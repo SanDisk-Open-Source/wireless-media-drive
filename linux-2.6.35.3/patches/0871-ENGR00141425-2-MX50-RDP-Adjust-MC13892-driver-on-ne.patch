@@ -1,0 +1,57 @@
+From bd5f50f7b22eec1a69e920afc63047db906d6999 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Fri, 1 Apr 2011 18:43:17 +0800
+Subject: [PATCH] ENGR00141425-2 MX50 RDP: Adjust MC13892 driver on new framework
+
+Changed the .modalias to "mc13892", so that the PMIC SPI driver
+can use the modalias to distinguish the "mc13892" and the new PMIC "mc34708".
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c |   16 +++++++---------
+ 1 files changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+index 5502d40..fd2faf1 100644
+--- a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+@@ -1,21 +1,19 @@
+ /*
+  * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
++ *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+  * (at your option) any later version.
+-
++ *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+-
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ #include <linux/module.h>
+@@ -421,7 +419,7 @@ static struct mc13892_platform_data mc13892_plat = {
+ };
+ 
+ static struct spi_board_info __initdata mc13892_spi_device = {
+-	.modalias = "pmic_spi",
++	.modalias = "mc13892",
+ 	.irq = gpio_to_irq(114),
+ 	.max_speed_hz = 6000000,	/* max spi SCK clock speed in HZ */
+ 	.bus_num = 3,
+-- 
+1.5.4.4
+

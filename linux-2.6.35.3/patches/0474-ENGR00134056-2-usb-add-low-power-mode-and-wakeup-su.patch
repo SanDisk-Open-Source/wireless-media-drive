@@ -1,0 +1,176 @@
+From 6287e26624f2a05658ef261ec27e3210fc8cd835 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Thu, 25 Nov 2010 15:43:40 +0800
+Subject: [PATCH] ENGR00134056-2 usb: add low power mode and wakeup support for mx28 otg port
+
+Add low power mode and wakeup support for mx28 otg port,
+and the host1 and otg port are fully verified for low power mode and wakeup
+function.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |   28 ++++++++++++++++++++++++----
+ drivers/usb/gadget/arcotg_udc.h |    1 +
+ drivers/usb/host/ehci-arc.c     |    3 ++-
+ drivers/usb/otg/fsl_otg.c       |   11 +++++++++--
+ 4 files changed, 36 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 987110b..2539c3e 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -21,6 +21,7 @@
+ #include <linux/errno.h>
+ #include <linux/delay.h>
+ #include <linux/sched.h>
++#include <linux/workqueue.h>
+ #include <linux/slab.h>
+ #include <linux/init.h>
+ #include <linux/timer.h>
+@@ -78,6 +79,7 @@ volatile static struct usb_sys_interface *usb_sys_regs;
+ 
+ /* it is initialized in probe()  */
+ static struct fsl_udc *udc_controller;
++static struct workqueue_struct *usb_gadget_queue;
+ 
+ #ifdef POSTPONE_FREE_LAST_DTD
+ static struct ep_td_struct *last_free_td;
+@@ -109,7 +111,7 @@ extern struct resource *otg_get_resources(void);
+ extern void fsl_platform_set_test_mode(struct fsl_usb2_platform_data *pdata, enum usb_test_mode mode);
+ 
+ #ifdef CONFIG_WORKAROUND_ARCUSB_REG_RW
+-static void safe_writel(u32 val32, void *addr)
++static void safe_writel(u32 val32, volatile u32 *addr)
+ {
+ 	__asm__ ("swp %0, %0, [%1]" : : "r"(val32), "r"(addr));
+ }
+@@ -489,6 +491,8 @@ static void dr_controller_run(struct fsl_udc *udc)
+ 
+ 	/* enable BSV irq */
+ 	temp = fsl_readl(&dr_regs->otgsc);
++	/* do not clear otgsc interrupt status */
++	temp &= (~(OTGSC_ID_CHANGE_IRQ_STS | OTGSC_B_SESSION_VALID_IRQ_STS));
+ 	temp |= OTGSC_B_SESSION_VALID_IRQ_EN;
+ 	fsl_writel(temp, &dr_regs->otgsc);
+ 
+@@ -496,10 +500,10 @@ static void dr_controller_run(struct fsl_udc *udc)
+ 	if (!(temp & OTGSC_B_SESSION_VALID)) {
+ 		/* Set stopped before low power mode */
+ 		udc->stopped = 1;
+-		/* enter lower power mode */
+-		dr_phy_low_power_mode(udc, true);
+ 		/* enable wake up */
+ 		dr_wake_up_enable(udc, true);
++		/* enter lower power mode */
++		dr_phy_low_power_mode(udc, true);
+ 		printk(KERN_DEBUG "%s: udc enter low power mode \n", __func__);
+ 	} else {
+ #ifdef CONFIG_ARCH_MX37
+@@ -2105,6 +2109,11 @@ static void reset_irq(struct fsl_udc *udc)
+ 	udc->usb_state = USB_STATE_DEFAULT;
+ }
+ 
++static void fsl_gadget_clk_off_event(struct work_struct *work)
++{
++	dr_clk_gate(false);
++}
++
+ /* if wakup udc, return true; else return false*/
+ bool try_wake_up_udc(struct fsl_udc *udc)
+ {
+@@ -2126,6 +2135,10 @@ bool try_wake_up_udc(struct fsl_udc *udc)
+ 	if (irq_src & OTGSC_B_SESSION_VALID_IRQ_STS) {
+ 		u32 tmp;
+ 		fsl_writel(irq_src, &dr_regs->otgsc);
++		/* only handle device interrupt event */
++		if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
++			return false;
++		}
+ 		tmp = fsl_readl(&dr_regs->usbcmd);
+ 		/* check BSV bit to see if fall or rise */
+ 		if (irq_src & OTGSC_B_SESSION_VALID) {
+@@ -2143,7 +2156,7 @@ bool try_wake_up_udc(struct fsl_udc *udc)
+ 			dr_wake_up_enable(udc, true);
+ 			/* close USB PHY clock */
+ 			dr_phy_low_power_mode(udc, true);
+-			dr_clk_gate(false);
++			queue_work(usb_gadget_queue, &udc->usb_gadget_work);
+ 			printk(KERN_DEBUG "%s: udc enter low power mode \n", __func__);
+ 			return false;
+ 		}
+@@ -2931,6 +2944,13 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
+ 				g_iram_addr + i * g_iram_size;
+ 		}
+ 	}
++
++	usb_gadget_queue = create_workqueue("usb_gadget_workqueue");
++	if (usb_gadget_queue == NULL) {
++		printk(KERN_ERR "Coulndn't create usb gadget work queue\n");
++		return -ENOMEM;
++	}
++	INIT_WORK(&udc_controller->usb_gadget_work, fsl_gadget_clk_off_event);
+ #ifdef POSTPONE_FREE_LAST_DTD
+ 	last_free_td = NULL;
+ #endif
+diff --git a/drivers/usb/gadget/arcotg_udc.h b/drivers/usb/gadget/arcotg_udc.h
+index 6f0282b..a823a91 100644
+--- a/drivers/usb/gadget/arcotg_udc.h
++++ b/drivers/usb/gadget/arcotg_udc.h
+@@ -623,6 +623,7 @@ struct fsl_udc {
+ 	struct completion *done;	/* to make sure release() is done */
+ 	u32 iram_buffer[IRAM_PPH_NTD];
+ 	void *iram_buffer_v[IRAM_PPH_NTD];
++	struct work_struct 		usb_gadget_work;
+ };
+ 
+ /*-------------------------------------------------------------------------*/
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index 81583a0..20416da 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -425,7 +425,8 @@ static int ehci_fsl_bus_resume(struct usb_hcd *hcd)
+ 			   but the clock opens at wakeup routine
+ 			 */
+ 			fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
+-		}
++		} else
++			pdata->wakeup_event = 0;
+ 		usb_host_set_wakeup(hcd->self.controller, false);
+ 		fsl_usb_lowpower_mode(pdata, false);
+ 	}
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index 2567b04..eccd173 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -446,12 +446,11 @@ static void fsl_otg_loading_monitor(unsigned long data)
+ static void b_session_irq_enable(bool enable)
+ {
+ 	int osc = le32_to_cpu(usb_dr_regs->otgsc);
+-	printk(KERN_DEBUG "%s:enable is %d\n", __func__, enable);
++	pr_debug("%s:enable=%d", __func__, enable);
+ 	/* The other interrupts' status should not be cleared */
+ 	osc &= ~(OTGSC_INTSTS_USB_ID | OTGSC_INTSTS_A_VBUS_VALID
+ 		| OTGSC_INTSTS_A_SESSION_VALID | OTGSC_INTSTS_B_SESSION_VALID);
+ 	osc |= OTGSC_INTSTS_B_SESSION_VALID;
+-
+ 	if (enable)
+ 		osc |= OTGSC_INTR_B_SESSION_VALID_EN;
+ 	else
+@@ -667,6 +666,14 @@ static int fsl_otg_set_peripheral(struct otg_transceiver *otg_p,
+ 	if (otg_dev->fsm.id == 1) {
+ 		fsl_otg_start_host(&otg_dev->fsm, 0);
+ 		otg_drv_vbus(&otg_dev->fsm, 0);
++		/* Clear OTGSC_INTSTS_B_SESSION_VALID
++		 * When the host driver loads, the vbus may change to 5v for some
++		 * SoC's. But when there is no usb device at host port, the vbus
++		 * will be off, in that case, vbus changes status will be set.
++		 */
++		fsl_otg_clk_gate(true);
++		b_session_irq_enable(false);
++		fsl_otg_clk_gate(false);
+ 		fsl_otg_start_gadget(&otg_dev->fsm, 1);
+ 	}
+ 
+-- 
+1.5.4.4
+

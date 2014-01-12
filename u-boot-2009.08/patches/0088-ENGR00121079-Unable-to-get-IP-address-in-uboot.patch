@@ -1,0 +1,176 @@
+From cdfb31a14c8d7f17af7640abcba88b856c2388b9 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 24 Feb 2010 18:50:48 +0800
+Subject: [PATCH] ENGR00121079: Unable to get IP address in uboot
+
+It was found that the failure is caused by
+sending DCHP Discover request with empty
+"Parameter Request List" option.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx25_3stack.h         |    5 ++++-
+ include/configs/mx28.h                |    6 +++++-
+ include/configs/mx35_3stack.h         |    3 +++
+ include/configs/mx35_3stack_mmc.h     |    3 +++
+ include/configs/mx51_3stack.h         |    3 +++
+ include/configs/mx51_3stack_android.h |    3 +++
+ include/configs/mx51_bbg.h            |    3 +++
+ include/configs/mx51_bbg_android.h    |    3 +++
+ include/configs/stmp378x_dev.h        |    5 ++++-
+ 9 files changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index b0401cd..796f3db 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2009 Freescale Semiconductor
++ * (C) Copyright 2009-2010 Freescale Semiconductor
+  *
+  * (C) Copyright 2004
+  * Texas Instruments.
+@@ -147,6 +147,9 @@
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_RETRY_COUNT	100
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ #define CONFIG_NET_MULTI
+ #define CONFIG_ETHPRIME
+ 
+diff --git a/include/configs/mx28.h b/include/configs/mx28.h
+index 84fecc3..b119f76 100644
+--- a/include/configs/mx28.h
++++ b/include/configs/mx28.h
+@@ -1,6 +1,7 @@
+ /*
+  * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+- * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -158,6 +159,9 @@
+ #define CONFIG_CMD_MII
+ #define CONFIG_DISCOVER_PHY
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ #define CONFIG_CMD_PING
+ #define CONFIG_IPADDR			192.168.1.101
+ #define CONFIG_SERVERIP			192.168.1.100
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index bc420b2..7af1888 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -82,6 +82,9 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ /*#define CONFIG_CMD_SPI*/
+ /*#define CONFIG_CMD_DATE*/
+ #define CONFIG_CMD_NAND
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index c9cc157..b8e567a 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -82,6 +82,9 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ /*#define CONFIG_CMD_SPI*/
+ /*#define CONFIG_CMD_DATE*/
+ /*#define CONFIG_CMD_NAND*/
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index a942bfe..d4af081 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -84,6 +84,9 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ /* Enable below configure when supporting nand */
+ #define CONFIG_CMD_NAND
+ #define CONFIG_MXC_NAND
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index fabb718..24d43f3 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -89,6 +89,9 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_RETRY_COUNT	100
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index c17c82c..1887626 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -83,6 +83,9 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_RETRY_COUNT	100
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 07663be..97e5ff3 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -73,6 +73,9 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_RETRY_COUNT	100
+diff --git a/include/configs/stmp378x_dev.h b/include/configs/stmp378x_dev.h
+index c0368c3..26a5f3b 100644
+--- a/include/configs/stmp378x_dev.h
++++ b/include/configs/stmp378x_dev.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -136,6 +136,9 @@
+ #include <config_cmd_default.h>
+ #define CONFIG_CMD_ASKENV
+ #define CONFIG_CMD_DHCP
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
+ #undef CONFIG_CMD_DIAG
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_PING
+-- 
+1.5.4.4
+

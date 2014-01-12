@@ -1,0 +1,95 @@
+From 807e5c91389650f3d33b2b8ad5e4c23bc1d2ccc1 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 20 Jan 2011 16:23:14 +0800
+Subject: [PATCH] ENGR00138270-2 ipuv3: change ipu_check_buffer_busy to ipu_check_buffer_ready
+
+Change ipu_check_buffer_busy to ipu_check_buffer_ready.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/media/video/mxc/output/mxc_v4l2_output.c |    4 ++--
+ drivers/mxc/ipu/ipu_common.c                     |    6 +++---
+ drivers/mxc/ipu3/ipu_common.c                    |    6 +++---
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/media/video/mxc/output/mxc_v4l2_output.c b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+index 064baba..86cd795 100644
+--- a/drivers/media/video/mxc/output/mxc_v4l2_output.c
++++ b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -292,7 +292,7 @@ static int finish_previous_frame(vout_data *vout)
+ 	int ret = 0, try = 0;
+ 
+ 	/* make sure buf[vout->disp_buf_num] in showing */
+-	while (ipu_check_buffer_busy(vout->display_ch,
++	while (ipu_check_buffer_ready(vout->display_ch,
+ 			IPU_INPUT_BUFFER, vout->disp_buf_num)) {
+ 		if (fbi->fbops->fb_ioctl) {
+ 			old_fs = get_fs();
+diff --git a/drivers/mxc/ipu/ipu_common.c b/drivers/mxc/ipu/ipu_common.c
+index a9ab8b8..fd43452 100644
+--- a/drivers/mxc/ipu/ipu_common.c
++++ b/drivers/mxc/ipu/ipu_common.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -717,7 +717,7 @@ int32_t ipu_select_buffer(ipu_channel_t channel, ipu_buffer_t type,
+  * 				ready state.
+  *
+  */
+-int32_t ipu_check_buffer_busy(ipu_channel_t channel, ipu_buffer_t type,
++int32_t ipu_check_buffer_ready(ipu_channel_t channel, ipu_buffer_t type,
+ 		uint32_t bufNum)
+ {
+ 	uint32_t dma_chan = channel_2_dma(channel, type);
+@@ -736,7 +736,7 @@ int32_t ipu_check_buffer_busy(ipu_channel_t channel, ipu_buffer_t type,
+ 	else
+ 		return 0;
+ }
+-EXPORT_SYMBOL(ipu_check_buffer_busy);
++EXPORT_SYMBOL(ipu_check_buffer_ready);
+ 
+ /*!
+  * This function links 2 channels together for automatic frame
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index a0f36ad..1bacec0 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -1798,7 +1798,7 @@ EXPORT_SYMBOL(ipu_enable_channel);
+  * 				ready state.
+  *
+  */
+-int32_t ipu_check_buffer_busy(ipu_channel_t channel, ipu_buffer_t type,
++int32_t ipu_check_buffer_ready(ipu_channel_t channel, ipu_buffer_t type,
+ 		uint32_t bufNum)
+ {
+ 	uint32_t dma_chan = channel_2_dma(channel, type);
+@@ -1817,7 +1817,7 @@ int32_t ipu_check_buffer_busy(ipu_channel_t channel, ipu_buffer_t type,
+ 	else
+ 		return 0;
+ }
+-EXPORT_SYMBOL(ipu_check_buffer_busy);
++EXPORT_SYMBOL(ipu_check_buffer_ready);
+ 
+ /*!
+  * This function clear buffer ready for a logical channel.
+-- 
+1.5.4.4
+

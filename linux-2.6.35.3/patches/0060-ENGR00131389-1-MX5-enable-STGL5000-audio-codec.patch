@@ -1,0 +1,106 @@
+From 57bdba19407c73db152d3cf06c152c9a857f63e1 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 13 Sep 2010 21:16:33 +0800
+Subject: [PATCH] ENGR00131389-1 MX5: enable STGL5000 audio codec
+
+1.Enable STGL5000 audio codec in default config.
+2.Enable IRAM playback in default config.
+3. Fix ssi2 clock name.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |   18 ++++++++++++++----
+ arch/arm/mach-mx5/clock.c       |    2 +-
+ arch/arm/mach-mx5/clock_mx50.c  |    2 +-
+ 3 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 8ee4fc2..7bd1991 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Wed Sep  8 14:06:36 2010
++# Mon Sep 13 21:09:06 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -243,6 +243,8 @@ CONFIG_ARCH_MXC=y
+ # CONFIG_ARCH_MX37 is not set
+ # CONFIG_ARCH_MXC91231 is not set
+ CONFIG_ARCH_MX5=y
++CONFIG_MXC_SDMA_API=y
++CONFIG_SDMA_IRAM=y
+ CONFIG_ARCH_MX51=y
+ CONFIG_ARCH_MX53=y
+ CONFIG_ARCH_MX50=y
+@@ -256,10 +258,8 @@ CONFIG_MACH_MX50_ARM2=y
+ #
+ # MX5x Options:
+ #
+-CONFIG_MXC_SDMA_API=y
+ CONFIG_ARCH_MXC_HAS_NFC_V3=y
+ CONFIG_ARCH_MXC_HAS_NFC_V3_2=y
+-CONFIG_SDMA_IRAM=y
+ CONFIG_IRAM_ALLOC=y
+ CONFIG_DMA_ZONE_SIZE=96
+ CONFIG_ISP1504_MXC=y
+@@ -267,6 +267,7 @@ CONFIG_UTMI_MXC=y
+ # CONFIG_MXC_IRQ_PRIOR is not set
+ CONFIG_MXC_TZIC=y
+ CONFIG_MXC_PWM=y
++# CONFIG_MXC_DEBUG_BOARD is not set
+ CONFIG_ARCH_MXC_IOMUX_V3=y
+ CONFIG_MXC_DVFS_PER=y
+ 
+@@ -1595,9 +1596,18 @@ CONFIG_SND_USB=y
+ # CONFIG_SND_USB_UA101 is not set
+ # CONFIG_SND_USB_CAIAQ is not set
+ CONFIG_SND_SOC=y
+-# CONFIG_SND_IMX_SOC is not set
++CONFIG_SND_MXC_SOC=y
++CONFIG_SND_MXC_SOC_SSI=y
++CONFIG_SND_MXC_SOC_IRAM=y
++CONFIG_SND_SOC_IMX_3STACK_SGTL5000=y
++# CONFIG_SND_SOC_IMX_3STACK_AK4647 is not set
++# CONFIG_SND_SOC_IMX_3STACK_WM8580 is not set
++# CONFIG_SND_SOC_IMX_3STACK_AK5702 is not set
++# CONFIG_SND_SOC_IMX_3STACK_BLUETOOTH is not set
++# CONFIG_SND_SOC_IMX_3STACK_CS42888 is not set
+ CONFIG_SND_SOC_I2C_AND_SPI=y
+ # CONFIG_SND_SOC_ALL_CODECS is not set
++CONFIG_SND_SOC_SGTL5000=y
+ # CONFIG_SOUND_PRIME is not set
+ CONFIG_HID_SUPPORT=y
+ CONFIG_HID=y
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index f86df41..b29f4c0 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4121,7 +4121,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("mxc_spi.2", NULL, cspi3_clk),
+ 	_REGISTER_CLOCK(NULL, "ssi_lp_apm_clk", ssi_lp_apm_clk),
+ 	_REGISTER_CLOCK("mxc_ssi.0", NULL, ssi1_clk[0]),
+-	_REGISTER_CLOCK("mxc_ssi.0", NULL, ssi2_clk[0]),
++	_REGISTER_CLOCK("mxc_ssi.1", NULL, ssi2_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ssi_ext1_clk", ssi_ext1_clk),
+ 	_REGISTER_CLOCK(NULL, "ssi_ext2_clk", ssi_ext2_clk),
+ 	_REGISTER_CLOCK("mxc_iim.0", NULL, iim_clk),
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 69fc5f6..8918514 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2883,7 +2883,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("mxc_spi.2", NULL, cspi3_clk),
+ 	_REGISTER_CLOCK(NULL, "ssi_lp_apm_clk", ssi_lp_apm_clk),
+ 	_REGISTER_CLOCK("mxc_ssi.0", NULL, ssi1_clk[0]),
+-	_REGISTER_CLOCK("mxc_ssi.0", NULL, ssi2_clk[0]),
++	_REGISTER_CLOCK("mxc_ssi.1", NULL, ssi2_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ssi_ext1_clk", ssi_ext1_clk),
+ 	_REGISTER_CLOCK(NULL, "ssi_ext2_clk", ssi_ext2_clk),
+ 	_REGISTER_CLOCK(NULL, "usb_ahb_clk", usb_ahb_clk),
+-- 
+1.5.4.4
+

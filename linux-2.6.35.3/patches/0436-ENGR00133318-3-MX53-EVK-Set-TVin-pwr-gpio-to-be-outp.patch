@@ -1,0 +1,53 @@
+From eff2453e942edcc9cd85e56a1f3b7bcde7c4aedc Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 10 Nov 2010 18:17:52 +0800
+Subject: [PATCH] ENGR00133318-3 MX53 EVK:Set TVin pwr gpio to be output in io_init
+
+This patch sets TVin pwr gpio to be output in io_init.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index cf5fb65..6cf08f1 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -796,11 +796,11 @@ static void mx53_gpio_host1_driver_vbus(bool on)
+ static void adv7180_pwdn(int pwdn)
+ {
+ 	gpio_request(MX53_TVIN_PWR, "tvin-pwr");
+-	gpio_direction_output(MX53_TVIN_PWR, 0);
+ 	if (pwdn)
+ 		gpio_set_value(MX53_TVIN_PWR, 0);
+ 	else
+ 		gpio_set_value(MX53_TVIN_PWR, 1);
++	gpio_free(MX53_TVIN_PWR);
+ }
+ 
+ static struct mxc_tvin_platform_data adv7180_data = {
+@@ -872,8 +872,8 @@ device_initcall(mxc_init_fb);
+ static void camera_pwdn(int pwdn)
+ {
+ 	gpio_request(MX53_TVIN_PWR, "tvin-pwr");
+-	gpio_direction_output(MX53_TVIN_PWR, 0);
+ 	gpio_set_value(MX53_TVIN_PWR, pwdn);
++	gpio_free(MX53_TVIN_PWR);
+ }
+ 
+ static struct mxc_camera_platform_data camera_data = {
+@@ -1572,6 +1572,10 @@ static void __init mx53_evk_io_init(void)
+ 	msleep(5);
+ 	gpio_set_value(MX53_TVIN_RESET, 1);
+ 
++	/* TVin power down */
++	gpio_request(MX53_TVIN_PWR, "tvin-pwr");
++	gpio_direction_output(MX53_TVIN_PWR, 0);
++
+ 	/* CAN1 enable GPIO*/
+ 	gpio_request(MX53_CAN1_EN1, "can1-en1");
+ 	gpio_direction_output(MX53_CAN1_EN1, 0);
+-- 
+1.5.4.4
+

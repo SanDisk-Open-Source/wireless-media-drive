@@ -1,0 +1,31 @@
+From 572671697d964c6de0488a299f617a24f469cb61 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Thu, 5 Aug 2010 11:30:19 +0800
+Subject: [PATCH] ENGR00125983 esdhc: fix the issue that the clock is enabled one more time
+
+This will cause the esdhc clock registerd in the kernel clock tree
+to be always enabled which will block the sysem to disable PLL2 in
+LPAPM mode.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index 5df8c31..c522aa9 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -1811,8 +1811,7 @@ static int __devinit sdhci_probe_slot(struct platform_device
+ 	if (NULL == host->clk) {
+ 		printk(KERN_ERR "MXC MMC can't get clock.\n");
+ 		goto out1;
+-	} else
+-		clk_enable(host->clk);
++	}
+ 	DBG("SDHC:%d clock:%lu\n", pdev->id, clk_get_rate(host->clk));
+ 
+ 	host->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-- 
+1.5.4.4
+

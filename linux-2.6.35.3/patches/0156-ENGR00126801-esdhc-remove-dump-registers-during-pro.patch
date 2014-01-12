@@ -1,0 +1,31 @@
+From 26e0c68c804fee1984caa62aa904adb702ff8cfb Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 30 Aug 2010 14:55:15 +0800
+Subject: [PATCH] ENGR00126801 esdhc: remove dump registers during probe time
+
+The driver can not dump registers during probe time because
+some clocks needed for register read/write are still not enabled
+or the system may hang.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index ef756aa..8f81a40 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -2037,9 +2037,6 @@ static int __devinit sdhci_probe_slot(struct platform_device
+ 		}
+ 		mxc_dma_callback_set(host->dma, sdhci_dma_irq, (void *)host);
+ 	}
+-#ifdef CONFIG_MMC_DEBUG
+-	sdhci_dumpregs(host);
+-#endif
+ 
+ 	mmiowb();
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,391 @@
+From 7c1e92c0700c18f8baf1fcd6d77b5e22c6a0c01e Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Fri, 31 Dec 2010 14:57:33 +0800
+Subject: [PATCH] ENGR00137517 MXC V4L2 capture:Improve streaming capture
+
+1) Remove skip frame support.
+2) Add dummy buffer support for CSI_PRP_ENC_MEM and
+   MEM_ROT_ENC_MEM channel to get rid of lost frame
+   error.
+3) Clear buffer ready bit for one time whenever we fail
+   to update buffer address.
+4) Fix potential tearing issue by sync the working buf
+   with EOF interrupt.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/ipu_csi_enc.c      |   12 ++-
+ drivers/media/video/mxc/capture/ipu_prp_enc.c      |   47 +++++++-
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.c |  134 +++++---------------
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.h |    3 +-
+ 4 files changed, 86 insertions(+), 110 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/ipu_csi_enc.c b/drivers/media/video/mxc/capture/ipu_csi_enc.c
+index 9725b7e..c8a4dab 100644
+--- a/drivers/media/video/mxc/capture/ipu_csi_enc.c
++++ b/drivers/media/video/mxc/capture/ipu_csi_enc.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -166,8 +166,14 @@ static int csi_enc_eba_update(dma_addr_t eba, int *buffer_num)
+ 	if (err != 0) {
+ 		ipu_clear_buffer_ready(CSI_MEM, IPU_OUTPUT_BUFFER,
+ 				       *buffer_num);
+-		printk(KERN_ERR "err %d buffer_num %d\n", err, *buffer_num);
+-		return err;
++
++		err = ipu_update_channel_buffer(CSI_MEM, IPU_OUTPUT_BUFFER,
++						*buffer_num, eba);
++		if (err != 0) {
++			pr_err("ERROR: v4l2 capture: fail to update "
++			       "buf%d\n", *buffer_num);
++			return err;
++		}
+ 	}
+ 
+ 	ipu_select_buffer(CSI_MEM, IPU_OUTPUT_BUFFER, *buffer_num);
+diff --git a/drivers/media/video/mxc/capture/ipu_prp_enc.c b/drivers/media/video/mxc/capture/ipu_prp_enc.c
+index 5bdbe81..67637dd 100644
+--- a/drivers/media/video/mxc/capture/ipu_prp_enc.c
++++ b/drivers/media/video/mxc/capture/ipu_prp_enc.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -287,8 +287,29 @@ static int prp_enc_eba_update(dma_addr_t eba, int *buffer_num)
+ 						eba);
+ 	}
+ 	if (err != 0) {
+-		printk(KERN_ERR "err %d buffer_num %d\n", err, *buffer_num);
+-		return err;
++		if (grotation >= IPU_ROTATE_90_RIGHT) {
++			ipu_clear_buffer_ready(MEM_ROT_ENC_MEM,
++					       IPU_OUTPUT_BUFFER,
++					       *buffer_num);
++			err = ipu_update_channel_buffer(MEM_ROT_ENC_MEM,
++							IPU_OUTPUT_BUFFER,
++							*buffer_num,
++							eba);
++		} else {
++			ipu_clear_buffer_ready(CSI_PRP_ENC_MEM,
++					       IPU_OUTPUT_BUFFER,
++					       *buffer_num);
++			err = ipu_update_channel_buffer(CSI_PRP_ENC_MEM,
++							IPU_OUTPUT_BUFFER,
++							*buffer_num,
++							eba);
++		}
++
++		if (err != 0) {
++			pr_err("ERROR: v4l2 capture: fail to update "
++			       "buf%d\n", *buffer_num);
++			return err;
++		}
+ 	}
+ 
+ 	if (grotation >= IPU_ROTATE_90_RIGHT) {
+@@ -315,6 +336,20 @@ static int prp_enc_enabling_tasks(void *private)
+ 	int err = 0;
+ 	CAMERA_TRACE("IPU:In prp_enc_enabling_tasks\n");
+ 
++	cam->dummy_frame.vaddress = dma_alloc_coherent(0,
++			       PAGE_ALIGN(cam->v2f.fmt.pix.sizeimage),
++			       &cam->dummy_frame.paddress,
++			       GFP_DMA | GFP_KERNEL);
++	if (cam->dummy_frame.vaddress == 0) {
++		pr_err("ERROR: v4l2 capture: Allocate dummy frame "
++		       "failed.\n");
++		return -ENOBUFS;
++	}
++	cam->dummy_frame.buffer.type = V4L2_BUF_TYPE_PRIVATE;
++	cam->dummy_frame.buffer.length =
++	    PAGE_ALIGN(cam->v2f.fmt.pix.sizeimage);
++	cam->dummy_frame.buffer.m.offset = cam->dummy_frame.paddress;
++
+ 	if (cam->rotation >= IPU_ROTATE_90_RIGHT) {
+ 		err = ipu_request_irq(IPU_IRQ_PRP_ENC_ROT_OUT_EOF,
+ 				      prp_enc_callback, 0, "Mxc Camera", cam);
+@@ -367,6 +402,12 @@ static int prp_enc_disabling_tasks(void *private)
+ 		ipu_uninit_channel(MEM_ROT_ENC_MEM);
+ 	}
+ 
++	if (cam->dummy_frame.vaddress != 0) {
++		dma_free_coherent(0, cam->dummy_frame.buffer.length,
++				  cam->dummy_frame.vaddress,
++				  cam->dummy_frame.paddress);
++		cam->dummy_frame.vaddress = 0;
++	}
+ 	ipu_csi_enable_mclk_if(CSI_MCLK_ENC, cam->csi, false, false);
+ 
+ 	return err;
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+index e2f82a9..eaefa3a 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -38,7 +38,7 @@
+ #include "mxc_v4l2_capture.h"
+ #include "ipu_prp_sw.h"
+ 
+-static int video_nr = -1;
++static int video_nr = -1, local_buf_num;
+ static cam_data *g_cam;
+ 
+ /*! This data is used for the output to the display. */
+@@ -268,7 +268,6 @@ static void mxc_free_frames(cam_data *cam)
+ 	}
+ 
+ 	cam->enc_counter = 0;
+-	cam->skip_frame = 0;
+ 	INIT_LIST_HEAD(&cam->ready_q);
+ 	INIT_LIST_HEAD(&cam->working_q);
+ 	INIT_LIST_HEAD(&cam->done_q);
+@@ -365,11 +364,13 @@ static int mxc_streamon(cam_data *cam)
+ 	}
+ 
+ 	cam->ping_pong_csi = 0;
++	local_buf_num = 0;
+ 	if (cam->enc_update_eba) {
+ 		frame =
+ 		    list_entry(cam->ready_q.next, struct mxc_v4l_frame, queue);
+ 		list_del(cam->ready_q.next);
+ 		list_add_tail(&frame->queue, &cam->working_q);
++		frame->ipu_buf_num = cam->ping_pong_csi;
+ 		err = cam->enc_update_eba(frame->buffer.m.offset,
+ 					  &cam->ping_pong_csi);
+ 
+@@ -377,6 +378,7 @@ static int mxc_streamon(cam_data *cam)
+ 		    list_entry(cam->ready_q.next, struct mxc_v4l_frame, queue);
+ 		list_del(cam->ready_q.next);
+ 		list_add_tail(&frame->queue, &cam->working_q);
++		frame->ipu_buf_num = cam->ping_pong_csi;
+ 		err |= cam->enc_update_eba(frame->buffer.m.offset,
+ 					   &cam->ping_pong_csi);
+ 	} else {
+@@ -1406,7 +1408,6 @@ static int mxc_v4l_open(struct file *file)
+ 		}
+ 
+ 		cam->enc_counter = 0;
+-		cam->skip_frame = 0;
+ 		INIT_LIST_HEAD(&cam->ready_q);
+ 		INIT_LIST_HEAD(&cam->working_q);
+ 		INIT_LIST_HEAD(&cam->done_q);
+@@ -1744,7 +1745,6 @@ static long mxc_v4l_do_ioctl(struct file *file,
+ 		mxc_streamoff(cam);
+ 		mxc_free_frame_buf(cam);
+ 		cam->enc_counter = 0;
+-		cam->skip_frame = 0;
+ 		INIT_LIST_HEAD(&cam->ready_q);
+ 		INIT_LIST_HEAD(&cam->working_q);
+ 		INIT_LIST_HEAD(&cam->done_q);
+@@ -1787,34 +1787,12 @@ static long mxc_v4l_do_ioctl(struct file *file,
+ 		pr_debug("   case VIDIOC_QBUF\n");
+ 
+ 		spin_lock_irqsave(&cam->queue_int_lock, lock_flags);
+-		cam->frame[index].buffer.m.offset = buf->m.offset;
+ 		if ((cam->frame[index].buffer.flags & 0x7) ==
+ 		    V4L2_BUF_FLAG_MAPPED) {
+ 			cam->frame[index].buffer.flags |=
+ 			    V4L2_BUF_FLAG_QUEUED;
+-			if (strcmp(mxc_capture_inputs[cam->current_input].name,
+-				"CSI IC MEM") == 0) {
+-				if (cam->skip_frame > 0) {
+-					list_add_tail(&cam->frame[index].queue,
+-						      &cam->working_q);
+-
+-					retval =
+-					   cam->enc_update_eba(cam->
+-							       frame[index].
+-							       buffer.m.offset,
+-							       &cam->
+-							       ping_pong_csi);
+-
+-					cam->skip_frame = 0;
+-				} else
+-					list_add_tail(&cam->frame[index].queue,
+-						      &cam->ready_q);
+-			} else if (strcmp(
+-					mxc_capture_inputs[cam->current_input].
+-					name, "CSI MEM") == 0) {
+-				list_add_tail(&cam->frame[index].queue,
+-					      &cam->ready_q);
+-			}
++			list_add_tail(&cam->frame[index].queue,
++				      &cam->ready_q);
+ 		} else if (cam->frame[index].buffer.
+ 			   flags & V4L2_BUF_FLAG_QUEUED) {
+ 			pr_err("ERROR: v4l2 capture: VIDIOC_QBUF: "
+@@ -2278,24 +2256,23 @@ static void camera_callback(u32 mask, void *dev)
+ 
+ 	pr_debug("In MVC:camera_callback\n");
+ 
+-	if (strcmp(mxc_capture_inputs[cam->current_input].name, "CSI IC MEM")
+-	    == 0) {
+-		if (list_empty(&cam->working_q)) {
+-			pr_err("ERROR: v4l2 capture: camera_callback: "
+-				"working queue empty\n");
+-			return;
+-		}
++	if (!list_empty(&cam->working_q)) {
+ 		do_gettimeofday(&cur_time);
+ 
+ 		done_frame = list_entry(cam->working_q.next,
+ 					struct mxc_v4l_frame,
+ 					queue);
+ 
++		if (done_frame->ipu_buf_num != local_buf_num)
++			goto next;
++
+ 		/*
+-		 * Set the current time to done frame buffer's timestamp.
+-		 * Users can use this information to judge the frame's usage.
++		 * Set the current time to done frame buffer's
++		 * timestamp. Users can use this information to judge
++		 * the frame's usage.
+ 		 */
+ 		done_frame->buffer.timestamp = cur_time;
++
+ 		if (done_frame->buffer.flags & V4L2_BUF_FLAG_QUEUED) {
+ 			done_frame->buffer.flags |= V4L2_BUF_FLAG_DONE;
+ 			done_frame->buffer.flags &= ~V4L2_BUF_FLAG_QUEUED;
+@@ -2307,81 +2284,33 @@ static void camera_callback(u32 mask, void *dev)
+ 			/* Wake up the queue */
+ 			cam->enc_counter++;
+ 			wake_up_interruptible(&cam->enc_queue);
+-
+-			if (list_empty(&cam->ready_q)) {
+-				cam->skip_frame++;
+-			} else {
+-				ready_frame = list_entry(cam->ready_q.next,
+-							 struct mxc_v4l_frame,
+-							 queue);
+-
+-				if (cam->enc_update_eba(
+-						ready_frame->buffer.m.offset,
+-						&cam->ping_pong_csi) == 0) {
+-					list_del(cam->ready_q.next);
+-					list_add_tail(&ready_frame->queue,
+-						      &cam->working_q);
+-				} else
+-					return;
+-			}
+-		} else {
++		} else
+ 			pr_err("ERROR: v4l2 capture: camera_callback: "
+ 				"buffer not queued\n");
+-		}
+-	} else if (strcmp(mxc_capture_inputs[cam->current_input].name,
+-		   "CSI MEM") == 0) {
+-		if (!list_empty(&cam->working_q)) {
+-			do_gettimeofday(&cur_time);
+-
+-			done_frame = list_entry(cam->working_q.next,
+-						struct mxc_v4l_frame,
+-						queue);
+-
+-			/*
+-			 * Set the current time to done frame buffer's
+-			 * timestamp. Users can use this information to judge
+-			 * the frame's usage.
+-			 */
+-			done_frame->buffer.timestamp = cur_time;
+-
+-			if (done_frame->buffer.flags & V4L2_BUF_FLAG_QUEUED) {
+-				done_frame->buffer.flags |=
+-							V4L2_BUF_FLAG_DONE;
+-				done_frame->buffer.flags &=
+-							~V4L2_BUF_FLAG_QUEUED;
+-
+-				/* Added to the done queue */
+-				list_del(cam->working_q.next);
+-				list_add_tail(&done_frame->queue, &cam->done_q);
+-
+-				/* Wake up the queue */
+-				cam->enc_counter++;
+-				wake_up_interruptible(&cam->enc_queue);
+-			} else {
+-				pr_err("ERROR: v4l2 capture: camera_callback: "
+-					"buffer not queued\n");
+-			}
+-		}
++	}
+ 
+-		if (!list_empty(&cam->ready_q)) {
+-			ready_frame = list_entry(cam->ready_q.next,
+-						 struct mxc_v4l_frame,
+-						 queue);
++next:
++	if (!list_empty(&cam->ready_q)) {
++		ready_frame = list_entry(cam->ready_q.next,
++					 struct mxc_v4l_frame,
++					 queue);
++		if (cam->enc_update_eba)
+ 			if (cam->enc_update_eba(ready_frame->buffer.m.offset,
+ 						&cam->ping_pong_csi) == 0) {
+ 				list_del(cam->ready_q.next);
+ 				list_add_tail(&ready_frame->queue,
+ 					      &cam->working_q);
+-			} else
+-				return;
+-		} else {
+-			if (cam->enc_update_eba(
++				ready_frame->ipu_buf_num = local_buf_num;
++			}
++	} else {
++		if (cam->enc_update_eba)
++			cam->enc_update_eba(
+ 				cam->dummy_frame.buffer.m.offset,
+-				&cam->ping_pong_csi) == -EACCES)
+-				return;
+-		}
++				&cam->ping_pong_csi);
+ 	}
+ 
++	local_buf_num = (local_buf_num == 0) ? 1 : 0;
++
+ 	return;
+ }
+ 
+@@ -2438,7 +2367,6 @@ static void init_camera_struct(cam_data *cam, struct platform_device *pdev)
+ 	cam->streamparm.parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
+ 	cam->overlay_on = false;
+ 	cam->capture_on = false;
+-	cam->skip_frame = 0;
+ 	cam->v4l2_fb.flags = V4L2_FBUF_FLAG_OVERLAY;
+ 
+ 	cam->v2f.fmt.pix.sizeimage = 352 * 288 * 3 / 2;
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.h b/drivers/media/video/mxc/capture/mxc_v4l2_capture.h
+index 50f6951..3f53d60 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.h
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -50,6 +50,7 @@ struct mxc_v4l_frame {
+ 	struct v4l2_buffer buffer;
+ 	struct list_head queue;
+ 	int index;
++	int ipu_buf_num;
+ };
+ 
+ /* Only for old version.  Will go away soon. */
+-- 
+1.5.4.4
+

@@ -1,0 +1,45 @@
+From f430e9fac017ec0872d81ec9fc7e9e82609a42c9 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Sun, 30 Jan 2011 13:49:53 +0800
+Subject: [PATCH] ENGR00138642-1 msl-gpio:fix spin lock recursion problem
+
+The kernel IRQ API set_irq_type will cause spin lock recursion
+problem when the irq is GPIO's.
+The fix is originated from arch/arm/plat-omap/gpio.c
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/plat-mxc/gpio.c |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/gpio.c b/arch/arm/plat-mxc/gpio.c
+index 985787d..b82ae0b 100644
+--- a/arch/arm/plat-mxc/gpio.c
++++ b/arch/arm/plat-mxc/gpio.c
+@@ -3,7 +3,7 @@
+  * Copyright 2008 Juergen Beisert, kernel@pengutronix.de
+  *
+  * Based on code from Freescale,
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -122,10 +122,10 @@ static int gpio_set_irq_type(u32 irq, u32 type)
+ 	}
+ 
+ 	/* set the correct irq handler */
+-	if (type & IRQ_TYPE_EDGE_BOTH)
+-		set_irq_handler(irq, handle_edge_irq);
+-	else if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
+-		set_irq_handler(irq, handle_level_irq);
++	if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
++		__set_irq_handler_unlocked(irq, handle_level_irq);
++	else if (type & IRQ_TYPE_EDGE_BOTH)
++		__set_irq_handler_unlocked(irq, handle_edge_irq);
+ 
+ 	reg += GPIO_ICR1 + ((gpio & 0x10) >> 2); /* lower or upper register */
+ 	bit = gpio & 0xf;
+-- 
+1.5.4.4
+

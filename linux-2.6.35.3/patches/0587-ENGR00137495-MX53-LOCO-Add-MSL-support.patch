@@ -1,0 +1,1250 @@
+From f653a2862d8ca56312d0848aef2fc926e1901702 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 30 Dec 2010 17:02:36 +0800
+Subject: [PATCH] ENGR00137495 MX53 LOCO: Add MSL support
+
+Add MSL support for MX53 LOCO board.
+The following functions are tested on MX53 LOCO board:
+- SGTL5000 audio playback
+- USB HOST
+- Video playback
+- GPU
+- MMC/SD
+- WVGA panel
+- VGA (command option: video=mxcdi1fb:BGR24,XGA di1_primary tve)
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig             |    3 +-
+ arch/arm/mach-mx5/Kconfig                   |    7 +
+ arch/arm/mach-mx5/Makefile                  |    1 +
+ arch/arm/mach-mx5/mx53_loco.c               |  900 +++++++++++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/iomux-mx53.h |    1 +
+ arch/arm/tools/mach-types                   |  194 ++++++-
+ 6 files changed, 1098 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 8fb5404..9d51ba9 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Fri Dec 31 01:04:45 2010
++# Thu Dec 30 19:50:11 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -256,6 +256,7 @@ CONFIG_MACH_MX51_BABBAGE=y
+ CONFIG_MACH_MX53_EVK=y
+ CONFIG_MACH_MX53_ARD=y
+ CONFIG_MACH_MX53_SMD=y
++CONFIG_MACH_MX53_LOCO=y
+ CONFIG_MACH_MX50_ARM2=y
+ CONFIG_MACH_MX50_RDP=y
+ 
+diff --git a/arch/arm/mach-mx5/Kconfig b/arch/arm/mach-mx5/Kconfig
+index 7a98590..59c7b23 100644
+--- a/arch/arm/mach-mx5/Kconfig
++++ b/arch/arm/mach-mx5/Kconfig
+@@ -63,6 +63,13 @@ config MACH_MX53_SMD
+ 	  Include support for MX53 SMD platform. This includes specific
+ 	  configurations for the board and its peripherals.
+ 
++config MACH_MX53_LOCO
++	bool "Support MX53 LOCO platform"
++	select ARCH_MX53
++	help
++	  Include support for MX53 LOCO platform. This includes specific
++	  configurations for the board and its peripherals.
++
+ config MACH_MX50_ARM2
+ 	bool "Support MX50 Armadillo2 platform"
+ 	select ARCH_MX50
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index c1815b5..d779393 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -15,6 +15,7 @@ obj-$(CONFIG_MACH_MX51_BABBAGE) += mx51_babbage.o mx51_babbage_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX53_EVK) += mx53_evk.o mx53_evk_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX53_ARD) += mx53_ard.o mx53_ard_pmic_ltc3589.o
+ obj-$(CONFIG_MACH_MX53_SMD) += mx53_smd.o
++obj-$(CONFIG_MACH_MX53_LOCO) += mx53_loco.o
+ obj-$(CONFIG_MACH_MX50_ARM2) += mx50_arm2.o mx50_arm2_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX50_RDP) += mx50_rdp.o mx50_rdp_pmic_mc13892.o
+ 
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+new file mode 100644
+index 0000000..8d68c47
+--- /dev/null
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -0,0 +1,900 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#include <linux/types.h>
++#include <linux/sched.h>
++#include <linux/delay.h>
++#include <linux/pm.h>
++#include <linux/interrupt.h>
++#include <linux/irq.h>
++#include <linux/init.h>
++#include <linux/input.h>
++#include <linux/nodemask.h>
++#include <linux/clk.h>
++#include <linux/platform_device.h>
++#include <linux/fsl_devices.h>
++#include <linux/spi/spi.h>
++#include <linux/i2c.h>
++#include <linux/ata.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/map.h>
++#include <linux/mtd/partitions.h>
++#include <linux/regulator/consumer.h>
++#include <linux/pmic_external.h>
++#include <linux/pmic_status.h>
++#include <linux/ipu.h>
++#include <linux/mxcfb.h>
++#include <linux/pwm_backlight.h>
++#include <linux/fec.h>
++#include <linux/ahci_platform.h>
++#include <mach/common.h>
++#include <mach/hardware.h>
++#include <asm/irq.h>
++#include <asm/setup.h>
++#include <asm/mach-types.h>
++#include <asm/mach/arch.h>
++#include <asm/mach/time.h>
++#include <asm/mach/keypad.h>
++#include <asm/mach/flash.h>
++#include <mach/memory.h>
++#include <mach/gpio.h>
++#include <mach/mmc.h>
++#include <mach/mxc_dvfs.h>
++#include <mach/iomux-mx53.h>
++#include <mach/i2c.h>
++#include <mach/mxc_iim.h>
++
++#include "crm_regs.h"
++#include "devices.h"
++#include "usb.h"
++
++/*!
++ * @file mach-mx5/mx53_loco.c
++ *
++ * @brief This file contains MX53 loco board specific initialization routines.
++ *
++ * @ingroup MSL_MX53
++ */
++
++/* MX53 LOCO GPIO PIN configurations */
++#define NVDD_FAULT			(0*32 + 5)	/* GPIO1_5 */
++
++#define FEC_INT				(1*32 + 4)	/* GPIO_2_4 */
++#define HEADPHONE_DEC_B		(1*32 + 5)	/* GPIO_2_5 */
++#define MIC_DEC_B			(1*32 + 6)	/* GPIO_2_6 */
++#define USER_UI1			(1*32 + 14)	/* GPIO_2_14 */
++#define USER_UI2			(1*32 + 15)	/* GPIO_2_15 */
++
++#define SD3_CD				(2*32 + 11)	/* GPIO_3_11 */
++#define SD3_WP				(2*32 + 12)	/* GPIO_3_12 */
++#define DISP0_POWER_EN		(2*32 + 24)	/* GPIO_3_24 */
++
++#define DISP0_RESET			(4*32 + 0)	/* GPIO_5_0 */
++
++#define CSI0_RTSB			(5*32 + 9)	/* GPIO_6_9 */
++#define CSI0_PWDN			(5*32 + 10)	/* GPIO_6_10 */
++#define ACCL_EN				(5*32 + 14)	/* GPIO_6_14 */
++#define ACCL_INT1_IN		(5*32 + 15)	/* GPIO_6_15 */
++#define ACCL_INT2_IN		(5*32 + 16)	/* GPIO_6_16 */
++
++#define LCD_BLT_EN			(6*32 + 2)	/* GPIO_7_2 */
++#define FEC_RST				(6*32 + 6)	/* GPIO_7_6 */
++#define USER_LED_EN			(6*32 + 7)	/* GPIO_7_7 */
++#define USB_PWREN			(6*32 + 8)	/* GPIO_7_8 */
++#define NIRQ				(6*32 + 11)	/* GPIO7_11 */
++
++extern struct cpu_wp *(*get_cpu_wp)(int *wp);
++extern void (*set_num_cpu_wp)(int num);
++static int num_cpu_wp = 3;
++
++static struct pad_desc mx53_loco_pads[] = {
++	/* FEC */
++	MX53_PAD_FEC_MDC__FEC_MDC,
++	MX53_PAD_FEC_MDIO__FEC_MDIO,
++	MX53_PAD_FEC_REF_CLK__FEC_REF_CLK,
++	MX53_PAD_FEC_RX_ER__FEC_RX_ER,
++	MX53_PAD_FEC_CRS_DV__FEC_CRS_DV,
++	MX53_PAD_FEC_RXD1__FEC_RXD1,
++	MX53_PAD_FEC_RXD0__FEC_RXD0,
++	MX53_PAD_FEC_TX_EN__FEC_TX_EN,
++	MX53_PAD_FEC_TXD1__FEC_TXD1,
++	MX53_PAD_FEC_TXD0__FEC_TXD0,
++	/* FEC_nRST */
++	MX53_PAD_ATA_DA_0__GPIO_7_6,
++	/* FEC_nINT */
++	MX53_PAD_ATA_DATA4__GPIO_2_4,
++	/* AUDMUX5 */
++	MX53_PAD_KEY_COL0__AUD5_TXC,
++	MX53_PAD_KEY_ROW0__AUD5_TXD,
++	MX53_PAD_KEY_COL1__AUD5_TXFS,
++	MX53_PAD_KEY_ROW1__AUD5_RXD,
++	/* I2C2 */
++	MX53_PAD_KEY_COL3__I2C2_SCL,
++	MX53_PAD_KEY_ROW3__I2C2_SDA,
++	/* SD1 */
++	MX53_PAD_SD1_CMD__SD1_CMD,
++	MX53_PAD_SD1_CLK__SD1_CLK,
++	MX53_PAD_SD1_DATA0__SD1_DATA0,
++	MX53_PAD_SD1_DATA1__SD1_DATA1,
++	MX53_PAD_SD1_DATA2__SD1_DATA2,
++	MX53_PAD_SD1_DATA3__SD1_DATA3,
++	/* SD3 */
++	MX53_PAD_ATA_DATA8__SD3_DAT0,
++	MX53_PAD_ATA_DATA9__SD3_DAT1,
++	MX53_PAD_ATA_DATA10__SD3_DAT2,
++	MX53_PAD_ATA_DATA11__SD3_DAT3,
++	MX53_PAD_ATA_DATA0__SD3_DAT4,
++	MX53_PAD_ATA_DATA1__SD3_DAT5,
++	MX53_PAD_ATA_DATA2__SD3_DAT6,
++	MX53_PAD_ATA_DATA3__SD3_DAT7,
++	MX53_PAD_ATA_IORDY__SD3_CLK,
++	MX53_PAD_ATA_RESET_B__SD3_CMD,
++	/* SD3_CD */
++	MX53_PAD_EIM_DA11__GPIO_3_11,
++	/* SD3_WP */
++	MX53_PAD_EIM_DA12__GPIO_3_12,
++	/* VGA */
++	MX53_PAD_EIM_OE__DI1_PIN7,
++	MX53_PAD_EIM_RW__DI1_PIN8,
++	/* DISPLB */
++	MX53_PAD_EIM_D20__SER_DISP0_CS,
++	MX53_PAD_EIM_D21__DISPB0_SER_CLK,
++	MX53_PAD_EIM_D22__DISPB0_SER_DIN,
++	MX53_PAD_EIM_D23__DI0_D0_CS,
++	/* DISP0_POWER_EN */
++	MX53_PAD_EIM_D24__GPIO_3_24,
++
++	/* LVDS */
++	MX53_PAD_LVDS0_TX3_P__LVDS0_TX3,
++	MX53_PAD_LVDS0_CLK_P__LVDS0_CLK,
++	MX53_PAD_LVDS0_TX2_P__LVDS0_TX2,
++	MX53_PAD_LVDS0_TX1_P__LVDS0_TX1,
++	MX53_PAD_LVDS0_TX0_P__LVDS0_TX0,
++	MX53_PAD_LVDS1_TX3_P__LVDS1_TX3,
++	MX53_PAD_LVDS1_TX2_P__LVDS1_TX2,
++	MX53_PAD_LVDS1_CLK_P__LVDS1_CLK,
++	MX53_PAD_LVDS1_TX1_P__LVDS1_TX1,
++	MX53_PAD_LVDS1_TX0_P__LVDS1_TX0,
++	/* I2C1 */
++	MX53_PAD_CSI0_D8__I2C1_SDA,
++	MX53_PAD_CSI0_D9__I2C1_SCL,
++	/* UART1 */
++	MX53_PAD_CSI0_D10__UART1_TXD,
++	MX53_PAD_CSI0_D11__UART1_RXD,
++	/* CSI0 */
++	MX53_PAD_CSI0_D12__CSI0_D12,
++	MX53_PAD_CSI0_D13__CSI0_D13,
++	MX53_PAD_CSI0_D14__CSI0_D14,
++	MX53_PAD_CSI0_D15__CSI0_D15,
++	MX53_PAD_CSI0_D16__CSI0_D16,
++	MX53_PAD_CSI0_D17__CSI0_D17,
++	MX53_PAD_CSI0_D18__CSI0_D18,
++	MX53_PAD_CSI0_D19__CSI0_D19,
++	MX53_PAD_CSI0_VSYNC__CSI0_VSYNC,
++	MX53_PAD_CSI0_MCLK__CSI0_HSYNC,
++	MX53_PAD_CSI0_PIXCLK__CSI0_PIXCLK,
++	/* DISPLAY */
++	MX53_PAD_DI0_DISP_CLK__DI0_DISP_CLK,
++	MX53_PAD_DI0_PIN15__DI0_PIN15,
++	MX53_PAD_DI0_PIN2__DI0_PIN2,
++	MX53_PAD_DI0_PIN3__DI0_PIN3,
++	MX53_PAD_DISP0_DAT0__DISP0_DAT0,
++	MX53_PAD_DISP0_DAT1__DISP0_DAT1,
++	MX53_PAD_DISP0_DAT2__DISP0_DAT2,
++	MX53_PAD_DISP0_DAT3__DISP0_DAT3,
++	MX53_PAD_DISP0_DAT4__DISP0_DAT4,
++	MX53_PAD_DISP0_DAT5__DISP0_DAT5,
++	MX53_PAD_DISP0_DAT6__DISP0_DAT6,
++	MX53_PAD_DISP0_DAT7__DISP0_DAT7,
++	MX53_PAD_DISP0_DAT8__DISP0_DAT8,
++	MX53_PAD_DISP0_DAT9__DISP0_DAT9,
++	MX53_PAD_DISP0_DAT10__DISP0_DAT10,
++	MX53_PAD_DISP0_DAT11__DISP0_DAT11,
++	MX53_PAD_DISP0_DAT12__DISP0_DAT12,
++	MX53_PAD_DISP0_DAT13__DISP0_DAT13,
++	MX53_PAD_DISP0_DAT14__DISP0_DAT14,
++	MX53_PAD_DISP0_DAT15__DISP0_DAT15,
++	MX53_PAD_DISP0_DAT16__DISP0_DAT16,
++	MX53_PAD_DISP0_DAT17__DISP0_DAT17,
++	MX53_PAD_DISP0_DAT18__DISP0_DAT18,
++	MX53_PAD_DISP0_DAT19__DISP0_DAT19,
++	MX53_PAD_DISP0_DAT20__DISP0_DAT20,
++	MX53_PAD_DISP0_DAT21__DISP0_DAT21,
++	MX53_PAD_DISP0_DAT22__DISP0_DAT22,
++	MX53_PAD_DISP0_DAT23__DISP0_DAT23,
++	/* Audio CLK*/
++	MX53_PAD_GPIO_0__SSI_EXT1_CLK,
++	/* PWM */
++	MX53_PAD_GPIO_1__PWMO,
++	/* SPDIF */
++	MX53_PAD_GPIO_7__PLOCK,
++	MX53_PAD_GPIO_17__SPDIF_OUT1,
++	/* GPIO */
++	MX53_PAD_ATA_DA_1__GPIO_7_7,
++	MX53_PAD_ATA_DA_2__GPIO_7_8,
++	MX53_PAD_ATA_DATA5__GPIO_2_5,
++	MX53_PAD_ATA_DATA6__GPIO_2_6,
++	MX53_PAD_ATA_DATA14__GPIO_2_14,
++	MX53_PAD_ATA_DATA15__GPIO_2_15,
++	MX53_PAD_ATA_INTRQ__GPIO_7_2,
++	MX53_PAD_EIM_WAIT__GPIO_5_0,
++	MX53_PAD_NANDF_WP_B__GPIO_6_9,
++	MX53_PAD_NANDF_RB0__GPIO_6_10,
++	MX53_PAD_NANDF_CS1__GPIO_6_14,
++	MX53_PAD_NANDF_CS2__GPIO_6_15,
++	MX53_PAD_NANDF_CS3__GPIO_6_16,
++	MX53_PAD_GPIO_5__GPIO_1_5,
++	MX53_PAD_GPIO_16__GPIO_7_11,
++};
++
++/* working point(wp)*/
++static struct cpu_wp cpu_wp_auto[] = {
++	{
++	 .pll_rate = 1000000000,
++	 .cpu_rate = 1000000000,
++	 .pdf = 0,
++	 .mfi = 10,
++	 .mfd = 11,
++	 .mfn = 5,
++	 .cpu_podf = 0,
++	 .cpu_voltage = 1150000,},
++	{
++	 .pll_rate = 800000000,
++	 .cpu_rate = 800000000,
++	 .pdf = 0,
++	 .mfi = 8,
++	 .mfd = 2,
++	 .mfn = 1,
++	 .cpu_podf = 0,
++	 .cpu_voltage = 1050000,},
++	{
++	 .pll_rate = 800000000,
++	 .cpu_rate = 160000000,
++	 .pdf = 4,
++	 .mfi = 8,
++	 .mfd = 2,
++	 .mfn = 1,
++	 .cpu_podf = 4,
++	 .cpu_voltage = 850000,},
++};
++
++static struct fb_videomode video_modes[] = {
++	{
++	 /* NTSC TV output */
++	 "TV-NTSC", 60, 720, 480, 74074,
++	 122, 15,
++	 18, 26,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_INTERLACED,
++	 0,},
++	{
++	 /* PAL TV output */
++	 "TV-PAL", 50, 720, 576, 74074,
++	 132, 11,
++	 22, 26,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_INTERLACED | FB_VMODE_ODD_FLD_FIRST,
++	 0,},
++	{
++	 /* 1080i50 TV output */
++	 "1080I50", 50, 1920, 1080, 13468,
++	 192, 527,
++	 20, 24,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_INTERLACED | FB_VMODE_ODD_FLD_FIRST,
++	 0,},
++	{
++	 /* 1080i60 TV output */
++	 "1080I60", 60, 1920, 1080, 13468,
++	 192, 87,
++	 20, 24,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_INTERLACED | FB_VMODE_ODD_FLD_FIRST,
++	 0,},
++	{
++	 /* 800x480 @ 57 Hz , pixel clk @ 27MHz */
++	 "CLAA-WVGA", 57, 800, 480, 37037, 40, 60, 10, 10, 20, 10,
++	 FB_SYNC_CLK_LAT_FALL,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	 "XGA", 60, 1024, 768, 15385,
++	 220, 40,
++	 21, 7,
++	 60, 10,
++	 0,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	 /* 720p30 TV output */
++	 "720P30", 30, 1280, 720, 13468,
++	 260, 1759,
++	 25, 4,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	 "720P60", 60, 1280, 720, 13468,
++	 260, 109,
++	 25, 4,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	/* VGA 1280x1024 108M pixel clk output */
++	"SXGA", 60, 1280, 1024, 9259,
++	48, 248,
++	1, 38,
++	112, 3,
++	0,
++	FB_VMODE_NONINTERLACED,
++	0,},
++	{
++	/* 1600x1200 @ 60 Hz 162M pixel clk*/
++	"UXGA", 60, 1600, 1200, 6172,
++	304, 64,
++	1, 46,
++	192, 3,
++	FB_SYNC_HOR_HIGH_ACT|FB_SYNC_VERT_HIGH_ACT,
++	FB_VMODE_NONINTERLACED,
++	0,},
++	{
++	 /* 1080p24 TV output */
++	 "1080P24", 24, 1920, 1080, 13468,
++	 192, 637,
++	 38, 6,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	 /* 1080p25 TV output */
++	 "1080P25", 25, 1920, 1080, 13468,
++	 192, 527,
++	 38, 6,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	 /* 1080p30 TV output */
++	 "1080P30", 30, 1920, 1080, 13468,
++	 192, 87,
++	 38, 6,
++	 1, 1,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
++	 "1080P60", 60, 1920, 1080, 7692,
++	 100, 40,
++	 30, 3,
++	 10, 2,
++	 0,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++};
++
++struct cpu_wp *mx53_loco_get_cpu_wp(int *wp)
++{
++	*wp = num_cpu_wp;
++	return cpu_wp_auto;
++}
++
++void mx53_loco_set_num_cpu_wp(int num)
++{
++	num_cpu_wp = num;
++	return;
++}
++
++static struct platform_pwm_backlight_data mxc_pwm_backlight_data = {
++	.pwm_id = 1,
++	.max_brightness = 255,
++	.dft_brightness = 128,
++	.pwm_period_ns = 50000,
++};
++
++extern void mx5_ipu_reset(void);
++static struct mxc_ipu_config mxc_ipu_data = {
++	.rev = 3,
++	.reset = mx5_ipu_reset,
++};
++
++extern void mx5_vpu_reset(void);
++static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.reset = mx5_vpu_reset,
++};
++
++static struct fec_platform_data fec_data = {
++	.phy = PHY_INTERFACE_MODE_RMII,
++};
++
++static struct mxc_srtc_platform_data srtc_data = {
++	.srtc_sec_mode_addr = 0x83F98840,
++};
++
++static struct mxc_dvfs_platform_data dvfs_core_data = {
++	.reg_id = "SW1",
++	.clk1_id = "cpu_clk",
++	.clk2_id = "gpc_dvfs_clk",
++	.gpc_cntr_offset = MXC_GPC_CNTR_OFFSET,
++	.gpc_vcr_offset = MXC_GPC_VCR_OFFSET,
++	.ccm_cdcr_offset = MXC_CCM_CDCR_OFFSET,
++	.ccm_cacrr_offset = MXC_CCM_CACRR_OFFSET,
++	.ccm_cdhipr_offset = MXC_CCM_CDHIPR_OFFSET,
++	.prediv_mask = 0x1F800,
++	.prediv_offset = 11,
++	.prediv_val = 3,
++	.div3ck_mask = 0xE0000000,
++	.div3ck_offset = 29,
++	.div3ck_val = 2,
++	.emac_val = 0x08,
++	.upthr_val = 25,
++	.dnthr_val = 9,
++	.pncthr_val = 33,
++	.upcnt_val = 10,
++	.dncnt_val = 10,
++	.delay_time = 30,
++	.num_wp = 3,
++};
++
++static struct tve_platform_data tve_data = {
++	.dac_reg = "VVIDEO",
++};
++
++static struct ldb_platform_data ldb_data = {
++	.ext_ref = 1,
++};
++
++static void mxc_iim_enable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++
++	/* enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg |= 0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static void mxc_iim_disable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++	/* enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg &= ~0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static struct mxc_iim_data iim_data = {
++	.bank_start = MXC_IIM_MX53_BANK_START_ADDR,
++	.bank_end   = MXC_IIM_MX53_BANK_END_ADDR,
++	.enable_fuse = mxc_iim_enable_fuse,
++	.disable_fuse = mxc_iim_disable_fuse,
++};
++
++static struct resource mxcfb_resources[] = {
++	[0] = {
++	       .flags = IORESOURCE_MEM,
++	       },
++};
++
++static struct mxc_fb_platform_data fb_data[] = {
++	{
++	 .interface_pix_fmt = IPU_PIX_FMT_RGB565,
++	 .mode_str = "CLAA-WVGA",
++	 .mode = video_modes,
++	 .num_modes = ARRAY_SIZE(video_modes),
++	 },
++	{
++	 .interface_pix_fmt = IPU_PIX_FMT_BGR24,
++	 .mode_str = "XGA",
++	 .mode = video_modes,
++	 .num_modes = ARRAY_SIZE(video_modes),
++	 },
++};
++
++extern int primary_di;
++static int __init mxc_init_fb(void)
++{
++	if (!machine_is_mx53_loco())
++		return 0;
++
++	if (primary_di) {
++		printk(KERN_INFO "DI1 is primary\n");
++		/* DI1 -> DP-BG channel: */
++		mxc_fb_devices[1].num_resources = ARRAY_SIZE(mxcfb_resources);
++		mxc_fb_devices[1].resource = mxcfb_resources;
++		mxc_register_device(&mxc_fb_devices[1], &fb_data[1]);
++
++		/* DI0 -> DC channel: */
++		mxc_register_device(&mxc_fb_devices[0], &fb_data[0]);
++	} else {
++		printk(KERN_INFO "DI0 is primary\n");
++
++		/* DI0 -> DP-BG channel: */
++		mxc_fb_devices[0].num_resources = ARRAY_SIZE(mxcfb_resources);
++		mxc_fb_devices[0].resource = mxcfb_resources;
++		mxc_register_device(&mxc_fb_devices[0], &fb_data[0]);
++
++		/* DI1 -> DC channel: */
++		mxc_register_device(&mxc_fb_devices[1], &fb_data[1]);
++	}
++
++	/*
++	 * DI0/1 DP-FG channel:
++	 */
++	mxc_register_device(&mxc_fb_devices[2], NULL);
++
++	return 0;
++}
++device_initcall(mxc_init_fb);
++
++static void sii9022_hdmi_reset(void)
++{
++	gpio_set_value(DISP0_RESET, 0);
++	msleep(10);
++	gpio_set_value(DISP0_RESET, 1);
++	msleep(10);
++}
++
++static struct mxc_lcd_platform_data sii9022_hdmi_data = {
++       .reset = sii9022_hdmi_reset,
++};
++
++static struct imxi2c_platform_data mxci2c_data = {
++       .bitrate = 100000,
++};
++
++static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
++	{
++	.type = "mma8450",
++	.addr = 0x1C,
++	 },
++};
++
++static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
++	{
++	 .type = "sgtl5000-i2c",
++	 .addr = 0x0a,
++	 },
++	{
++	 .type = "sii9022",
++	 .addr = 0x39,
++	 .platform_data = &sii9022_hdmi_data,
++	},
++};
++
++static int sdhc_write_protect(struct device *dev)
++{
++	int ret = 0;
++
++	if (to_platform_device(dev)->id == 2)
++		ret = gpio_get_value(SD3_WP);
++
++	return ret;
++}
++
++static unsigned int sdhc_get_card_det_status(struct device *dev)
++{
++	int ret = 0;
++
++	if (to_platform_device(dev)->id == 2)
++		ret = gpio_get_value(SD3_CD);
++
++	return ret;
++}
++
++static struct mxc_mmc_platform_data mmc1_data = {
++	.ocr_mask = MMC_VDD_27_28 | MMC_VDD_28_29 | MMC_VDD_29_30
++		| MMC_VDD_31_32,
++	.caps = MMC_CAP_4_BIT_DATA,
++	.min_clk = 400000,
++	.max_clk = 50000000,
++	.card_inserted_state = 1,
++	.clock_mmc = "esdhc_clk",
++	.power_mmc = NULL,
++};
++
++static struct mxc_mmc_platform_data mmc3_data = {
++	.ocr_mask = MMC_VDD_27_28 | MMC_VDD_28_29 | MMC_VDD_29_30
++		| MMC_VDD_31_32,
++	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA
++		| MMC_CAP_DATA_DDR,
++	.min_clk = 400000,
++	.max_clk = 50000000,
++	.card_inserted_state = 0,
++	.status = sdhc_get_card_det_status,
++	.wp_status = sdhc_write_protect,
++	.clock_mmc = "esdhc_clk",
++};
++
++static int headphone_det_status(void)
++{
++	return (gpio_get_value(HEADPHONE_DEC_B) == 0);
++}
++
++static int mxc_sgtl5000_init(void);
++
++static struct mxc_audio_platform_data sgtl5000_data = {
++	.ssi_num = 1,
++	.src_port = 2,
++	.ext_port = 5,
++	.hp_irq = IOMUX_TO_IRQ_V3(HEADPHONE_DEC_B),
++	.hp_status = headphone_det_status,
++	.init = mxc_sgtl5000_init,
++};
++
++static int mxc_sgtl5000_init(void)
++{
++	struct clk *ssi_ext1;
++	int rate;
++
++	ssi_ext1 = clk_get(NULL, "ssi_ext1_clk");
++	if (IS_ERR(ssi_ext1))
++			return -1;
++
++	rate = clk_round_rate(ssi_ext1, 24000000);
++	if (rate < 8000000 || rate > 27000000) {
++			printk(KERN_ERR "Error: SGTL5000 mclk freq %d out of range!\n",
++				   rate);
++			clk_put(ssi_ext1);
++			return -1;
++	}
++
++	clk_set_rate(ssi_ext1, rate);
++	clk_enable(ssi_ext1);
++	sgtl5000_data.sysclk = rate;
++
++	return 0;
++}
++
++static struct platform_device mxc_sgtl5000_device = {
++	.name = "imx-3stack-sgtl5000",
++};
++
++static struct mxc_spdif_platform_data mxc_spdif_data = {
++	.spdif_tx = 1,
++	.spdif_rx = 0,
++	.spdif_clk_44100 = -1,	/* Souce from CKIH1 for 44.1K */
++	/* Source from CCM spdif_clk (24M) for 48k and 32k
++	 * It's not accurate
++	 */
++	.spdif_clk_48000 = 1,
++	.spdif_clkid = 0,
++	.spdif_clk = NULL,	/* spdif bus clk */
++};
++
++static void mx53_loco_usbh1_vbus(bool on)
++{
++	if (on)
++		gpio_set_value(USB_PWREN, 1);
++	else
++		gpio_set_value(USB_PWREN, 0);
++}
++
++/*!
++ * Board specific fixup function. It is called by \b setup_arch() in
++ * setup.c file very early on during kernel starts. It allows the user to
++ * statically fill in the proper values for the passed-in parameters. None of
++ * the parameters is used currently.
++ *
++ * @param  desc         pointer to \b struct \b machine_desc
++ * @param  tags         pointer to \b struct \b tag
++ * @param  cmdline      pointer to the command line
++ * @param  mi           pointer to \b struct \b meminfo
++ */
++static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
++				   char **cmdline, struct meminfo *mi)
++{
++	struct tag *t;
++	struct tag *mem_tag = 0;
++	int total_mem = SZ_1G;
++	int left_mem = 0;
++	int gpu_mem = SZ_128M;
++	int fb_mem = SZ_32M;
++	char *str;
++
++	mxc_set_cpu_type(MXC_CPU_MX53);
++
++	get_cpu_wp = mx53_loco_get_cpu_wp;
++	set_num_cpu_wp = mx53_loco_set_num_cpu_wp;
++
++	for_each_tag(mem_tag, tags) {
++		if (mem_tag->hdr.tag == ATAG_MEM) {
++			total_mem = mem_tag->u.mem.size;
++			left_mem = total_mem - gpu_mem - fb_mem;
++			break;
++		}
++	}
++
++	for_each_tag(t, tags) {
++		if (t->hdr.tag == ATAG_CMDLINE) {
++			str = t->u.cmdline.cmdline;
++			str = strstr(str, "mem=");
++			if (str != NULL) {
++				str += 4;
++				left_mem = memparse(str, &str);
++				if (left_mem == 0 || left_mem > total_mem)
++					left_mem = total_mem - gpu_mem - fb_mem;
++			}
++
++			str = t->u.cmdline.cmdline;
++			str = strstr(str, "gpu_memory=");
++			if (str != NULL) {
++				str += 11;
++				gpu_mem = memparse(str, &str);
++			}
++
++			break;
++		}
++	}
++
++	if (mem_tag) {
++		fb_mem = total_mem - left_mem - gpu_mem;
++		if (fb_mem < 0) {
++			gpu_mem = total_mem - left_mem;
++			fb_mem = 0;
++		}
++		mem_tag->u.mem.size = left_mem;
++
++		/*reserve memory for gpu*/
++		gpu_device.resource[5].start =
++				mem_tag->u.mem.start + left_mem;
++		gpu_device.resource[5].end =
++				gpu_device.resource[5].start + gpu_mem - 1;
++#if defined(CONFIG_FB_MXC_SYNC_PANEL) || \
++	defined(CONFIG_FB_MXC_SYNC_PANEL_MODULE)
++		if (fb_mem) {
++			mxcfb_resources[0].start =
++				gpu_device.resource[5].end + 1;
++			mxcfb_resources[0].end =
++				mxcfb_resources[0].start + fb_mem - 1;
++		} else {
++			mxcfb_resources[0].start = 0;
++			mxcfb_resources[0].end = 0;
++		}
++#endif
++	}
++}
++
++static void __init mx53_loco_io_init(void)
++{
++	mxc_iomux_v3_setup_multiple_pads(mx53_loco_pads,
++					ARRAY_SIZE(mx53_loco_pads));
++
++	/* SD3 */
++	gpio_request(SD3_CD, "sd3-cd");
++	gpio_direction_input(SD3_CD);
++	gpio_request(SD3_WP, "sd3-wp");
++	gpio_direction_input(SD3_WP);
++
++	/* reset FEC PHY */
++	gpio_request(FEC_RST, "fec-rst");
++	gpio_direction_output(FEC_RST, 0);
++	gpio_set_value(FEC_RST, 0);
++	msleep(1);
++	gpio_set_value(FEC_RST, 1);
++
++	/* headphone_det_b */
++	gpio_request(HEADPHONE_DEC_B, "headphone-dec");
++	gpio_direction_input(HEADPHONE_DEC_B);
++
++	/* USB PWR enable */
++	gpio_request(USB_PWREN, "usb-pwr");
++	gpio_direction_output(USB_PWREN, 0);
++
++	/* Sii9022 HDMI controller */
++	gpio_request(DISP0_RESET, "disp0-reset");
++	gpio_direction_output(DISP0_RESET, 0);
++}
++
++/*!
++ * Board specific initialization.
++ */
++static void __init mxc_board_init(void)
++{
++	mxc_ipu_data.di_clk[0] = clk_get(NULL, "ipu_di0_clk");
++	mxc_ipu_data.di_clk[1] = clk_get(NULL, "ipu_di1_clk");
++	mxc_ipu_data.csi_clk[0] = clk_get(NULL, "ssi_ext1_clk");
++	mxc_spdif_data.spdif_core_clk = clk_get(NULL, "spdif_xtal_clk");
++	clk_put(mxc_spdif_data.spdif_core_clk);
++
++	mxcsdhc3_device.resource[2].start = IOMUX_TO_IRQ_V3(SD3_CD);
++	mxcsdhc3_device.resource[2].end = IOMUX_TO_IRQ_V3(SD3_CD);
++
++	mxc_cpu_common_init();
++	mx53_loco_io_init();
++
++	mxc_register_device(&mxc_dma_device, NULL);
++	mxc_register_device(&mxc_wdt_device, NULL);
++	mxc_register_device(&mxci2c_devices[0], &mxci2c_data);
++	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
++
++	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
++	mxc_register_device(&mxc_ldb_device, &ldb_data);
++	mxc_register_device(&mxc_tve_device, &tve_data);
++	mxc_register_device(&mxcvpu_device, &mxc_vpu_data);
++	mxc_register_device(&gpu_device, &z160_revision);
++	mxc_register_device(&mxcscc_device, NULL);
++	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
++	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&mxc_iim_device, &iim_data);
++	mxc_register_device(&mxc_pwm2_device, NULL);
++	mxc_register_device(&mxc_pwm1_backlight_device, &mxc_pwm_backlight_data);
++	mxc_register_device(&mxcsdhc1_device, &mmc1_data);
++	mxc_register_device(&mxcsdhc3_device, &mmc3_data);
++	mxc_register_device(&mxc_ssi1_device, NULL);
++	mxc_register_device(&mxc_ssi2_device, NULL);
++	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
++	mxc_register_device(&ahci_fsl_device, &sata_data);
++	mxc_register_device(&mxc_fec_device, &fec_data);
++
++	i2c_register_board_info(0, mxc_i2c0_board_info,
++				ARRAY_SIZE(mxc_i2c0_board_info));
++	i2c_register_board_info(1, mxc_i2c1_board_info,
++				ARRAY_SIZE(mxc_i2c1_board_info));
++
++	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
++	mx5_usb_dr_init();
++	mx5_set_host1_vbus_func(mx53_loco_usbh1_vbus);
++	mx5_usbh1_init();
++	mxc_register_device(&mxc_v4l2_device, NULL);
++	mxc_register_device(&mxc_v4l2out_device, NULL);
++}
++
++static void __init mx53_loco_timer_init(void)
++{
++	struct clk *uart_clk;
++
++	mx53_clocks_init(32768, 24000000, 0, 0);
++
++	uart_clk = clk_get_sys("mxcintuart.0", NULL);
++	early_console_setup(MX53_BASE_ADDR(UART1_BASE_ADDR), uart_clk);
++}
++
++static struct sys_timer mxc_timer = {
++	.init	= mx53_loco_timer_init,
++};
++
++/*
++ * The following uses standard kernel macros define in arch.h in order to
++ * initialize __mach_desc_MX53_LOCO data structure.
++ */
++MACHINE_START(MX53_LOCO, "Freescale MX53 LOCO Board")
++	/* Maintainer: Freescale Semiconductor, Inc. */
++	.fixup = fixup_mxc_board,
++	.map_io = mx5_map_io,
++	.init_irq = mx5_init_irq,
++	.init_machine = mxc_board_init,
++	.timer = &mxc_timer,
++MACHINE_END
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx53.h b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+index 9279f04..40004a2 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx53.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+@@ -323,6 +323,7 @@ typedef enum iomux_config {
+ #define MX53_PAD_GPIO_4__GPIO_1_4	IOMUX_PAD(0x6BC, 0x32C, 1, 0x0, 0, NO_PAD_CTRL)
+ #define MX53_PAD_GPIO_5__GPIO_1_5	IOMUX_PAD(0x6C0, 0x330, 1, 0x0, 0, NO_PAD_CTRL)
+ #define MX53_PAD_GPIO_7__GPIO_1_7	IOMUX_PAD(0x6C4, 0x334, 1, 0x0, 0, NO_PAD_CTRL)
++#define MX53_PAD_GPIO_7__PLOCK          IOMUX_PAD(0x6C4, 0x334, 6, 0x0, 0, NO_PAD_CTRL)
+ #define MX53_PAD_GPIO_8__GPIO_1_8	IOMUX_PAD(0x6C8, 0x338, 1, 0x0, 0, NO_PAD_CTRL)
+ #define MX53_PAD_GPIO_16__GPIO_7_11	IOMUX_PAD(0x6CC, 0x33C, 1, 0x0, 0, NO_PAD_CTRL)
+ #define MX53_PAD_GPIO_17__GPIO_7_12	IOMUX_PAD(0x6D0, 0x340, 1, 0x0, 0, NO_PAD_CTRL)
+diff --git a/arch/arm/tools/mach-types b/arch/arm/tools/mach-types
+index b969419..c43d5bc 100644
+--- a/arch/arm/tools/mach-types
++++ b/arch/arm/tools/mach-types
+@@ -12,7 +12,7 @@
+ #
+ #   http://www.arm.linux.org.uk/developer/machines/?action=new
+ #
+-# Last update: Tue Sep 21 03:20:25 2010
++# Last update: Thu Dec 30 02:31:56 2010
+ #
+ # machine_is_xxx	CONFIG_xxxx		MACH_TYPE_xxx		number
+ #
+@@ -1319,7 +1319,7 @@ mistral			MACH_MISTRAL		MISTRAL			1315
+ msm			MACH_MSM		MSM			1316
+ ct5910			MACH_CT5910		CT5910			1317
+ ct5912			MACH_CT5912		CT5912			1318
+-argonst_foundation	MACH_HYNET_INE		HYNET_INE		1319
++argonst_mp		MACH_HYNET_INE		HYNET_INE		1319
+ hynet_app		MACH_HYNET_APP		HYNET_APP		1320
+ msm7200			MACH_MSM7200		MSM7200			1321
+ msm7600			MACH_MSM7600		MSM7600			1322
+@@ -2591,7 +2591,7 @@ wzl6410i		MACH_WZL6410I		WZL6410I		2603
+ spacecom1		MACH_SPACECOM1		SPACECOM1		2604
+ pingu920		MACH_PINGU920		PINGU920		2605
+ bravoc			MACH_BRAVOC		BRAVOC			2606
+-cybo2440		MACH_CYBO2440		CYBO2440		2607
++mydev			MACH_CYBO2440		CYBO2440		2607
+ vdssw			MACH_VDSSW		VDSSW			2608
+ romulus			MACH_ROMULUS		ROMULUS			2609
+ omap_magic		MACH_OMAP_MAGIC		OMAP_MAGIC		2610
+@@ -2683,7 +2683,7 @@ lkevm			MACH_LKEVM		LKEVM			2695
+ mw6410			MACH_MW6410		MW6410			2696
+ terastation_wxl		MACH_TERASTATION_WXL	TERASTATION_WXL		2697
+ cpu8000e		MACH_CPU8000E		CPU8000E		2698
+-catania			MACH_CATANIA		CATANIA			2699
++catania_s		MACH_CATANIA		CATANIA			2699
+ tokyo			MACH_TOKYO		TOKYO			2700
+ msm7201a_surf		MACH_MSM7201A_SURF	MSM7201A_SURF		2701
+ msm7201a_ffa		MACH_MSM7201A_FFA	MSM7201A_FFA		2702
+@@ -2879,7 +2879,7 @@ davinci_picto		MACH_DAVINCI_PICTO	DAVINCI_PICTO		2891
+ mecha			MACH_MECHA		MECHA			2892
+ bubba3			MACH_BUBBA3		BUBBA3			2893
+ pupitre			MACH_PUPITRE		PUPITRE			2894
+-tegra_harmony		MACH_TEGRA_HARMONY	TEGRA_HARMONY		2895
++tegra_unused		MACH_TEGRA_HARMONY	TEGRA_HARMONY		2895
+ tegra_vogue		MACH_TEGRA_VOGUE	TEGRA_VOGUE		2896
+ tegra_e1165		MACH_TEGRA_E1165	TEGRA_E1165		2897
+ simplenet		MACH_SIMPLENET		SIMPLENET		2898
+@@ -2973,7 +2973,7 @@ premierwave_en		MACH_PREMIERWAVE_EN	PREMIERWAVE_EN		2985
+ wasabi			MACH_WASABI		WASABI			2986
+ vivo_w			MACH_VIVOW		VIVOW			2987
+ mx50_rdp		MACH_MX50_RDP		MX50_RDP		2988
+-universal		MACH_UNIVERSAL		UNIVERSAL		2989
++universal_c210		MACH_UNIVERSAL_C210	UNIVERSAL_C210		2989
+ real6410		MACH_REAL6410		REAL6410		2990
+ spx_sakura		MACH_SPX_SAKURA		SPX_SAKURA		2991
+ ij3k_2440		MACH_IJ3K_2440		IJ3K_2440		2992
+@@ -2989,7 +2989,7 @@ pxwnas_500_1000		MACH_PXWNAS_500_1000	PXWNAS_500_1000		3001
+ ea20			MACH_EA20		EA20			3002
+ awm2			MACH_AWM2		AWM2			3003
+ ti8148evm		MACH_TI8148EVM		TI8148EVM		3004
+-tegra_seaboard		MACH_TEGRA_SEABOARD	TEGRA_SEABOARD		3005
++seaboard		MACH_SEABOARD		SEABOARD		3005
+ linkstation_chlv2	MACH_LINKSTATION_CHLV2	LINKSTATION_CHLV2	3006
+ tera_pro2_rack		MACH_TERA_PRO2_RACK	TERA_PRO2_RACK		3007
+ rubys			MACH_RUBYS		RUBYS			3008
+@@ -3077,3 +3077,183 @@ goflexnet		MACH_GOFLEXNET		GOFLEXNET		3089
+ torbreck		MACH_TORBRECK		TORBRECK		3090
+ saarb_mg1		MACH_SAARB_MG1		SAARB_MG1		3091
+ callisto		MACH_CALLISTO		CALLISTO		3092
++multhsu			MACH_MULTHSU		MULTHSU			3093
++saluda			MACH_SALUDA		SALUDA			3094
++pemp_omap3_apollo	MACH_PEMP_OMAP3_APOLLO	PEMP_OMAP3_APOLLO	3095
++vc0718			MACH_VC0718		VC0718			3096
++mvblx			MACH_MVBLX		MVBLX			3097
++inhand_apeiron		MACH_INHAND_APEIRON	INHAND_APEIRON		3098
++inhand_fury		MACH_INHAND_FURY	INHAND_FURY		3099
++inhand_siren		MACH_INHAND_SIREN	INHAND_SIREN		3100
++hdnvp			MACH_HDNVP		HDNVP			3101
++softwinner		MACH_SOFTWINNER		SOFTWINNER		3102
++prima2_evb		MACH_PRIMA2_EVB		PRIMA2_EVB		3103
++nas6210			MACH_NAS6210		NAS6210			3104
++unisdev			MACH_UNISDEV		UNISDEV			3105
++sbca11			MACH_SBCA11		SBCA11			3106
++saga			MACH_SAGA		SAGA			3107
++ns_k330			MACH_NS_K330		NS_K330			3108
++tanna			MACH_TANNA		TANNA			3109
++imate8502		MACH_IMATE8502		IMATE8502		3110
++aspen			MACH_ASPEN		ASPEN			3111
++daintree_cwac		MACH_DAINTREE_CWAC	DAINTREE_CWAC		3112
++zmx25			MACH_ZMX25		ZMX25			3113
++maple1			MACH_MAPLE1		MAPLE1			3114
++qsd8x72_surf		MACH_QSD8X72_SURF	QSD8X72_SURF		3115
++qsd8x72_ffa		MACH_QSD8X72_FFA	QSD8X72_FFA		3116
++abilene			MACH_ABILENE		ABILENE			3117
++eigen_ttr		MACH_EIGEN_TTR		EIGEN_TTR		3118
++iomega_ix2_200		MACH_IOMEGA_IX2_200	IOMEGA_IX2_200		3119
++coretec_vcx7400		MACH_CORETEC_VCX7400	CORETEC_VCX7400		3120
++santiago		MACH_SANTIAGO		SANTIAGO		3121
++mx257sol		MACH_MX257SOL		MX257SOL		3122
++strasbourg		MACH_STRASBOURG		STRASBOURG		3123
++msm8x60_fluid		MACH_MSM8X60_FLUID	MSM8X60_FLUID		3124
++smartqv5		MACH_SMARTQV5		SMARTQV5		3125
++smartqv3		MACH_SMARTQV3		SMARTQV3		3126
++smartqv7		MACH_SMARTQV7		SMARTQV7		3127
++tegra_paz00		MACH_PAZ00		PAZ00			3128
++acmenetusfoxg20		MACH_ACMENETUSFOXG20	ACMENETUSFOXG20		3129
++htc_willow		MACH_HTCWILLOW		HTCWILLOW		3130
++fwbd_0404		MACH_FWBD_0404		FWBD_0404		3131
++hdgu			MACH_HDGU		HDGU			3132
++pyramid			MACH_PYRAMID		PYRAMID			3133
++epiphan			MACH_EPIPHAN		EPIPHAN			3134
++omap_bender		MACH_OMAP_BENDER	OMAP_BENDER		3135
++gurnard			MACH_GURNARD		GURNARD			3136
++gtl_it5100		MACH_GTL_IT5100		GTL_IT5100		3137
++bcm2708			MACH_BCM2708		BCM2708			3138
++mx51_ggc		MACH_MX51_GGC		MX51_GGC		3139
++sharespace		MACH_SHARESPACE		SHARESPACE		3140
++haba_knx_explorer	MACH_HABA_KNX_EXPLORER	HABA_KNX_EXPLORER	3141
++simtec_kirkmod		MACH_SIMTEC_KIRKMOD	SIMTEC_KIRKMOD		3142
++crux			MACH_CRUX		CRUX			3143
++mx51_bravo		MACH_MX51_BRAVO		MX51_BRAVO		3144
++charon			MACH_CHARON		CHARON			3145
++picocom3		MACH_PICOCOM3		PICOCOM3		3146
++picocom4		MACH_PICOCOM4		PICOCOM4		3147
++serrano			MACH_SERRANO		SERRANO			3148
++doubleshot		MACH_DOUBLESHOT		DOUBLESHOT		3149
++evsy			MACH_EVSY		EVSY			3150
++huashan			MACH_HUASHAN		HUASHAN			3151
++lausanne		MACH_LAUSANNE		LAUSANNE		3152
++emerald			MACH_EMERALD		EMERALD			3153
++tqma35			MACH_TQMA35		TQMA35			3154
++marvel			MACH_MARVEL		MARVEL			3155
++manuae			MACH_MANUAE		MANUAE			3156
++chacha			MACH_CHACHA		CHACHA			3157
++lemon			MACH_LEMON		LEMON			3158
++csc			MACH_CSC		CSC			3159
++gira_knxip_router	MACH_GIRA_KNXIP_ROUTER	GIRA_KNXIP_ROUTER	3160
++t20			MACH_T20		T20			3161
++hdmini			MACH_HDMINI		HDMINI			3162
++sciphone_g2		MACH_SCIPHONE_G2	SCIPHONE_G2		3163
++express			MACH_EXPRESS		EXPRESS			3164
++express_kt		MACH_EXPRESS_KT		EXPRESS_KT		3165
++maximasp		MACH_MAXIMASP		MAXIMASP		3166
++nitrogen_imx51		MACH_NITROGEN_IMX51	NITROGEN_IMX51		3167
++nitrogen_imx53		MACH_NITROGEN_IMX53	NITROGEN_IMX53		3168
++sunfire			MACH_SUNFIRE		SUNFIRE			3169
++arowana			MACH_AROWANA		AROWANA			3170
++tegra_daytona		MACH_TEGRA_DAYTONA	TEGRA_DAYTONA		3171
++tegra_swordfish		MACH_TEGRA_SWORDFISH	TEGRA_SWORDFISH		3172
++edison			MACH_EDISON		EDISON			3173
++svp8500v1		MACH_SVP8500V1		SVP8500V1		3174
++svp8500v2		MACH_SVP8500V2		SVP8500V2		3175
++svp5500			MACH_SVP5500		SVP5500			3176
++b5500			MACH_B5500		B5500			3177
++s5500			MACH_S5500		S5500			3178
++icon			MACH_ICON		ICON			3179
++elephant		MACH_ELEPHANT		ELEPHANT		3180
++msm8x60_charm_surf	MACH_MSM8X60_FUSION	MSM8X60_FUSION		3181
++shooter			MACH_SHOOTER		SHOOTER			3182
++spade_lte		MACH_SPADE_LTE		SPADE_LTE		3183
++philhwani		MACH_PHILHWANI		PHILHWANI		3184
++gsncomm			MACH_GSNCOMM		GSNCOMM			3185
++strasbourg_a2		MACH_STRASBOURG_A2	STRASBOURG_A2		3186
++mmm			MACH_MMM		MMM			3187
++davinci_dm365_bv	MACH_DAVINCI_DM365_BV	DAVINCI_DM365_BV	3188
++ag5evm			MACH_AG5EVM		AG5EVM			3189
++sc575plc		MACH_SC575PLC		SC575PLC		3190
++sc575hmi		MACH_SC575IPC		SC575IPC		3191
++omap3_tdm3730		MACH_OMAP3_TDM3730	OMAP3_TDM3730		3192
++rover_g7		MACH_G7			G7			3193
++top9000_eval		MACH_TOP9000_EVAL	TOP9000_EVAL		3194
++top9000_su		MACH_TOP9000_SU		TOP9000_SU		3195
++utm300			MACH_UTM300		UTM300			3196
++tsunagi			MACH_TSUNAGI		TSUNAGI			3197
++ts75xx			MACH_TS75XX		TS75XX			3198
++msm8x60_charm_ffa	MACH_MSM8X60_FUSN_FFA	MSM8X60_FUSN_FFA	3199
++ts47xx			MACH_TS47XX		TS47XX			3200
++da850_k5		MACH_DA850_K5		DA850_K5		3201
++ax502			MACH_AX502		AX502			3202
++igep0032		MACH_IGEP0032		IGEP0032		3203
++antero			MACH_ANTERO		ANTERO			3204
++synergy			MACH_SYNERGY		SYNERGY			3205
++ics_if_voip		MACH_ICS_IF_VOIP	ICS_IF_VOIP		3206
++wlf_cragg_6410		MACH_WLF_CRAGG_6410	WLF_CRAGG_6410		3207
++punica			MACH_PUNICA		PUNICA			3208
++trimslice		MACH_SBC_NT250		SBC_NT250		3209
++mx27_wmultra		MACH_MX27_WMULTRA	MX27_WMULTRA		3210
++mackerel		MACH_MACKEREL		MACKEREL		3211
++pvd_imx27		MACH_MACH_PVD_IMX27	MACH_PVD_IMX27		3212
++fa9x27			MACH_FA9X27		FA9X27			3213
++ns2816tb		MACH_NS2816TB		NS2816TB		3214
++ns2816_ntpad		MACH_NS2816_NTPAD	NS2816_NTPAD		3215
++ns2816_ntnb		MACH_NS2816_NTNB	NS2816_NTNB		3216
++kaen			MACH_KAEN		KAEN			3217
++nv1000			MACH_NV1000		NV1000			3218
++nuc950ts		MACH_NUC950TS		NUC950TS		3219
++nokia_rm680		MACH_NOKIA_RM680	NOKIA_RM680		3220
++ast2200			MACH_AST2200		AST2200			3221
++lead			MACH_LEAD		LEAD			3222
++unino1			MACH_UNINO1		UNINO1			3223
++greeco			MACH_GREECO		GREECO			3224
++verdi			MACH_VERDI		VERDI			3225
++dm6446_adbox		MACH_DM6446_ADBOX	DM6446_ADBOX		3226
++quad_salsa		MACH_QUAD_SALSA		QUAD_SALSA		3227
++abb_gma_1_1		MACH_ABB_GMA_1_1	ABB_GMA_1_1		3228
++svcid			MACH_SVCID		SVCID			3229
++msm8960_sim		MACH_MSM8960_SIM	MSM8960_SIM		3230
++msm8960_rumi3		MACH_MSM8960_RUMI3	MSM8960_RUMI3		3231
++icon_g			MACH_ICON_G		ICON_G			3232
++mb3			MACH_MB3		MB3			3233
++gsia18s			MACH_GSIA18S		GSIA18S			3234
++pivicc			MACH_PIVICC		PIVICC			3235
++pcm048			MACH_PCM048		PCM048			3236
++dds			MACH_DDS		DDS			3237
++chalten_xa1		MACH_CHALTEN_XA1	CHALTEN_XA1		3238
++ts48xx			MACH_TS48XX		TS48XX			3239
++tonga2_tfttimer		MACH_TONGA2_TFTTIMER	TONGA2_TFTTIMER		3240
++whistler		MACH_WHISTLER		WHISTLER		3241
++asl_phoenix		MACH_ASL_PHOENIX	ASL_PHOENIX		3242
++at91sam9263otlite	MACH_AT91SAM9263OTLITE	AT91SAM9263OTLITE	3243
++ddplug			MACH_DDPLUG		DDPLUG			3244
++d2plug			MACH_D2PLUG		D2PLUG			3245
++kzm9d			MACH_KZM9D		KZM9D			3246
++verdi_lte		MACH_VERDI_LTE		VERDI_LTE		3247
++nanozoom		MACH_NANOZOOM		NANOZOOM		3248
++dm3730_som_lv		MACH_DM3730_SOM_LV	DM3730_SOM_LV		3249
++dm3730_torpedo		MACH_DM3730_TORPEDO	DM3730_TORPEDO		3250
++anchovy			MACH_ANCHOVY		ANCHOVY			3251
++linux			MACH_LINUX		LINUX			3252
++re2rev20		MACH_RE2REV20		RE2REV20		3253
++re2rev21		MACH_RE2REV21		RE2REV21		3254
++cns21xx			MACH_CNS21XX		CNS21XX			3255
++rider			MACH_RIDER		RIDER			3257
++nsk330			MACH_NSK330		NSK330			3258
++cns2133evb		MACH_CNS2133EVB		CNS2133EVB		3259
++z3_816x_mod		MACH_Z3_816X_MOD	Z3_816X_MOD		3260
++z3_814x_mod		MACH_Z3_814X_MOD	Z3_814X_MOD		3261
++beect			MACH_BEECT		BEECT			3262
++dma_thunderbug		MACH_DMA_THUNDERBUG	DMA_THUNDERBUG		3263
++omn_at91sam9g20		MACH_OMN_AT91SAM9G20	OMN_AT91SAM9G20		3264
++mx25_e2s_uc		MACH_MX25_E2S_UC	MX25_E2S_UC		3265
++mione			MACH_MIONE		MIONE			3266
++top9000_rcu		MACH_TOP9000_RCU	TOP9000_RCU		3267
++top9000_bsl		MACH_TOP9000_BSL	TOP9000_BSL		3268
++kingdom			MACH_KINGDOM		KINGDOM			3269
++armadillo460		MACH_ARMADILLO460	ARMADILLO460		3270
++lq2			MACH_LQ2		LQ2			3271
++sweda_tms2		MACH_SWEDA_TMS2		SWEDA_TMS2		3272
++mx53_loco		MACH_MX53_LOCO		MX53_LOCO		3273
+-- 
+1.5.4.4
+

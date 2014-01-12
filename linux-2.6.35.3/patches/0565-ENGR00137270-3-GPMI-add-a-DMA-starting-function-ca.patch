@@ -1,0 +1,53 @@
+From 1f57a96a53d4abf07a5fc4cd88e209f937cc75d6 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Thu, 23 Dec 2010 12:46:58 +0800
+Subject: [PATCH] ENGR00137270-3 GPMI : add a DMA starting function called in non-BCH context
+
+This function is called in non-BCH context, such send_command(),
+read_data() and send_data().
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c |   12 ++++++++++++
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h            |    2 ++
+ 2 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+index 7aacc89..36956b3 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+@@ -460,6 +460,18 @@ int start_dma_with_bch_irq(struct gpmi_nfc_data *this, int dma_channel)
+ 	return error;
+ }
+ 
++/* This function is called in non-BCH DMA operations */
++int start_dma_without_bch_irq(struct gpmi_nfc_data *this, int dma_channel)
++{
++	int error = 0;
++
++	/* Go! */
++	error = gpmi_nfc_dma_go(this, dma_channel);
++	if (error)
++		printk(KERN_ERR "[ %s ] DMA error\n", __func__);
++	return error;
++}
++
+ /**
+  * ns_to_cycles - Converts time in nanoseconds to cycles.
+  *
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+index 8cd8ab2..5af7f63 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+@@ -610,6 +610,8 @@ extern int gpmi_nfc_dma_go(struct gpmi_nfc_data *this, int  dma_channel);
+ extern int gpmi_nfc_compute_hardware_timing(struct gpmi_nfc_data *this,
+ 					struct gpmi_nfc_hardware_timing *hw);
+ extern int start_dma_with_bch_irq(struct gpmi_nfc_data *this, int dma_channel);
++extern int start_dma_without_bch_irq(struct gpmi_nfc_data *this,
++					int dma_channel);
+ 
+ /* NFC HAL Structures */
+ 
+-- 
+1.5.4.4
+

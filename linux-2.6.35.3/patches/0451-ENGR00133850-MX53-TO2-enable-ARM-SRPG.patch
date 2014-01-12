@@ -1,0 +1,29 @@
+From 293b046e23aa710eab05fbaff293c784920ce9bc Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 18 Nov 2010 19:03:55 +0800
+Subject: [PATCH] ENGR00133850 MX53 TO2: enable ARM SRPG
+
+MX53 TO2.0 fix the errata ENGcm11185 (L2 data corruption after
+SRPG event). So this patch enables ARM SRPG for MX53 TO2.0
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>`
+---
+ arch/arm/mach-mx5/system.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index e513f8e..605837f 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -111,7 +111,7 @@ void mxc_cpu_lp_set(enum mxc_cpu_pwr_mode mode)
+ 
+ 	__raw_writel(plat_lpc, MXC_CORTEXA8_PLAT_LPC);
+ 	__raw_writel(ccm_clpcr, MXC_CCM_CLPCR);
+-	if (cpu_is_mx51())
++	if (cpu_is_mx51() || (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1))
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_ARM_SRPGCR);
+ 	if (!cpu_is_mx50())
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_NEON_SRPGCR);
+-- 
+1.5.4.4
+

@@ -1,0 +1,54 @@
+From 9a215c39b684f9f697d1d81aaafa26c8d1031817 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Wed, 26 Jan 2011 18:06:31 +0800
+Subject: [PATCH] ENGR00138534 Disable splashimage support defaultly for PDK
+
+Disable splashimage support defaultly for MX51 BBG/MX53 SMD/
+MX53 ARD platforms.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ include/configs/mx51_bbg.h |    1 -
+ include/configs/mx53_ard.h |    1 -
+ include/configs/mx53_smd.h |    1 -
+ 3 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 46ff011..6b3a513 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -274,7 +274,6 @@
+ #undef CONFIG_JFFS2_CMDLINE
+ #define CONFIG_JFFS2_DEV	"nand0"
+ 
+-#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 6791011..3ba6188 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -283,7 +283,6 @@
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+ 
+-#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+diff --git a/include/configs/mx53_smd.h b/include/configs/mx53_smd.h
+index 223761f..4858de4 100644
+--- a/include/configs/mx53_smd.h
++++ b/include/configs/mx53_smd.h
+@@ -274,7 +274,6 @@
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+ 
+-#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+-- 
+1.5.4.4
+

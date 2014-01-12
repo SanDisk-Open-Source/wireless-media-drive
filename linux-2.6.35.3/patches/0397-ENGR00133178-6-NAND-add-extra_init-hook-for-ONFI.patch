@@ -1,0 +1,46 @@
+From 917477c24fce29c71f4a9da5e8a04538f3232fb6 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 1 Nov 2010 13:57:06 +0800
+Subject: [PATCH] ENGR00133178-6 NAND : add extra_init() hook for ONFI nand
+
+ONFI nand works in asynchronous mode in normal case,
+You have to do extra initialization to let it work in
+DDR mode(synchronous mode).
+
+so add extra initialization hook for ONFI nand.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c |    3 +++
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h     |    1 +
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index 83f5086..7653906 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -1726,6 +1726,9 @@ static int mil_scan_bbt(struct mtd_info *mtd)
+ 
+ 	/* We use the reference implementation for bad block management. */
+ 
++	if (nfc->extra_init)
++		nfc->extra_init(this);
++
+ 	error = nand_default_bbt(mtd);
+ 
+ 	if (error)
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+index 9b00745..561dfb2 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+@@ -535,6 +535,7 @@ struct nfc_hal {
+ 	/* Configuration functions. */
+ 
+ 	int   (*init)        (struct gpmi_nfc_data *);
++	int   (*extra_init)  (struct gpmi_nfc_data *);
+ 	int   (*set_geometry)(struct gpmi_nfc_data *);
+ 	int   (*set_timing)  (struct gpmi_nfc_data *,
+ 					const struct gpmi_nfc_timing *);
+-- 
+1.5.4.4
+

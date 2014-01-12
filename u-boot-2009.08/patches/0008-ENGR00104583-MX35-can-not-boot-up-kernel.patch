@@ -1,0 +1,149 @@
+From 5f7373e548c7862364511891596a97f18b945978 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Mon, 23 Feb 2009 14:08:23 +0800
+Subject: [PATCH] ENGR00104583 MX35 can not boot up kernel
+
+uboot can not boot kernel.
+There are no more messages excepts uncompression message.
+The root cause is wrong romfile version offset.
+
+Signed-off-by: Fred Fan <r01011@freescale.com>
+---
+ board/freescale/mx35_3stack/lowlevel_init.S |   15 +++++++++++----
+ board/freescale/mx35_3stack/mx35_3stack.c   |   10 ++++++----
+ drivers/net/smc911x.c                       |    2 ++
+ include/asm-arm/arch-mx35/mx35.h            |   12 +++++++++++-
+ 4 files changed, 30 insertions(+), 9 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/lowlevel_init.S b/board/freescale/mx35_3stack/lowlevel_init.S
+index 0b47ef1..c255e98 100644
+--- a/board/freescale/mx35_3stack/lowlevel_init.S
++++ b/board/freescale/mx35_3stack/lowlevel_init.S
+@@ -33,8 +33,8 @@
+ 	ldr \tmp, =IIM_BASE_ADDR
+ 	ldr \ret, [\tmp, #IIM_SREV]
+ 	cmp \ret, #0x00
+-	moveq \tmp, #ROMPATCH_BASE_ADDR
+-	ldreq \ret, [\tmp, #ROMPATCH_REV]
++	moveq \tmp, #ROMPATCH_REV
++	ldreq \ret, [\tmp]
+ 	moveq \ret, \ret, lsl #4
+ 	addne \ret, \ret, #0x10
+ .endm
+@@ -62,6 +62,13 @@
+     orr r1, r1, r2
+     str r1, [r0, #L2_CACHE_AUX_CTL_REG]
+ 
++    /* Workaournd for TO1 DDR issue:WT*/
++    check_soc_version r1, r2
++    cmp r1, #CHIP_REV_2_0
++    ldrlo r1, [r0, #L2_CACHE_DBG_CTL_REG]
++    orrlo r1, r1, #2
++    strlo r1, [r0, #L2_CACHE_DBG_CTL_REG]
++
+    /* Invalidate L2 */
+     mov r1, #0x000000FF
+     str r1, [r0, #L2_CACHE_INV_WAY_REG]
+@@ -196,7 +203,7 @@
+         str r2, [r0, #CLKCTL_CCMR]
+ 
+     	check_soc_version r1, r2
+-    	cmp r1, #0x20
++	cmp r1, #CHIP_REV_2_0
+ 	ldrhs r3, =CCM_MPLL_399_HZ
+ 	bhs 1f
+ 	ldr r2, [r0, #CLKCTL_PDR0]
+@@ -247,7 +254,7 @@
+         mov lr, fp
+ 
+ 	check_soc_version r3, r4
+-	cmp r1, #0x20
++	cmp r1, #CHIP_REV_2_0
+ 	bhs 1f
+ 	cmp r5, #0
+         movne r3, #L2CC_BASE_ADDR
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 7854f86..267e9f1 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -43,19 +43,20 @@ static inline void setup_soc_rev(void)
+ 	int reg;
+ 	reg = __REG(IIM_BASE_ADDR + IIM_SREV);
+ 	if (!reg) {
+-		reg = __REG(ROMPATCH_BASE_ADDR + ROMPATCH_REV);
++		reg = __REG(ROMPATCH_REV);
+ 		reg <<= 4;
+ 	} else
+-		reg += 0x10;
++		reg += CHIP_REV_1_0;
+ 	system_rev = 0x35000 + (reg & 0xFF);
+ }
+ 
+ static inline void set_board_rev(int rev)
+ {
+-	system_rev |= (rev & 0xF) << 8;
++	int reg;
++	system_rev =  (system_rev & ~(0xF << 8)) | (rev & 0xF) << 8;
+ }
+ 
+-static inline int is_soc_rev(int rev)
++int is_soc_rev(int rev)
+ {
+ 	return (system_rev & 0xFF) - rev;
+ }
+@@ -171,6 +172,7 @@ static inline int board_detect(void)
+ 		set_board_rev(1);
+ 		return 1;
+ 	}
++	set_board_rev(0);
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/smc911x.c b/drivers/net/smc911x.c
+index 5c00028..13cb6ea 100644
+--- a/drivers/net/smc911x.c
++++ b/drivers/net/smc911x.c
+@@ -711,3 +711,5 @@ int smc911x_initialize(u8 dev_num, int base_addr)
+ 	return 0;
+ }
+ #endif
++
++#endif
+diff --git a/include/asm-arm/arch-mx35/mx35.h b/include/asm-arm/arch-mx35/mx35.h
+index 2ed85d3..c96092c 100644
+--- a/include/asm-arm/arch-mx35/mx35.h
++++ b/include/asm-arm/arch-mx35/mx35.h
+@@ -221,6 +221,12 @@
+ #define FDO_PAGE_SPARE_VAL              0x8
+ #define NAND_BUF_NUM    8
+ 
++#define CHIP_REV_1_0		0x10
++#define CHIP_REV_2_0		0x20
++
++#define BOARD_REV_1_0		0x0
++#define BOARD_REV_2_0		0x1
++
+ #ifndef __ASSEMBLER__
+ 
+ enum mxc_clock {
+@@ -239,12 +245,16 @@ MXC_UART_CLK,
+ #define NFMS_NF_DWIDTH          14
+ #define NFMS_NF_PG_SZ           8
+ 
++
+ extern unsigned int mxc_get_clock(enum mxc_clock clk);
++extern unsigned int get_board_rev(void);
++extern int is_soc_rev(int rev);
+ 
+ #define fixup_before_linux	\
+ 	{		\
+ 		volatile unsigned long *l2cc_ctl = (unsigned long *)0x30000100;\
+-		*l2cc_ctl = 1;\
++		if (is_soc_rev(CHIP_REV_2_0) < 0) \
++			*l2cc_ctl = 1;\
+ 	}
+ #endif /* __ASSEMBLER__*/
+ #endif /* __ASM_ARCH_MX35_H */
+-- 
+1.5.4.4
+

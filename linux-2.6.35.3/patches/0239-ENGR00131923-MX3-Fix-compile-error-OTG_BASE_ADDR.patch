@@ -1,0 +1,62 @@
+From 463b2ceb56c105dbd50ac9ff625bf9b7bc74efd6 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sat, 25 Sep 2010 15:39:54 +0800
+Subject: [PATCH] ENGR00131923 MX3: Fix compile error OTG_BASE_ADDR
+
+Fix compiling error caused by OTG_BASE_ADDR for MX31
+and MX35 platform
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx3/devices.c              |    4 +++-
+ arch/arm/plat-mxc/include/mach/arc_otg.h |    4 ++++
+ 2 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx3/devices.c b/arch/arm/mach-mx3/devices.c
+index 54353c7..184b748 100644
+--- a/arch/arm/mach-mx3/devices.c
++++ b/arch/arm/mach-mx3/devices.c
+@@ -789,7 +789,7 @@ struct platform_device mxc_pseudo_irq_device = {
+ 	.name = "mxc_pseudo_irq",
+ 	.id = 0,
+ };
+-
++volatile u32 *mx3_usb_otg_addr;
+ static int __init mx3_devices_init(void)
+ {
+ 	if (cpu_is_mx31()) {
+@@ -798,6 +798,7 @@ static int __init mx3_devices_init(void)
+ 		imx_wdt_resources[0].start = MX31_WDOG_BASE_ADDR;
+ 		imx_wdt_resources[0].end = MX31_WDOG_BASE_ADDR + 0x3fff;
+ 		mxc_register_device(&mxc_rnga_device, NULL);
++		mx3_usb_otg_addr = MX31_OTG_BASE_ADDR;
+ 	}
+ 	if (cpu_is_mx35()) {
+ 		mxc_nandv2_resources[0].start = MX35_NFC_BASE_ADDR;
+@@ -816,6 +817,7 @@ static int __init mx3_devices_init(void)
+ 		imx_ssi_resources1[1].end = MX35_INT_SSI2;
+ 		imx_wdt_resources[0].start = MX35_WDOG_BASE_ADDR;
+ 		imx_wdt_resources[0].end = MX35_WDOG_BASE_ADDR + 0x3fff;
++		mx3_usb_otg_addr = MX35_OTG_BASE_ADDR;
+ 	}
+ 
+ 	return 0;
+diff --git a/arch/arm/plat-mxc/include/mach/arc_otg.h b/arch/arm/plat-mxc/include/mach/arc_otg.h
+index c6d334f..07d0e9b 100644
+--- a/arch/arm/plat-mxc/include/mach/arc_otg.h
++++ b/arch/arm/plat-mxc/include/mach/arc_otg.h
+@@ -13,6 +13,10 @@
+ #ifndef __ASM_ARCH_MXC_ARC_OTG_H__
+ #define __ASM_ARCH_MXC_ARC_OTG_H__
+ 
++#ifdef CONFIG_ARCH_MX3
++extern volatile u32 *mx3_usb_otg_addr;
++#define OTG_BASE_ADDR		mx3_usb_otg_addr
++#endif
+ #define USB_OTGREGS_BASE	(OTG_BASE_ADDR + 0x000)
+ #define USB_H1REGS_BASE		(OTG_BASE_ADDR + 0x200)
+ #define USB_H2REGS_BASE		(OTG_BASE_ADDR + 0x400)
+-- 
+1.5.4.4
+

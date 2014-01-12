@@ -1,0 +1,119 @@
+From 5cdb2bc56b4096fa6b2842e367f3075b210957e4 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 14 Feb 2011 14:43:02 +0800
+Subject: [PATCH] ENGR00139120: Correct CONFIG_CMD_MMC to CONFIG_CMD_IIM for iim
+
+Correct CONFIG_CMD_MMC to CONFIG_CMD_IIM for iim.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx53_ard.h               |    2 +-
+ include/configs/mx53_arm2_ddr3_android.h |    4 ++--
+ include/configs/mx53_evk.h               |    2 +-
+ include/configs/mx53_evk_android.h       |    2 +-
+ include/configs/mx53_loco.h              |    2 +-
+ include/configs/mx53_smd.h               |    2 +-
+ include/configs/mx53_smd_android.h       |    2 +-
+ 7 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 3ba6188..37e1c5e 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -175,7 +175,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+diff --git a/include/configs/mx53_arm2_ddr3_android.h b/include/configs/mx53_arm2_ddr3_android.h
+index f56a7a3..da14413 100644
+--- a/include/configs/mx53_arm2_ddr3_android.h
++++ b/include/configs/mx53_arm2_ddr3_android.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX53-ARM2-DDR3 Freescale board.
+  *
+@@ -198,7 +198,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index 7d8cf81..e2458a0 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -179,7 +179,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index 77eec2d..bceb849 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -227,7 +227,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+diff --git a/include/configs/mx53_loco.h b/include/configs/mx53_loco.h
+index b5d880f..8550434 100644
+--- a/include/configs/mx53_loco.h
++++ b/include/configs/mx53_loco.h
+@@ -172,7 +172,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+diff --git a/include/configs/mx53_smd.h b/include/configs/mx53_smd.h
+index 4858de4..d9504de 100644
+--- a/include/configs/mx53_smd.h
++++ b/include/configs/mx53_smd.h
+@@ -172,7 +172,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index 717c758..f6dfa37 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -224,7 +224,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+-- 
+1.5.4.4
+

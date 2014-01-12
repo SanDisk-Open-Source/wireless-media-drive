@@ -1,0 +1,47 @@
+From 9e82e99d5df9f28f6775397bfa7a540ae3be775e Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 15 Sep 2010 11:16:50 +0800
+Subject: [PATCH] ENGR00131489-2 MX3: add arch_idle support
+
+Add arch_idle support for MX3 platform
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx3/Makefile |    2 +-
+ arch/arm/mach-mx3/system.c |   10 ----------
+ 2 files changed, 1 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm/mach-mx3/Makefile b/arch/arm/mach-mx3/Makefile
+index 589e821..3f7807b 100644
+--- a/arch/arm/mach-mx3/Makefile
++++ b/arch/arm/mach-mx3/Makefile
+@@ -4,7 +4,7 @@
+ 
+ # Object file lists.
+ 
+-obj-y				:= mm.o devices.o cpu.o
++obj-y				:= mm.o devices.o cpu.o system.o
+ obj-y				+= dma.o dummy_gpio.o mx3x-dma.o
+ 
+ obj-$(CONFIG_ARCH_MX31)		+= clock-imx31.o iomux-imx31.o entry-pm.o
+diff --git a/arch/arm/mach-mx3/system.c b/arch/arm/mach-mx3/system.c
+index 8fe3241..a2f5442 100644
+--- a/arch/arm/mach-mx3/system.c
++++ b/arch/arm/mach-mx3/system.c
+@@ -91,13 +91,3 @@ void arch_idle(void)
+ 	}
+ }
+ 
+-/*
+- * This function resets the system. It is called by machine_restart().
+- *
+- * @param  mode         indicates different kinds of resets
+- */
+-void arch_reset(char mode)
+-{
+-	/* Assert SRS signal */
+-	mxc_wd_reset();
+-}
+-- 
+1.5.4.4
+

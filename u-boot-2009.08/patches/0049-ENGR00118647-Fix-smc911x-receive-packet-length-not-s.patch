@@ -1,0 +1,29 @@
+From 74d5620b3daf9125366489d979a0c36d6f752291 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Fri, 20 Nov 2009 17:47:39 +0800
+Subject: [PATCH] ENGR00118647 Fix smc911x receive packet length not set correctly
+
+Fix smc911x receive packet length not set correctly issue. This
+caused MX25 tftp timeout sometimes.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ drivers/net/smc911x.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/smc911x.c b/drivers/net/smc911x.c
+index c50758e..adcb9c9 100644
+--- a/drivers/net/smc911x.c
++++ b/drivers/net/smc911x.c
+@@ -220,7 +220,7 @@ static int smc911x_rx(struct eth_device *dev)
+ 
+ 		smc911x_reg_write(dev, RX_CFG, 0);
+ 
+-		tmplen = (pktlen + 2+ 3) / 4;
++		tmplen = (pktlen + 3) / 4;
+ 		while (tmplen--)
+ 			*data++ = pkt_data_pull(dev, RX_DATA_FIFO);
+ 
+-- 
+1.5.4.4
+

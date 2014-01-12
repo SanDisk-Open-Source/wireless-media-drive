@@ -1,0 +1,139 @@
+From d09369ab5cac6414d9790837cc805254d180c092 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 17 Feb 2011 16:03:15 +0800
+Subject: [PATCH] ENGR00139354-1 MSL: add common ddc driver support
+
+Add common DDC driver support, one use case is for DVI monitor edid reading
+and cable detection.
+A sysfs node can be check for cable status under
+/sys/devices/platform/mxc_ddc.0/cable_state
+
+And an uevent (EVENT=plugin or plugout) will be sent out during cable
+plugin/out.
+
+To enable this feature, pls add 'ddc' to boot cmdline.
+Note: this driver will be conflict with HDMI driver, so pls use carefully.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/mach-mx5/mx51_babbage.c          |   29 ++++++++++++++++++++++++++++-
+ arch/arm/mach-mx5/mx53_evk.c              |   29 ++++++++++++++++++++++++-----
+ arch/arm/plat-mxc/include/mach/mxc_edid.h |    4 ++--
+ 3 files changed, 54 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index e565103..1d4ab19 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -770,6 +770,27 @@ static struct mxc_lightsensor_platform_data ls_data = {
+ 	.rext = 100,
+ };
+ 
++static void ddc_dvi_init()
++{
++	/* enable DVI I2C */
++	gpio_set_value(BABBAGE_DVI_I2C_EN, 1);
++}
++
++static int ddc_dvi_update()
++{
++	/* DVI cable state */
++	if (gpio_get_value(BABBAGE_DVI_DET) == 1)
++		return 1;
++	else
++		return 0;
++}
++
++static struct mxc_ddc_platform_data mxc_ddc_dvi_data = {
++	.di = 0,
++	.init = ddc_dvi_init,
++	.update = ddc_dvi_update,
++};
++
+ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	 .type = "sgtl5000-i2c",
+@@ -780,11 +801,17 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	 .addr = 0x44,
+ 	 .platform_data = &ls_data,
+ 	 },
++	{
++	 .type = "mxc_ddc",
++	 .addr = 0x50,
++	 .irq = gpio_to_irq(BABBAGE_DVI_DET),
++	 .platform_data = &mxc_ddc_dvi_data,
++	 },
+ };
+ 
+ static struct i2c_board_info mxc_i2c_hs_board_info[] __initdata = {
+ 	{
+-	 .type = "sii9022",
++	 .type = "sii902x",
+ 	 .addr = 0x39,
+ 	 .platform_data = &dvi_data,
+ 	 },
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 2b412cc..830fad7 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -861,6 +861,27 @@ static struct mxc_lcd_platform_data sii902x_hdmi_data = {
+ 	.reset = sii902x_hdmi_reset,
+ };
+ 
++static void ddc_dvi_init()
++{
++	/* enable DVI I2C */
++	gpio_set_value(MX53_DVI_I2C, 1);
++}
++
++static int ddc_dvi_update()
++{
++	/* DVI cable state */
++	if (gpio_get_value(MX53_DVI_DETECT) == 1)
++		return 1;
++	else
++		return 0;
++}
++
++static struct mxc_ddc_platform_data mxc_ddc_dvi_data = {
++	.di = 0,
++	.init = ddc_dvi_init,
++	.update = ddc_dvi_update,
++};
++
+ /* TO DO add platform data */
+ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+@@ -877,12 +898,10 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	 .addr = 0x2c,
+ 	 },
+ 	{
+-	 .type = "vga-ddc",
+-	 .addr = 0x1f,
+-	 },
+-	{
+-	 .type = "eeprom",
++	 .type = "mxc_ddc",
+ 	 .addr = 0x50,
++	 .irq = gpio_to_irq(MX53_DVI_DETECT),
++	 .platform_data = &mxc_ddc_dvi_data,
+ 	 },
+ 	{
+ 	.type = "sii902x",
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_edid.h b/arch/arm/plat-mxc/include/mach/mxc_edid.h
+index f36a1d2..f354461 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc_edid.h
++++ b/arch/arm/plat-mxc/include/mach/mxc_edid.h
+@@ -34,7 +34,7 @@ struct mxc_edid_cfg {
+ 	bool hdmi_cap;
+ };
+ 
+-int mxc_edid_read(struct i2c_adapter *adp, unsigned char *edid,
+-	struct mxc_edid_cfg *cfg, struct fb_info *fbi);
++int mxc_edid_read(struct i2c_adapter *adp, unsigned short addr,
++	unsigned char *edid, struct mxc_edid_cfg *cfg, struct fb_info *fbi);
+ 
+ #endif
+-- 
+1.5.4.4
+

@@ -1,0 +1,28 @@
+From 2fc408150b0b491fb8f20211ff58b96d91f44393 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 13 Jul 2009 18:03:52 +0800
+Subject: [PATCH] ENGR00111465: Remove Watchdog disable codes in MX51 uboot.
+
+Remove Watchdog disable codes in MX51 uboot.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/imx51/lowlevel_init.S |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/board/freescale/imx51/lowlevel_init.S b/board/freescale/imx51/lowlevel_init.S
+index 4fff3e5..e974a5f 100644
+--- a/board/freescale/imx51/lowlevel_init.S
++++ b/board/freescale/imx51/lowlevel_init.S
+@@ -258,8 +258,6 @@ lowlevel_init:
+ 
+ 	init_aips
+ 
+-	setup_wdog
+-
+ 	init_max
+ 
+ 	init_m4if
+-- 
+1.5.4.4
+

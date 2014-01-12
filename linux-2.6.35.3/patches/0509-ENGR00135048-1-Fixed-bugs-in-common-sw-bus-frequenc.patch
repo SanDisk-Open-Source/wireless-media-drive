@@ -1,0 +1,165 @@
+From 37ab55b227d3c21b7ec53507ff077e6280b0b994 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Fri, 3 Dec 2010 16:15:17 -0600
+Subject: [PATCH] ENGR00135048-1: Fixed bugs in common sw bus frequency scaling code.
+
+Some GPC bits were getting set twice, fixed the issue. Protected the section where CPU
+frequency is changed. For MX50, increase the cpu frequency along with increasing
+the bus frequency.
+
+Fixed the test conditions under which bus frequency should be set to low, medium or high
+setpoint.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/clock.c     |   28 +++++++++++++++++++---------
+ arch/arm/plat-mxc/dvfs_core.c |   28 +++++++++++++---------------
+ 2 files changed, 32 insertions(+), 24 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/clock.c b/arch/arm/plat-mxc/clock.c
+index af47bed..32cf787 100644
+--- a/arch/arm/plat-mxc/clock.c
++++ b/arch/arm/plat-mxc/clock.c
+@@ -49,6 +49,7 @@ extern int lp_high_freq;
+ extern int lp_med_freq;
+ extern int low_bus_freq_mode;
+ extern int high_bus_freq_mode;
++extern int med_bus_freq_mode;
+ extern int set_high_bus_freq(int high_freq);
+ extern int set_low_bus_freq(void);
+ extern int low_freq_bus_used(void);
+@@ -188,16 +189,16 @@ int clk_enable(struct clk *clk)
+ 				(AHB_HIGH_SET_POINT | AHB_MED_SET_POINT)))
+ 				set_low_bus_freq();
+ 		} else {
+-			if (!high_bus_freq_mode)
+-				/* Currently at ow or medium set point,
+-				  * need to set to high setpoint
+-				  */
++			if ((clk->flags & AHB_MED_SET_POINT)
++				&& !med_bus_freq_mode)
++				/* Set to Medium setpoint */
+ 				set_high_bus_freq(0);
+-			else if (high_bus_freq_mode || low_bus_freq_mode)
+-				/* Currently at low or high set point,
+-				  * need to set to medium setpoint
++			else if ((clk->flags & AHB_HIGH_SET_POINT)
++				&& !high_bus_freq_mode)
++				/* Currently at low or medium set point,
++				  * need to set to high setpoint
+ 				  */
+-				set_high_bus_freq(0);
++				set_high_bus_freq(1);
+ 		}
+ #endif
+ 	}
+@@ -241,8 +242,17 @@ void clk_disable(struct clk *clk)
+ #if (defined(CONFIG_ARCH_MX5) || defined(CONFIG_ARCH_MX37))
+ 		if (low_freq_bus_used() && !low_bus_freq_mode)
+ 			set_low_bus_freq();
+-		else if (!high_bus_freq_mode)
++		else if ((clk->flags & AHB_MED_SET_POINT)
++			&& !med_bus_freq_mode)
++			/* Currently at low need to set to medium setpoint
++			  */
+ 			set_high_bus_freq(0);
++		else if ((clk->flags & AHB_HIGH_SET_POINT)
++			&& !high_bus_freq_mode)
++			/* Currently at low or medium set point,
++			  * need to set to high setpoint
++			  */
++			set_high_bus_freq(1);
+ #endif
+ 	}
+ }
+diff --git a/arch/arm/plat-mxc/dvfs_core.c b/arch/arm/plat-mxc/dvfs_core.c
+index 9c0223e..9bce591 100644
+--- a/arch/arm/plat-mxc/dvfs_core.c
++++ b/arch/arm/plat-mxc/dvfs_core.c
+@@ -269,6 +269,7 @@ static int set_cpu_freq(int wp)
+ 		/* Set ARM_PODF */
+ 		reg &= 0xFFFFFFF8;
+ 		reg |= arm_podf;
++		spin_lock_irqsave(&mxc_dvfs_core_lock, flags);
+ 
+ 		reg1 = __raw_readl(ccm_base + dvfs_data->ccm_cdhipr_offset);
+ 		if ((reg1 & 0x00010000) == 0)
+@@ -278,13 +279,6 @@ static int set_cpu_freq(int wp)
+ 			printk(KERN_DEBUG "ARM_PODF still in busy!!!!\n");
+ 			return 0;
+ 		}
+-
+-		/* START the GPC main control FSM */
+-		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+-		reg |= MXC_GPCCNTR_FUPD;
+-		/* ADU=1, select ARM domain */
+-		reg |= MXC_GPCCNTR_ADU;
+-		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 		/* set VINC */
+ 		reg = __raw_readl(gpc_base + dvfs_data->gpc_vcr_offset);
+ 		reg &=
+@@ -296,8 +290,14 @@ static int set_cpu_freq(int wp)
+ 		__raw_writel(reg, gpc_base + dvfs_data->gpc_vcr_offset);
+ 
+ 		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+-		reg &= (~(MXC_GPCCNTR_ADU | MXC_GPCCNTR_FUPD));
+-		reg |= MXC_GPCCNTR_ADU | MXC_GPCCNTR_FUPD | MXC_GPCCNTR_STRT;
++		reg &= (~(MXC_GPCCNTR_ADU | MXC_GPCCNTR_FUPD
++				| MXC_GPCCNTR_STRT));
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
++		reg |= MXC_GPCCNTR_ADU | MXC_GPCCNTR_FUPD;
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
++		reg |= MXC_GPCCNTR_STRT;
+ 		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ 		/* Wait for arm podf Enable */
+@@ -306,6 +306,7 @@ static int set_cpu_freq(int wp)
+ 			printk(KERN_DEBUG "Waiting arm_podf enabled!\n");
+ 			udelay(10);
+ 		}
++		spin_unlock_irqrestore(&mxc_dvfs_core_lock, flags);
+ 
+ 		if (vinc == 0) {
+ 			ret = regulator_set_voltage(core_regulator,
+@@ -327,7 +328,6 @@ static int set_cpu_freq(int wp)
+ 		cpufreq_trig_needed = 1;
+ #endif
+ 	old_wp = wp;
+-
+ 	return ret;
+ }
+ 
+@@ -458,7 +458,6 @@ static void dvfs_core_work_handler(struct work_struct *work)
+ 		goto END;
+ 	}
+ 	curr_cpu = clk_get_rate(cpu_clk);
+-
+ 	/* If FSVAI indicate freq down,
+ 	   check arm-clk is not in lowest frequency 200 MHz */
+ 	if (fsvai == FSVAI_FREQ_DECREASE) {
+@@ -486,7 +485,7 @@ static void dvfs_core_work_handler(struct work_struct *work)
+ 			maxf = 1;
+ 			goto END;
+ 		} else {
+-			if (low_bus_freq_mode) {
++			if (!high_bus_freq_mode && !cpu_is_mx50()) {
+ 				/* bump up LP freq first. */
+ 				bus_incr = 1;
+ 				dvfs_load_config(2);
+@@ -512,9 +511,8 @@ static void dvfs_core_work_handler(struct work_struct *work)
+ 			cpu_dcr = 0;
+ 		}
+ 	} else {
+-		if (low_bus_freq_mode)
+-			set_high_bus_freq(0);
+-
++		if (!high_bus_freq_mode)
++			set_high_bus_freq(1);
+ 		if (!bus_incr)
+ 			ret = set_cpu_freq(curr_wp);
+ 		bus_incr = 0;
+-- 
+1.5.4.4
+

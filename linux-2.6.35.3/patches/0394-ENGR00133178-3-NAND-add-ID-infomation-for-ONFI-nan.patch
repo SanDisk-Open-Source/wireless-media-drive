@@ -1,0 +1,27 @@
+From 88ff7c86cb6a73ec22936b07b830f7e6c5aaf585 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 1 Nov 2010 11:02:05 +0800
+Subject: [PATCH] ENGR00133178-3 NAND : add ID infomation for ONFI nand
+
+add the necessary id infomation for the MICRON ONFI nand.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/nand_ids.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index 922fa4e..e47996b 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -129,6 +129,7 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 	 BBT_AUTO_REFRESH
+ 	},
+ 
++	{"ONFI NAND 3,3V 8-bit", 0x88, 8192, 2048, 0, 0 /*LP_OPTIONS*/ },
+ 	{NULL,}
+ };
+ 
+-- 
+1.5.4.4
+

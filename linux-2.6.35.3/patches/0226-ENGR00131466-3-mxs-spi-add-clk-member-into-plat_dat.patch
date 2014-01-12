@@ -1,0 +1,28 @@
+From 39138ccff1a7a4194ef5ad433bf04087eed7f1f5 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 13 Sep 2010 22:28:11 +0800
+Subject: [PATCH] ENGR00131466-3 mxs spi: add clk member into plat_data
+
+Used by spi host driver to dynamically check which clock to use.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/plat-mxs/include/mach/device.h |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/include/mach/device.h b/arch/arm/plat-mxs/include/mach/device.h
+index 7be62fb..080add7 100644
+--- a/arch/arm/plat-mxs/include/mach/device.h
++++ b/arch/arm/plat-mxs/include/mach/device.h
+@@ -128,6 +128,8 @@ struct mxs_mma7450_platform_data {
+ struct mxs_spi_platform_data {
+ 	int (*hw_pin_init)(void);
+ 	int (*hw_pin_release)(void);
++
++	char *clk;
+ };
+ 
+ struct mxs_audio_platform_data {
+-- 
+1.5.4.4
+

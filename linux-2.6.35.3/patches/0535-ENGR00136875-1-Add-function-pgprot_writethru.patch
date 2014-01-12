@@ -1,0 +1,29 @@
+From 29e135bea4156e9a677ba44148537f7375841020 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Mon, 13 Dec 2010 15:47:28 +0800
+Subject: [PATCH] ENGR00136875-1 Add function pgprot_writethru()
+
+Added pgprot_writethru(), to set the buffer's cache property as
+writethrough.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/include/asm/pgtable.h |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/include/asm/pgtable.h b/arch/arm/include/asm/pgtable.h
+index ab68cf1..7c4b3e7 100644
+--- a/arch/arm/include/asm/pgtable.h
++++ b/arch/arm/include/asm/pgtable.h
+@@ -314,6 +314,8 @@ static inline pte_t pte_mkspecial(pte_t pte) { return pte; }
+ 	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_UNCACHED)
+ #define pgprot_writecombine(prot) \
+ 	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_BUFFERABLE)
++#define pgprot_writethru(prot) \
++	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_WRITETHROUGH)
+ #ifdef CONFIG_ARM_DMA_MEM_BUFFERABLE
+ #define pgprot_dmacoherent(prot) \
+ 	__pgprot_modify(prot, L_PTE_MT_MASK|L_PTE_EXEC, L_PTE_MT_BUFFERABLE)
+-- 
+1.5.4.4
+

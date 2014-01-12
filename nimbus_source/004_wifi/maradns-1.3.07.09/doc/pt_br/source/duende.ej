@@ -1,0 +1,92 @@
+<HEAD>
+<TH>DUENDE 8 "duende" "Janeiro 2003" "duende"</TH>
+<DTWIDTH>4</DTWIDTH>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<BODY>
+<H1>NOME</H1>
+duende - executa um processo filho como um daemon
+<H1>DESCRIÇÃO</H1>
+
+<b>duende</b> faz um determinado processo filho rodar como daemon.  A saída
+padrão e a saída de erros do processo filho é capturada via syslog() com prioridade
+de LOG_INFO.
+
+<H1>USO</H1>
+<b>duende</b> processo_filho [ todos os subsequentes argumentos passado para o child ]
+
+<H1>DETALHES</H1>
+
+Quando <b>duende</b> é invocado, ele gera novos processos.  Além de criar
+o processo fillho daemonized, <b>duende</b> também cria um processo
+no qual lê e log na saída padrão do processo daemonized. O processo pai manten-se
+vivo para monitorar o processo daemonized.
+<p>
+<b>duende</b> requer um diretório vazio chamado <tt>/etc/maradns/logger</tt> 
+para ser executado.
+
+<p>
+Se o processo duende pai sinalizar HUP, <b>duende</b > reiniciará o 
+processo filho. Caso o processo daemonized ou de loggin receber 
+o sinal HUP untrapped ou sair com um código de saída 8, <b>duende</b >
+reiniciará o processo.  Se o daemonized ou processo de registo sair por qualquer 
+outra razão, <b>duende</b> emitirá ao processo logger um sinal TERM e saíra.  
+Se o processo pai do duende receber um sinal TERM ou um INT, <b>duende</b>
+emitirá todos seus sinais TERM filhos e então sairá. 
+
+<p>
+O processo duende deve ser inicializado como usuário root;  isto porque
+os processos filhos pretendidos do Duende (maradns e zoneserver) 
+necessitam se ligar as portas privilegiadas, e porque o duende usa uma chamada
+setuid() para mudar o usuário ID do processo registrando ao usuário com ID 66. 
+
+<h1>EXEMPLOS</h1>
+
+Usando duende para inicializar o maradns, quando o arquivo mararc é /etc/mararc.2
+<blockquote>
+<pre>
+duende maradns -f /etc/mararc.2
+</pre>
+</blockquote>
+
+<p>
+
+Usando duende para iniciaizar o zoneserver, quando o arquivo é /etc/mararc.4
+<blockquote>
+<pre>
+duende zoneserver -f /etc/mararc.4
+</pre>
+</blockquote>
+
+<h1>BUGS</h1>
+
+<b>Duende</b> supõe que todos seus filhos são bem comportados, 
+comam vegetais, vão dormir quando são mandados e finalizam ao 
+receber um sinal TERM.  
+
+<h1>VEJA TAMBÉM</h1>
+<b>maradns(8)</b>
+<br>
+<A href=http://www.maradns.org>http://www.maradns.org</A>
+
+<h1>RETRATAÇÃO LEGAL</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS 
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE 
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+<h1>AUTOR</h1>
+Duende e este man page são escritos por Sam Trenholme.  D Richard Felker
+III proveu uma valiosa assistência com o código do piping que <b>duende</b> 
+usa.
+
+<h1>TRADUÇÃO</h1>
+A tradução deste documento foi realizada por Daniel Zilli.
+</BODY>

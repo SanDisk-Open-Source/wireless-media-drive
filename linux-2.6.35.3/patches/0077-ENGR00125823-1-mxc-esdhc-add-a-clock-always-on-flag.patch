@@ -1,0 +1,33 @@
+From 679ab6b0f79b5e3cbde6db7e78994503dd8e37de Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 2 Aug 2010 22:35:54 +0800
+Subject: [PATCH] ENGR00125823-1 mxc esdhc: add a clock always on flag in plat_data
+
+Add a control flag for clock always on function in plat_data.
+By default ,esdhc clock will be automatically gate off by HW
+if there's no CMD/DATA transferring.
+
+This inferface allows user to easily disable clock auto gate off
+according specicial using cases such as SDIO card that needs
+clock to send SDIO interrupt signal to host.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/mmc.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/mmc.h b/arch/arm/plat-mxc/include/mach/mmc.h
+index c01dabb..c56268f 100644
+--- a/arch/arm/plat-mxc/include/mach/mmc.h
++++ b/arch/arm/plat-mxc/include/mach/mmc.h
+@@ -40,6 +40,7 @@ struct mxc_mmc_platform_data {
+ 	unsigned int min_clk;
+ 	unsigned int max_clk;
+ 	unsigned int clk_flg;	/* 1 clock enable, 0 not */
++	unsigned int clk_always_on;     /* Needed by SDIO cards and etc */
+ 	unsigned int dll_override_en;	/* Enable dll override delay line */
+ 	unsigned int dll_delay_cells;	/* The number of delay cells (0-0x3f) */
+ 	unsigned int reserved:16;
+-- 
+1.5.4.4
+

@@ -1,0 +1,100 @@
+From 2c96e518979a9bdf16f521e3335b7587226a8e68 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 19 Jan 2011 22:04:23 +0800
+Subject: [PATCH] ENGR00138217 mx53: use arm_podf to switch cpu frequency
+
+Use arm_podf to switch cpu frequency when the pll_rate is
+same. Remove pll settings for 400MHZ, 160MHZ since they
+use arm_podf for cpu frequency change. For 1.2GHZ, 1GHZ,
+800MHZ working point, relock pll is used. So pll settings
+are kept.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c   |   17 ++++++++---------
+ arch/arm/mach-mx5/mx53_wp.c |   16 ----------------
+ 2 files changed, 8 insertions(+), 25 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 84be464..8c91002 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -5059,9 +5059,11 @@ static int cpu_clk_set_wp(int wp)
+ 	/*
+ 	 * If DDR clock is sourced from PLL1, we cannot drop PLL1 freq.
+ 	 * Use the ARM_PODF to change the freq of the core, leave the PLL1
+-	 * freq unchanged.
++	 * freq unchanged. Meanwhile, if pll_rate is same, use the ARM_PODF
++	 * to change the freq of core
+ 	 */
+-	if (ddr_clk.parent == &ddr_hf_clk) {
++	if ((ddr_clk.parent == &ddr_hf_clk) ||
++		(p->pll_rate == cpu_wp_tbl[cpu_curr_wp].pll_rate)) {
+ 		reg = __raw_readl(MXC_CCM_CACRR);
+ 		reg &= ~MXC_CCM_CACRR_ARM_PODF_MASK;
+ 		reg |= cpu_wp_tbl[wp].cpu_podf << MXC_CCM_CACRR_ARM_PODF_OFFSET;
+@@ -5086,13 +5088,10 @@ static int cpu_clk_set_wp(int wp)
+ 		reg &= ~MXC_PLL_DP_CTL_UPEN;
+ 		__raw_writel(reg, pll1_base + MXC_PLL_DP_CTL);
+ 
+-		/* if DVFS core is enabled, need to check ARM PODF */
+-		if (dvfs_core_is_active) {
+-			reg = __raw_readl(MXC_CCM_CACRR);
+-			reg = (reg & ~MXC_CCM_CACRR_ARM_PODF_MASK)
+-				| p->cpu_podf;
+-			__raw_writel(reg, MXC_CCM_CACRR);
+-		}
++		reg = __raw_readl(MXC_CCM_CACRR);
++		reg = (reg & ~MXC_CCM_CACRR_ARM_PODF_MASK)
++			| p->cpu_podf;
++		__raw_writel(reg, MXC_CCM_CACRR);
+ 
+ 		reg = __raw_readl(pll1_base + MXC_PLL_DP_CTL);
+ 		pll_hfsm = reg & MXC_PLL_DP_CTL_HFSM;
+diff --git a/arch/arm/mach-mx5/mx53_wp.c b/arch/arm/mach-mx5/mx53_wp.c
+index fd6813a..a09cb73 100644
+--- a/arch/arm/mach-mx5/mx53_wp.c
++++ b/arch/arm/mach-mx5/mx53_wp.c
+@@ -71,19 +71,11 @@ static struct cpu_wp cpu_wp_ces[] = {
+ 	 {
+ 	  .pll_rate = 800000000,
+ 	  .cpu_rate = 400000000,
+-	  .pdf = 1,
+-	  .mfi = 8,
+-	  .mfd = 2,
+-	  .mfn = 1,
+ 	  .cpu_podf = 1,
+ 	  .cpu_voltage = 950000,},
+ 	{
+ 	 .pll_rate = 800000000,
+ 	 .cpu_rate = 160000000,
+-	 .pdf = 4,
+-	 .mfi = 8,
+-	 .mfd = 2,
+-	 .mfn = 1,
+ 	 .cpu_podf = 4,
+ 	 .cpu_voltage = 900000,},
+ };
+@@ -120,19 +112,11 @@ static struct cpu_wp cpu_wp_ces_1_2g[] = {
+ 	 {
+ 	  .pll_rate = 800000000,
+ 	  .cpu_rate = 400000000,
+-	  .pdf = 1,
+-	  .mfi = 8,
+-	  .mfd = 2,
+-	  .mfn = 1,
+ 	  .cpu_podf = 1,
+ 	  .cpu_voltage = 950000,},
+ 	{
+ 	 .pll_rate = 800000000,
+ 	 .cpu_rate = 160000000,
+-	 .pdf = 4,
+-	 .mfi = 8,
+-	 .mfd = 2,
+-	 .mfn = 1,
+ 	 .cpu_podf = 4,
+ 	 .cpu_voltage = 900000,},
+ };
+-- 
+1.5.4.4
+

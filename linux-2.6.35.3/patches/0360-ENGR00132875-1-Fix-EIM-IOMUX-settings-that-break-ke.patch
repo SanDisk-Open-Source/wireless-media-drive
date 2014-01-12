@@ -1,0 +1,32 @@
+From 0c4c7cae6b4ff95e4fb42b0ae8586d74337a7732 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Fri, 22 Oct 2010 07:51:25 -0500
+Subject: [PATCH] ENGR00132875-1: Fix EIM IOMUX settings that break keypad
+
+Create a platform specific power management data structure that will
+facilitate platform specific functions to be called during suspend/resume.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ include/linux/fsl_devices.h |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index c127ae6..268aae9 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -326,6 +326,11 @@ struct mxc_epdc_fb_platform_data {
+ 	void (*disable_pins) (void);
+ };
+ 
++struct mxc_pm_platform_data {
++	void (*suspend_enter) (void);
++	void (*suspend_exit) (void);
++};
++
+ /*! Platform data for the IDE drive structure. */
+ struct mxc_ide_platform_data {
+ 	char *power_drive;	/*!< The power pointer */
+-- 
+1.5.4.4
+

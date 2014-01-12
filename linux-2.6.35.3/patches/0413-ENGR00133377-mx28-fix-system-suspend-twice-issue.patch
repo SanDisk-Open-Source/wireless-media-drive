@@ -1,0 +1,38 @@
+From 70d7a71fa7de571c227f959136ea68932d9916c5 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Mon, 8 Nov 2010 17:28:58 +0800
+Subject: [PATCH] ENGR00133377 mx28: fix system suspend twice issue
+
+fix issue: system would enter suspend twice instead
+of resume when press pwr key twice
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx28/pm.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/pm.c b/arch/arm/mach-mx28/pm.c
+index 2d1d0af..c6490d0 100644
+--- a/arch/arm/mach-mx28/pm.c
++++ b/arch/arm/mach-mx28/pm.c
+@@ -141,6 +141,8 @@ static inline void do_standby(void)
+ 	saved_sleep_state = 0;  /* waking from standby */
+ 	__raw_writel(BM_POWER_CTRL_PSWITCH_IRQ,
+ 		REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++	__raw_writel(BM_POWER_CTRL_ENIRQ_PSWITCH,
++		REGS_POWER_BASE + HW_POWER_CTRL_SET);
+ 
+ 	local_fiq_enable();
+ 
+@@ -292,8 +294,6 @@ static void pswitch_check_work(struct work_struct *work)
+ 	}
+ 	__raw_writel(BM_POWER_CTRL_PSWITCH_IRQ,
+ 		REGS_POWER_BASE + HW_POWER_CTRL_CLR);
+-	__raw_writel(BM_POWER_CTRL_ENIRQ_PSWITCH,
+-		REGS_POWER_BASE + HW_POWER_CTRL_SET);
+ 	__raw_writel(BM_POWER_CTRL_PSWITCH_IRQ,
+ 		REGS_POWER_BASE + HW_POWER_CTRL_CLR);
+ }
+-- 
+1.5.4.4
+

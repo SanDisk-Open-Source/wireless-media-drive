@@ -1,0 +1,104 @@
+From 5325044f9f5bfdb8ab7f36cb78e347ffc1d326ef Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Wed, 13 Oct 2010 14:48:10 +0800
+Subject: [PATCH] ENGR00132553-1 Power: enable power on/off key as suspend/resume key
+
+MSL Part
+enable the powerkey as suspend/resume key on mx53evk and mx50 rdp
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ arch/arm/mach-mx5/devices.c               |    4 ++++
+ arch/arm/mach-mx5/devices.h               |    1 +
+ arch/arm/mach-mx5/mx50_rdp.c              |    2 +-
+ arch/arm/mach-mx5/mx53_evk.c              |    1 +
+ arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c |   14 --------------
+ 5 files changed, 7 insertions(+), 15 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 5a4106c..7685a83 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -97,6 +97,10 @@ struct platform_device mxc_keypad_device = {
+ 	.resource = mxc_kpp_resources,
+ };
+ 
++struct platform_device mxc_powerkey_device = {
++	.name = "mxcpwrkey",
++	.id = 0,
++};
+ static struct resource rtc_resources[] = {
+ 	{
+ 		.start = SRTC_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index e3a73b0..d1b7f82 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -27,6 +27,7 @@ extern struct platform_device mxc_usbdr_udc_device;
+ extern struct platform_device mxc_dma_device;
+ extern struct platform_device mxc_w1_master_device;
+ extern struct platform_device mxc_keypad_device;
++extern struct platform_device mxc_powerkey_device;
+ extern struct platform_device mxc_rtc_device;
+ extern struct platform_device mxc_nandv2_mtd_device;
+ extern struct platform_device imx_nfc_device;
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 2c32c62..1353889 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1152,7 +1152,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxs_viim, NULL);
+ 	mxc_register_device(&mxc_rngb_device, NULL);
+ 	mxc_register_device(&dcp_device, NULL);
+-
++	mxc_register_device(&mxc_powerkey_device, NULL);
+ 	mx50_rdp_init_mc13892();
+ /*
+ 	pm_power_off = mxc_power_off;
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index d7ecaee..562a048 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1672,6 +1672,7 @@ static void __init mxc_board_init(void)
+ 	*/
+ 	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
+ 	mxc_register_device(&mxc_mlb_device, &mlb_data);
++	mxc_register_device(&mxc_powerkey_device, NULL);
+ 	mx5_set_otghost_vbus_func(mx53_gpio_usbotg_driver_vbus);
+ 	mx5_usb_dr_init();
+ 	mx5_set_host1_vbus_func(mx53_gpio_host1_driver_vbus);
+diff --git a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+index 2d4a610..6959751 100644
+--- a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+@@ -274,27 +274,13 @@ static struct regulator_init_data gpo4_init = {
+ 	}
+ };
+ 
+-/*!
+- * the event handler for power on event
+- */
+-static void power_on_evt_handler(void)
+-{
+-	pr_info("pwr on event1 is received \n");
+-}
+-
+ static int mc13892_regulator_init(struct mc13892 *mc13892)
+ {
+ 	unsigned int value;
+-	pmic_event_callback_t power_key_event;
+ 	int register_mask;
+ 
+ 	pr_info("Initializing regulators for MX53 EVK \n");
+ 
+-	/* subscribe PWRON1 event to enable ON_OFF key */
+-	power_key_event.param = NULL;
+-	power_key_event.func = (void *)power_on_evt_handler;
+-	pmic_event_subscribe(EVENT_PWRONI, power_key_event);
+-
+ 	/* Bit 4 DRM: keep VSRTC and CLK32KMCU on for all states */
+ #if defined(CONFIG_RTC_DRV_MXC_V2) || defined(CONFIG_RTC_DRV_MXC_V2_MODULE)
+ 	value = BITFVAL(DRM, 1);
+-- 
+1.5.4.4
+

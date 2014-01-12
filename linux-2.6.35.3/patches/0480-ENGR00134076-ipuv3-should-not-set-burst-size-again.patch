@@ -1,0 +1,27 @@
+From c92859faa8c874119e768c22ac1710cbec579b04 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Mon, 29 Nov 2010 17:53:18 +0800
+Subject: [PATCH] ENGR00134076 ipuv3: should not set burst size again
+
+Burst size has been set for non-interleaing format channel.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_common.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index 620d17f..a0f36ad 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -1085,7 +1085,6 @@ int32_t ipu_init_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
+ 				dmfc_wr_chan |= 0x80;
+ 				__raw_writel(dmfc_wr_chan, DMFC_WR_CHAN);
+ 			}
+-			_ipu_ch_param_set_burst_size(dma_chan, 32);
+ 		}
+ 		spin_lock_irqsave(&ipu_lock, lock_flags);
+ 		_ipu_dmfc_set_wait4eot(dma_chan, width);
+-- 
+1.5.4.4
+

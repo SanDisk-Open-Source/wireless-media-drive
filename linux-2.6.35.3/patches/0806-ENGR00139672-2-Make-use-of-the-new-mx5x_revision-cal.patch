@@ -1,0 +1,437 @@
+From 0df596b2086a4c4b361c5be86e09d2b180a456a8 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Wed, 23 Feb 2011 14:52:40 -0600
+Subject: [PATCH] ENGR00139672-2 Make use of the new mx5x_revision call
+
+For better alignment with the upstream i.MX kernel, switch from
+cpu_is_mx5x_rev() to mx5x_revision().
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c            |   18 +++++------
+ arch/arm/mach-mx5/cpu.c              |    6 +--
+ arch/arm/mach-mx5/devices.c          |    9 +----
+ arch/arm/mach-mx5/iomux.c            |   55 ++--------------------------------
+ arch/arm/mach-mx5/mx50_arm2.c        |    2 +-
+ arch/arm/mach-mx5/mx50_rdp.c         |    2 +-
+ arch/arm/mach-mx5/mx51_3stack.c      |    5 +--
+ arch/arm/mach-mx5/mx51_3stack_gpio.c |    5 ++-
+ arch/arm/mach-mx5/mx51_babbage.c     |   19 +++++------
+ arch/arm/mach-mx5/mx53_ard.c         |    2 +-
+ arch/arm/mach-mx5/mx53_evk.c         |    2 +-
+ arch/arm/mach-mx5/mx53_loco.c        |    2 +-
+ arch/arm/mach-mx5/mx53_smd.c         |    2 +-
+ arch/arm/mach-mx5/system.c           |    7 ++--
+ arch/arm/plat-mxc/include/mach/mxc.h |    4 --
+ 15 files changed, 39 insertions(+), 101 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index cd83264..bb55290 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -3866,10 +3866,7 @@ static int _clk_vpu_set_parent(struct clk *clk, struct clk *parent)
+ static int _clk_vpu_enable(struct clk *clk)
+ {
+ 	/* Set VPU's parent to be axi_a or ahb when its enabled. */
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0) {
+-		clk_set_parent(&vpu_clk[0], &ahb_clk);
+-		clk_set_parent(&vpu_clk[1], &ahb_clk);
+-	} else if (cpu_is_mx51()) {
++	if (cpu_is_mx51()) {
+ 		clk_set_parent(&vpu_clk[0], &axi_a_clk);
+ 		clk_set_parent(&vpu_clk[1], &axi_a_clk);
+ 	}
+@@ -4572,13 +4569,13 @@ int __init mx51_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 
+ 	/* set DDR clock parent */
+ 	reg = 0;
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) >= 1) {
+-		reg = __raw_readl(MXC_CCM_CBCDR) & MXC_CCM_CBCDR_DDR_HF_SEL;
+-		reg >>= MXC_CCM_CBCDR_DDR_HF_SEL_OFFSET;
++	/* Note this code is for TO2 and above */
++	reg = __raw_readl(MXC_CCM_CBCDR) & MXC_CCM_CBCDR_DDR_HF_SEL;
++	reg >>= MXC_CCM_CBCDR_DDR_HF_SEL_OFFSET;
++
++	if (reg)
++		tclk = &ddr_hf_clk;
+ 
+-		if (reg)
+-			tclk = &ddr_hf_clk;
+-	}
+ 	if (reg == 0) {
+ 		reg = __raw_readl(MXC_CCM_CBCMR) &
+ 					MXC_CCM_CBCMR_DDR_CLK_SEL_MASK;
+@@ -4910,6 +4907,7 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	max_ahb_clk = MAX_AHB_CLK_MX53;
+ 	max_emi_slow_clk = MAX_AHB_CLK_MX53;
+ 
++	mx53_revision();
+ 
+ 	/* set DDR clock parent */
+ 	reg = __raw_readl(MXC_CCM_CBCMR) &
+diff --git a/arch/arm/mach-mx5/cpu.c b/arch/arm/mach-mx5/cpu.c
+index b8996a5..dc52165 100644
+--- a/arch/arm/mach-mx5/cpu.c
++++ b/arch/arm/mach-mx5/cpu.c
+@@ -167,10 +167,8 @@ static void __init mipi_hsc_disable(void)
+ 		temp = __raw_readl(reg_hsc_mxt_conf);
+ 		__raw_writel(temp | 0x0FF, reg_hsc_mxt_conf);
+ 
+-		if (cpu_is_mx51_rev(CHIP_REV_2_0) > 0) {
+-			temp = __raw_readl(reg_hsc_mxt_conf);
+-			__raw_writel(temp | 0x10000, reg_hsc_mxt_conf);
+-		}
++		temp = __raw_readl(reg_hsc_mxt_conf);
++		__raw_writel(temp | 0x10000, reg_hsc_mxt_conf);
+ 
+ 		clk_disable(clk);
+ 		clk_put(clk);
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 68c021c..e3cc1aa 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1544,9 +1544,7 @@ void __init mx5_init_irq(void)
+ {
+ 	unsigned long tzic_addr;
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0)
+-		tzic_addr = MX51_TZIC_BASE_ADDR_T01;
+-	else if (cpu_is_mx51_rev(CHIP_REV_2_0) > 0)
++	if (cpu_is_mx51())
+ 		tzic_addr = MX51_TZIC_BASE_ADDR;
+ 	else /* mx53 and mx50 */
+ 		tzic_addr = MX53_TZIC_BASE_ADDR;
+@@ -1859,7 +1857,7 @@ int __init mxc_init_devices(void)
+ 			mxc_gpu_resources[4].start = MX53_GPU_GMEM_BASE_ADDR;
+ 			mxc_gpu_resources[4].end = MX53_GPU_GMEM_BASE_ADDR
+ 						+ SZ_256K - 1;
+-			if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++			if (mx53_revision() >= IMX_CHIP_REVISION_2_0) {
+ 				z160_revision = 1;
+ 			} else {
+ 				z160_revision = 0;
+@@ -1885,9 +1883,6 @@ int __init mxc_init_devices(void)
+ 		mxc_nandv2_mtd_device.resource[1].end -= MX53_OFFSET;
+ 		ldb_resources[0].start -=  MX53_OFFSET;
+ 		ldb_resources[0].end -=  MX53_OFFSET;
+-	} else if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0) {
+-		scc_resources[1].start += 0x8000;
+-		scc_resources[1].end += 0x8000;
+ 	}
+ 
+ 
+diff --git a/arch/arm/mach-mx5/iomux.c b/arch/arm/mach-mx5/iomux.c
+index 25b8514..860070d 100644
+--- a/arch/arm/mach-mx5/iomux.c
++++ b/arch/arm/mach-mx5/iomux.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -65,16 +65,6 @@ static inline void *_get_mux_reg(iomux_pin_name_t pin)
+ {
+ 	u32 mux_reg = PIN_TO_IOMUX_MUX(pin);
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0) {
+-		if ((pin == MX51_PIN_NANDF_RB5) ||
+-			(pin == MX51_PIN_NANDF_RB6) ||
+-			(pin == MX51_PIN_NANDF_RB7))
+-			; /* Do nothing */
+-		else if (mux_reg >= 0x2FC)
+-			mux_reg += 8;
+-		else if (mux_reg >= 0x130)
+-			mux_reg += 0xC;
+-	}
+ 	return IOMUXSW_MUX_CTL + mux_reg;
+ }
+ 
+@@ -83,25 +73,6 @@ static inline void *_get_pad_reg(iomux_pin_name_t pin)
+ 	u32 pad_reg = PIN_TO_IOMUX_PAD(pin);
+ 	void __iomem *sw_pad_reg = _get_sw_pad();
+ 
+-
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0) {
+-		if ((pin == MX51_PIN_NANDF_RB5) ||
+-			(pin == MX51_PIN_NANDF_RB6) ||
+-			(pin == MX51_PIN_NANDF_RB7))
+-			; /* Do nothing */
+-		else if (pad_reg == 0x4D0 - PAD_I_START_MX51)
+-			pad_reg += 0x4C;
+-		else if (pad_reg == 0x860 - PAD_I_START_MX51)
+-			pad_reg += 0x9C;
+-		else if (pad_reg >= 0x804 - PAD_I_START_MX51)
+-			pad_reg += 0xB0;
+-		else if (pad_reg >= 0x7FC - PAD_I_START_MX51)
+-			pad_reg += 0xB4;
+-		else if (pad_reg >= 0x4E4 - PAD_I_START_MX51)
+-			pad_reg += 0xCC;
+-		else
+-			pad_reg += 8;
+-	}
+ 	return sw_pad_reg + pad_reg;
+ }
+ 
+@@ -110,10 +81,7 @@ static inline void *_get_mux_end(void)
+ 	if (cpu_is_mx50())
+ 		return IO_ADDRESS(IOMUXC_BASE_ADDR) + 0x2C8;
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0)
+-		return IO_ADDRESS(IOMUXC_BASE_ADDR) + (0x3F8 - 4);
+-	else
+-		return IO_ADDRESS(IOMUXC_BASE_ADDR) + (0x3F0 - 4);
++	return IO_ADDRESS(IOMUXC_BASE_ADDR) + (0x3F0 - 4);
+ }
+ 
+ /*!
+@@ -238,24 +206,7 @@ void mxc_iomux_set_input(iomux_input_select_t input, u32 config)
+ {
+ 	void __iomem *reg;
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0) {
+-		if (input == MUX_IN_IPU_IPP_DI_0_IND_DISPB_SD_D_SELECT_INPUT)
+-			input -= 4;
+-		else if (input == MUX_IN_IPU_IPP_DI_1_IND_DISPB_SD_D_SELECT_INPUT)
+-			input -= 3;
+-		else if (input >= MUX_IN_KPP_IPP_IND_COL_6_SELECT_INPUT)
+-			input -= 2;
+-		else if (input >= MUX_IN_HSC_MIPI_MIX_PAR_SISG_TRIG_SELECT_INPUT)
+-			input -= 5;
+-		else if (input >= MUX_IN_HSC_MIPI_MIX_IPP_IND_SENS1_DATA_EN_SELECT_INPUT)
+-			input -= 3;
+-		else if (input >= MUX_IN_ECSPI2_IPP_IND_SS_B_3_SELECT_INPUT)
+-			input -= 2;
+-		else if (input >= MUX_IN_CCM_PLL1_BYPASS_CLK_SELECT_INPUT)
+-			input -= 1;
+-
+-		reg = IOMUXSW_INPUT_CTL + (input << 2) + INPUT_CTL_START_MX51_TO1;
+-	} else if (cpu_is_mx51()) {
++	if (cpu_is_mx51()) {
+ 		reg = IOMUXSW_INPUT_CTL + (input << 2) + INPUT_CTL_START_MX51;
+ 	} else if (cpu_is_mx53()) {
+ 		reg = IOMUXSW_INPUT_CTL + (input << 2) + INPUT_CTL_START_MX53;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 2507770..b3c4727 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1365,7 +1365,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_rngb_device, NULL);
+ 	mxc_register_device(&dcp_device, NULL);
+ 	mxc_register_device(&fsl_otp_device, &otp_data);
+-	if (cpu_is_mx50_rev(CHIP_REV_1_1) >= 1)
++	if (mx50_revision() >= IMX_CHIP_REVISION_1_1)
+ 		mxc_register_device(&mxc_zq_calib_device, NULL);
+ 	mxc_register_device(&mxc_perfmon, &mxc_perfmon_data);
+ }
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 5d19142..48b5076 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1568,7 +1568,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&dcp_device, NULL);
+ 	mxc_register_device(&mxc_powerkey_device, &pwrkey_data);
+ 	mxc_register_device(&fixed_volt_reg_device, &fixed_volt_reg_pdata);
+-	if (cpu_is_mx50_rev(CHIP_REV_1_1) >= 1)
++	if (mx50_revision() >= IMX_CHIP_REVISION_1_1)
+ 		mxc_register_device(&mxc_zq_calib_device, NULL);
+ 	mx50_rdp_init_mc13892();
+ /*
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index 544333d..bb767af 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -1008,8 +1008,7 @@ static void __init mxc_board_init(void)
+ 	if (debug_board_present)
+ 		mxc_register_device(&smsc_lan9217_device, &smsc911x_config);
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) > 0)
+-		lcd_data.reset = lcd_reset_to2;
++	lcd_data.reset = lcd_reset_to2;
+ 
+ 	mxc_register_device(&mxc_lcd_device, &lcd_data);
+ 	mxc_register_device(&lcd_wvga_device, &lcd_wvga_data);
+@@ -1058,7 +1057,7 @@ static void __init mx51_3stack_timer_init(void)
+ 	struct clk *uart_clk;
+ 
+ 	/* Change the CPU voltages for TO2*/
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) <= 1) {
++	if (mx51_revision() == IMX_CHIP_REVISION_2_0) {
+ 		cpu_wp_auto[0].cpu_voltage = 1175000;
+ 		cpu_wp_auto[1].cpu_voltage = 1100000;
+ 		cpu_wp_auto[2].cpu_voltage = 1000000;
+diff --git a/arch/arm/mach-mx5/mx51_3stack_gpio.c b/arch/arm/mach-mx5/mx51_3stack_gpio.c
+index b0fca77..97f6eac 100644
+--- a/arch/arm/mach-mx5/mx51_3stack_gpio.c
++++ b/arch/arm/mach-mx5/mx51_3stack_gpio.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -19,6 +19,7 @@
+ #include <mach/hardware.h>
+ #include <mach/clock.h>
+ #include <mach/gpio.h>
++#include <mach/common.h>
+ 
+ #include "iomux.h"
+ #include "mx51_pins.h"
+@@ -806,7 +807,7 @@ void __init mx51_3stack_io_init(void)
+ 	}
+ 
+ 	/* TO3 doesn't need pad to drive CSI_DATA_EN[0] high */
+-	if (cpu_is_mx51_rev(CHIP_REV_3_0) > 0)
++	if (mx51_revision() >= IMX_CHIP_REVISION_3_0)
+ 		mxc_request_iomux(MX51_PIN_EIM_A26, IOMUX_CONFIG_ALT0);
+ 
+ 	/* Camera low power */
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 1d4ab19..52bcdbf 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -1194,7 +1194,7 @@ static void __init mx51_babbage_io_init(void)
+ 	gpio_request(BABBAGE_POWER_KEY, "power-key");
+ 	gpio_direction_input(BABBAGE_POWER_KEY);
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_3_0) > 0) {
++	if (mx51_revision() >= IMX_CHIP_REVISION_3_0) {
+ 		/* DVI_I2C_ENB = 0 tristates the DVI I2C level shifter */
+ 		gpio_request(BABBAGE_DVI_I2C_EN, "dvi-i2c-en");
+ 		gpio_direction_output(BABBAGE_DVI_I2C_EN, 0);
+@@ -1304,19 +1304,18 @@ static void __init mxc_board_init(void)
+ 	i2c_register_board_info(1, mxc_i2c1_board_info,
+ 				ARRAY_SIZE(mxc_i2c1_board_info));
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) >= 1) {
+-		vga_data.core_reg = NULL;
+-		vga_data.io_reg = NULL;
+-		vga_data.analog_reg = NULL;
+-	}
++
++	vga_data.core_reg = NULL;
++	vga_data.io_reg = NULL;
++	vga_data.analog_reg = NULL;
++
+ 	i2c_register_board_info(3, mxc_i2c_hs_board_info,
+ 				ARRAY_SIZE(mxc_i2c_hs_board_info));
+ 
+ 	pm_power_off = mxc_power_off;
+ 
+-	if (cpu_is_mx51_rev(CHIP_REV_1_1) == 2) {
+-		sgtl5000_data.sysclk = 26000000;
+-	}
++	sgtl5000_data.sysclk = 26000000;
++
+ 	gpio_request(BABBAGE_AUDAMP_STBY, "audioamp-stdby");
+ 	gpio_direction_output(BABBAGE_AUDAMP_STBY, 0);
+ 	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
+@@ -1330,7 +1329,7 @@ static void __init mx51_babbage_timer_init(void)
+ 	struct clk *uart_clk;
+ 
+ 	/* Change the CPU voltages for TO2*/
+-	if (cpu_is_mx51_rev(CHIP_REV_2_0) <= 1) {
++	if (mx51_revision() == IMX_CHIP_REVISION_2_0) {
+ 		cpu_wp_auto[0].cpu_voltage = 1175000;
+ 		cpu_wp_auto[1].cpu_voltage = 1100000;
+ 		cpu_wp_auto[2].cpu_voltage = 1000000;
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 3085d5c..43dfa0e 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1268,7 +1268,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
+ 
+ 	/* ASRC is only available for MX53 TO2.0 */
+-	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++	if (mx53_revision() >= IMX_CHIP_REVISION_2_0) {
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index e82dcca..f6c4b4f 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1496,7 +1496,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
+ 
+ 	/* ASRC is only available for MX53 TO2.0 */
+-	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++	if (mx53_revision() >= IMX_CHIP_REVISION_2_0) {
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index a474398..4e57436 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -773,7 +773,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
+ 	mxc_register_device(&mxc_ptp_device, NULL);
+ 	/* ASRC is only available for MX53 TO2.0 */
+-	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++	if (mx53_revision() >= IMX_CHIP_REVISION_2_0) {
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index c98e883..0307bb8 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -1138,7 +1138,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
+ 	mxc_register_device(&mxc_ptp_device, NULL);
+ 	/* ASRC is only available for MX53 TO2.0 */
+-	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++	if (mx53_revision() >= IMX_CHIP_REVISION_2_0) {
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index 868a406..9bc667b 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -19,6 +19,7 @@
+ #include <asm/io.h>
+ #include <mach/hardware.h>
+ #include <mach/clock.h>
++#include <mach/common.h>
+ #include <asm/proc-fns.h>
+ #include <asm/system.h>
+ #include "crm_regs.h"
+@@ -114,11 +115,11 @@ void mxc_cpu_lp_set(enum mxc_cpu_pwr_mode mode)
+ 
+ 	__raw_writel(plat_lpc, MXC_CORTEXA8_PLAT_LPC);
+ 	__raw_writel(ccm_clpcr, MXC_CCM_CLPCR);
+-	if (cpu_is_mx51() || (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1)
+-		|| cpu_is_mx50_rev(CHIP_REV_1_1) >= 1)
++	if (cpu_is_mx51() || (mx53_revision() >= IMX_CHIP_REVISION_2_0)
++		|| (mx50_revision() >= IMX_CHIP_REVISION_1_1))
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_ARM_SRPGCR);
+ 	/* Enable NEON SRPG for all but MX50TO1.0. */
+-	if (!(cpu_is_mx50_rev(CHIP_REV_1_0) == 1))
++	if (!(mx50_revision() == IMX_CHIP_REVISION_1_0))
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_NEON_SRPGCR);
+ 	if (stop_mode) {
+ 		__raw_writel(empgc0, MXC_SRPG_EMPGC0_SRPGCR);
+diff --git a/arch/arm/plat-mxc/include/mach/mxc.h b/arch/arm/plat-mxc/include/mach/mxc.h
+index 5acf759..4ae916a 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc.h
++++ b/arch/arm/plat-mxc/include/mach/mxc.h
+@@ -218,10 +218,6 @@ extern unsigned int system_rev;
+ #define cpu_is_mx31_rev(rev) cpu_rev(mx31, rev)
+ #define cpu_is_mx35_rev(rev) cpu_rev(mx35, rev)
+ #define cpu_is_mx37_rev(rev) cpu_rev(mx37, rev)
+-#define cpu_is_mx50_rev(rev) cpu_rev(mx50, rev)
+-#define cpu_is_mx51_rev(rev) cpu_rev(mx51, rev)
+-#define cpu_is_mx53_rev(rev) cpu_rev(mx53, rev)
+-
+ 
+ #include <linux/types.h>
+ 
+-- 
+1.5.4.4
+

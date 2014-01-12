@@ -1,0 +1,53 @@
+From fc7156f17d49bfabf9771a16193ed21d22a71a95 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Fri, 17 Dec 2010 11:14:14 +0800
+Subject: [PATCH] ENGR00137101-4 GPMI : change the is_onfi_nand() to is_ddr_nand()
+
+change the function name is_onfi_nand() to is_ddr_nand().
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c |   13 ++++++++-----
+ 1 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+index ba2fb07..e5ba51f 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+@@ -178,7 +178,7 @@ int gpmi_nfc_set_geometry(struct gpmi_nfc_data *this)
+ 
+ 	geometry->ecc_chunk_size_in_bytes = 512;
+ 	/* Only ONFI nand uses 1k chunk now */
+-	if (is_onfi_nand(&this->device_info))
++	if (is_ddr_nand(&this->device_info))
+ 		geometry->ecc_chunk_size_in_bytes = 1024;
+ 
+ 	/* Compute the page size based on the physical geometry. */
+@@ -223,9 +223,12 @@ int gpmi_nfc_set_geometry(struct gpmi_nfc_data *this)
+ 		break;
+ 	case 8192:
+ 		geometry->ecc_strength = 24;
+-
+-		/* ONFI nand needs GF14, so re-culculate DMA page size */
+-		if (is_onfi_nand(&this->device_info))
++		/*
++		 * ONFI/TOGGLE nand needs GF14, so re-culculate DMA page size.
++		 * The ONFI nand must do the reculation,
++		 * else it will fail in DMA.
++		 */
++		if (is_ddr_nand(&this->device_info))
+ 			geometry->page_size_in_bytes =
+ 				physical->page_data_size_in_bytes +
+ 				geometry->metadata_size_in_bytes +
+@@ -294,7 +297,7 @@ int gpmi_nfc_set_geometry(struct gpmi_nfc_data *this)
+ 	chunk_data_size_in_bits = geometry->ecc_chunk_size_in_bytes * 8;
+ 
+ 	/* ONFI nand needs GF14 */
+-	if (is_onfi_nand(&this->device_info))
++	if (is_ddr_nand(&this->device_info))
+ 		chunk_ecc_size_in_bits  = geometry->ecc_strength * 14;
+ 	else
+ 		chunk_ecc_size_in_bits  = geometry->ecc_strength * 13;
+-- 
+1.5.4.4
+

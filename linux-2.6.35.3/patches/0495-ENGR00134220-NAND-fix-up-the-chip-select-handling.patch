@@ -1,0 +1,81 @@
+From 09783b283ef1e2d07a4dee376ff07d5ab7ef259a Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 1 Dec 2010 17:17:51 +0800
+Subject: [PATCH] ENGR00134220 NAND: fix up the chip select handling
+
+When the NAND has multi-cs, the chip select other than
+cs0 is not handled correctly which will lead to NAND not
+function as expected
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nd2.c |    7 ++++++-
+ drivers/mtd/nand/mxc_nd2.h |    6 ++++++
+ 2 files changed, 12 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nd2.c b/drivers/mtd/nand/mxc_nd2.c
+index 5e45cc4..f8db044 100644
+--- a/drivers/mtd/nand/mxc_nd2.c
++++ b/drivers/mtd/nand/mxc_nd2.c
+@@ -291,7 +291,7 @@ static void auto_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 	else
+ 		page_addr = addr_low >> 16 | addr_high << 16;
+ 
+-	ncs = page_addr >> (this->chip_shift - this->page_shift);
++	ncs = NFC_GET_NFC_ACTIVE_CS();
+ 
+ 	if (j > 1) {
+ 		page_addr *= j;
+@@ -529,6 +529,8 @@ static u16 get_dev_status(void)
+ #ifdef NFC_AUTO_MODE_ENABLE
+ 	int i;
+ 	u16 status = 0;
++	int cs = NFC_GET_NFC_ACTIVE_CS();
++
+ 	for (i = 0; i < num_of_interleave; i++) {
+ 
+ 		/* set ative cs */
+@@ -544,6 +546,9 @@ static u16 get_dev_status(void)
+ 			break;
+ 	}
+ 
++	/* Restore active CS */
++	NFC_SET_NFC_ACTIVE_CS(cs);
++
+ 	return status;
+ #else
+ 	volatile u16 *mainBuf = MAIN_AREA1;
+diff --git a/drivers/mtd/nand/mxc_nd2.h b/drivers/mtd/nand/mxc_nd2.h
+index d6b19de..4120c2a 100644
+--- a/drivers/mtd/nand/mxc_nd2.h
++++ b/drivers/mtd/nand/mxc_nd2.h
+@@ -381,6 +381,10 @@ do { \
+ 	(NFC_FIELD_RESET(NFC_ACTIVE_CS_WIDTH, NFC_ACTIVE_CS_SHIFT))) | \
+ 	((val) << NFC_ACTIVE_CS_SHIFT), NFC_CONFIG1);
+ 
++#define NFC_GET_NFC_ACTIVE_CS() \
++	((raw_read(NFC_CONFIG1) >> NFC_ACTIVE_CS_SHIFT) & \
++	((1 << NFC_ACTIVE_CS_WIDTH) - 1))
++
+ #define NFC_GET_MAXCHIP_SP() 		8
+ 
+ #else
+@@ -389,6 +393,7 @@ do { \
+ 	(end_addr << NFC_UNLOCK_END_ADDR_SHIFT), REG_UNLOCK_BLK_ADD0);
+ 
+ #define NFC_SET_NFC_ACTIVE_CS(val)
++#define NFC_GET_NFC_ACTIVE_CS()
+ #define NFC_GET_MAXCHIP_SP() 		1
+ #endif
+ 
+@@ -680,6 +685,7 @@ do { \
+ }
+ 
+ #define NFC_SET_NFC_ACTIVE_CS(val)
++#define NFC_GET_NFC_ACTIVE_CS()
+ #define NFC_GET_MAXCHIP_SP() 		1
+ #define NFC_SET_WPC(val)                val
+ 
+-- 
+1.5.4.4
+

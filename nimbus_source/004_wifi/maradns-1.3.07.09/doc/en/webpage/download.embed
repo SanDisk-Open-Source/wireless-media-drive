@@ -1,0 +1,239 @@
+<A NAME=stable> </A>
+<!-- &iexcl; instead of ¡ because of *@#$ Dillo -->
+<h1>&iexcl;Download MaraDNS!</h1>
+
+<h2>Stable release</h2>
+<p>This is the current stable release of MaraDNS, MaraDNS 1.3.07.08,
+released December 25, 2007.
+<p>This release is available both at <A 
+href="http://sourceforge.net/project/showfiles.php?group_id=24033">sourceforge.net</A>
+and on this page.
+
+<p>
+<table><tr><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1.3.07.08.tar.bz2"><!--
+                          -->maradns-1.3.07.08.tar.bz2</A>
+</td><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1.3.07.08.tar.bz2.sha.asc">sig</A><p>
+</td><td>
+<A href="#bz2">info</A> 
+</td></tr><tr><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1.3.07.08.tar.lzma"><!--
+                          -->maradns-1.3.07.08.tar.lzma</A>
+</td><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1.3.07.08.tar.lzma.sha.asc">sig</A>
+</td><td>
+<A href="#lzma">info</A> 
+</td></tr><tr><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1.3.07.08.tar.gz"><!--
+                          -->maradns-1.3.07.08.tar.gz</A>
+</td><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1.3.07.08.tar.gz.sha.asc">sig</A>
+</td><td>
+<A href="#gz">info</A>
+</td></tr><tr><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1-3-07-08-win32.zip"><!--
+                          -->maradns-1-3-07-08-win32.zip</A>
+</td><td>
+<A 
+href="download/1.3/1.3.07.08/maradns-1-3-07-08-win32.zip.sha.asc">sig</A>
+</td><td>
+<A href="#zip">info</A>
+</td></tr></table>
+<hr>
+
+<h2>Previous stable release</h2>
+
+This is the previous stable branch of MaraDNS; this release will be 
+supported with critical and maintenance release until December 31, 2010.
+Doesn't have BIND zone file support, nor a couple of other features,
+but otherwise similar to the stable release of MaraDNS. <p>
+
+<p>This is the previous stable release of MaraDNS, MaraDNS 1.2.12.09,
+released December 14, 2007.
+
+<p>
+<table><tr><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1.2.12.09.tar.bz2"><!--
+                          -->maradns-1.2.12.09.tar.bz2</A>
+</td><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1.2.12.09.tar.bz2.sha.asc">sig</A><p>
+</td><td>
+<A href="#bz2">info</A> 
+</td></tr><tr><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1.2.12.09.tar.lzma"><!--
+                          -->maradns-1.2.12.09.tar.lzma</A>
+</td><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1.2.12.09.tar.lzma.sha.asc">sig</A>
+</td><td>
+<A href="#lzma">info</A> 
+</td></tr><tr><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1.2.12.09.tar.gz"><!--
+                          -->maradns-1.2.12.09.tar.gz</A>
+</td><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1.2.12.09.tar.gz.sha.asc">sig</A>
+</td><td>
+<A href="#gz">info</A>
+</td></tr><tr><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1-2-12-09-win32.zip"><!--
+                          -->maradns-1-2-12-09-win32.zip</A>
+</td><td>
+<A 
+href="download/1.2/1.2.12.09/maradns-1-2-12-09-win32.zip.sha.asc">sig</A>
+</td><td>
+<A href="#zip">info</A>
+
+</td></tr></table>
+<h3>Contributed packages</h3>
+
+<A
+href="download/1.2/3rd_party/maradns-1.2.12.08-i486-2.tgz"><!--
+                          -->maradns-1.2.12.08-i486-2.tgz</A> 
+<A href="#tgz">info</A>
+<h2>Development release</h2>
+
+This is a development release.  This is where new features get added
+to MaraDNS; new features have often not been fully tested so <b>use 
+this release at your own risk</b>.
+
+<p>This is the current development release of MaraDNS, MaraDNS 1.3.10,
+released November 26, 2007.  One can also download the <A 
+href=download/1.3/snap>snapshot release</A>.
+
+<p>
+<table><tr><td>
+<A 
+href="download/1.3/1.3.10/maradns-1.3.10.tar.bz2"><!--
+                          -->maradns-1.3.10.tar.bz2</A>
+</td><td>
+<A 
+href="download/1.3/1.3.10/maradns-1.3.10.tar.bz2.sha.asc">sig</A><p>
+</td><td>
+<A href="#bz2">info</A> 
+</td></tr><tr><td>
+<A 
+href="download/1.3/1.3.10/maradns-1.3.10.tar.lzma"><!--
+                          -->maradns-1.3.10.tar.lzma</A>
+</td><td>
+<A 
+href="download/1.3/1.3.10/maradns-1.3.10.tar.lzma.sha.asc">sig</A>
+</td><td>
+<A href="#lzma">info</A> 
+</td></tr><tr><td>
+<A 
+href="download/1.3/1.3.10/maradns-1.3.10.tar.gz"><!--
+                          -->maradns-1.3.10.tar.gz</A>
+</td><td>
+<A 
+href="download/1.3/1.3.10/maradns-1.3.10.tar.gz.sha.asc">sig</A>
+</td><td>
+<A href="#gz">info</A>
+</td></tr><tr><td>
+<A 
+href="download/1.3/1.3.10/maradns-1-3-10-win32.zip"><!--
+                          -->maradns-1-3-10-win32.zip</A>
+</td><td>
+<A 
+href="download/1.3/1.3.10/maradns-1-3-10-win32.zip.sha.asc">sig</A>
+</td><td>
+<A href="#zip">info</A>
+
+</td></tr></table>
+
+<h3>Pthreads soruce code</h3>
+
+The Windows port of MaraDNS 1.3 uses the LGPL phtreads library. Source 
+code for this library is available <A 
+href="download/1.3/1.3.10/pthreads-w32-2-8-0-release.tar.lzma">here</A>
+
+<hr>
+
+<h2>Other</h2>
+<p><A href=changelog.html>View the changelog</A></p>
+
+<H2>Tools to help verify the sums of MaraDNS (or any other file)</H2>
+<p>This is a mismash of various cryptographic summing algorithms.  <b>By and
+large, the programs in this tarball are not public domain</b>
+<p><A href=download/non-maradns/sums-20070214.tar.bz2>sums-20070214.tar.bz2</A>  This is the
+actual code which performs various cryptographic hashes against the file.
+(<A href=download/non-maradns/sums-20070214.tar.bz2.sha.asc>PGP signature</A>)
+<p>
+<A href=download/sums-papers-20010818.tar.bz2>sums-papers-20010818.tar.bz2</A>  
+This is a collection of papers describing some of the various 
+cryptographic hashes.
+
+<h2>Obsolete 1.0 MaraDNS branch</h1>
+
+The <A href=download/1.0>obsolete 1.0 branch of MaraDNS</A>.  The only 
+updates I would do on this branch are critical security fixes.  You're
+better off using 1.2 or 1.3.  If you want something small for embedded
+systems, the "Deadwood" code in the 1.3 development snapshots is your
+best bet.  Unless you've found a critical security hole, I don't
+support this version.
+
+<H2>Disclaimer</H2>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS 
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE 
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+<hr>
+
+<h2>Information on file types</h2>
+
+<A name="bz2"><b>.bz2</b> A .bz2 file is compressed with the bzip2 program.  The
+maradns tar.bz2 file contains the source code for MaraDNS.</A>
+<p>
+<A name="lzma"><b>.lzma</b> A .lzma file
+is compressed with LZMA compression, which both compresses
+better and decompresses faster than bzip2 compressed files.  Information
+on decompressing LZMA files can be found </A><A 
+href="download/1.2/00Uncompress.txt">here</A>.  The maradns tar.lzma
+file contains the source code for MaraDNS.
+<p>
+<A name="gz"><b>.gz</b> A .gz file is compressed with the gzip program.  
+The maradns .tar.gz file contains the source code for MaraDNS.</A>
+<p>
+<A name="srcrpm"><b>.src.rpm</b> A .src.rpm file is a package with 
+source for rpm-based
+Linux distributions.  This file was created on CentOS 3, and contains
+the source code for MaraDNS.</A>
+<p>
+<A name="rpm"><b>.i386.rpm</b> A .i386.rpm file is a binary RPM package.  
+The RPM file
+was built on CentOS 3, and should run on other RPM-based systems.</A>
+<p>
+<A name="zip"><b>.zip</b> A .zip file is a compressed file that 
+Windows XP can open.
+The MaraDNS .zip file contains a Windows native binary of MaraDNS.
+This is a partial port of MaraDNS to Windows.  While this port
+does not have all of the security nor features of the Linux/UNIX version of
+MaraDNS, this port allows Windows to have a basic, 
+reasonably secure DNS client and recursive resolver.  People who want a full 
+Windows port of MaraDNS can compile MaraDNS on</A>
+<A href="http://www.cygwin.com">Cygwin</A>.
+<p>
+<A name="tgz"><b>.tgz</b> A .tgz file is a tar.gz file.  The MaraDNS 
+.tgz file contains
+the Slackware package for MaraDNS.</A>

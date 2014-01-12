@@ -1,0 +1,229 @@
+From bd4a694934e348acb930f05fe25dcee6b53b3685 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Fri, 7 May 2010 17:46:36 +0800
+Subject: [PATCH] ENGR00123265 UBOOT:Preserve NAND bad block indication
+
+Preserve NAND bad block indication
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nand.c          |   30 +++++++++++++++++++++++++++++-
+ include/asm-arm/arch-mx25/mxc_nand.h |   26 +++++++++++++++++++++++++-
+ include/asm-arm/arch-mx35/mxc_nand.h |   26 +++++++++++++++++++++++++-
+ include/asm-arm/arch-mx51/mxc_nand.h |   25 ++++++++++++++++++++++++-
+ 4 files changed, 103 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index 5961b4c..ccb7af1 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -57,6 +57,27 @@ static struct nand_ecclayout nand_hw_eccoob_4k = {
+ 	.oobfree = {{2, 4} }
+ };
+ 
++
++static void mxc_nand_bi_swap(struct mtd_info *mtd)
++{
++	struct nand_chip *this = mtd->priv;
++	struct nand_info *info = this->priv;
++	u16 ma, sa, nma, nsa;
++
++	if (!IS_LARGE_PAGE_NAND)
++		return;
++
++	ma = __raw_readw(BAD_BLK_MARKER_MAIN);
++	sa = __raw_readw(BAD_BLK_MARKER_SP);
++
++	nma = (ma & 0xFF00) | (sa >> 8);
++	nsa = (sa & 0x00FF) | (ma << 8);
++
++	__raw_writew(nma, BAD_BLK_MARKER_MAIN);
++	__raw_writew(nsa, BAD_BLK_MARKER_SP);
++
++}
++
+ /*!
+  * @defgroup NAND_MTD NAND Flash MTD Driver for MXC processors
+  */
+@@ -325,6 +346,7 @@ static void send_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 			/* data transfer */
+ 			nfc_memcpy(MAIN_AREA0, dbuf, dlen);
+ 			copy_spare(mtd, obuf, SPARE_AREA0, olen, 0);
++			mxc_nand_bi_swap(mtd);
+ 
+ 			/* update the value */
+ 			dbuf += dlen;
+@@ -358,6 +380,7 @@ static void send_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 			mxc_nand_ecc_status(mtd);
+ 
+ 			/* data transfer */
++			mxc_nand_bi_swap(mtd);
+ 			nfc_memcpy(dbuf, MAIN_AREA0, dlen);
+ 			copy_spare(mtd, obuf, SPARE_AREA0, olen, 1);
+ 
+@@ -906,6 +929,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 			nfc_memcpy(MAIN_AREA0, info->data_buf, mtd->writesize);
+ 			copy_spare(mtd, info->oob_buf, SPARE_AREA0,
+ 						mtd->oobsize, 0);
++			mxc_nand_bi_swap(mtd);
+ 		}
+ 
+ 		send_prog_page(mtd, 0);
+@@ -938,6 +962,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 
+ 		if (!info->auto_mode) {
+ 			mxc_nand_ecc_status(mtd);
++			mxc_nand_bi_swap(mtd);
+ 			nfc_memcpy(info->data_buf, MAIN_AREA0, mtd->writesize);
+ 			copy_spare(mtd, info->oob_buf, SPARE_AREA0,
+ 						mtd->oobsize, 1);
+@@ -1184,6 +1209,9 @@ skip_it:
+ 	/* jffs2 not write oob */
+ 	/*mtd->flags &= ~MTD_OOB_WRITEABLE;*/
+ 
++	/* fix up the offset */
++	largepage_memorybased.offs = BAD_BLK_MARKER_OOB_OFFS;
++
+ 	/* use flash based bbt */
+ 	this->bbt_td = &bbt_main_descr;
+ 	this->bbt_md = &bbt_mirror_descr;
+diff --git a/include/asm-arm/arch-mx25/mxc_nand.h b/include/asm-arm/arch-mx25/mxc_nand.h
+index 9b2eec6..de273ac 100644
+--- a/include/asm-arm/arch-mx25/mxc_nand.h
++++ b/include/asm-arm/arch-mx25/mxc_nand.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -32,6 +32,30 @@
+ #define IS_LARGE_PAGE_NAND	((mtd->writesize / info->num_of_intlv) > 512)
+ 
+ #define GET_NAND_OOB_SIZE       (mtd->oobsize / info->num_of_intlv)
++#define GET_NAND_PAGE_SIZE      (mtd->writesize / info->num_of_intlv)
++
++/*
++ * main area for bad block marker is in the last data section
++ * the spare area for swapped bad block marker is the second
++ * byte of last spare section
++ */
++#define NAND_SECTIONS        (GET_NAND_PAGE_SIZE >> 9)
++#define NAND_OOB_PER_SECTION (((GET_NAND_OOB_SIZE / NAND_SECTIONS) >> 1) << 1)
++#define NAND_CHUNKS          (GET_NAND_PAGE_SIZE / (512 + NAND_OOB_PER_SECTION))
++
++#define BAD_BLK_MARKER_MAIN_OFFS \
++	(GET_NAND_PAGE_SIZE - NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_SP_OFFS (NAND_CHUNKS * SPARE_LEN)
++
++#define BAD_BLK_MARKER_OOB_OFFS (NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_MAIN  \
++	((u32)MAIN_AREA0 + BAD_BLK_MARKER_MAIN_OFFS)
++
++#define BAD_BLK_MARKER_SP  \
++	((u32)SPARE_AREA0 + BAD_BLK_MARKER_SP_OFFS)
++
+ #define NAND_PAGESIZE_2KB	2048
+ #define NAND_PAGESIZE_4KB	4096
+ #define NAND_MAX_PAGESIZE	4096
+diff --git a/include/asm-arm/arch-mx35/mxc_nand.h b/include/asm-arm/arch-mx35/mxc_nand.h
+index 5946703..c672e54 100644
+--- a/include/asm-arm/arch-mx35/mxc_nand.h
++++ b/include/asm-arm/arch-mx35/mxc_nand.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -32,11 +32,35 @@
+ #define IS_LARGE_PAGE_NAND      ((mtd->writesize / info->num_of_intlv) > 512)
+ 
+ #define GET_NAND_OOB_SIZE       (mtd->oobsize / info->num_of_intlv)
++#define GET_NAND_PAGE_SIZE      (mtd->writesize / info->num_of_intlv)
+ 
+ #define NAND_PAGESIZE_2KB	2048
+ #define NAND_PAGESIZE_4KB	4096
+ 
+ /*
++ * main area for bad block marker is in the last data section
++ * the spare area for swapped bad block marker is the second
++ * byte of last spare section
++ */
++#define NAND_SECTIONS        (GET_NAND_PAGE_SIZE >> 9)
++#define NAND_OOB_PER_SECTION (((GET_NAND_OOB_SIZE / NAND_SECTIONS) >> 1) << 1)
++#define NAND_CHUNKS          (GET_NAND_PAGE_SIZE / (512 + NAND_OOB_PER_SECTION))
++
++#define BAD_BLK_MARKER_MAIN_OFFS \
++	(GET_NAND_PAGE_SIZE - NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_SP_OFFS (NAND_CHUNKS * SPARE_LEN)
++
++#define BAD_BLK_MARKER_OOB_OFFS (NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_MAIN  \
++	((u32)MAIN_AREA0 + BAD_BLK_MARKER_MAIN_OFFS)
++
++#define BAD_BLK_MARKER_SP  \
++	((u32)SPARE_AREA0 + BAD_BLK_MARKER_SP_OFFS)
++
++
++/*
+  * Addresses for NFC registers
+  */
+ #define NFC_REG_BASE			(NFC_BASE_ADDR + 0x1000)
+diff --git a/include/asm-arm/arch-mx51/mxc_nand.h b/include/asm-arm/arch-mx51/mxc_nand.h
+index ee5bf91..843f080 100644
+--- a/include/asm-arm/arch-mx51/mxc_nand.h
++++ b/include/asm-arm/arch-mx51/mxc_nand.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -32,6 +32,29 @@
+ #define IS_LARGE_PAGE_NAND      ((mtd->writesize / info->num_of_intlv) > 512)
+ 
+ #define GET_NAND_OOB_SIZE	(mtd->oobsize / info->num_of_intlv)
++#define GET_NAND_PAGE_SIZE      (mtd->writesize / info->num_of_intlv)
++
++/*
++ * main area for bad block marker is in the last data section
++ * the spare area for swapped bad block marker is the second
++ * byte of last spare section
++ */
++#define NAND_SECTIONS        (GET_NAND_PAGE_SIZE >> 9)
++#define NAND_OOB_PER_SECTION (((GET_NAND_OOB_SIZE / NAND_SECTIONS) >> 1) << 1)
++#define NAND_CHUNKS          (GET_NAND_PAGE_SIZE / (512 + NAND_OOB_PER_SECTION))
++
++#define BAD_BLK_MARKER_MAIN_OFFS \
++	(GET_NAND_PAGE_SIZE - NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_SP_OFFS (NAND_CHUNKS * SPARE_LEN)
++
++#define BAD_BLK_MARKER_OOB_OFFS (NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_MAIN  \
++	((u32)MAIN_AREA0 + BAD_BLK_MARKER_MAIN_OFFS)
++
++#define BAD_BLK_MARKER_SP  \
++	((u32)SPARE_AREA0 + BAD_BLK_MARKER_SP_OFFS)
+ 
+ #define NAND_PAGESIZE_2KB	2048
+ #define NAND_PAGESIZE_4KB	4096
+-- 
+1.5.4.4
+

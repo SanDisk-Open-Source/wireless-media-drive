@@ -1,0 +1,191 @@
+<HEAD><TITLE>DNS over TCP</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
+
+</HEAD>
+<BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<h1>DNS over TCP</h1>
+
+MaraDNS 1.2 has full support for DNS over TCP.  However, this setup is
+not automatically done; a little configuration needs to be set up and the
+"zoneserver" daemon has to be running in addition to the MaraDNS daemon
+in order for DNS records to be served over TCP.
+
+<p>
+
+The first mararc variable that needs to be set is <tt>tcp_convert_acl</tt>.
+This is a list of IPs that are allowed to make DNS-over-TCP queries.  In
+the case of using MaraDNS as an authoritative nameserver, this should
+have a value of "0.0.0.0/0" (anyone on the internet can make TCP
+DNS connections).  If MaraDNS is being used as a recursive or upstream
+server, this should have the same value that the <tt>recursive_acl</tt>
+mararc variable has.  In the case of MaraDNS being both a recursive and
+authoritative DNS server, <tt>tcp_convert_acl</tt> should have a value
+of "0.0.0.0/0"--this is not a security hazard since the zoneserver will 
+only send UDP packets that request recursion if the client that connects
+to the TCP server is on the <tt>recursive_acl</tt> list.
+
+<p>
+
+The second mararc variable that needs to be set is 
+<tt>tcp_convert_server</tt>.  This is the IP of the UDP DNS server that we
+will connect whenever we get a DNS-over-TCP request.  The way we perform
+DNS over TCP is as follows:
+
+<ul>
+<li>The resolver or end user connects via TCP to the <tt>zoneserver</tt> 
+    daemon.
+<li>The resolver sends a DNS query over TCP.
+<li>The <tt>zoneserver</tt> program converts the query in to a UDP query.
+<li><tt>zoneserver</tt> sends the UDP query to the ip specified in the
+    <tt>tcp_convert_server</tt> mararc variable.
+<li><tt>zoneserver</tt> waits for a UDP reply
+<li>After <tt>zoneserver</tt> gets a UDP reply, it converts this reply to
+    a TCP reply to give to the resolver/end user.
+</ul>
+
+<p>
+
+This is what a mararc file which serves the domain <tt>example.com</tt>
+and will provide both DNS over UDP and TCP will look like:
+
+<pre>
+ipv4_bind_addresses = "10.1.2.3"
+chroot_dir = "/etc/maradns"
+csv2 = {}
+csv2["example.com."] = "db.example.com"
+tcp_convert_acl = "0.0.0.0/0"
+tcp_convert_server = "10.1.2.3"
+</pre>
+
+With this mararc file, and the csv2 zone file "db.example.com" in the
+directory <tt>/etc/maradns</tt>, the program <tt>maradns</tt> will process
+UDP DNS queries, and <tt>zoneserver</tt> will process TCP DNS queries.  
+<tt>maradns</tt> is a standalone UDP DNS server; <tt>zoneserver</tt> is a
+TCP proxy that converts TCP requests in to UDP requests.  Both daemons
+must be running to process both UDP and TCP DNS queries.
+
+<p>
+
+This is what a recursive mararc file which provides recursive DNS over
+TCP and UDP will look like:
+
+<pre>
+ipv4_bind_addresses = "10.1.2.3"
+chroot_dir = "/etc/maradns"
+recursive_acl = "10.0.0.0/8"
+tcp_convert_acl = "10.0.0.0/8"
+tcp_convert_server = "10.1.2.3"
+</pre>
+
+If both <tt>maradns</tt> and <tt>zoneserver</tt> are running, this
+mararc file will provide recursive DNS for anyone with an IP starting
+with the number "10" (this is a special network for private IPs)
+on a machine with the IP 10.1.2.3.
+
+<hr>
+
+<h2>Long packets</h2>
+
+<tt>maradns</tt>, the UDP DNS server, in compliance with RFC1035
+section 2.3.4, will not output a packet longer than 512 bytes long.
+This is sufficient packet size for over 99% of the DNS traffic out there.
+
+<p>
+
+However, some DNS packets may need to be longer than this.  MaraDNS has
+support for outputting DNS packets up to 4096 bytes long.  RFC1035 only
+allows such packets to be sent over TCP; the work around is to have the
+UDP server only send long RFC-violating DNS packets to the TCP server;
+which then converts the long UDP packet in to a RFC-compliant long TCP
+packet.
+
+<p>
+
+Since these packets use extra memory to store in memory, they are only
+enabled when MaraDNS is compiled as an authoritative-only DNS server.
+
+<p>
+
+To compile MaraDNS as an authoritative-only server:
+
+<ul>
+<li>Compile MaraDNS as an authoritative-only nameserver:
+<pre>
+./configure --authonly
+make
+</pre>
+<li>Install MaraDNS as an authoritative-only nameserver:
+<pre>
+make install
+</pre>
+<li>Make sure any existing copy of maradns with recursive support has
+    been removed:
+<pre>
+rm /usr/sbin/maradns
+rm /usr/local/sbin/maradns
+</pre>
+    (The authoritative-only binary has the name maradns.authonly)
+</ul>
+
+At this point, one uses the <tt>long_packet_ipv4</tt> mararc variable to
+tell <tt>maradns.authonly</tt> which IPs we will send long UDP packets to.
+This value is usually the same value as is set for 
+<tt>ipv4_bind_addresses</tt>.
+
+<p>
+
+<tt>long_packet_ipv4</tt> is a list of IPs <tt>maradns.authonly</tt> will send
+RFC-violating long UDP packets to.  When <tt>zoneserver</tt> listens for
+a UDP reply from <tt>maradns</tt>, the <tt>zoneserver</tt> program will
+be able to process long UDP packets, converting them in to
+RFC-compliant TCP DNS packets.
+
+<p>
+Note that the <tt>zoneserver</tt> program, like the <tt>maradns</tt>
+program, is changed when compiled after <tt>./configure --authonly</tt>.
+These changes are needed for the zoneserver to accept long DNS packets.
+
+<p>
+
+This is what a <tt>mararc</tt> file which provides authoritative DNS over
+TCP and UDP, sending long UDP packets to the TCP server to process,
+will look like:
+
+<pre>
+ipv4_bind_addresses = "10.1.2.3"
+chroot_dir = "/etc/maradns"
+csv2 = {}
+csv2["example.com."] = "db.example.com"
+tcp_convert_acl = "0.0.0.0/0"
+tcp_convert_server = "10.1.2.3"
+long_packet_ipv4 = "10.1.2.3"
+</pre>
+
+<p>
+
+<hr>
+
+<p>
+
+The <tt>zoneserver</tt> program can also be used to serve DNS
+zones; see the file <A href=dnsmaster.html>dnsmaster</A> for
+details.
+
+</BODY></HTML>
+

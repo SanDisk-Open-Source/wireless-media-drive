@@ -1,0 +1,165 @@
+<HEAD><TITLE>Solucionando oscilações de registro CNAME</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD>
+<BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+Existem dois casos que podem fazer a mensagem "dangling CNAME" 
+aparecer:
+ 
+
+<ul>
+<li><A href="#nonlocal">Quando um CNAME aponta para um nome 
+de host externo.
+</a>
+ <li><A href="#local">Quando um CNAME possui erros de escrita ou
+o host que o CNAME aponta está com erro de escrita.
+</a>
+ </ul>
+
+<A name=nonlocal>
+<h3>CNAMEs apontando para nomes de host externos</h3>
+</a>
+
+As vezes, as pessoas podem desejar ter nomes locais apontando para entradas
+externas com registros CNAME.  Por exemplo, pode ser desejável ter o atalho 
+"google" para "www.google.com." Um modo que a pessoa possa desejar fazer
+isto é:
+<pre>
+google.example.com. +86400 CNAME www.google.com.
+</pre>
+
+A configuração padrão do MaraDNS não completará o registro. 
+Em outras palavras, algumas pessoas podem esperar que o Mara
+produza o seguinte para "google.example.com":
+<pre>
+	google.example.com. +86400 CNAME www.google.com.
+	www.google.com. +900 A 66.102.7.104
+</pre>
+
+Ao invés, Mara simplesmente reproduz: 
+
+<pre>
+	google.example.com. +86400 CNAME www.google.com.
+</pre>
+
+Eu chamo isto de um registro "dangling CNAME", já que o registro 
+CNAME não é resolvível por alguns servidores toscos. Para solucionar
+o dangling CNAME, MaraDNS pode ser configurado desta maneira:
+ 
+<ul>
+<li>Executarmos dois servidores MaraDNS em dois IPs diferentes. 
+<li>Por causa deste exemplo, supormos que a pessoa do servidor 
+envie requisições para solucionar nomes de hosts que tem o IP 192.168.1.1.
+Vamos supor mais adiante que há um servidor que tem o dangling CNAME 
+com o IP 192.168.1.2
+<li>Configure 192.168.1.1 para usar 192.168.1.2 como um servidor upstream
+usando a variável upstream_servers do mararc. 
+<li>Configure 192.168.1.2 para ser tanto um servidor autoritativo e recursivo de DNS, 
+e tenha registros de dangling CNAME dentro da metade do autoritativo.
+ </ul>
+
+Isto resolverá completamente o problema de dangling CNAME; aqui é o
+que os dois servidores MaraDNS fazem para solucionar tal registro:
+ 
+<ol>
+<li>Um determinador servidor tosco pergunta para 192.168.1.1 o endereço de IP para, digamos "google.example.com"
+ <li>192.168.1.1 pede para 192.168.1.2 o endereço de IP "google.example.com" 
+<li>192.168.1.2 diz que 192.168.1.1 "google.example.com é um CNAME para www.google.com, e eu não tenho um IP para isto"
+ <li>192.168.1.1, vendo que tem um CNAME sem um IP, pede para 192.168.1.2 o IP "www.google.com"
+ <li>192.168.1.2 recursivamente soluciona o IP para www.google.com, e dá este IP para 192.168.1.1
+ <li>Agora que 192.168.1.1 têm um registro completo, enviará este registro ao tosco.
+Em outras palavras, 192.168.1.1 contará ao tosco que google.example.com é um CNAME para www.google.com, e então distribuirá o IP para www.google.com.
+
+ 
+</ol>
+
+Aqui é um exemplo do arquivo <TT>mararc</TT> para 192.168.1.1: 
+ 
+<pre>
+ipv4_bind_addresses = "192.168.1.1"
+chroot_dir = "/ etc/maradns"
+recursive_acl = "192.168.1.0/24"
+upstream_servers = "192.168.1.2"
+</pre>
+
+Aqui é um exemplo do arquivo <TT>mararc</TT> para 192.168.1.2: 
+ 
+<pre>
+ipv4_bind_addresses = "192.168.1.2"
+chroot_dir = "/ etc/maradns"
+recursive_acl = "192.168.1.1"
+csv2 = {}
+csv2 ["example.com".] = "db.example.com"
+</pre>
+
+Se dangling CNAME não é problema para uma determinada configuração, ou se foi
+resolivido através dos exemplos anteriores, as advertências sobre dangling 
+CNAME podem ser desabilitadas adicionando o seguinte num arquivo mararc:
+
+<pre>
+no_cname_warnings = 1
+</pre>
+
+<A name=local>
+<h3>Um erro de digitação pode causar um registro dangling CNAME</h3>
+</a>
+
+Um erro de digitação também pode causar um registro de dangling CNAME.
+Por exemplo: 
+
+<pre>
+www.example.com. CNAME hoost1.example.com.
+host1.example.com. A 10.1.2.3
+</pre>
+
+Aqui, nós cometemos um erro no registro CNAME; pretendíamos digitar
+"host1.example.com" mas digitamos "hoost1.example.com." . Nós também
+podemos adquirir um CNAME oscilando deste modo:
+ 
+<pre>
+www.example.com. CNAME host1.example.com.
+hoost1.example.com. A 10.1.2.3
+</pre>
+
+Ou por um erro no arquivo arquivo <TT>mararc:</TT> 
+ 
+<pre>
+csv2 ["exammple.com".] = "db.example.com"
+</pre>
+
+(Nós digitamos exammple.com quando nós deveríamos ter digitado "example.com") 
+
+<P>
+
+Seguido por um arquivo de zona que se parece: 
+
+<pre>
+www.example.com. CNAME host1.example.com.
+host1.% A 10.1.2.3
+</pre>
+
+Desde que o % se expandirá a "exam<B>m</B>ple.com" em vez de "example.com." 
+ 
+<P>
+Em todos estes casos, os avisos de dangling CNAME desapareceram quando o erro
+for encontrado e corrigido.
+ 
+</BODY>
+</HTML>
+

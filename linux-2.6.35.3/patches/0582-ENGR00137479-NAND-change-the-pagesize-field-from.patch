@@ -1,0 +1,29 @@
+From 8c11eaf816dad71ca4c8a9ce3c67d503b3ad600a Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Thu, 30 Dec 2010 13:59:13 +0800
+Subject: [PATCH] ENGR00137479 NAND : change the `pagesize` field from 8192 to 0 for ONFI NAND
+
+Change the field to 0 will cause the kernel call the ->init_size()
+hook of the nand_chip{} which will set the proper parameters.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/nand_ids.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index e47996b..241c73b 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -129,7 +129,7 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 	 BBT_AUTO_REFRESH
+ 	},
+ 
+-	{"ONFI NAND 3,3V 8-bit", 0x88, 8192, 2048, 0, 0 /*LP_OPTIONS*/ },
++	{"ONFI NAND 3,3V 8-bit", 0x88, 0, 2048, 0, 0 /*LP_OPTIONS*/ },
+ 	{NULL,}
+ };
+ 
+-- 
+1.5.4.4
+

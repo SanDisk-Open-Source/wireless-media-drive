@@ -1,0 +1,101 @@
+   This document describes each file or directory at the MaraDNS
+   source top-level directory.
+
+   00README.FIRST
+           Legal disclaimer
+
+   0QuickStart
+           Quick start guide; geared for experienced UNIX admins
+
+   build/
+           Files used to compile, install, and make RPMs of
+           MaraDNS. This will also include patches and scripts that
+           update a stable release of MaraDNS.
+
+   CHANGELOG
+           Link to an ASCII version of the changelog document
+
+   configure
+           Script which sets up the Makefile; uses uname to detect
+           the system being used. Non-autoconf because an
+           autoconf-enabled system requires the presence of non-BSD
+           licensed code.
+
+   CREDITS
+           List of people who have helped with MaraDNS' development
+
+   dns/
+           Source code files with functions which manipulate the
+           raw DNS data
+
+   doc/
+           Documentation
+
+   FAQ
+           Link to an ASCII version of the MaraDNS FAQ (Frequently
+           Asked Questions)
+
+   libs/
+           The libraries for the overflow-resistant string
+           functions, and to the hashing core used by MaraDNS.
+
+   locale.de
+           Shell script which changes some of the messages which
+           MaraDNS outputs from English to German. This needs to be
+           run before compiling MaraDNS.
+
+   locale.en
+           Shell script which changes the language of MaraDNS'
+           messages to English (this is the default language). This
+           needs ot be run before compiling MaraDNS.
+
+   locale.es
+           Shell script which changes some of the messages which
+           MaraDNS outputs from English to Spanish. This needs to
+           be run before compiling MaraDNS.
+
+   Makefile
+           Starts off as a wrapper which runs configure to generate
+           the makefile, then runs 'make' on that Makefile.
+
+   MaraDNS.h
+           Header files which defines some of MaraDNS' structures;
+           this file is used by source files in many different
+           MaraDNS directories.
+
+   maradns.gpg.key
+           The GPG key which is used to sign MaraDNS releases.
+
+   parse/
+           Routines which parse the mararc file and the csv1 zone
+           files.
+
+   qual/
+           Y2038 compliant timestamp routines
+
+   rng/
+           Routines used by the secure random number generator
+
+   server/
+           The core maradns server
+
+   sqa/
+           Routines used for MaraDNS regression and stress testing;
+           not compiled by default
+
+   tcp/
+           The TCP domain zone and TCP server and the getzone
+           domain zone client
+
+   test/
+           Routines used for testing some library routines in
+           MaraDNS; not compiled by default
+
+   tools/
+           askmara; the "ej" tools used for processing MaraDNS
+           documentation; and some other scripts I wrote for
+           various MaraDNS-development related purposes
+
+   utf8/
+           Some routines for 8859-1 to utf-8 conversion; currently
+           unused by MaraDNS

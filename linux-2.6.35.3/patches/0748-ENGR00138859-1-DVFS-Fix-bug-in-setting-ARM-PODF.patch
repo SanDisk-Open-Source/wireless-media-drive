@@ -1,0 +1,33 @@
+From 83d24772a52ce96222f6da70fb7a2f903e83922b Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Mon, 7 Feb 2011 14:22:02 -0600
+Subject: [PATCH] ENGR00138859-1: DVFS: Fix bug in setting ARM-PODF
+
+Fix possible forever loop bug in DVFS-CORE when setting the ARM-PODF bits
+while changing CPU frequency.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/dvfs_core.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/dvfs_core.c b/arch/arm/plat-mxc/dvfs_core.c
+index 624d8bb..a134cae 100644
+--- a/arch/arm/plat-mxc/dvfs_core.c
++++ b/arch/arm/plat-mxc/dvfs_core.c
+@@ -305,8 +305,11 @@ static int set_cpu_freq(int wp)
+ 				__raw_writel(reg,
+ 					ccm_base + dvfs_data->ccm_cacrr_offset);
+ 				break;
+-			} else
++			} else {
++				reg1 = __raw_readl(
++				ccm_base + dvfs_data->ccm_cdhipr_offset);
+ 				printk(KERN_DEBUG "ARM_PODF still in busy!!!!\n");
++			}
+ 		}
+ 		/* set VINC */
+ 		reg = __raw_readl(gpc_base + dvfs_data->gpc_vcr_offset);
+-- 
+1.5.4.4
+

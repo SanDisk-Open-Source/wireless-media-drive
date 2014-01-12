@@ -1,0 +1,83 @@
+From b695e1012bf4c50564cc95391c9d7eaacaa1c6f7 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Thu, 13 Jan 2011 11:03:10 +0800
+Subject: [PATCH] ENGR00137894-2 MX53: Add ipu base addr and ipu clock
+
+This patch adds ipu base address and ipu clock.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ cpu/arm_cortexa8/mx53/generic.c  |   43 ++++++++++++++++++++++++++++++++++++++
+ include/asm-arm/arch-mx53/mx53.h |    5 ++++
+ 2 files changed, 48 insertions(+), 0 deletions(-)
+
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index d31d9b5..4283c7a 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -1076,3 +1076,46 @@ void enable_usb_phy1_clk(unsigned char enable)
+ 	writel(reg, MXC_CCM_CCGR4);
+ }
+ 
++void ipu_clk_enable(void)
++{
++	unsigned int reg;
++
++	/* IPU root clock deprived from AXI B */
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
++	reg &= ~0xC0;
++	reg |= 0x40;
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CBCMR);
++
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CCGR5);
++	reg |= (0x3 << 10);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CCGR5);
++
++	/* Handshake with IPU when certain clock rates are changed. */
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CCDR);
++	reg &= ~(0x1 << 21);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CCDR);
++
++	/* Handshake with IPU when LPM is entered as its enabled. */
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CLPCR);
++	reg &= ~(0x1 << 18);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CLPCR);
++}
++
++void ipu_clk_disable(void)
++{
++	unsigned int reg;
++
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CCGR5);
++	reg &= (0x3 << 10);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CCGR5);
++
++	/* Handshake with IPU when certain clock rates are changed. */
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CCDR);
++	reg |= (0x1 << 21);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CCDR);
++
++	/* Handshake with IPU when LPM is entered as its enabled. */
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CLPCR);
++	reg |= (0x1 << 18);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CLPCR);
++}
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index 39babf9..037054d 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -40,6 +40,11 @@
+ #define IRAM_SIZE		(IRAM_PARTITIONS*SZ_8K)	/* 128KB */
+ 
+ /*
++ * IPU
++ */
++#define IPU_CTRL_BASE_ADDR	0x0
++
++/*
+  * NFC
+  */
+ #define NFC_BASE_ADDR_AXI		0xF7FF0000	/* NAND flash AXI */
+-- 
+1.5.4.4
+

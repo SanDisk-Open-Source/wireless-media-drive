@@ -1,0 +1,247 @@
+From c885c13754ed958d1b2042d933d2b5c5868f7e88 Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Fri, 8 Oct 2010 11:08:40 +0800
+Subject: [PATCH] ENGR00132377 I.MX53 USB: enable usb host2 on imx53 ard board
+
+enable usb host2 on imx53 ard board, external ULPI phy is used
+on this board.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c             |    1 +
+ arch/arm/mach-mx5/usb_h2.c               |   97 +++++++++++++++++++++++++++--
+ arch/arm/plat-mxc/include/mach/arc_otg.h |    6 ++-
+ arch/arm/plat-mxc/usb_common.c           |   34 ++++++----
+ 4 files changed, 116 insertions(+), 22 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index daad5e4..7a2aa0d 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1370,6 +1370,7 @@ static void __init mxc_board_init(void)
+ 	mx5_usb_dr_init();
+ 	mx5_set_host1_vbus_func(mx53_ard_host1_driver_vbus);
+ 	mx5_usbh1_init();
++	mx5_usbh2_init();
+ 	mxc_register_device(&mxc_nandv2_mtd_device, &mxc_nand_data);
+ 	mxc_register_device(&mxc_esai_device, &esai_data);
+ 	mxc_register_device(&mxc_alsa_surround_device,
+diff --git a/arch/arm/mach-mx5/usb_h2.c b/arch/arm/mach-mx5/usb_h2.c
+index c3279e5..57384f8 100644
+--- a/arch/arm/mach-mx5/usb_h2.c
++++ b/arch/arm/mach-mx5/usb_h2.c
+@@ -14,6 +14,7 @@
+ #include <linux/kernel.h>
+ #include <linux/types.h>
+ #include <linux/delay.h>
++#include <linux/clk.h>
+ #include <linux/platform_device.h>
+ #include <linux/fsl_devices.h>
+ #include <mach/arc_otg.h>
+@@ -43,32 +44,114 @@ static void gpio_usbh2_inactive(void)
+ 	mxc_free_iomux(MX51_PIN_EIM_A26, IOMUX_CONFIG_GPIO);
+ }
+ 
++static void _wake_up_enable(struct fsl_usb2_platform_data *pdata, bool enable)
++{
++	printk(KERN_DEBUG "host2, %s, enable is %d\n", __func__, enable);
++	if (enable)
++		USBCTRL_HOST2 |= UCTRL_H2WIE;
++	else {
++		USBCTRL_HOST2 &= ~UCTRL_H2WIE;
++		/* The interrupt must be disabled for at least 3
++		* cycles of the standby clock(32k Hz) , that is 0.094 ms*/
++		udelay(100);
++	}
++}
++
++static void _phy_lowpower_suspend(bool enable)
++{
++	printk(KERN_DEBUG "host2, %s, enable is %d\n", __func__, enable);
++	if (enable) {
++		UH2_PORTSC1 |= PORTSC_PHCD;
++	} else {
++		UH2_PORTSC1 &= ~PORTSC_PHCD;
++	}
++}
++
++static void fsl_usbh2_clock_gate(bool on)
++{
++	struct clk *usb_clk;
++	if (on) {
++		usb_clk = clk_get(NULL, "usb_ahb_clk");
++		clk_enable(usb_clk);
++		clk_put(usb_clk);
++
++		usb_clk = clk_get(NULL, "usboh3_clk");
++		clk_enable(usb_clk);
++		clk_put(usb_clk);
++	} else {
++		usb_clk = clk_get(NULL, "usb_ahb_clk");
++		clk_disable(usb_clk);
++		clk_put(usb_clk);
++
++		usb_clk = clk_get(NULL, "usboh3_clk");
++		clk_disable(usb_clk);
++		clk_put(usb_clk);
++	}
++}
++
+ static int fsl_usb_host_init_ext(struct platform_device *pdev)
+ {
+-	int ret = fsl_usb_host_init(pdev);
+-	if (ret)
+-		return ret;
++	int ret = 0;
++	struct clk *usb_clk;
++
++	usb_clk = clk_get(NULL, "usboh3_clk");
++	clk_enable(usb_clk);
++	clk_put(usb_clk);
++
++	/*derive clock from oscillator */
++	usb_clk = clk_get(NULL, "usb_utmi_clk");
++	clk_disable(usb_clk);
++	clk_put(usb_clk);
++
++	/* on mx53, there is a hardware limitation that when switch the host2's clk mode
++	 * ,usb phy1 clk must be on, after finish switching this clk can be off */
++	if (cpu_is_mx53()) {
++		usb_clk = clk_get(NULL, "usb_phy1_clk");
++		clk_enable(usb_clk);
++		clk_put(usb_clk);
++	}
++
++	ret = fsl_usb_host_init(pdev);
++
++	if (cpu_is_mx53()) {
++		usb_clk = clk_get(NULL, "usb_phy1_clk");
++		clk_disable(usb_clk);
++		clk_put(usb_clk);
++	}
+ 
+ 	/* setback USBH2_STP to be function */
+ 	mxc_request_iomux(MX51_PIN_EIM_A26, IOMUX_CONFIG_ALT2);
+ 
+-	return 0;
++	return ret;
++}
++
++static void fsl_usb_host_uninit_ext(struct fsl_usb2_platform_data *pdata)
++{
++	struct clk *usb_clk;
++
++	usb_clk = clk_get(NULL, "usboh3_clk");
++	clk_disable(usb_clk);
++	clk_put(usb_clk);
++
++	fsl_usb_host_uninit(pdata);
+ }
+ 
+ static struct fsl_usb2_platform_data usbh2_config = {
+ 	.name = "Host 2",
+ 	.platform_init = fsl_usb_host_init_ext,
+-	.platform_uninit = fsl_usb_host_uninit,
++	.platform_uninit = fsl_usb_host_uninit_ext,
+ 	.operating_mode = FSL_USB2_MPH_HOST,
+ 	.phy_mode = FSL_USB2_PHY_ULPI,
+ 	.power_budget = 500,	/* 500 mA max power */
++	.wake_up_enable = _wake_up_enable,
++	.usb_clock_for_pm  = fsl_usbh2_clock_gate,
++	.phy_lowpower_suspend = _phy_lowpower_suspend,
+ 	.gpio_usb_active = gpio_usbh2_active,
+ 	.gpio_usb_inactive = gpio_usbh2_inactive,
+ 	.transceiver = "isp1504",
+ };
+ 
+-void __init mx51_usbh2_init(void)
++void __init mx5_usbh2_init(void)
+ {
+ 	mxc_register_device(&mxc_usbh2_device, &usbh2_config);
+ }
+-
+diff --git a/arch/arm/plat-mxc/include/mach/arc_otg.h b/arch/arm/plat-mxc/include/mach/arc_otg.h
+index 07d0e9b..320fd7d 100644
+--- a/arch/arm/plat-mxc/include/mach/arc_otg.h
++++ b/arch/arm/plat-mxc/include/mach/arc_otg.h
+@@ -251,7 +251,11 @@ extern volatile u32 *mx3_usb_otg_addr;
+ #define UCTRL_OBPVAL_RXDM	(1 << 25)	/* OTG RxDm status in bypass mode */
+ #define UCTRL_OPM		(1 << 24)	/* OTG power mask */
+ #define UCTRL_O_PWR_POL	(1 << 24)	/* OTG power pin polarity */
++#ifdef CONFIG_ARCH_MX5
++#define UCTRL_H2WIR		(1 << 17)	/* HOST2 wakeup intr request received */
++#else
+ #define UCTRL_H2WIR		(1 << 23)	/* HOST2 wakeup intr request received */
++#endif
+ #define UCTRL_H2SIC_MASK	(3 << 21)	/* HOST2 Serial Interface Config: */
+ #define UCTRL_H2SIC_DU6		(0 << 21)	/* Differential/unidirectional 6 wire */
+ #define UCTRL_H2SIC_DB4		(1 << 21)	/* Differential/bidirectional  4 wire */
+@@ -345,7 +349,7 @@ extern volatile u32 *mx3_usb_otg_addr;
+ /* USB_CTRL_1 */
+ #define USB_CTRL_UH1_EXT_CLK_EN			(1 << 25)
+ #define USB_CTRL_UH2_EXT_CLK_EN			(1 << 26)
+-
++#define USB_CTRL_UH2_CLK_FROM_ULPI_PHY  	(1 << 2)
+ /* ULPIVIEW register bits */
+ #define ULPIVW_OFF		(0x170)
+ #define ULPIVW_WU		(1 << 31)	/* Wakeup */
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index db55a42..5a60f06 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -335,25 +335,29 @@ static void usbh2_set_ulpi_xcvr(void)
+ 
+ 	pr_debug("%s\n", __func__);
+ 
+-	if (cpu_is_mx51()) {
+-		USBCTRL_HOST2 &= ~(UCTRL_H2SIC_MASK | UCTRL_BPE);
+-		USBCTRL_HOST2 |= UCTRL_H2WIE |	/* wakeup intr enable */
+-			UCTRL_H2UIE |	/* ULPI intr enable */
+-			UCTRL_H2DT |	/* disable H2 TLL */
+-			UCTRL_H2PM;	/* power mask */
+-	} else {
+-		USBCTRL &= ~(UCTRL_H2SIC_MASK | UCTRL_BPE);
+-		USBCTRL |= UCTRL_H2WIE |	/* wakeup intr enable */
+-			UCTRL_H2UIE |	/* ULPI intr enable */
+-			UCTRL_H2DT |	/* disable H2 TLL */
+-			UCTRL_H2PM;	/* power mask */
+-	}
++	UH2_USBCMD &= ~UCMD_RUN_STOP;
++	while (UH2_USBCMD & UCMD_RUN_STOP)
++		;
+ 
++	UH2_USBCMD |= UCMD_RESET;
++	while (UH2_USBCMD & UCMD_RESET)
++
++	USBCTRL_HOST2 &= ~(UCTRL_H2SIC_MASK | UCTRL_BPE);
++	USBCTRL_HOST2 &= ~UCTRL_H2WIE;	/* wakeup intr enable */
++	USBCTRL_HOST2 &= ~UCTRL_H2UIE;	/* ULPI intr enable */
++	USB_CTRL_1 |= USB_CTRL_UH2_EXT_CLK_EN;
++	if (cpu_is mx53())
++		USB_CTRL_1 |= USB_CTRL_UH2_CLK_FROM_ULPI_PHY;
++	if (cpu_is_mx51())/* not tested */
++		USBCTRL_HOST2 |= (1 << 12);
+ 	/* must set ULPI phy before turning off clock */
+ 	tmp = UH2_PORTSC1 & ~PORTSC_PTS_MASK;
+ 	tmp |= PORTSC_PTS_ULPI;
+ 	UH2_PORTSC1 = tmp;
+-
++	if (cpu_is_mx53()) {
++		/* turn off the internal 60MHZ clk  */
++		USB_CLKONOFF_CTRL |= (1 << 21);
++	}
+ 	UH2_USBCMD |= UCMD_RESET;	/* reset the controller */
+ 
+ 	/* allow controller to reset, and leave time for
+@@ -896,6 +900,8 @@ int usb_host_wakeup_irq(struct device *wkup_dev)
+ 
+ 	if (!strcmp("Host 1", pdata->name)) {
+ 		wakeup_req = USBCTRL & UCTRL_H1WIR;
++	} else if (!strcmp("Host 2", pdata->name)) {
++		wakeup_req = USBCTRL_HOST2 & UCTRL_H2WIR;
+ 	} else if (!strcmp("DR", pdata->name)) {
+ 		wakeup_req = USBCTRL & UCTRL_OWIR;
+ 		usb_debounce_id_pin();
+-- 
+1.5.4.4
+

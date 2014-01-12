@@ -1,0 +1,37 @@
+From b39b1f3bcdc4ee99319f478aa71e9b701719f165 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 4 Jan 2011 15:35:57 +0800
+Subject: [PATCH] ENGR00137559 MXC V4L2 overlay:Don't clear FG position after preview
+
+The FG window will go to the left-top corner of the display panel
+after preview. So, remove the code to clear FG position when we
+stop preview.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c |    4 +---
+ 1 files changed, 1 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c b/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
+index c70dd07..893c82d 100644
+--- a/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
++++ b/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -324,8 +324,6 @@ static int prpvf_stop(void *private)
+ 		return -EPERM;
+ 	}
+ 
+-	ipu_disp_set_window_pos(MEM_FG_SYNC, 0, 0);
+-
+ 	if (cam->vf_rotation >= IPU_ROTATE_VERT_FLIP) {
+ 		ipu_unlink_channels(CSI_PRP_VF_MEM, MEM_ROT_VF_MEM);
+ 		ipu_unlink_channels(MEM_ROT_VF_MEM, MEM_FG_SYNC);
+-- 
+1.5.4.4
+

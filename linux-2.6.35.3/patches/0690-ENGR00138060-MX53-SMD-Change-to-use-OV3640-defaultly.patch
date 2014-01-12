@@ -1,0 +1,28 @@
+From cf5f926bd3e70a6f3298d042911f5ccac25b6609 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Mon, 17 Jan 2011 17:08:04 +0800
+Subject: [PATCH] ENGR00138060 MX53 SMD:Change to use OV3640 defaultly
+
+This patch changes to use OV3640 defaultly.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index cea9b77..1517a1a 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -724,7 +724,7 @@ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
+ 	.addr = 0x1C,
+ 	 },
+ 	{
+-	.type = "ov5640",
++	.type = "ov3640",
+ 	.addr = 0x3C,
+ 	.platform_data = (void *)&camera_data,
+ 	 },
+-- 
+1.5.4.4
+

@@ -1,0 +1,66 @@
+From ceb7249f7d520975c29019876b9bf63c0016f175 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Wed, 25 Aug 2010 16:52:43 -0500
+Subject: [PATCH] ENGR00126698 - EPDC fb: Pan API should not trigger full screen update
+
+In order to provide more flexibility to the user, the pan API should not
+automatically trigger a full-screen panel update.  No update will
+be performed, and the user will have to submit a SEND_UPDATE to update
+the screen after panning.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |   23 +----------------------
+ 1 files changed, 1 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index ed3cf47..bd2d435 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -1827,8 +1827,6 @@ static int mxc_epdc_fb_pan_display(struct fb_var_screeninfo *var,
+ 				   struct fb_info *info)
+ {
+ 	struct mxc_epdc_fb_data *fb_data = (struct mxc_epdc_fb_data *)info;
+-	struct mxcfb_update_data update;
+-	int ret = 0;
+ 	u_int y_bottom;
+ 
+ 	dev_dbg(info->device, "%s: var->xoffset %d, info->var.xoffset %d\n",
+@@ -1855,25 +1853,6 @@ static int mxc_epdc_fb_pan_display(struct fb_var_screeninfo *var,
+ 	fb_data->fb_offset = (var->yoffset * var->xres_virtual + var->xoffset)
+ 		* (var->bits_per_pixel) / 8;
+ 
+-	/* Update to new view of FB */
+-	update.update_region.left = 0;
+-	update.update_region.width = fb_data->info.var.xres;
+-	update.update_region.top = 0;
+-	update.update_region.height = fb_data->info.var.yres;
+-	update.waveform_mode = WAVEFORM_MODE_AUTO;
+-	update.update_mode = UPDATE_MODE_FULL;
+-	update.update_marker = PAN_UPDATE_MARKER;
+-	update.temp = TEMP_USE_AMBIENT;
+-	update.use_alt_buffer = false;
+-
+-	mxc_epdc_fb_send_update(&update, &fb_data->info);
+-
+-	/* Block on initial update */
+-	ret = mxc_epdc_fb_wait_update_complete(update.update_marker, info);
+-	if (ret < 0)
+-		dev_err(fb_data->dev,
+-			"Wait for update complete failed.  Error = 0x%x", ret);
+-
+ 	info->var.xoffset = var->xoffset;
+ 	info->var.yoffset = var->yoffset;
+ 
+@@ -1882,7 +1861,7 @@ static int mxc_epdc_fb_pan_display(struct fb_var_screeninfo *var,
+ 	else
+ 		info->var.vmode &= ~FB_VMODE_YWRAP;
+ 
+-	return ret;
++	return 0;
+ }
+ 
+ static struct fb_ops mxc_epdc_fb_ops = {
+-- 
+1.5.4.4
+

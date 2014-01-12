@@ -1,0 +1,91 @@
+From f7af4ae4bbe25f6e53fcc779458ab31c6c412596 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 21 Sep 2010 14:00:30 +0800
+Subject: [PATCH] ENGR00131792: Fix mx50 lpddr2 build errors
+
+Fix mx50 lpddr2 build errors.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx50_arm2_ddr2.h   |    4 ++--
+ include/configs/mx50_arm2_iram.h   |    4 ++--
+ include/configs/mx50_arm2_lpddr2.h |   10 ++++++++--
+ include/configs/mx50_arm2_mfg.h    |    4 ++--
+ 4 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/include/configs/mx50_arm2_ddr2.h b/include/configs/mx50_arm2_ddr2.h
+index 5bdf0be..744253f 100644
+--- a/include/configs/mx50_arm2_ddr2.h
++++ b/include/configs/mx50_arm2_ddr2.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX50_UART	1
+-#define CONFIG_MX50_UART1	1
++#define CONFIG_MXC_UART
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx50_arm2_iram.h b/include/configs/mx50_arm2_iram.h
+index a0a5e99..34aadb6 100644
+--- a/include/configs/mx50_arm2_iram.h
++++ b/include/configs/mx50_arm2_iram.h
+@@ -70,8 +70,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX50_UART	1
+-#define CONFIG_MX50_UART1	1
++#define CONFIG_MXC_UART
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index 9a85050..4504ed0 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX50_UART	1
+-#define CONFIG_MX50_UART1	1
++#define CONFIG_MXC_UART
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+@@ -260,6 +260,12 @@
+ 	#define CONFIG_SYS_MAX_NAND_DEVICE	1
+ #endif
+ 
++/*
++ * APBH DMA Configs
++ */
++#define CONFIG_APBH_DMA
++#define CONFIG_MXS_DMA_REG_BASE ABPHDMA_BASE_ADDR
++
+ /*-----------------------------------------------------------------------
+  * Stack sizes
+  *
+diff --git a/include/configs/mx50_arm2_mfg.h b/include/configs/mx50_arm2_mfg.h
+index b29c7a9..a97ca0f 100644
+--- a/include/configs/mx50_arm2_mfg.h
++++ b/include/configs/mx50_arm2_mfg.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX50_UART	1
+-#define CONFIG_MX50_UART1	1
++#define CONFIG_MXC_UART
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+-- 
+1.5.4.4
+

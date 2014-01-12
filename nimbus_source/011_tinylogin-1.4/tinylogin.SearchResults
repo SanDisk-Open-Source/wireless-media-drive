@@ -1,0 +1,12 @@
+---- QSI Matches (12 in 3 files) ----
+Getty.c:#define QSI
+Getty.c:#ifdef QSI
+Getty.c:    #ifdef QSI
+Getty.c:    #ifdef QSI
+Passwd.c:#ifdef QSI
+Passwd.c:#ifdef QSI	
+Passwd.c:#ifdef QSI
+Passwd.c:#ifdef QSI
+Passwd.c:#ifdef QSI
+Passwd.c:#ifdef QSI
+Tinylogin.h (include):#define QSI // patched code by QSI,20121016

@@ -1,0 +1,173 @@
+From 0557114f39ead28bb9d9b81291970c72728786a4 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 17 Jun 2009 18:46:13 +0800
+Subject: [PATCH] ENGR00113439: BBG2, enable SPI NOR and MMC in one image.
+
+BBG2, enable SPI NOR and MMC in one image.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/imx51/imx51.c            |    1 -
+ drivers/mtd/spi/imx_spi_nor.c            |   16 +++++++++++-----
+ include/asm-arm/arch-mx51/imx_spi_pmic.h |    6 +++---
+ include/configs/imx51.h                  |   16 ++++++----------
+ 4 files changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/board/freescale/imx51/imx51.c b/board/freescale/imx51/imx51.c
+index 793afa2..b0bbf46 100644
+--- a/board/freescale/imx51/imx51.c
++++ b/board/freescale/imx51/imx51.c
+@@ -258,7 +258,6 @@ int board_eth_init(bd_t *bis)
+ int sdhc_init(void)
+ {
+ 	u32 interface_esdhc = 0;
+-	u32 pad_val = 0;
+ 	s32 status = 0;
+ 
+ 	interface_esdhc = (readl(SRC_BASE_ADDR + 0x4) & (0x00180000)) >> 19;
+diff --git a/drivers/mtd/spi/imx_spi_nor.c b/drivers/mtd/spi/imx_spi_nor.c
+index a912a3f..bd10ca4 100644
+--- a/drivers/mtd/spi/imx_spi_nor.c
++++ b/drivers/mtd/spi/imx_spi_nor.c
+@@ -230,6 +230,8 @@ static int spi_nor_flash_read(struct spi_flash *flash, u32 offset,
+ 	if (!(flash->spi))
+ 		return -1;
+ 
++	printf("Reading SPI NOR flash 0x%x [0x%x bytes] -> ram 0x%p\n",
++		offset, len, buf);
+ 	debug("%s(from flash=0x%08x to ram=%p len=0x%x)\n",
+ 		__func__,
+ 		offset, buf, len);
+@@ -271,7 +273,7 @@ static int spi_nor_flash_read(struct spi_flash *flash, u32 offset,
+ 						*d_buf++ = s_buf[1];
+ 						*d_buf++ = s_buf[0];
+ 					}
+-					printf("\n");
++					printf("SUCCESS\n\n");
+ 					return 0;
+ 				}
+ 				/* copy 4 bytes */
+@@ -302,7 +304,7 @@ static int spi_nor_flash_read(struct spi_flash *flash, u32 offset,
+ 		if ((s32remain_size % imx_sf->params->block_size) == 0)
+ 			printf(".");
+ 	}
+-	printf("\n");
++	printf("SUCCESS\n\n");
+ 
+ 	return -1;
+ }
+@@ -321,6 +323,8 @@ static int spi_nor_flash_write(struct spi_flash *flash, u32 offset,
+ 	if (len == 0)
+ 		return 0;
+ 
++	printf("Writing SPI NOR flash 0x%x [0x%x bytes] <- ram 0x%p\n",
++		offset, len, buf);
+ 	debug("%s(flash addr=0x%08x, ram=%p, len=0x%x)\n",
+ 			__func__, offset, buf, len);
+ 
+@@ -395,7 +399,7 @@ static int spi_nor_flash_write(struct spi_flash *flash, u32 offset,
+ 		if ((s32remain_size % imx_sf->params->block_size) == 0)
+ 			printf(".");
+ 	}
+-	printf("\n");
++	printf("SUCCESS\n\n");
+ 	debug("100%% transferred\n");
+ 
+ 	WRITE_DISABLE(flash);
+@@ -423,12 +427,14 @@ static int spi_nor_flash_write(struct spi_flash *flash, u32 offset,
+ static int spi_nor_flash_erase(struct spi_flash *flash, u32 offset,
+ 		size_t len)
+ {
+-	struct imx_spi_flash *imx_sf = to_imx_spi_flash(flash);
+ 	s32 s32remain_size = len;
+ 
+ 	if (!(flash->spi))
+ 		return -1;
+ 
++	printf("Erasing SPI NOR flash 0x%x [0x%x bytes]\n",
++		offset, len);
++
+ 	if ((len % SZ_4K) != 0 || len == 0) {
+ 		printf("Error: size (0x%x) is not integer multiples of 4kB(0x1000)\n",
+ 			len);
+@@ -450,7 +456,7 @@ static int spi_nor_flash_erase(struct spi_flash *flash, u32 offset,
+ 		}
+ 		printf(".");
+ 	}
+-	printf("\n");
++	printf("SUCCESS\n\n");
+ 	debug("100%% erased\n");
+ 	return 0;
+ }
+diff --git a/include/asm-arm/arch-mx51/imx_spi_pmic.h b/include/asm-arm/arch-mx51/imx_spi_pmic.h
+index 1c32a9e..acd8cbf 100644
+--- a/include/asm-arm/arch-mx51/imx_spi_pmic.h
++++ b/include/asm-arm/arch-mx51/imx_spi_pmic.h
+@@ -25,9 +25,9 @@
+ 
+ #include <linux/types.h>
+ 
+-struct spi_slave *spi_pmic_probe();
+-void spi_pmic_free(struct spi_slave *slave);
+-u32 pmic_reg(struct spi_slave *slave,
++extern struct spi_slave *spi_pmic_probe();
++extern void spi_pmic_free(struct spi_slave *slave);
++extern u32 pmic_reg(struct spi_slave *slave,
+ 				u32 reg, u32 val, u32 write);
+ 
+ #endif /* _IMX_SPI_PMIC_H_ */
+diff --git a/include/configs/imx51.h b/include/configs/imx51.h
+index 238457e..7bd6c38 100644
+--- a/include/configs/imx51.h
++++ b/include/configs/imx51.h
+@@ -68,10 +68,9 @@
+ #define CONFIG_MX51_UART	1
+ #define CONFIG_MX51_UART1	1
+ 
+-#if defined(BOOT_MEDIA_SPI_NOR)
+ /*
+  * SPI Configs
+- */
++ * */
+ #define CONFIG_FSL_SF		1
+ #define CONFIG_CMD_SPI
+ #define CONFIG_CMD_SF
+@@ -80,18 +79,19 @@
+ #define CONFIG_IMX_SPI
+ #define CONFIG_IMX_SPI_PMIC
+ #define CONFIG_IMX_SPI_PMIC_CS 0
++
+ #define MAX_SPI_BYTES		(64 * 4)
+ 
+-#elif defined(BOOT_MEDIA_MMC)
+ /*
+  * MMC Configs
+- */
++ * */
+ #define CONFIG_FSL_MMC		1
++
++#define CONFIG_MMC              1
++#define CONFIG_CMD_MMC
+ #define CONFIG_DOS_PARTITION	1
+ #define CONFIG_CMD_FAT		1
+ 
+-#endif
+-
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+ #define CONFIG_CONS_INDEX	1
+@@ -208,11 +208,7 @@
+ #if defined(CONFIG_FSL_SF)
+ 	#define CONFIG_FSL_ENV_IN_SF
+ #elif defined(CONFIG_FSL_MMC)
+-	#define CONFIG_MMC              1
+-	#define CONFIG_CMD_MMC
+-/*
+ 	#define CONFIG_FSL_ENV_IN_MMC
+-*/
+ #elif defined(CONFIG_CMD_NAND)
+ 	#define CONFIG_FSL_ENV_IN_NAND
+ #endif
+-- 
+1.5.4.4
+

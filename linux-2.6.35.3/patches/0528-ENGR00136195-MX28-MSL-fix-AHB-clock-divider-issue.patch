@@ -1,0 +1,43 @@
+From c540753d60b2b0ade16fbe8d59796ab61677f132 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Fri, 10 Dec 2010 12:35:09 +0800
+Subject: [PATCH] ENGR00136195 MX28-MSL: fix AHB clock divider issue
+
+Also fix the suspend/resume issue when CPU running @261818000Hz
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/mach-mx28/clock.c |    2 +-
+ arch/arm/mach-mx28/pm.c    |    3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/clock.c b/arch/arm/mach-mx28/clock.c
+index b02a694..9797d1f 100644
+--- a/arch/arm/mach-mx28/clock.c
++++ b/arch/arm/mach-mx28/clock.c
+@@ -772,7 +772,7 @@ static unsigned long h_round_rate(struct clk *clk, unsigned long rate)
+ 	div = root_rate / rate;
+ 	if ((div == 0) || (div >= 0x20))
+ 		return root_rate;
+-	if (frac_rate == 0)
++	if (frac_rate < (rate / 2))
+ 		return rate;
+ 	else
+ 		return root_rate / (div + 1);
+diff --git a/arch/arm/mach-mx28/pm.c b/arch/arm/mach-mx28/pm.c
+index c6490d0..3dcbb1e 100644
+--- a/arch/arm/mach-mx28/pm.c
++++ b/arch/arm/mach-mx28/pm.c
+@@ -115,7 +115,8 @@ static inline void do_standby(void)
+ 		clk_set_parent(cpu_clk, osc_clk);
+ 	} else
+ 		pr_err("fail to get cpu clk\n");
+-
++	if (cpu_rate == 261818000)
++		clk_set_rate(hbus_clk, 8727267);
+ 	local_fiq_disable();
+ 
+ 	__raw_writel(BM_POWER_CTRL_ENIRQ_PSWITCH,
+-- 
+1.5.4.4
+

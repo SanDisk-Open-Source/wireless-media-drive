@@ -1,0 +1,88 @@
+From 18ccbded3fbafe22637e8a84394f8f8efaaadc89 Mon Sep 17 00:00:00 2001
+From: Ranjani <ra5478@freescale.com>
+Date: Wed, 28 Jul 2010 17:35:50 -0500
+Subject: [PATCH] ENGR00125682-1: MX50: Reduce power consumption in STOP mode.
+
+Add support for disabling MX13892 regulators when the system is in
+suspend. Lowered VDDA voltage to 0.95V in suspend state. Disabled NEON
+SRPG.
+
+Signed-off-by: Ranjani <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c |   17 ++++++++---------
+ arch/arm/mach-mx5/system.c                 |    4 ++--
+ 2 files changed, 10 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
+index 66972b1..05b8462 100644
+--- a/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
+@@ -74,11 +74,7 @@
+ #define AUDIO_STBY_MASK		(1 << 16)
+ #define SD_STBY_MASK		(1 << 19)
+ 
+-/* 0x92412 */
+-#define REG_MODE_0_ALL_MASK	(GEN1_STBY_MASK |\
+-				DIG_STBY_MASK | GEN2_STBY_MASK |\
+-				PLL_STBY_MASK)
+-/* 0x92082 */
++#define REG_MODE_0_ALL_MASK	(DIG_STBY_MASK | GEN1_STBY_MASK)
+ #define REG_MODE_1_ALL_MASK	(CAM_STBY_MASK | VIDEO_STBY_MASK |\
+ 				AUDIO_STBY_MASK | SD_STBY_MASK)
+ 
+@@ -153,11 +149,17 @@ static struct regulator_init_data sw2_init = {
+ static struct regulator_init_data sw3_init = {
+ 	.constraints = {
+ 		.name = "SW3",
+-		.min_uV = mV_to_uV(1100),
++		.min_uV = mV_to_uV(900),
+ 		.max_uV = mV_to_uV(1850),
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+ 		.always_on = 1,
+ 		.boot_on = 1,
++		.initial_state = PM_SUSPEND_MEM,
++		.state_mem = {
++			.uV = 950000,
++			.mode = REGULATOR_MODE_NORMAL,
++			.enabled = 1,
++		},
+ 	}
+ };
+ 
+@@ -329,8 +331,6 @@ static int mc13892_regulator_init(struct mc13892 *mc13892)
+ 	unsigned int value, register_mask;
+ 	printk("Initializing regulators for mx50 arm2.\n");
+ 
+-	/* TBD later. */
+-#if 0
+ 	/* enable standby controll for all regulators */
+ 	pmic_read_reg(REG_MODE_0, &value, 0xffffff);
+ 	value |= REG_MODE_0_ALL_MASK;
+@@ -339,7 +339,6 @@ static int mc13892_regulator_init(struct mc13892 *mc13892)
+ 	pmic_read_reg(REG_MODE_1, &value, 0xffffff);
+ 	value |= REG_MODE_1_ALL_MASK;
+ 	pmic_write_reg(REG_MODE_1, value, 0xffffff);
+-#endif
+ 
+ 	/* enable switch audo mode */
+ 	pmic_read_reg(REG_IDENTIFICATION, &value, 0xffffff);
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index ba9989b..a7b950b 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -92,10 +92,10 @@ void mxc_cpu_lp_set(enum mxc_cpu_pwr_mode mode)
+ 
+ 	__raw_writel(plat_lpc, MXC_CORTEXA8_PLAT_LPC);
+ 	__raw_writel(ccm_clpcr, MXC_CCM_CLPCR);
+-	/* Need to fix this for MX53 and MX508 */
+ 	if (cpu_is_mx51())
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_ARM_SRPGCR);
+-	__raw_writel(arm_srpgcr, MXC_SRPG_NEON_SRPGCR);
++	if (!cpu_is_mx50())
++		__raw_writel(arm_srpgcr, MXC_SRPG_NEON_SRPGCR);
+ 	if (stop_mode) {
+ 		__raw_writel(empgc0, MXC_SRPG_EMPGC0_SRPGCR);
+ 		__raw_writel(empgc1, MXC_SRPG_EMPGC1_SRPGCR);
+-- 
+1.5.4.4
+

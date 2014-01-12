@@ -1,0 +1,41 @@
+SOBJECTS=MaraBigHash.o recursive.o timestamp.o
+JOBJS=../libs/JsStr.o ../libs/JsStrOS.o ../libs/JsStrCP.o 
+MHOBJS=../libs/MaraHash.o
+POBJECTS=../parse/ParseMaraRc.o ../parse/ParseCsv1.o ../parse/ParseIpAcl.o
+DOBJECTS=../dns/Queries.o ../dns/Compress.o ../dns/bobbit.o ../dns/Decompress.o
+ROBJECTS=../rng/rng-api-fst.o ../rng/rng-alg-fst.o
+#JEB
+OBJECTS=$(JOBJS) $(MHOBJS) $(SOBJECTS) $(DOBJECTS) $(POBJECTS) $(ROBJECTS) win9x-srvc.o
+#END JEB
+EXECS=maradns
+
+#FLAGS = -g -Wall
+#FLAGS = -g -DDEBUG -DCALL_LOCKS
+#FLAGS = -g -DCALL_LOCKS $(DEBUG)
+#FLAGS = -g -DDEBUG 
+#FLAGS = -g -DDEBUG -DNOTHREAD
+#FLAGS = -g $(DEBUG) -DNOTHREAD -DDEBUG
+#FLAGS = -g -DDEBUG_MEMORY $(DEBUG) 
+#FLAGS = -g $(DEBUG) 
+FLAGS = -g -Wall $(DEBUG)
+
+all: $(EXECS)
+
+clean:
+	rm -f $(SOBJECTS) core $(EXECS) 
+
+libs/tests:
+	cd libs ; make
+
+MaraBigHash.o: MaraBigHash.c ../libs/JsStr.h ../libs/MaraHash.h ../MaraDns.h MaraBigHash_locale.h
+	$(CC) -c $(FLAGS) -o MaraBigHash.o MaraBigHash.c 
+
+recursive.o: recursive.c ../libs/JsStr.h ../libs/MaraHash.h ../MaraDns.h
+	$(CC) -c $(FLAGS) -o recursive.o recursive.c 
+
+timestamp.o: timestamp.c MaraDNS_locale.h
+	$(CC) -c $(FLAGS) -o timestamp.o timestamp.c
+
+maradns: MaraDNS.c $(OBJECTS) MaraDNS_locale.h
+	$(CC) $(FLAGS) -DVERSION=\"$(VERSION)\" -DCOMPILED=\"$(COMPILED)\" -o maradns MaraDNS.c $(OBJECTS) -lpthread
+

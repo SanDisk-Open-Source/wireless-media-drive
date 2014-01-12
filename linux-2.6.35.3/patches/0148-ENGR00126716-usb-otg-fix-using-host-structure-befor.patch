@@ -1,0 +1,54 @@
+From aac2452486efe311019215c34d837eaab7ef1fde Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Thu, 26 Aug 2010 20:17:44 +0800
+Subject: [PATCH] ENGR00126716 usb-otg: fix using host structure before init it
+
+The OTG driver will be loaded before usb host driver, at OTG driver
+the usb host data structure can only be used after usb host driver
+finishes initialization.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/otg/fsl_otg.c |   16 ++++++++++++----
+ 1 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index 656b950..6cf4515 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -684,9 +684,9 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+ 		(struct fsl_usb2_platform_data *)dev_id;
+ 	struct fsl_otg *p_otg;
+ 	struct otg_transceiver *otg_trans = otg_get_transceiver();
++	int value;
+ 	p_otg = container_of(otg_trans, struct fsl_otg, otg);
+ 	fsm = &p_otg->fsm;
+-	int value;
+ 
+ 	if (pdata->id_gpio == 0)
+ 		return IRQ_NONE;
+@@ -790,10 +790,18 @@ static void fsl_otg_fsm_drv_vbus(int on)
+ {
+ 	struct otg_fsm *fsm = &(fsl_otg_dev->fsm);
+ 	struct otg_transceiver *xceiv = fsm->transceiver;
+-	struct device *dev = xceiv->host->controller;
+-
++	struct device *dev;
++	/*
++	 * The host is assigned at otg_set_host
++	 */
++	if (!xceiv->host)
++		return;
++	/*
++	 * The dev is assigned at usb_create_hcd which is called earlier
++	 * than otg_set_host at host driver's probe
++	 */
++	dev = xceiv->host->controller;
+ 	fsl_otg_drv_vbus(dev->platform_data, on);
+-
+ }
+ 
+ static struct otg_fsm_ops fsl_otg_ops = {
+-- 
+1.5.4.4
+

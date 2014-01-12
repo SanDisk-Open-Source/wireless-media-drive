@@ -1,0 +1,576 @@
+From 23b6527003ca6a12d7872e9e552160041d8b6285 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 24 Jun 2009 11:31:38 +0800
+Subject: [PATCH] ENGR00113611: Add FEC support for BBG2.
+
+Add FEC support for BBG2.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/imx51/imx51.c    |  255 +++++++++++++++++++++++++++++++-------
+ cpu/arm_cortexa8/mx51/generic.c  |   25 ++++
+ drivers/mmc/fsl_mmc.c            |    2 +
+ drivers/net/mxc_fec.c            |   13 +-
+ drivers/spi/imx_spi_pmic.c       |   14 ++-
+ include/asm-arm/arch-mx51/mx51.h |    1 +
+ include/configs/imx51.h          |   35 +++++-
+ net/eth.c                        |    5 +
+ 8 files changed, 289 insertions(+), 61 deletions(-)
+
+diff --git a/board/freescale/imx51/imx51.c b/board/freescale/imx51/imx51.c
+index b0bbf46..5c3c022 100644
+--- a/board/freescale/imx51/imx51.c
++++ b/board/freescale/imx51/imx51.c
+@@ -24,13 +24,14 @@
+ 
+ #include <common.h>
+ #include <asm/io.h>
+-#include <asm/errno.h>
+ #include <asm/arch/mx51.h>
+ #include <asm/arch/mx51_pins.h>
+ #include <asm/arch/iomux.h>
++#include <asm/errno.h>
+ #include <i2c.h>
+ #include "board-imx51.h"
+ #include <asm/arch/imx_spi.h>
++#include <asm/arch/imx_spi_pmic.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+@@ -158,48 +159,6 @@ static void setup_expio(void)
+ 	writew(reg, mx51_io_base_addr + PBC_SW_RESET);
+ }
+ 
+-int board_init(void)
+-{
+-	setup_soc_rev();
+-
+-	gd->bd->bi_arch_number = MACH_TYPE_MX51_3DS;	/* board id for linux */
+-	/* address of boot parameters */
+-	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
+-
+-	setup_uart();
+-	setup_nfc();
+-	setup_expio();
+-	return 0;
+-}
+-
+-#ifdef BOARD_LATE_INIT
+-int board_late_init(void)
+-{
+-	return 0;
+-}
+-#endif
+-
+-int checkboard(void)
+-{
+-	printf("Board: MX51 3STACK [");
+-	switch (__REG(SRC_BASE_ADDR + 0x8)) {
+-	case 0x0001:
+-		printf("POR");
+-		break;
+-	case 0x0009:
+-		printf("RST");
+-		break;
+-	case 0x0010:
+-	case 0x0011:
+-		printf("WDOG");
+-		break;
+-	default:
+-		printf("unknown");
+-	}
+-	printf("]\n");
+-	return 0;
+-}
+-
+ void spi_io_init(struct imx_spi_dev_t *dev)
+ {
+ 	switch (dev->base) {
+@@ -242,13 +201,177 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ 	}
+ }
+ 
++static void setup_fec(void)
++{
++	/*FEC_MDIO*/
++	writel(0x3, IOMUXC_BASE_ADDR + 0x0D4);
++	writel(0x1FD, IOMUXC_BASE_ADDR + 0x0468);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0954);
++
++	/*FEC_MDC*/
++	writel(0x2, IOMUXC_BASE_ADDR + 0x13C);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x0524);
++
++	/* FEC RDATA[3] */
++	writel(0x3, IOMUXC_BASE_ADDR + 0x0EC);
++	writel(0x180, IOMUXC_BASE_ADDR + 0x0480);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0964);
++
++	/* FEC RDATA[2] */
++	writel(0x3, IOMUXC_BASE_ADDR + 0x0E8);
++	writel(0x180, IOMUXC_BASE_ADDR + 0x047C);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0960);
++
++	/* FEC RDATA[1] */
++	writel(0x3, IOMUXC_BASE_ADDR + 0x0d8);
++	writel(0x180, IOMUXC_BASE_ADDR + 0x046C);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x095C);
++
++	/* FEC RDATA[0] */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x016C);
++	writel(0x2180, IOMUXC_BASE_ADDR + 0x0554);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0958);
++
++	/* FEC TDATA[3] */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x148);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x0530);
++
++	/* FEC TDATA[2] */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x144);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x052C);
++
++	/* FEC TDATA[1] */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x140);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x0528);
++
++	/* FEC TDATA[0] */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x0170);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x0558);
++
++	/* FEC TX_EN */
++	writel(0x1, IOMUXC_BASE_ADDR + 0x014C);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x0534);
++
++	/* FEC TX_ER */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x0138);
++	writel(0x2004, IOMUXC_BASE_ADDR + 0x0520);
++
++	/* FEC TX_CLK */
++	writel(0x1, IOMUXC_BASE_ADDR + 0x0150);
++	writel(0x2180, IOMUXC_BASE_ADDR + 0x0538);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0974);
++
++	/* FEC COL */
++	writel(0x1, IOMUXC_BASE_ADDR + 0x0124);
++	writel(0x2180, IOMUXC_BASE_ADDR + 0x0500);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x094c);
++
++	/* FEC RX_CLK */
++	writel(0x1, IOMUXC_BASE_ADDR + 0x0128);
++	writel(0x2180, IOMUXC_BASE_ADDR + 0x0504);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0968);
++
++	/* FEC CRS */
++	writel(0x3, IOMUXC_BASE_ADDR + 0x0f4);
++	writel(0x180, IOMUXC_BASE_ADDR + 0x0488);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0950);
++
++	/* FEC RX_ER */
++	writel(0x3, IOMUXC_BASE_ADDR + 0x0f0);
++	writel(0x180, IOMUXC_BASE_ADDR + 0x0484);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x0970);
++
++	/* FEC RX_DV */
++	writel(0x2, IOMUXC_BASE_ADDR + 0x164);
++	writel(0x2180, IOMUXC_BASE_ADDR + 0x054C);
++	writel(0x0, IOMUXC_BASE_ADDR + 0x096C);
++}
++
++static void power_init(void)
++{
++	struct spi_slave *slave;
++	unsigned int val;
++	unsigned int reg;
++
++	slave = spi_pmic_probe();
++
++	/* power up the system first */
++	pmic_reg(slave, 34, 0x00200000, 1);
++
++	if (mxc_get_clock(MXC_FEC_CLK) > 800000000) {
++		/* Set core voltage to 1.175V */
++		val = pmic_reg(slave, 24, 0, 0);
++		val = (val & (~0x1F)) | 0x17;
++		pmic_reg(slave, 24, val, 1);
++	}
++
++	/* Setup VCC (SW2) to 1.225 */
++	val = pmic_reg(slave, 25, 0, 0);
++	val = (val & (~0x1F)) | 0x19;
++	pmic_reg(slave, 25, val, 1);
++
++	/* Setup 1V2_DIG1 (SW3) to 1.2 */
++	val = pmic_reg(slave, 26, 0, 0);
++	val = (val & (~0x1F)) | 0x18;
++	pmic_reg(slave, 25, val, 1);
++
++	/* Set VDIG to 1.65V, VGEN3 to 1.8V, VCAM to 2.5V */
++	val = pmic_reg(slave, 30, 0, 0);
++	val &= ~0x34030;
++	val |= 0x10020;
++	pmic_reg(slave, 30, val, 1);
++
++	/* Set VVIDEO to 2.775V, VAUDIO to 3V, VSD to 3.15V */
++	val = pmic_reg(slave, 31, 0, 0);
++	val &= ~0x1FC;
++	val |= 0x1F4;
++	pmic_reg(slave, 31, val, 1);
++
++	/* Configure VGEN3 and VCAM regulators to use external PNP */
++	val = 0x208;
++	pmic_reg(slave, 33, val, 1);
++	udelay(200);
++
++	reg = readl(GPIO2_BASE_ADDR + 0x0);
++	reg &= ~0x4000;  /* Lower reset line */
++	writel(reg, GPIO2_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO2_BASE_ADDR + 0x4);
++	reg |= 0x4000;  /* configure GPIO lines as output */
++	writel(reg, GPIO2_BASE_ADDR + 0x4);
++
++	/* Reset the ethernet controller over GPIO */
++	writel(0x1, IOMUXC_BASE_ADDR + 0x0AC);
++
++	/* Enable VGEN3, VCAM, VAUDIO, VVIDEO, VSD regulators */
++	val = 0x49249;
++	pmic_reg(slave, 33, val, 1);
++
++	udelay(500);
++
++	reg = readl(GPIO2_BASE_ADDR + 0x0);
++	reg |= 0x4000;
++	writel(reg, GPIO2_BASE_ADDR + 0x0);
++
++	/* Setup the FEC after enabling the regulators */
++	setup_fec();
++
++	spi_pmic_free(slave);
++}
++
+ #ifdef CONFIG_NET_MULTI
++
++#if defined(CONFIG_DRIVER_SMC911X)
++extern int smc911x_initialize(bd_t *bis);
++#endif
+ int board_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
++
+ #if defined(CONFIG_DRIVER_SMC911X)
+-	 rc = smc911x_initialize(bis);
++	rc = smc911x_initialize(bis);
+ #endif
++
+ 	return rc;
+ }
+ #endif
+@@ -329,3 +452,47 @@ int sdhc_init(void)
+ }
+ 
+ #endif
++
++int board_init(void)
++{
++	setup_soc_rev();
++
++	gd->bd->bi_arch_number = MACH_TYPE_MX51_3DS;	/* board id for linux */
++	/* address of boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
++
++	setup_uart();
++	setup_nfc();
++	setup_expio();
++	return 0;
++}
++
++#ifdef BOARD_LATE_INIT
++int board_late_init(void)
++{
++	power_init();
++	return 0;
++}
++#endif
++
++int checkboard(void)
++{
++	printf("Board: MX51 3STACK [");
++	switch (__REG(SRC_BASE_ADDR + 0x8)) {
++	case 0x0001:
++		printf("POR");
++		break;
++	case 0x0009:
++		printf("RST");
++		break;
++	case 0x0010:
++	case 0x0011:
++		printf("WDOG");
++		break;
++	default:
++		printf("unknown");
++	}
++	printf("]\n");
++	return 0;
++}
++
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index ef8ef98..6f928f6 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -25,6 +25,7 @@
+ 
+ #include <common.h>
+ #include <asm/arch/mx51.h>
++#include <asm/errno.h>
+ #include "crm_regs.h"
+ 
+ enum pll_clocks {
+@@ -203,6 +204,10 @@ unsigned int mxc_get_clock(enum mxc_clock clk)
+ 		return __get_uart_clk();
+ 	case MXC_CSPI_CLK:
+ 		return __get_cspi_clk();
++	case MXC_FEC_CLK:
++		return __decode_pll(PLL1_CLK, CONFIG_MX51_HCLK_FREQ);
++	default:
++		break;
+ 	}
+ 	return -1;
+ }
+@@ -233,3 +238,23 @@ int print_cpuinfo(void)
+ 	return 0;
+ }
+ #endif
++
++/*
++ * Initializes on-chip ethernet controllers.
++ * to override, implement board_eth_init()
++ */
++ #if defined(CONFIG_MXC_FEC)
++ extern int mxc_fec_initialize(bd_t *bis);
++ #endif
++
++int cpu_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++
++#if defined(CONFIG_MXC_FEC)
++	rc = mxc_fec_initialize(bis);
++#endif
++
++	return rc;
++}
++
+diff --git a/drivers/mmc/fsl_mmc.c b/drivers/mmc/fsl_mmc.c
+index 2fbf4d6..85829d0 100644
+--- a/drivers/mmc/fsl_mmc.c
++++ b/drivers/mmc/fsl_mmc.c
+@@ -38,6 +38,8 @@
+ #define RETRY_TIMEOUT					(10)
+ 
+ 
++extern int sdhc_init();
++
+ extern int fat_register_device(block_dev_desc_t *dev_desc, int part_no);
+ 
+ static block_dev_desc_t	mmc_dev;
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index 218c432..91d248b 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -121,7 +121,7 @@ static inline void fec_localhw_setup(volatile fec_t *fecp)
+ 	fecp->fec_miigsk_enr = FEC_MIIGSK_ENR_EN;
+ }
+ #else
+-static inline void fec_localhw_setup(struct fec_t *fecp)
++static inline void fec_localhw_setup(fec_t *fecp)
+ {
+ }
+ #endif
+@@ -271,7 +271,7 @@ static inline u16 getFecPhyStatus(volatile fec_t *fecp, unsigned char addr)
+ 	return val;
+ }
+ 
+-static void setFecDuplexSpeed(volatile fec_t *fecp, unsigned char addr,
++static void setFecDuplexSpeed(volatile fec_t *fecp,  unsigned char addr,
+ 			      int dup_spd)
+ {
+ 	unsigned short val;
+@@ -386,7 +386,7 @@ int fec_send(struct eth_device *dev, volatile void *packet, int length)
+ 		j++;
+ 	}
+ 	if (j >= FEC_MAX_TIMEOUT)
+-		printf("TX timeout packet at %x\n", packet);
++		printf("TX timeout packet at %p\n", packet);
+ 
+ #ifdef ET_DEBUG
+ 	printf("%s[%d] %s: cycles: %d    status: %x  retry cnt: %d\n",
+@@ -612,7 +612,7 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ 
+ 	fec_reset(dev);
+ 
+-	fec_localhw_setup(fecp);
++	fec_localhw_setup((fec_t *)fecp);
+ 
+ #if defined (CONFIG_CMD_MII) || defined (CONFIG_MII) || \
+ 	defined (CONFIG_DISCOVER_PHY)
+@@ -622,10 +622,11 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ 	if (info->phy_addr < 0 || info->phy_addr > 0x1F)
+ 		info->phy_addr = mxc_fec_mii_discover_phy(dev);
+ #endif
+-	setFecDuplexSpeed(fecp, bd, info->dup_spd);
++	setFecDuplexSpeed(fecp, (unsigned char)bd, info->dup_spd);
+ #else
+ #ifndef CONFIG_DISCOVER_PHY
+-	setFecDuplexSpeed(fecp, bd, (FECDUPLEX << 16) | FECSPEED);
++	setFecDuplexSpeed(fecp, (unsigned char)bd,
++				(FECDUPLEX << 16) | FECSPEED);
+ #endif				/* ifndef CONFIG_SYS_DISCOVER_PHY */
+ #endif				/* CONFIG_CMD_MII || CONFIG_MII */
+ 
+diff --git a/drivers/spi/imx_spi_pmic.c b/drivers/spi/imx_spi_pmic.c
+index bce42c2..79d798d 100644
+--- a/drivers/spi/imx_spi_pmic.c
++++ b/drivers/spi/imx_spi_pmic.c
+@@ -53,13 +53,17 @@ u32 pmic_reg(struct spi_slave *slave, u32 reg, u32 val, u32 write)
+ 	pmic_tx = (write << 31) | (reg << 25) | (val & 0x00FFFFFF);
+ 	printf("reg=0x%x, val=0x%08x\n", reg, pmic_tx);
+ 
+-	spi_xfer(slave, 4 << 3, (u8 *)&pmic_tx,
+-				  (u8 *)&pmic_rx, 0);
++	if (spi_xfer(slave, 4 << 3, (u8 *)&pmic_tx, (u8 *)&pmic_rx,
++			SPI_XFER_BEGIN | SPI_XFER_END)) {
++		return -1;
++	}
+ 
+ 	if (write) {
+ 		pmic_tx &= ~(1 << 31);
+-		spi_xfer(slave, 4 << 3,
+-			(u8 *)&pmic_tx, (u8 *)&pmic_rx, 0);
++		if (spi_xfer(slave, 4 << 3, (u8 *)&pmic_tx, (u8 *)&pmic_rx,
++			SPI_XFER_BEGIN | SPI_XFER_END)) {
++			return -1;
++		}
+ 	}
+ 
+ 	return pmic_rx;
+@@ -73,7 +77,7 @@ void show_pmic_info(struct spi_slave *slave)
+ 		return;
+ 
+ 	rev_id = pmic_reg(slave, 7, 0, 0);
+-	printf("PMIC ID: 0x%08x [Rev: ", rev_id);
++	debug("PMIC ID: 0x%08x [Rev: ", rev_id);
+ 	switch (rev_id & 0x1F) {
+ 	case 0x1:
+ 		printf("1.0");
+diff --git a/include/asm-arm/arch-mx51/mx51.h b/include/asm-arm/arch-mx51/mx51.h
+index 29120ab..14c2b2d 100644
+--- a/include/asm-arm/arch-mx51/mx51.h
++++ b/include/asm-arm/arch-mx51/mx51.h
+@@ -405,6 +405,7 @@ MXC_IPG_CLK,
+ MXC_IPG_PERCLK,
+ MXC_UART_CLK,
+ MXC_CSPI_CLK,
++MXC_FEC_CLK,
+ };
+ 
+ extern unsigned int mxc_get_clock(enum mxc_clock clk);
+diff --git a/include/configs/imx51.h b/include/configs/imx51.h
+index 7bd6c38..3257843 100644
+--- a/include/configs/imx51.h
++++ b/include/configs/imx51.h
+@@ -91,15 +91,33 @@
+ #define CONFIG_CMD_MMC
+ #define CONFIG_DOS_PARTITION	1
+ #define CONFIG_CMD_FAT		1
++#define CONFIG_MMC_BASE         0x0
++
++/*
++ * Eth Configs
++ */
++#define CONFIG_HAS_ETH1
++#define CONFIG_NET_MULTI 1
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_DISCOVER_PHY
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	0x1F
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+-#define CONFIG_CONS_INDEX	1
+-#define CONFIG_BAUDRATE		115200
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
+ #define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
+ 
+-#define CONFIG_MMC_BASE		0x0
+-
+ /***********************************************************
+  * Command definition
+  ***********************************************************/
+@@ -116,11 +134,13 @@
+ 
+ #define CONFIG_BOOTDELAY	3
+ 
++#define CONFIG_PRIME	"FEC0"
++
+ #define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
+ 
+ #define	CONFIG_EXTRA_ENV_SETTINGS					\
+ 		"netdev=eth0\0"						\
+-		"ethprime=smc911x\0"					\
++		"ethprime=FEC0\0"					\
+ 		"uboot_addr=0xa0000000\0"				\
+ 		"uboot=u-boot.bin\0"			\
+ 		"kernel=uImage\0"				\
+@@ -138,9 +158,11 @@
+ 			"setenv filesize; saveenv\0"
+ 
+ /*Support LAN9217*/
++/*
+ #define CONFIG_DRIVER_SMC911X	1
+ #define CONFIG_DRIVER_SMC911X_16_BIT 1
+ #define CONFIG_DRIVER_SMC911X_BASE_VARIABLE mx51_io_base_addr
++*/
+ 
+ /*
+  * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
+@@ -158,7 +180,8 @@
+  * Miscellaneous configurable options
+  */
+ #define CONFIG_SYS_LONGHELP		/* undef to save memory */
+-#define CONFIG_SYS_PROMPT		"=> "
++#define CONFIG_SYS_PROMPT		"BBG U-Boot > "
++#define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+ #define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+diff --git a/net/eth.c b/net/eth.c
+index bb8b6e4..67f6646 100644
+--- a/net/eth.c
++++ b/net/eth.c
+@@ -201,8 +201,13 @@ int eth_initialize(bd_t *bis)
+ #endif
+ 	/* Try board-specific initialization first.  If it fails or isn't
+ 	 * present, try the cpu-specific initialization */
++#ifdef CONFIG_ETH_PRIME
++	board_eth_init(bis);
++	cpu_eth_init(bis);
++#else
+ 	if (board_eth_init(bis) < 0)
+ 		cpu_eth_init(bis);
++#endif
+ 
+ #if defined(CONFIG_DB64360) || defined(CONFIG_CPCI750)
+ 	mv6436x_eth_initialize(bis);
+-- 
+1.5.4.4
+

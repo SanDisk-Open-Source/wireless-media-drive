@@ -1,0 +1,41 @@
+From a0699a9a6793fb8968490bcdd5104bd6a81daa83 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Tue, 17 Aug 2010 15:40:29 +0800
+Subject: [PATCH] ENGR00126349-1 Fix unable to alloc large DMA buffer issue
+
+Reverted previous implementation.
+Change flag directly in common codes drivers/media/video/videobuf-dma-contig.c
+since later MX50 will also need this change while no ISA_DMA_THRESHOLD there.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+(cherry picked from commit 6737098e19dd265446a30ab3a9b73098679b6d5c)
+---
+ arch/arm/plat-mxs/device.c |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/device.c b/arch/arm/plat-mxs/device.c
+index d8e6ccb..0274089 100644
+--- a/arch/arm/plat-mxs/device.c
++++ b/arch/arm/plat-mxs/device.c
+@@ -39,7 +39,6 @@ static struct list_head mxs_device_level[] = {
+ };
+ 
+ static u64 common_dmamask = DMA_BIT_MASK(32);
+-static u64 pxp_dmamask = ISA_DMA_THRESHOLD;
+ 
+ void mxs_nop_release(struct device *dev)
+ {
+@@ -263,8 +262,8 @@ static struct platform_device mxs_pxp = {
+ 	.id		= 0,
+ 	.dev		= {
+ 		.release = mxs_nop_release,
+-		.dma_mask		= &pxp_dmamask,
+-		.coherent_dma_mask	= ISA_DMA_THRESHOLD,
++		.dma_mask		= &common_dmamask,
++		.coherent_dma_mask	= DMA_BIT_MASK(32),
+ 	},
+ };
+ #endif
+-- 
+1.5.4.4
+

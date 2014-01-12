@@ -1,0 +1,118 @@
+From 00f925823560aeb1b0724c1d57a281a4464de115 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Tue, 14 Sep 2010 23:20:18 -0500
+Subject: [PATCH] ENGR00131515  MX50 DCP driver enable with clock gating
+
+Added DCP device and clock gate support to MX50 MSL
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |   10 +++++-----
+ arch/arm/mach-mx5/devices.c     |   28 ++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/devices.h     |    1 +
+ arch/arm/mach-mx5/mx50_arm2.c   |    2 +-
+ 4 files changed, 35 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index d71d033..59cc774 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -2294,8 +2294,8 @@ CONFIG_CRYPTO_ALGAPI2=y
+ # CONFIG_CRYPTO_NULL is not set
+ # CONFIG_CRYPTO_CRYPTD is not set
+ # CONFIG_CRYPTO_AUTHENC is not set
+-# CONFIG_CRYPTO_TEST is not set
+-# CONFIG_CRYPTO_CRYPTODEV is not set
++CONFIG_CRYPTO_TEST=m
++CONFIG_CRYPTO_CRYPTODEV=y
+ 
+ #
+ # Authenticated Encryption with Associated Data
+@@ -2307,10 +2307,10 @@ CONFIG_CRYPTO_ALGAPI2=y
+ #
+ # Block modes
+ #
+-# CONFIG_CRYPTO_CBC is not set
++CONFIG_CRYPTO_CBC=y
+ # CONFIG_CRYPTO_CTR is not set
+ # CONFIG_CRYPTO_CTS is not set
+-# CONFIG_CRYPTO_ECB is not set
++CONFIG_CRYPTO_ECB=y
+ # CONFIG_CRYPTO_LRW is not set
+ # CONFIG_CRYPTO_PCBC is not set
+ # CONFIG_CRYPTO_XTS is not set
+@@ -2343,7 +2343,7 @@ CONFIG_CRYPTO_ALGAPI2=y
+ #
+ # Ciphers
+ #
+-# CONFIG_CRYPTO_AES is not set
++CONFIG_CRYPTO_AES=y
+ # CONFIG_CRYPTO_ANUBIS is not set
+ # CONFIG_CRYPTO_ARC4 is not set
+ # CONFIG_CRYPTO_BLOWFISH is not set
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index db04e40..ac705a4 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -474,6 +474,34 @@ struct platform_device mxcscc_device = {
+ 	.resource = scc_resources,
+ };
+ 
++static struct resource dcp_resources[] = {
++
++	{
++		.flags = IORESOURCE_MEM,
++		.start = DCP_BASE_ADDR,
++		.end   = DCP_BASE_ADDR + 0x2000 - 1,
++	}, {
++		.flags = IORESOURCE_IRQ,
++		.start = MXC_INT_DCP_CHAN0,
++		.end = MXC_INT_DCP_CHAN0,
++	}, {
++		.flags = IORESOURCE_IRQ,
++		.start = MXC_INT_DCP_CHAN1_3,
++		.end = MXC_INT_DCP_CHAN1_3,
++	},
++};
++
++struct platform_device dcp_device = {
++	.name = "dcp",
++	.id = 0,
++	.num_resources = ARRAY_SIZE(dcp_resources),
++	.resource = dcp_resources,
++	.dev = {
++		.coherent_dma_mask = DMA_BIT_MASK(32),
++	},
++};
++
++
+ static struct resource rngb_resources[] = {
+ 	{
+ 		.start = RNGB_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index b8f9713..0d955ad 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -84,3 +84,4 @@ extern struct platform_device mxs_viim;
+ extern struct platform_device mxs_dma_apbh_device;
+ extern struct platform_device gpmi_nfc_device;
+ extern struct platform_device mxc_rngb_device;
++extern struct platform_device dcp_device;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index be00917..be96063 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1188,9 +1188,9 @@ static void __init mxc_board_init(void)
+ 	mx5_usbh1_init();
+ 
+ 	mxc_register_device(&mxc_rngb_device, NULL);
+-
+ 	mxc_register_device(&dcp_device, NULL);
+ 	mxc_register_device(&fsl_otp_device, &otp_data);
++	mxc_register_device(&dcp_device, NULL);
+ }
+ 
+ static void __init mx50_arm2_timer_init(void)
+-- 
+1.5.4.4
+

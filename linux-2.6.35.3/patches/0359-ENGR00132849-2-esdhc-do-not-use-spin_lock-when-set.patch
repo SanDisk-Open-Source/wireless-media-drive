@@ -1,0 +1,36 @@
+From f6aec74e8b64117b12e8dba19dd2641d0ba915f9 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Thu, 21 Oct 2010 19:17:28 +0800
+Subject: [PATCH] ENGR00132849-2 esdhc: do not use spin_lock when set power on/off
+
+Do not use spin_lock when sets power on/off since pmic driver may sleep
+on this operation.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index c522aa9..df31ac6 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -1025,6 +1025,7 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
+ 
+ 	sdhci_set_clock(host, ios->clock);
+ 
++	spin_unlock_irqrestore(&host->lock, flags);
+ 	if (ios->power_mode == MMC_POWER_OFF)
+ 		sdhci_set_power(host, -1);
+ 	else {
+@@ -1039,6 +1040,7 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
+ 		}
+ 	}
+ 
++	spin_lock_irqsave(&host->lock, flags);
+ 	tmp = readl(host->ioaddr + SDHCI_HOST_CONTROL);
+ 
+ 	if ((ios->bus_width & ~MMC_BUS_WIDTH_DDR) == MMC_BUS_WIDTH_4) {
+-- 
+1.5.4.4
+

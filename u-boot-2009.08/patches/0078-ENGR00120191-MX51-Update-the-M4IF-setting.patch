@@ -1,0 +1,64 @@
+From ade8a952ce56b9e8204bd89929bb70a878e2db04 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sun, 17 Jan 2010 12:30:39 +0800
+Subject: [PATCH] ENGR00120191 MX51: Update the M4IF setting
+
+New M4IF settings benefit to video performance improvement.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx51_3stack/lowlevel_init.S |    6 +++---
+ board/freescale/mx51_bbg/lowlevel_init.S    |    6 +++---
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/lowlevel_init.S b/board/freescale/mx51_3stack/lowlevel_init.S
+index 68810df..b867335 100644
+--- a/board/freescale/mx51_3stack/lowlevel_init.S
++++ b/board/freescale/mx51_3stack/lowlevel_init.S
+@@ -89,16 +89,16 @@
+ 	 */
+ 	ldr r0, =M4IF_BASE_ADDR
+ 
+-	ldr r1, =0x00000203
++	ldr r1, =0x00000103
+ 	str r1, [r0, #0x40]
+ 
+ 	ldr r1, =0x0
+ 	str r1, [r0, #0x44]
+ 
+-	ldr r1, =0x00120125
++	ldr r1, =0x00240126
+ 	str r1, [r0, #0x9C]
+ 
+-	ldr r1, =0x001901A3
++	ldr r1, =0x00230185
+ 	str r1, [r0, #0x48]
+ .endm /* init_m4if */
+ 
+diff --git a/board/freescale/mx51_bbg/lowlevel_init.S b/board/freescale/mx51_bbg/lowlevel_init.S
+index 07ec55c..62e46dc 100644
+--- a/board/freescale/mx51_bbg/lowlevel_init.S
++++ b/board/freescale/mx51_bbg/lowlevel_init.S
+@@ -88,16 +88,16 @@
+ 	 */
+ 	ldr r0, =M4IF_BASE_ADDR
+ 
+-	ldr r1, =0x00000203
++	ldr r1, =0x00000103
+ 	str r1, [r0, #0x40]
+ 
+ 	ldr r1, =0x0
+ 	str r1, [r0, #0x44]
+ 
+-	ldr r1, =0x00120125
++	ldr r1, =0x00240126
+ 	str r1, [r0, #0x9C]
+ 
+-	ldr r1, =0x001901A3
++	ldr r1, =0x00230185
+ 	str r1, [r0, #0x48]
+ 
+ /*
+-- 
+1.5.4.4
+

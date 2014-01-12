@@ -1,0 +1,1626 @@
+From 4a21b0aadd0627fd1df953df2d938c7f4aef59c8 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Mon, 27 Sep 2010 10:21:58 +0800
+Subject: [PATCH] ENGR00131616-2 usb: restructure lower power mode and wakeup function
+
+Device driver part((squashed with ENGR00131776)
+
+Mainly includes restruct low power mode and wakeup function for all usb modes.
+1. Move more kernel common code changes to fsl driver.
+2. Fix kinds of otg bugs
+3. At idle mode all usb clock and related phy clock will be closed.
+4. Wakeup function are fully verified for all usb modes
+(device, host and otg mode)
+5. The modifications are verified at mx50 platform for 2.6.35
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |  370 +++++++++++++++++++++++++-------------
+ drivers/usb/gadget/arcotg_udc.h |   13 +-
+ drivers/usb/host/ehci-arc.c     |  381 +++++++++++++++++++--------------------
+ drivers/usb/otg/fsl_otg.c       |  199 +++++++++++++--------
+ include/linux/fsl_devices.h     |    1 +
+ 5 files changed, 575 insertions(+), 389 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 161557f..0eee633 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -28,6 +28,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/proc_fs.h>
+ #include <linux/mm.h>
++#include <linux/jiffies.h>
+ #include <linux/moduleparam.h>
+ #include <linux/device.h>
+ #include <linux/usb/ch9.h>
+@@ -38,6 +39,7 @@
+ #include <linux/fsl_devices.h>
+ #include <linux/dmapool.h>
+ 
++#include <asm/processor.h>
+ #include <asm/byteorder.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
+@@ -67,7 +69,7 @@
+ #endif
+ 
+ #define	DMA_ADDR_INVALID	(~(dma_addr_t)0)
+-
++extern void usb_debounce_id_pin(void);
+ static const char driver_name[] = "fsl-usb2-udc";
+ static const char driver_desc[] = DRIVER_DESC;
+ 
+@@ -106,16 +108,6 @@ extern struct resource *otg_get_resources(void);
+ 
+ extern void fsl_platform_set_test_mode(struct fsl_usb2_platform_data *pdata, enum usb_test_mode mode);
+ 
+-static inline void
+-dr_wake_up_enable(struct fsl_udc *udc, bool enable)
+-{
+-	struct fsl_usb2_platform_data *pdata;
+-	pdata = udc->pdata;
+-
+-	if (pdata->wake_up_enable)
+-		pdata->wake_up_enable(pdata, enable);
+-}
+-
+ #ifdef CONFIG_WORKAROUND_ARCUSB_REG_RW
+ static void safe_writel(u32 val32, void *addr)
+ {
+@@ -280,9 +272,12 @@ static void done(struct fsl_ep *ep, struct fsl_req *req, int status)
+ static void nuke(struct fsl_ep *ep, int status)
+ {
+ 	ep->stopped = 1;
+-
+-	/* Flush fifo */
+-	fsl_ep_fifo_flush(&ep->ep);
++	/*
++	 * At udc stop mode, the clock is already off
++	 * So flush fifo, should be done at clock on mode.
++	 */
++	if (!ep->udc->stopped)
++		fsl_ep_fifo_flush(&ep->ep);
+ 
+ 	/* Whether this eq has request linked */
+ 	while (!list_empty(&ep->queue)) {
+@@ -297,28 +292,85 @@ static void nuke(struct fsl_ep *ep, int status)
+ /*------------------------------------------------------------------
+ 	Internal Hardware related function
+  ------------------------------------------------------------------*/
++static inline void
++dr_wake_up_enable(struct fsl_udc *udc, bool enable)
++{
++	struct fsl_usb2_platform_data *pdata;
++	pdata = udc->pdata;
++
++	if (pdata && pdata->wake_up_enable)
++		pdata->wake_up_enable(pdata, enable);
++}
++
++static bool clk_stopped;
++static inline void dr_clk_gate(bool on)
++{
++	struct fsl_usb2_platform_data *pdata = udc_controller->pdata;
++
++	if (!pdata || !pdata->usb_clock_for_pm)
++		return;
++	if (on && clk_stopped) {
++		pdata->usb_clock_for_pm(true);
++		clk_stopped = false;
++	}
++	if (!on && !clk_stopped) {
++		pdata->usb_clock_for_pm(false);
++		clk_stopped = true;
++	}
++	if (on)
++		reset_phy();
++}
+ 
+ static void dr_phy_low_power_mode(struct fsl_udc *udc, bool enable)
+ {
+-	u32 temp;
+-	if (enable) {
+-		temp = fsl_readl(&dr_regs->portsc1);
+-		temp |= PORTSCX_PHY_LOW_POWER_SPD;
+-		fsl_writel(temp, &dr_regs->portsc1);
++	struct fsl_usb2_platform_data *pdata = udc->pdata;
++	u32 portsc;
+ 
+-		if (udc_controller->pdata->usb_clock_for_pm)
+-			udc_controller->pdata->usb_clock_for_pm(false);
++	if (pdata && pdata->phy_lowpower_suspend) {
++		pdata->phy_lowpower_suspend(enable);
+ 	} else {
+-		if (udc_controller->pdata->usb_clock_for_pm)
+-			udc_controller->pdata->usb_clock_for_pm(true);
++		if (enable) {
++			portsc = fsl_readl(&dr_regs->portsc1);
++			portsc |= PORTSCX_PHY_LOW_POWER_SPD;
++			fsl_writel(portsc, &dr_regs->portsc1);
++		} else {
++			portsc = fsl_readl(&dr_regs->portsc1);
++			portsc &= ~PORTSCX_PHY_LOW_POWER_SPD;
++			fsl_writel(portsc, &dr_regs->portsc1);
++		}
++	}
++}
+ 
+-		/* Due to mx35/mx25's phy's bug */
+-		reset_phy();
+ 
+-		temp = fsl_readl(&dr_regs->portsc1);
+-		temp &= ~PORTSCX_PHY_LOW_POWER_SPD;
+-		fsl_writel(temp, &dr_regs->portsc1);
+-	}
++/* workaroud for some boards, maybe there is a large capacitor between the ground and the Vbus
++ * that will cause the vbus dropping very slowly when device is detached,
++ * may cost 2-3 seconds to below 0.8V */
++static void udc_wait_b_session_low(void)
++{
++	u32 temp;
++	u32 wait = 5000/jiffies_to_msecs(1); /* max wait time is 5000 ms */
++	/* if we are in host mode, don't need to care the B session */
++	if ((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0)
++		return;
++	/* if the udc is dettached , there will be a suspend irq */
++	if (udc_controller->usb_state != USB_STATE_SUSPENDED)
++		return;
++	temp = fsl_readl(&dr_regs->otgsc);
++	temp &= ~OTGSC_B_SESSION_VALID_IRQ_EN;
++	fsl_writel(temp, &dr_regs->otgsc);
++
++	do {
++		if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_B_SESSION_VALID))
++			break;
++		msleep(jiffies_to_msecs(1));
++		wait -= 1;
++	} while (wait);
++	if (!wait)
++		printk(KERN_ERR "ERROR!!!!!: the vbus can not be lower \
++				then 0.8V for 5 seconds, Pls Check your HW design\n");
++	temp = fsl_readl(&dr_regs->otgsc);
++	temp |= OTGSC_B_SESSION_VALID_IRQ_EN;
++	fsl_writel(temp, &dr_regs->otgsc);
+ }
+ 
+ static int dr_controller_setup(struct fsl_udc *udc)
+@@ -367,7 +419,7 @@ static int dr_controller_setup(struct fsl_udc *udc)
+ 	fsl_platform_set_device_mode(pdata);
+ 
+ 	/* Clear the setup status */
+-	fsl_writel(0, &dr_regs->usbsts);
++	fsl_writel(0xffffffff, &dr_regs->usbsts);
+ 
+ 	tmp = udc->ep_qh_dma;
+ 	tmp &= USB_EP_LIST_ADDRESS_MASK;
+@@ -453,9 +505,9 @@ static void dr_controller_run(struct fsl_udc *udc)
+ 		udc->stopped = 1;
+ 		/* enable wake up */
+ 		dr_wake_up_enable(udc, true);
+-		/* close PHY clock */
++		/* enter lower power mode */
+ 		dr_phy_low_power_mode(udc, true);
+-		printk(KERN_INFO "%s: udc enter low power mode \n", __func__);
++		printk(KERN_DEBUG "%s: udc enter low power mode \n", __func__);
+ 	} else {
+ #ifdef CONFIG_ARCH_MX37
+ 		/*
+@@ -472,6 +524,7 @@ static void dr_controller_run(struct fsl_udc *udc)
+ 		temp = fsl_readl(&dr_regs->usbcmd);
+ 		temp |= USB_CMD_RUN_STOP;
+ 		fsl_writel(temp, &dr_regs->usbcmd);
++		printk(KERN_DEBUG "%s: udc out low power mode\n", __func__);
+ 	}
+ 
+ 	return;
+@@ -1967,16 +2020,33 @@ static void suspend_irq(struct fsl_udc *udc)
+ 		udc->driver->suspend(&udc->gadget);
+ }
+ 
+-/* Process Wake up interrupt */
+-static void wake_up_irq(struct fsl_udc *udc)
+-{
+-	pr_debug("%s\n", __func__);
+-
+-	/* disable wake up irq */
+-	dr_wake_up_enable(udc_controller, false);
+-
+-	udc->stopped = 0;
+-}
++/* Process Wake up interrupt
++ * Be careful that some boards will use ID pin to control the VBUS on/off
++ * in these case, after the device enter the lowpower mode(clk off,
++ * phy lowpower mode, wakeup enable), then an udisk is attaced to the otg port,
++ * there will be an Vbus wakeup event and then an ID change wakeup, But the Vbus
++ * event is not expected, so there is an workaround that will detect the ID, if ID=0
++ * we just need the ID event so we can not disable the wakeup
++ *
++ * false: host wakeup event
++ * true: device wakeup event
++ */
++ static bool wake_up_irq(struct fsl_udc *udc)
++ {
++	usb_debounce_id_pin();
++	/* if the ID=0, let arc host process the wakeup */
++	if (fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) {
++		dr_wake_up_enable(udc_controller, false);
++		dr_phy_low_power_mode(udc, false);
++		pr_debug("at %s: device wake up event\n", __func__);
++		return true;
++	} else {/* wakeup is vbus wake event, but not for device so we need to clear b session */
++		int irq_src = fsl_readl(&dr_regs->otgsc) & (~OTGSC_ID_CHANGE_IRQ_STS);
++		fsl_writel(irq_src, &dr_regs->otgsc);
++		pr_debug("at %s: he host wakeup event, should be handled by host\n", __func__);
++		return false;
++	}
++ }
+ 
+ static void bus_resume(struct fsl_udc *udc)
+ {
+@@ -2044,17 +2114,16 @@ static void reset_irq(struct fsl_udc *udc)
+ bool try_wake_up_udc(struct fsl_udc *udc)
+ {
+ 	u32 irq_src;
++	bool b_device;
+ 
+ 	/* when udc is stopped, only handle wake up irq */
+ 	if (udc->stopped) {
+-		dr_phy_low_power_mode(udc_controller, false);
+-
+ 		/* check to see if wake up irq */
+ 		irq_src =  fsl_readl(&dr_regs->usbctrl);
+ 		if (irq_src & USB_CTRL_OTG_WUIR) {
+-			wake_up_irq(udc);
+-		} else {
+-			dr_phy_low_power_mode(udc_controller, true);
++			if (wake_up_irq(udc) == false) {
++				return false; /* host wakeup event */
++			}
+ 		}
+ 	}
+ 
+@@ -2062,21 +2131,29 @@ bool try_wake_up_udc(struct fsl_udc *udc)
+ 	irq_src = fsl_readl(&dr_regs->otgsc);
+ 	if (irq_src & OTGSC_B_SESSION_VALID_IRQ_STS) {
+ 		u32 tmp;
++		usb_debounce_id_pin();
++		b_device = (irq_src & OTGSC_STS_USB_ID) ? true : false;
+ 		fsl_writel(irq_src, &dr_regs->otgsc);
++		if (!b_device)
++			return false;
+ 		tmp = fsl_readl(&dr_regs->usbcmd);
+ 		/* check BSV bit to see if fall or rise */
+ 		if (irq_src & OTGSC_B_SESSION_VALID) {
++			if (udc->suspended) /*let the system pm resume the udc */
++				return true;
+ 			udc->stopped = 0;
+ 			fsl_writel(tmp | USB_CMD_RUN_STOP, &dr_regs->usbcmd);
+-			printk(KERN_INFO "%s: udc out low power mode\n", __func__);
++			printk(KERN_DEBUG "%s: udc out low power mode\n", __func__);
+ 		} else {
+-			printk(KERN_INFO "%s: udc enter low power mode \n", __func__);
++			if (udc->driver)
++				udc->driver->disconnect(&udc->gadget);
+ 			fsl_writel(tmp & ~USB_CMD_RUN_STOP, &dr_regs->usbcmd);
+ 			udc->stopped = 1;
+ 			/* enable wake up */
+ 			dr_wake_up_enable(udc, true);
+ 			/* close USB PHY clock */
+ 			dr_phy_low_power_mode(udc, true);
++			printk(KERN_DEBUG "%s: udc enter low power mode \n", __func__);
+ 			return false;
+ 		}
+ 	}
+@@ -2093,15 +2170,24 @@ static irqreturn_t fsl_udc_irq(int irq, void *_udc)
+ 	irqreturn_t status = IRQ_NONE;
+ 	unsigned long flags;
+ 
++	spin_lock_irqsave(&udc->lock, flags);
++	if (udc->stopped)
++		dr_clk_gate(true);
++
++	if (try_wake_up_udc(udc) == false) {
++		goto irq_end;
++	}
++#ifdef CONFIG_USB_OTG
++	/* if no gadget register in this driver, we need do noting */
++	if (udc->transceiver->gadget == NULL)
++		goto irq_end;
++
+ 	/* only handle device interrupt event */
+ 	if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
+-		return IRQ_NONE;
++		goto irq_end;
+ 	}
++#endif
+ 
+-	if (try_wake_up_udc(udc) == false)
+-		return IRQ_NONE;
+-
+-	spin_lock_irqsave(&udc->lock, flags);
+ 	irq_src = fsl_readl(&dr_regs->usbsts) & fsl_readl(&dr_regs->usbintr);
+ 	/* Clear notification bits */
+ 	fsl_writel(irq_src, &dr_regs->usbsts);
+@@ -2160,6 +2246,11 @@ static irqreturn_t fsl_udc_irq(int irq, void *_udc)
+ 		VDBG("Error IRQ %x ", irq_src);
+ 	}
+ 
++irq_end:
++	if (udc->stopped) {
++		dr_clk_gate(false);
++	}
++
+ 	spin_unlock_irqrestore(&udc->lock, flags);
+ 	return status;
+ }
+@@ -2189,11 +2280,12 @@ int usb_gadget_register_driver(struct usb_gadget_driver *driver)
+ 	spin_lock_irqsave(&udc_controller->lock, flags);
+ 
+ 	driver->driver.bus = 0;
++	udc_controller->pdata->port_enables = 1;
+ 	/* hook up the driver */
+ 	udc_controller->driver = driver;
+ 	udc_controller->gadget.dev.driver = &driver->driver;
+ 	spin_unlock_irqrestore(&udc_controller->lock, flags);
+-
++	dr_clk_gate(true);
+ 	/* It doesn't need to switch usb from low power mode to normal mode
+ 	 * at otg mode
+ 	 */
+@@ -2211,30 +2303,29 @@ int usb_gadget_register_driver(struct usb_gadget_driver *driver)
+ 
+ 	if (udc_controller->transceiver) {
+ 		/* Suspend the controller until OTG enable it */
+-		udc_controller->stopped = 1;
+-		printk(KERN_INFO "Suspend udc for OTG auto detect\n");
++		udc_controller->suspended = 1;/* let the otg resume it */
++		printk(KERN_DEBUG "Suspend udc for OTG auto detect\n");
+ 		dr_wake_up_enable(udc_controller, true);
+-		dr_phy_low_power_mode(udc_controller, true);
+ 
+ 		/* export udc suspend/resume call to OTG */
+ 		udc_controller->gadget.dev.driver->suspend = (dev_sus)fsl_udc_suspend;
+ 		udc_controller->gadget.dev.driver->resume = (dev_res)fsl_udc_resume;
+ 
+ 		/* connect to bus through transceiver */
+-		if (udc_controller->transceiver) {
+-			retval = otg_set_peripheral(udc_controller->transceiver,
+-						    &udc_controller->gadget);
+-			if (retval < 0) {
+-				ERR("can't bind to transceiver\n");
+-				driver->unbind(&udc_controller->gadget);
+-				udc_controller->gadget.dev.driver = 0;
+-				udc_controller->driver = 0;
+-				return retval;
+-			}
++		retval = otg_set_peripheral(udc_controller->transceiver,
++					    &udc_controller->gadget);
++		if (retval < 0) {
++			ERR("can't bind to transceiver\n");
++			driver->unbind(&udc_controller->gadget);
++			udc_controller->gadget.dev.driver = 0;
++			udc_controller->driver = 0;
++			return retval;
+ 		}
+ 	} else {
+ 		/* Enable DR IRQ reg and Set usbcmd reg  Run bit */
+ 		dr_controller_run(udc_controller);
++		if (udc_controller->stopped)
++			dr_clk_gate(false);
+ 		udc_controller->usb_state = USB_STATE_ATTACHED;
+ 		udc_controller->ep0_dir = 0;
+ 	}
+@@ -2242,8 +2333,10 @@ int usb_gadget_register_driver(struct usb_gadget_driver *driver)
+ 			udc_controller->gadget.name, driver->driver.name);
+ 
+ out:
+-	if (retval)
++	if (retval) {
+ 		printk(KERN_DEBUG "retval %d \n", retval);
++		udc_controller->pdata->port_enables = 0;
++	}
+ 	return retval;
+ }
+ EXPORT_SYMBOL(usb_gadget_register_driver);
+@@ -2260,15 +2353,16 @@ int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
+ 	if (!driver || driver != udc_controller->driver || !driver->unbind)
+ 		return -EINVAL;
+ 
++	if (udc_controller->stopped)
++		dr_clk_gate(true);
++
+ 	if (udc_controller->transceiver)
+ 		(void)otg_set_peripheral(udc_controller->transceiver, 0);
+ 
+-	/* open phy clock for following operation */
+-	dr_phy_low_power_mode(udc_controller, false);
+-
+ 	/* stop DR, disable intr */
+ 	dr_controller_stop(udc_controller);
+ 
++	udc_controller->pdata->port_enables = 0;
+ 	/* in fact, no needed */
+ 	udc_controller->usb_state = USB_STATE_ATTACHED;
+ 	udc_controller->ep0_dir = 0;
+@@ -2290,7 +2384,9 @@ int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
+ 	udc_controller->gadget.dev.driver = 0;
+ 	udc_controller->driver = 0;
+ 
+-	dr_wake_up_enable(udc_controller, false);
++	if (udc_controller->gadget.is_otg) {
++		dr_wake_up_enable(udc_controller, true);
++	}
+ 
+ 	dr_phy_low_power_mode(udc_controller, true);
+ 
+@@ -2707,6 +2803,7 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
+ 		ret = -ENODEV;
+ 		goto err1a;
+ 	}
++	udc_controller->gadget.is_otg = 1;
+ #endif
+ 
+ 	if ((pdev->dev.parent) &&
+@@ -2807,12 +2904,6 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
+ 	if (ret < 0)
+ 		goto err3;
+ 
+-	if (udc_controller->transceiver) {
+-		udc_controller->gadget.is_otg = 1;
+-		/* now didn't support lpm in OTG mode*/
+-		device_set_wakeup_capable(&pdev->dev, 0);
+-	}
+-
+ 	/* setup QH and epctrl for ep0 */
+ 	ep0_setup(udc_controller);
+ 
+@@ -2855,24 +2946,29 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
+ #ifdef POSTPONE_FREE_LAST_DTD
+ 	last_free_td = NULL;
+ #endif
+-#ifndef CONFIG_USB_OTG
++
+ 	/* disable all INTR */
++#ifndef CONFIG_USB_OTG
+ 	fsl_writel(0, &dr_regs->usbintr);
+-
+ 	dr_wake_up_enable(udc_controller, false);
+-	udc_controller->stopped = 1;
++#else
++	dr_wake_up_enable(udc_controller, true);
++#endif
+ 
++/*
++ * As mx25/mx35 does not implement clk_gate, should not let phy to low
++ * power mode due to IC bug
++ */
+ #if !(defined CONFIG_ARCH_MX35 || defined CONFIG_ARCH_MX25)
+ {
+-	u32 portsc;
+-	portsc = fsl_readl(&dr_regs->portsc1);
+-	portsc |= PORTSCX_PHY_LOW_POWER_SPD;
+-	fsl_writel(portsc, &dr_regs->portsc1);
++	dr_phy_low_power_mode(udc_controller, true);
+ }
+ #endif
+-	if (udc_controller->pdata->usb_clock_for_pm)
+-		udc_controller->pdata->usb_clock_for_pm(false);
+-#endif
++	udc_controller->stopped = 1;
++
++	/* let the gadget register function open the clk */
++	dr_clk_gate(false);
++
+ 	create_proc_file();
+ 	return 0;
+ 
+@@ -2907,7 +3003,8 @@ static int __exit fsl_udc_remove(struct platform_device *pdev)
+ 		return -ENODEV;
+ 	udc_controller->done = &done;
+ 	/* open USB PHY clock */
+-	dr_phy_low_power_mode(udc_controller, false);
++	if (udc_controller->stopped)
++		dr_clk_gate(true);
+ 
+ 	/* DR has been stopped in usb_gadget_unregister_driver() */
+ 	remove_proc_file();
+@@ -2948,6 +3045,8 @@ static int __exit fsl_udc_remove(struct platform_device *pdev)
+ 	if (pdata->platform_uninit)
+ 		pdata->platform_uninit(pdata);
+ 
++	if (udc_controller->stopped)
++		dr_clk_gate(false);
+ 	return 0;
+ }
+ 
+@@ -2955,43 +3054,41 @@ static int udc_suspend(struct fsl_udc *udc)
+ {
+ 	u32 mode, usbcmd;
+ 
+-	/* open clock for register access */
+-	if (udc_controller->pdata->usb_clock_for_pm)
+-		udc_controller->pdata->usb_clock_for_pm(true);
+-
+ 	/*
+ 	 * When it is the PM suspend routine and the device has no
+ 	 * abilities to wakeup system, it should not set wakeup enable.
+ 	 * Otherwise, the system will wakeup even the user only wants to
+ 	 * charge using usb
+ 	 */
+-	if (!device_may_wakeup(udc_controller->gadget.dev.parent) &&
+-		udc_controller->gadget.dev.parent->power.status
+-			== DPM_SUSPENDING){
+-		dr_wake_up_enable(udc, false);
++	printk(KERN_DEBUG "udc suspend begins\n");
++	if (udc_controller->gadget.dev.parent->power.status
++			== DPM_SUSPENDING) {
++		if (!device_may_wakeup(udc_controller->gadget.dev.parent))
++			dr_wake_up_enable(udc, false);
++		else
++			dr_wake_up_enable(udc, true);
+ 	}
+-
+ 	mode = fsl_readl(&dr_regs->usbmode) & USB_MODE_CTRL_MODE_MASK;
+ 	usbcmd = fsl_readl(&dr_regs->usbcmd);
+ 
+-	pr_debug("%s(): mode 0x%x stopped %d\n", __func__, mode, udc->stopped);
+-
+ 	/*
+ 	 * If the controller is already stopped, then this must be a
+ 	 * PM suspend.  Remember this fact, so that we will leave the
+ 	 * controller stopped at PM resume time.
+ 	 */
+-	if (udc->stopped) {
+-		pr_debug("gadget already stopped, leaving early\n");
+-		udc->already_stopped = 1;
++	if (udc->suspended) {
++		printk(KERN_DEBUG "gadget already suspended, leaving early\n");
+ 		goto out;
+ 	}
+ 
+ 	if (mode != USB_MODE_CTRL_MODE_DEVICE) {
+-		pr_debug("gadget not in device mode, leaving early\n");
++		printk(KERN_DEBUG "gadget not in device mode, leaving early\n");
+ 		goto out;
+ 	}
+ 
++	/* For some buggy hardware designs, see comment of this function for detail */
++	udc_wait_b_session_low();
++
+ 	udc->stopped = 1;
+ 
+ 	/* stop the controller */
+@@ -3004,13 +3101,15 @@ static int udc_suspend(struct fsl_udc *udc)
+ 		if (device_may_wakeup(udc_controller->gadget.dev.parent)) {
+ 			dr_wake_up_enable(udc, true);
+ 		}
+-		dr_phy_low_power_mode(udc, true);
+ 	}
+ 
+-	printk(KERN_INFO "USB Gadget suspended\n");
++	dr_phy_low_power_mode(udc, true);
++	printk(KERN_DEBUG "USB Gadget suspend ends\n");
+ out:
+-	if (udc_controller->pdata->usb_clock_for_pm)
+-		udc_controller->pdata->usb_clock_for_pm(false);
++	udc->suspended++;
++	if (udc->suspended > 2)
++		printk(KERN_ERR "ERROR: suspended times > 2\n");
++
+ 	return 0;
+ }
+ 
+@@ -3020,13 +3119,23 @@ out:
+  -----------------------------------------------------------------*/
+ static int fsl_udc_suspend(struct platform_device *pdev, pm_message_t state)
+ {
++	int ret;
++#ifdef CONFIG_USB_OTG
++	if (udc_controller->transceiver->gadget == NULL)
++		return 0;
++#endif
++	if (udc_controller->stopped)
++		dr_clk_gate(true);
+ 	if (((!(udc_controller->gadget.is_otg)) ||
+-			(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) &&
++		(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) &&
+ 			(udc_controller->usb_state > USB_STATE_POWERED) &&
+-			(udc_controller->usb_state < USB_STATE_SUSPENDED))
+-		return -EBUSY;
++			(udc_controller->usb_state < USB_STATE_SUSPENDED)) {
++		return -EBUSY;/* keep the clk on */
++	} else
++		ret = udc_suspend(udc_controller);
++	dr_clk_gate(false);
+ 
+-	return udc_suspend(udc_controller);
++	return ret;
+ }
+ 
+ /*-----------------------------------------------------------------
+@@ -3035,14 +3144,18 @@ static int fsl_udc_suspend(struct platform_device *pdev, pm_message_t state)
+  *-----------------------------------------------------------------*/
+ static int fsl_udc_resume(struct platform_device *pdev)
+ {
+-	pr_debug("%s(): stopped %d  already_stopped %d\n", __func__,
+-		 udc_controller->stopped, udc_controller->already_stopped);
++	printk(KERN_DEBUG "USB Gadget resume begins\n");
+ 
++	pr_debug("%s(): stopped %d  suspended %d\n", __func__,
++		 udc_controller->stopped, udc_controller->suspended);
++#ifdef CONFIG_USB_OTG
++	if (udc_controller->transceiver->gadget == NULL)
++		return 0;
++#endif
+ 	/*
+ 	 * If the controller was stopped at suspend time, then
+ 	 * don't resume it now.
+ 	 */
+-	if (udc_controller->already_stopped) {
+ 		/*
+ 		 * If it is PM resume routine, the udc is at low power mode,
+ 		 * and the udc has no abilities to wakeup system, it should
+@@ -3055,19 +3168,25 @@ static int fsl_udc_resume(struct platform_device *pdev)
+ 			if (udc_controller->pdata->usb_clock_for_pm)
+ 				udc_controller->pdata->usb_clock_for_pm(true);
+ 			dr_wake_up_enable(udc_controller, true);
+-			if (fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) {
+-				if (udc_controller->pdata->usb_clock_for_pm)
+-					udc_controller->pdata->usb_clock_for_pm(false);
+-			}
++
++			if (udc_controller->pdata->usb_clock_for_pm)
++				udc_controller->pdata->usb_clock_for_pm(false);
++
+ 		}
+ 
+-		udc_controller->already_stopped = 0;
+-		pr_debug("gadget was already stopped, leaving early\n");
++	if (--udc_controller->suspended) {
++		printk(KERN_DEBUG "gadget was already stopped, leaving early\n");
+ 		return 0;
+ 	}
+ 
+ 	/* Enable DR irq reg and set controller Run */
+ 	if (udc_controller->stopped) {
++		dr_clk_gate(true);
++		/* if in host mode, we need to do nothing */
++		if ((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0) {
++			dr_clk_gate(false);
++			return 0;
++		}
+ 		dr_wake_up_enable(udc_controller, false);
+ 		dr_phy_low_power_mode(udc_controller, false);
+ 		mdelay(1);
+@@ -3078,7 +3197,12 @@ static int fsl_udc_resume(struct platform_device *pdev)
+ 	udc_controller->usb_state = USB_STATE_ATTACHED;
+ 	udc_controller->ep0_dir = 0;
+ 
+-	printk(KERN_INFO "USB Gadget resumed\n");
++	/* if udc is resume by otg id change and no device
++	 * connecting to the otg, otg will enter low power mode*/
++	if (udc_controller->stopped)
++		dr_clk_gate(false);
++
++	printk(KERN_DEBUG "USB Gadget resume ends\n");
+ 	return 0;
+ }
+ 
+diff --git a/drivers/usb/gadget/arcotg_udc.h b/drivers/usb/gadget/arcotg_udc.h
+index 466a444..6f0282b 100644
+--- a/drivers/usb/gadget/arcotg_udc.h
++++ b/drivers/usb/gadget/arcotg_udc.h
+@@ -261,6 +261,7 @@ struct usb_sys_interface {
+ #define  PORTSCX_SPEED_BIT_POS                (26)
+ 
+ /* OTGSC Register Bit Masks */
++#define  OTGSC_ID_CHANGE_IRQ_STS		(1 << 16)
+ #define  OTGSC_B_SESSION_VALID_IRQ_EN           (1 << 27)
+ #define  OTGSC_B_SESSION_VALID_IRQ_STS          (1 << 19)
+ #define  OTGSC_B_SESSION_VALID                  (1 << 11)
+@@ -588,9 +589,15 @@ struct fsl_udc {
+ 	struct otg_transceiver *transceiver;
+ 	unsigned softconnect:1;
+ 	unsigned vbus_active:1;
+-	unsigned stopped:1;
+ 	unsigned remote_wakeup:1;
+-	unsigned already_stopped:1;
++	/* we must distinguish the stopped and suspended state,
++	 * stopped means the udc enter lowpower mode, suspended
++	 * means the udc is suspended by system pm or by otg
++	 * switching to host mode.if the udc in suspended state
++	 * it also in the stopped state, while if the udc in
++	 * stopped state,it may not be in the suspended state*/
++	unsigned stopped:1;
++	int suspended;
+ 
+ 	struct ep_queue_head *ep_qh;	/* Endpoints Queue-Head */
+ 	struct fsl_req *status_req;	/* ep0 status request */
+@@ -696,7 +703,7 @@ static void dump_msg(const char *label, const u8 * buf, unsigned int length)
+ #if defined(CONFIG_ARCH_MXC) || defined(CONFIG_ARCH_STMP3XXX) || \
+ 	defined(CONFIG_ARCH_MXS)
+ #include <mach/fsl_usb_gadget.h>
+-#elif CONFIG_PPC32
++#elif defined (CONFIG_PPC32)
+ #include <asm/fsl_usb_gadget.h>
+ #endif
+ 
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index fe79895..b4bea17 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (c) 2005 MontaVista Software
+  * Copyright (C) 2010 Freescale Semiconductor
+-  *
++ *
+  * This program is free software; you can redistribute it and/or modify it
+  * under the terms of the GNU General Public License as published by the
+  * Free Software Foundation; either version 2 of the License, or (at your
+@@ -23,10 +23,30 @@
+ #include <linux/platform_device.h>
+ #include <linux/fsl_devices.h>
+ #include <linux/usb/otg.h>
++#include <linux/usb/hcd.h>
+ 
++#include "../core/usb.h"
+ #include "ehci-fsl.h"
+ #include <mach/fsl_usb.h>
+ 
++extern int usb_host_wakeup_irq(struct device *wkup_dev);
++extern void usb_host_set_wakeup(struct device *wkup_dev, bool para);
++static void fsl_usb_lowpower_mode(struct fsl_usb2_platform_data *pdata, bool enable)
++{
++	if (enable) {
++		if (pdata->phy_lowpower_suspend)
++			pdata->phy_lowpower_suspend(true);
++	} else {
++		if (pdata->phy_lowpower_suspend)
++			pdata->phy_lowpower_suspend(false);
++	}
++}
++
++static void fsl_usb_clk_gate(struct fsl_usb2_platform_data *pdata, bool enable)
++{
++	if (pdata->usb_clock_for_pm)
++		pdata->usb_clock_for_pm(enable);
++}
+ #undef EHCI_PROC_PTC
+ #ifdef EHCI_PROC_PTC		/* /proc PORTSC:PTC support */
+ /*
+@@ -91,8 +111,34 @@ static int ehci_testmode_init(struct ehci_hcd *ehci)
+ #endif	/* /proc PORTSC:PTC support */
+ 
+ 
+-/* configure so an HC device and id are always provided */
+-/* always called with process context; sleeping is OK */
++/**
++ * This irq is used to open the hw access and let usb_hcd_irq process the usb event
++ * ehci_fsl_pre_irq will be called before usb_hcd_irq
++ */
++static irqreturn_t ehci_fsl_pre_irq(int irq, void *dev)
++{
++	struct platform_device *pdev = (struct platform_device *)dev;
++	struct usb_hcd *hcd = platform_get_drvdata(pdev);
++	struct fsl_usb2_platform_data *pdata;
++
++	pdata = hcd->self.controller->platform_data;
++
++	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		/* Need to open clk for accessing the register */
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++		/* if receive a remote wakeup interrrupt after suspend */
++		if (usb_host_wakeup_irq(hcd->self.controller)) {
++			pr_debug("host wakeup happens\n");
++			/* disable remote wake up irq */
++			usb_host_set_wakeup(hcd->self.controller, false);
++			fsl_usb_lowpower_mode(pdata, false);
++			set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
++		} else {
++			fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
++		}
++	}
++	return IRQ_NONE;
++}
+ 
+ /**
+  * usb_hcd_fsl_probe - initialize FSL-based HCDs
+@@ -183,10 +229,19 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 	fsl_platform_set_host_mode(hcd);
+ 	hcd->power_budget = pdata->power_budget;
+ 
+-	retval = usb_add_hcd(hcd, irq, IRQF_DISABLED | IRQF_SHARED);
++	/*
++	 * The ehci_fsl_pre_irq must be registered before usb_hcd_irq, in that case
++	 * it can be called before usb_hcd_irq when irq occurs
++	 */
++	retval = request_irq(irq, ehci_fsl_pre_irq, IRQF_SHARED,
++			"fsl ehci pre interrupt", (void *)pdev);
+ 	if (retval != 0)
+ 		goto err4;
+ 
++	retval = usb_add_hcd(hcd, irq, IRQF_DISABLED | IRQF_SHARED);
++	if (retval != 0)
++		goto err5;
++
+ 	fsl_platform_set_vbus_power(pdata, 1);
+ 
+ 	if (pdata->operating_mode == FSL_USB2_DR_OTG) {
+@@ -200,7 +255,7 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 		if (!ehci->transceiver) {
+ 			printk(KERN_ERR "can't find transceiver\n");
+ 			retval = -ENODEV;
+-			goto err4;
++			goto err5;
+ 		}
+ 
+ 		retval = otg_set_host(ehci->transceiver, &ehci_to_hcd(ehci)->self);
+@@ -217,7 +272,8 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 	fsl_platform_set_ahb_burst(hcd);
+ 	ehci_testmode_init(hcd_to_ehci(hcd));
+ 	return retval;
+-
++err5:
++	free_irq(irq, (void *)pdev);
+ err4:
+ 	iounmap(hcd->regs);
+ err3:
+@@ -232,9 +288,6 @@ err1:
+ 	return retval;
+ }
+ 
+-/* may be called without controller electrically present */
+-/* may be called with controller, bus, and devices active */
+-
+ /**
+  * usb_hcd_fsl_remove - shutdown processing for FSL-based HCDs
+  * @dev: USB Host Controller being removed
+@@ -325,6 +378,68 @@ static int ehci_fsl_reinit(struct ehci_hcd *ehci)
+ 	return 0;
+ }
+ 
++static int ehci_fsl_bus_suspend(struct usb_hcd *hcd)
++{
++	int ret = 0;
++	struct fsl_usb2_platform_data *pdata;
++	pdata = hcd->self.controller->platform_data;
++	printk(KERN_DEBUG "%s, %s\n", __func__, pdata->name);
++
++
++	/* the host is already at low power mode */
++	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		return 0;
++	}
++
++	pr_debug("%s, it is the host mode, %s\n", __func__, pdata->name);
++
++	ehci_bus_suspend(hcd);
++
++	if (pdata->platform_suspend)
++		pdata->platform_suspend(pdata);
++
++	usb_host_set_wakeup(hcd->self.controller, true);
++	fsl_usb_lowpower_mode(pdata, true);
++	fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
++	clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
++
++	return ret;
++}
++
++static int ehci_fsl_bus_resume(struct usb_hcd *hcd)
++{
++	int ret = 0;
++	struct fsl_usb2_platform_data *pdata;
++
++	pdata = hcd->self.controller->platform_data;
++	printk(KERN_DEBUG "%s, %s\n", __func__, pdata->name);
++
++	/*
++	 * At otg mode, it should not call host resume for usb gadget device
++	 * Otherwise, this usb device can't be recognized as a gadget
++	 */
++	if (hcd->self.is_b_host) {
++		return -ESHUTDOWN;
++	}
++
++	/* if it is a remote wakeup, it will open clock and clear PHCD automatically */
++	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++		usb_host_set_wakeup(hcd->self.controller, false);
++		fsl_usb_lowpower_mode(pdata, false);
++	}
++
++	if (pdata->platform_resume)
++		pdata->platform_resume(pdata);
++	ret = ehci_bus_resume(hcd);
++	if (ret)
++		return ret;
++
++	return ret;
++}
++
++
+ /* called during probe() after chip reset completes */
+ static int ehci_fsl_setup(struct usb_hcd *hcd)
+ {
+@@ -360,97 +475,6 @@ static int ehci_fsl_setup(struct usb_hcd *hcd)
+ 	return retval;
+ }
+ 
+-static int ehci_fsl_bus_suspend(struct usb_hcd *hcd)
+-{
+-	u32 temp;
+-	int rc;
+-	struct fsl_usb2_platform_data *pdata = hcd->self.controller->platform_data;
+-
+-	if ((pdata->operating_mode == FSL_USB2_DR_OTG) ||
+-		(pdata->operating_mode == FSL_USB2_DR_DEVICE))
+-		return -EBUSY;
+-
+-	rc = ehci_bus_suspend(hcd);
+-
+-	if (!rc && device_may_wakeup(hcd->self.controller)) {
+-		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+-		/* enable remote wake up irq */
+-		if (pdata->wake_up_enable)
+-			pdata->wake_up_enable(pdata, true);
+-
+-		/* Put PHY into low power mode */
+-		temp = readl(hcd->regs + 0x184);
+-		writel(temp | (1 << 23), (hcd->regs + 0x184));
+-
+-		if (pdata->usb_clock_for_pm)
+-			pdata->usb_clock_for_pm(false);
+-	}
+-	return rc;
+-}
+-
+-static int ehci_fsl_bus_resume(struct usb_hcd *hcd)
+-{
+-	u32 temp;
+-
+-	if (device_may_wakeup(hcd->self.controller)) {
+-		temp = readl(hcd->regs + 0x184);
+-		writel(temp & (~(1 << 23)), (hcd->regs + 0x184));
+-	}
+-	return ehci_bus_resume(hcd);
+-}
+-
+-int usb_host_wakeup_irq(struct device *wkup_dev);
+-
+-static irqreturn_t ehci_fsl_irq(struct usb_hcd *hcd)
+-{
+-	struct fsl_usb2_platform_data *pdata = hcd->self.controller->platform_data;
+-
+-	if (pdata->usb_clock_for_pm)
+-		pdata->usb_clock_for_pm(true);
+-
+-	/* if receive a remote wakeup interrrupt after suspend */
+-	if (usb_host_wakeup_irq(hcd->self.controller)) {
+-		/* disable remote wake up irq */
+-		if (pdata->wake_up_enable)
+-			pdata->wake_up_enable(pdata, false);
+-
+-		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+-	}
+-
+-	return ehci_irq(hcd);
+-}
+-
+-#ifdef CONFIG_USB_OTG
+-static int ehci_start_port_reset(struct usb_hcd *hcd, unsigned port)
+-{
+-	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
+-	u32 status;
+-
+-	if (!port)
+-		return -EINVAL;
+-	port--;
+-
+-	/* start port reset before HNP protocol time out */
+-	status = readl(&ehci->regs->port_status[port]);
+-	if (!(status & PORT_CONNECT))
+-		return -ENODEV;
+-
+-	/* khubd will finish the reset later */
+-	if (ehci_is_TDI(ehci))
+-		writel(PORT_RESET | (status & ~(PORT_CSC | PORT_PEC
+-				| PORT_OCC)), &ehci->regs->port_status[port]);
+-	else
+-		writel(PORT_RESET, &ehci->regs->port_status[port]);
+-
+-	return 0;
+-}
+-#else
+-static int ehci_start_port_reset(struct usb_hcd *hcd, unsigned port)
+-{
+-	return 0;
+-}
+-#endif /* CONFIG_USB_OTG */
+-
+ static const struct hc_driver ehci_fsl_hc_driver = {
+ 	.description = hcd_name,
+ 	.product_desc = "Freescale On-Chip EHCI Host Controller",
+@@ -459,7 +483,7 @@ static const struct hc_driver ehci_fsl_hc_driver = {
+ 	/*
+ 	 * generic hardware linkage
+ 	 */
+-	.irq = ehci_fsl_irq,
++	.irq = ehci_irq,
+ 	.flags = HCD_USB2,
+ 
+ 	/*
+@@ -490,7 +514,6 @@ static const struct hc_driver ehci_fsl_hc_driver = {
+ 	.hub_control = ehci_hub_control,
+ 	.bus_suspend = ehci_fsl_bus_suspend,
+ 	.bus_resume = ehci_fsl_bus_resume,
+-	.start_port_reset = ehci_start_port_reset,
+ 	.relinquish_port = ehci_relinquish_port,
+ 	.port_handed_over = ehci_port_handed_over,
+ 
+@@ -530,13 +553,43 @@ static int ehci_fsl_drv_suspend(struct platform_device *pdev,
+ {
+ 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
+ 	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
+-	u32 tmp, port_status;
++	struct usb_device *roothub = hcd->self.root_hub;
++	u32 port_status;
+ 	struct fsl_usb2_platform_data *pdata = pdev->dev.platform_data;
+ 
+-	if (device_may_wakeup(&(pdev->dev))) {
+-		/* Need open clock for register access */
+-		if (pdata->usb_clock_for_pm)
+-			pdata->usb_clock_for_pm(true);
++	printk(KERN_DEBUG "USB Host suspend begins\n");
++	/* Only handles OTG mode switch event, system suspend event will be done in bus suspend */
++	if (pdev->dev.power.status == DPM_SUSPENDING) {
++		printk(KERN_DEBUG "%s, pm event \n", __func__);
++		if (!device_may_wakeup(&(pdev->dev))) {
++			int mask;
++			/* Need open clock for register access */
++			if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags))
++				fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++
++			mask = ehci_readl(ehci, &ehci->regs->intr_enable);
++			mask &= ~STS_PCD;
++			ehci_writel(ehci, mask, &ehci->regs->intr_enable);
++
++			usb_host_set_wakeup(hcd->self.controller, false);
++			fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
++		}
++		return 0;
++	}
++	/* only the otg host can go here */
++	/* wait for all usb device on the hcd dettached */
++	while (roothub->children[0] != NULL)
++		msleep(1);
++	if ((pdata->operating_mode != FSL_USB2_MPH_HOST) && (!(hcd->state & HC_STATE_SUSPENDED))) {
++		printk(KERN_DEBUG "will suspend roothub and its children\n");
++		usb_lock_device(roothub);
++		usb_suspend(&roothub->dev, PMSG_USER_SUSPEND);
++		usb_unlock_device(roothub);
++	}
++
++	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+ 	}
+ 
+ #ifdef DEBUG
+@@ -549,24 +602,10 @@ static int ehci_fsl_drv_suspend(struct platform_device *pdev,
+ 	       pdata->suspended, pdata->already_suspended, mode, tmp);
+ #endif
+ 
+-	/*
+-	 * If the controller is already suspended, then this must be a
+-	 * PM suspend.  Remember this fact, so that we will leave the
+-	 * controller suspended at PM resume time.
+-	 */
+-	if (pdata->suspended) {
+-		pr_debug("%s: already suspended, leaving early\n", __func__);
+-		pdata->already_suspended = 1;
+-		goto err1;
+-	}
+-
+ 	pr_debug("%s: suspending...\n", __func__);
+ 
+-	printk(KERN_INFO "USB Host suspended\n");
+ 
+ 	port_status = ehci_readl(ehci, &ehci->regs->port_status[0]);
+-	pdev->dev.power.power_state = PMSG_SUSPEND;
+-
+ 	/* save EHCI registers */
+ 	pdata->pm_command = ehci_readl(ehci, &ehci->regs->command);
+ 	pdata->pm_command &= ~CMD_RUN;
+@@ -585,29 +624,11 @@ static int ehci_fsl_drv_suspend(struct platform_device *pdev,
+ 
+ 	/* clear PHCD bit */
+ 	pdata->pm_portsc &= ~PORT_PTS_PHCD;
+-
+-	pdata->suspended = 1;
+-
+-	if (!device_may_wakeup(&(pdev->dev))) {
+-		/* ignore non-host interrupts */
++	if (test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
+ 		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+-
+-		/* clear PP to cut power to the port */
+-		tmp = ehci_readl(ehci, &ehci->regs->port_status[0]);
+-		tmp &= ~PORT_POWER;
+-		ehci_writel(ehci, tmp, &ehci->regs->port_status[0]);
+-		goto err1;
+-	}
+-
+-	tmp = ehci_readl(ehci, &ehci->regs->port_status[0]);
+-
+-	if (pdata->platform_suspend)
+-		pdata->platform_suspend(pdata);
+-err1:
+-	if (device_may_wakeup(&(pdev->dev))) {
+-		if (pdata->usb_clock_for_pm)
+-			pdata->usb_clock_for_pm(false);
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
+ 	}
++	printk(KERN_DEBUG "host suspend ends\n");
+ 	return 0;
+ }
+ 
+@@ -615,47 +636,35 @@ static int ehci_fsl_drv_resume(struct platform_device *pdev)
+ {
+ 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
+ 	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
++	struct usb_device *roothub = hcd->self.root_hub;
+ 	u32 tmp;
+ 	struct fsl_usb2_platform_data *pdata = pdev->dev.platform_data;
+-
+-	pr_debug("%s('%s'): suspend=%d already_suspended=%d\n", __func__,
+-		pdata->name, pdata->suspended, pdata->already_suspended);
+-
+-	/*
+-	 * If the controller was already suspended at suspend time,
+-	 * then don't resume it now.
+-	 */
+-	if (pdata->already_suspended) {
+-		pr_debug("already suspended, leaving early\n");
+-		pdata->already_suspended = 0;
+-		return 0;
+-	}
+-
+-	if (!pdata->suspended) {
+-		pr_debug("not suspended, leaving early\n");
++	/* Only handles OTG mode switch event */
++	printk(KERN_DEBUG "ehci fsl drv resume begins: %s\n", pdata->name);
++	if (pdev->dev.power.status == DPM_RESUMING) {
++		printk(KERN_DEBUG "%s, pm event \n", __func__);
++		if (!device_may_wakeup(&(pdev->dev))) {
++			if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++				fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++			}
++			usb_host_set_wakeup(hcd->self.controller, true);
++
++			if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++				fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
++			}
++		}
+ 		return 0;
+ 	}
+-
+-	/* If hcd is resumed by non-usb wakeup events,
+-	 * then usb clocks are still not open when come here */
+-	if (device_may_wakeup(&(pdev->dev))) {
+-		/* Need open clock for register access */
+-		if (pdata->usb_clock_for_pm)
+-			pdata->usb_clock_for_pm(true);
++	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++		usb_host_set_wakeup(hcd->self.controller, false);
++		fsl_usb_lowpower_mode(pdata, false);
+ 	}
+ 
+-	tmp = ehci_readl(ehci, &ehci->regs->port_status[0]);
+-
+-	pdata->suspended = 0;
+-
+-	pr_debug("%s resuming...\n", __func__);
+-
+ 	/* set host mode */
+ 	fsl_platform_set_host_mode(hcd);
+ 
+-	if (pdata->platform_resume)
+-		pdata->platform_resume(pdata);
+-
+ 	/* restore EHCI registers */
+ 	ehci_writel(ehci, pdata->pm_portsc, &ehci->regs->port_status[0]);
+ 	ehci_writel(ehci, pdata->pm_command, &ehci->regs->command);
+@@ -667,32 +676,22 @@ static int ehci_fsl_drv_resume(struct platform_device *pdev)
+ 	ehci_writel(ehci, pdata->pm_configured_flag,
+ 		    &ehci->regs->configured_flag);
+ 
+-	/* set bit should be done by wakeup irq routine if may wakeup */
+-	if (!device_may_wakeup(&(pdev->dev)))
+-		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+-	else
+-		while (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags))
+-			msleep(1);
+-
+-	pdev->dev.power.power_state = PMSG_ON;
+ 
+ 	tmp = ehci_readl(ehci, &ehci->regs->command);
+ 	tmp |= CMD_RUN;
+ 	ehci_writel(ehci, tmp, &ehci->regs->command);
+ 
+-	usb_hcd_resume_root_hub(hcd);
+-
+-	printk(KERN_INFO "USB Host resumed\n");
+-
+-	if (device_may_wakeup(&(pdev->dev))) {
+-		if (pdata->usb_clock_for_pm)
+-			pdata->usb_clock_for_pm(false);
++	if ((hcd->state & HC_STATE_SUSPENDED)) {
++		printk(KERN_DEBUG "will resume roothub and its children\n");
++		usb_lock_device(roothub);
++		usb_resume(&roothub->dev, PMSG_USER_RESUME);
++		usb_unlock_device(roothub);
+ 	}
+ 
++	printk(KERN_DEBUG "ehci fsl drv resume ends: %s\n", pdata->name);
+ 	return 0;
+ }
+-#endif				/* CONFIG_USB_OTG */
+-
++#endif
+ MODULE_ALIAS("platform:fsl-ehci");
+ 
+ static struct platform_driver ehci_fsl_driver = {
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index 6cf4515..88d7d4b 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -34,6 +34,7 @@
+ #include <linux/init.h>
+ #include <linux/reboot.h>
+ #include <linux/timer.h>
++#include <linux/jiffies.h>
+ #include <linux/list.h>
+ #include <linux/usb.h>
+ #include <linux/device.h>
+@@ -61,8 +62,10 @@
+ #define DRIVER_DESC "Freescale USB OTG Driver"
+ #define DRIVER_INFO DRIVER_VERSION " " DRIVER_DESC
+ 
++#define TIMER_FREQ 1000 /* 1000 ms */
++#define IDLE_TIME  5000 /* 5000 ms */
+ 
+-MODULE_DESCRIPTION("Freescale USB OTG Transceiver Driver");
++MODULE_DESCRIPTION("Freescale USB OTG Driver");
+ 
+ static const char driver_name[] = "fsl-usb2-otg";
+ 
+@@ -90,6 +93,13 @@ static struct fsl_otg_config fsl_otg_initdata = {
+ 	.otg_port = 1,
+ };
+ 
++/* the timer is used to monitor the otg loading, if idle for some times
++ * we will close the otg clk
++ */
++static unsigned long last_busy;
++static bool clk_stopped;
++static struct timer_list monitor_timer;
++
+ int write_ulpi(u8 addr, u8 data)
+ {
+ 	u32 temp;
+@@ -139,15 +149,6 @@ void fsl_otg_dischrg_vbus(int on)
+ /* A-device driver vbus, controlled through PP bit in PORTSC */
+ void fsl_otg_drv_vbus(struct fsl_usb2_platform_data *pdata, int on)
+ {
+-/*	if (on)
+-		usb_dr_regs->portsc =
+-		    cpu_to_le32((le32_to_cpu(usb_dr_regs->portsc) &
+-				 ~PORTSC_W1C_BITS) | PORTSC_PORT_POWER);
+-	else
+-		usb_dr_regs->portsc =
+-		    cpu_to_le32(le32_to_cpu(usb_dr_regs->portsc) &
+-				~PORTSC_W1C_BITS & ~PORTSC_PORT_POWER);
+-*/
+ 	if (pdata->xcvr_ops && pdata->xcvr_ops->set_vbus_power)
+ 		pdata->xcvr_ops->set_vbus_power(pdata->xcvr_ops, pdata, on);
+ }
+@@ -398,6 +399,60 @@ int fsl_otg_tick_timer(void)
+ 	return expired;
+ }
+ 
++static void fsl_otg_clk_gate(bool on)
++{
++	struct device *dev = fsl_otg_dev->otg.dev;
++	struct fsl_usb2_platform_data *pdata;
++
++	if (dev) {
++		pdata = dev->platform_data;
++		if (pdata && pdata->usb_clock_for_pm)
++		    pdata->usb_clock_for_pm(on);
++	}
++}
++
++static void fsl_otg_clk_ctl(void)
++{
++	if (clk_stopped) {
++		fsl_otg_clk_gate(true);
++		clk_stopped = false;
++	}
++	last_busy = jiffies;
++}
++
++static void fsl_otg_loading_monitor(unsigned long data)
++{
++	unsigned long now = jiffies;
++	if (!clk_stopped) {
++		if (time_after(now, last_busy + msecs_to_jiffies(IDLE_TIME))) {
++			clk_stopped = true;
++			fsl_otg_clk_gate(false);
++		}
++	}
++	mod_timer(&monitor_timer, jiffies + msecs_to_jiffies(TIMER_FREQ));
++}
++
++/**
++ * Enable vbus interrupt
++ * The otg cares USB_ID interrupt
++ * The device cares B Session Valid
++ */
++static void b_session_irq_enable(bool enable)
++{
++	int osc = le32_to_cpu(usb_dr_regs->otgsc);
++	printk(KERN_DEBUG "%s:enable is %d\n", __func__, enable);
++	/* The other interrupts' status should not be cleared */
++	osc &= ~(OTGSC_INTSTS_USB_ID | OTGSC_INTSTS_A_VBUS_VALID
++		| OTGSC_INTSTS_A_SESSION_VALID | OTGSC_INTSTS_B_SESSION_VALID);
++	osc |= OTGSC_INTSTS_B_SESSION_VALID;
++
++	if (enable)
++		osc |= OTGSC_INTR_B_SESSION_VALID_EN;
++	else
++		osc &= ~OTGSC_INTR_B_SESSION_VALID_EN;
++	usb_dr_regs->otgsc = cpu_to_le32(osc);
++}
++
+ /* Reset controller, not reset the bus */
+ void otg_reset_controller(void)
+ {
+@@ -485,7 +540,6 @@ int fsl_otg_start_gadget(struct otg_fsm *fsm, int on)
+ 	struct device *dev;
+ 	struct platform_driver *gadget_pdrv;
+ 	struct platform_device *gadget_pdev;
+-
+ 	if (!xceiv->gadget || !xceiv->gadget->dev.parent)
+ 		return -ENODEV;
+ 
+@@ -521,7 +575,6 @@ static int fsl_otg_set_host(struct otg_transceiver *otg_p, struct usb_bus *host)
+ 
+ 	if (host) {
+ 		VDBG("host off......\n");
+-
+ 		otg_p->host->otg_port = fsl_otg_initdata.otg_port;
+ 		otg_p->host->is_b_host = otg_dev->fsm.id;
+ 		/* must leave time for khubd to finish its thing
+@@ -638,11 +691,28 @@ static void fsl_otg_event(struct work_struct *work)
+ {
+ 	struct fsl_otg *og = container_of(work, struct fsl_otg, otg_event.work);
+ 	struct otg_fsm *fsm = &og->fsm;
++	struct otg_transceiver *otg = &og->otg;
++
++	otg->default_a = (fsm->id == 0);
++	/* clear conn information */
++	if (fsm->id)
++		fsm->b_conn = 0;
++	else
++		fsm->a_conn = 0;
++
++	if (otg->host)
++		otg->host->is_b_host = fsm->id;
++	if (otg->gadget)
++		otg->gadget->is_a_peripheral = !fsm->id;
+ 
+ 	if (fsm->id) {		/* switch to gadget */
+ 		fsl_otg_start_host(fsm, 0);
+ 		otg_drv_vbus(fsm, 0);
+ 		fsl_otg_start_gadget(fsm, 1);
++	} else {			/* switch to host */
++		fsl_otg_start_gadget(fsm, 0);
++		otg_drv_vbus(fsm, 1);
++		fsl_otg_start_host(fsm, 1);
+ 	}
+ }
+ 
+@@ -682,12 +752,13 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+ 	struct otg_fsm *fsm;
+ 	struct fsl_usb2_platform_data *pdata =
+ 		(struct fsl_usb2_platform_data *)dev_id;
+-	struct fsl_otg *p_otg;
++	struct fsl_otg *f_otg;
+ 	struct otg_transceiver *otg_trans = otg_get_transceiver();
+ 	int value;
+-	p_otg = container_of(otg_trans, struct fsl_otg, otg);
+-	fsm = &p_otg->fsm;
++	f_otg = container_of(otg_trans, struct fsl_otg, otg);
++	fsm = &f_otg->fsm;
+ 
++	fsl_otg_clk_ctl();
+ 	if (pdata->id_gpio == 0)
+ 		return IRQ_NONE;
+ 
+@@ -699,35 +770,23 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+ 		set_irq_type(gpio_to_irq(pdata->id_gpio), IRQ_TYPE_LEVEL_HIGH);
+ 
+ 
+-	if (value == p_otg->fsm.id)
++	if (value == f_otg->fsm.id)
+ 		return IRQ_HANDLED;
+ 
+-	p_otg->fsm.id = value;
+-
+-	otg_trans->default_a = (fsm->id == 0);
+-	/* clear conn information */
+-	if (fsm->id)
+-		fsm->b_conn = 0;
+-	else
+-		fsm->a_conn = 0;
++	f_otg->fsm.id = value;
+ 
+-	if (otg_trans->host)
+-		otg_trans->host->is_b_host = fsm->id;
+-	if (otg_trans->gadget)
+-		otg_trans->gadget->is_a_peripheral = !fsm->id;
+-
+-	VDBG("ID int (ID is %d)\n", fsm->id);
+-	if (fsm->id) {  /* switch to gadget */
+-		schedule_delayed_work(&p_otg->otg_event, 100);
+-
+-	} else {        /* switch to host */
+-		cancel_delayed_work(&p_otg->otg_event);
+-		fsl_otg_start_gadget(fsm, 0);
+-		otg_drv_vbus(fsm, 1);
+-		fsl_otg_start_host(fsm, 1);
++	cancel_delayed_work(&f_otg->otg_event);
++	schedule_delayed_work(&f_otg->otg_event, msecs_to_jiffies(10));
++	/* if host mode, we should clear B_SESSION_VLD event and disable
++	 * B_SESSION_VLD irq
++	 */
++	if (!f_otg->fsm.id) {
++		b_session_irq_enable(false);
+ 	}
++
+ 	return IRQ_HANDLED;
+ }
++
+ /* Interrupt handler.  OTG/host/peripheral share the same int line.
+  * OTG driver clears OTGSC interrupts and leaves USB interrupts
+  * intact.  It needs to have knowledge of some USB interrupts
+@@ -735,55 +794,44 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+  */
+ irqreturn_t fsl_otg_isr(int irq, void *dev_id)
+ {
+-	struct otg_fsm *fsm = &((struct fsl_otg *)dev_id)->fsm;
+-	struct otg_transceiver *otg = &((struct fsl_otg *)dev_id)->otg;
++	struct fsl_otg *fotg = (struct fsl_otg *)dev_id;
++	struct otg_transceiver *otg = &fotg->otg;
+ 	u32 otg_int_src, otg_sc;
++	irqreturn_t ret = IRQ_NONE;
+ 
++	fsl_otg_clk_ctl();
+ 	otg_sc = le32_to_cpu(usb_dr_regs->otgsc);
+ 	otg_int_src = otg_sc & OTGSC_INTSTS_MASK & (otg_sc >> 8);
+ 
+-	/* Only clear otg interrupts */
+-	usb_dr_regs->otgsc |= cpu_to_le32(otg_sc & OTGSC_INTSTS_MASK);
++	/* Only clear otg interrupts, expect B_SESSION_VALID,
++	 * Leave it to be handled by arcotg_udc */
++	usb_dr_regs->otgsc = ((usb_dr_regs->otgsc | cpu_to_le32(otg_sc & OTGSC_INTSTS_MASK))&
++				(~OTGSC_INTSTS_B_SESSION_VALID));
+ 
+ 	/*FIXME: ID change not generate when init to 0 */
+-	fsm->id = (otg_sc & OTGSC_STS_USB_ID) ? 1 : 0;
+-	otg->default_a = (fsm->id == 0);
++	fotg->fsm.id = (otg_sc & OTGSC_STS_USB_ID) ? 1 : 0;
++	otg->default_a = (fotg->fsm.id == 0);
+ 
+ 	/* process OTG interrupts */
+ 	if (otg_int_src) {
+ 		if (otg_int_src & OTGSC_INTSTS_USB_ID) {
+-			fsm->id = (otg_sc & OTGSC_STS_USB_ID) ? 1 : 0;
+-			otg->default_a = (fsm->id == 0);
+-			/* clear conn information */
+-			if (fsm->id)
+-				fsm->b_conn = 0;
+-			else
+-				fsm->a_conn = 0;
+-
+-			if (otg->host)
+-				otg->host->is_b_host = fsm->id;
+-			if (otg->gadget)
+-				otg->gadget->is_a_peripheral = !fsm->id;
+-			VDBG("ID int (ID is %d)\n", fsm->id);
+-
+-			if (fsm->id) {	/* switch to gadget */
+-				schedule_delayed_work(&((struct fsl_otg *)
+-							dev_id)->otg_event,
+-							100);
+-			} else {	/* switch to host */
+-				cancel_delayed_work(&
+-						    ((struct fsl_otg *)dev_id)->
+-						    otg_event);
+-				fsl_otg_start_gadget(fsm, 0);
+-				otg_drv_vbus(fsm, 1);
+-				fsl_otg_start_host(fsm, 1);
+-			}
++			fotg->fsm.id = (otg_sc & OTGSC_STS_USB_ID) ? 1 : 0;
++
++			printk(KERN_DEBUG "ID int (ID is %d)\n", fotg->fsm.id);
+ 
+-			return IRQ_HANDLED;
++			cancel_delayed_work(&fotg->otg_event);
++			schedule_delayed_work(&fotg->otg_event, msecs_to_jiffies(10));
++			/* if host mode, we should clear B_SESSION_VLD event and disable
++			 * B_SESSION_VLD irq
++			 */
++			if (!fotg->fsm.id) {
++				b_session_irq_enable(false);
++			}
++			ret = IRQ_HANDLED;
+ 		}
+ 	}
+ 
+-	return IRQ_NONE;
++	return ret;
+ }
+ 
+ static void fsl_otg_fsm_drv_vbus(int on)
+@@ -859,6 +907,7 @@ static int fsl_otg_conf(struct platform_device *pdev)
+ 	fsl_otg_tc->otg.set_power = fsl_otg_set_power;
+ 	fsl_otg_tc->otg.start_hnp = fsl_otg_start_hnp;
+ 	fsl_otg_tc->otg.start_srp = fsl_otg_start_srp;
++	fsl_otg_tc->otg.dev = &pdev->dev;
+ 
+ 	fsl_otg_dev = fsl_otg_tc;
+ 
+@@ -925,6 +974,8 @@ int usb_otg_start(struct platform_device *pdev)
+ 	if (pdata->platform_init && pdata->platform_init(pdev) != 0)
+ 		return -EINVAL;
+ 
++	clk_stopped = false; /* platform_init will open the otg clk */
++
+ 	/* stop the controller */
+ 	temp = readl(&p_otg->dr_mem_map->usbcmd);
+ 	temp &= ~USB_CMD_RUN_STOP;
+@@ -1252,6 +1303,10 @@ static int __init fsl_otg_probe(struct platform_device *pdev)
+ 		return -EIO;
+ 	}
+ 
++	last_busy  = jiffies;
++	setup_timer(&monitor_timer, fsl_otg_loading_monitor, (unsigned long)pdev);
++	mod_timer(&monitor_timer, jiffies + msecs_to_jiffies(TIMER_FREQ));
++
+ 	create_proc_file();
+ 	return status;
+ }
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 67398a6..93d02d3 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -91,6 +91,7 @@ struct fsl_usb2_platform_data {
+ 	void (*platform_suspend)(struct fsl_usb2_platform_data *);
+ 	void (*platform_resume)(struct fsl_usb2_platform_data *);
+ 	void (*wake_up_enable)(struct fsl_usb2_platform_data *pdata, bool on);
++	void (*phy_lowpower_suspend)(bool);
+ 	void (*platform_driver_vbus)(bool on); /* platform special function for vbus shutdown/open */
+ 	unsigned			big_endian_mmio:1;
+ 	unsigned			big_endian_desc:1;
+-- 
+1.5.4.4
+

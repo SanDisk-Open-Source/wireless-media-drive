@@ -1,0 +1,50 @@
+From 129810dc73a840e8c88f95fa5b26bf2870de5116 Mon Sep 17 00:00:00 2001
+From: Rob Herring <r.herring@freescale.com>
+Date: Wed, 16 Sep 2009 11:44:38 -0500
+Subject: [PATCH] nand: add more nand devices
+
+Signed-off-by: Rob Herring <r.herring@freescale.com>
+---
+ drivers/mtd/nand/nand_ids.c |    5 +++++
+ include/linux/mtd/nand.h    |    2 ++
+ 2 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index 89907ed..77a100e 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -110,6 +110,9 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 	{"NAND 2GiB 1,8V 16-bit",	0xB5, 0, 2048, 0, LP_OPTIONS16},
+ 	{"NAND 2GiB 3,3V 16-bit",	0xC5, 0, 2048, 0, LP_OPTIONS16},
+ 
++	/* 32 Gigabit ,only use 2G due to the linux mtd limitation*/
++	{"NAND 4GiB 3,3V 8-bit",	0xD7, 0, 2048, 0, LP_OPTIONS},
++
+ 	/*
+ 	 * Renesas AND 1 Gigabit. Those chips do not support extended id and
+ 	 * have a strange page/block layout !  The chosen minimum erasesize is
+@@ -141,6 +144,8 @@ struct nand_manufacturers nand_manuf_ids[] = {
+ 	{NAND_MFR_HYNIX, "Hynix"},
+ 	{NAND_MFR_MICRON, "Micron"},
+ 	{NAND_MFR_AMD, "AMD"},
++	{NAND_MFR_SANDISK, "SanDisk"},
++	{NAND_MFR_INTEL, "Intel"},
+ 	{0x0, "Unknown"}
+ };
+ 
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index 0f795f0..fb42bc5 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -446,6 +446,8 @@ struct nand_chip {
+ #define NAND_MFR_HYNIX		0xad
+ #define NAND_MFR_MICRON		0x2c
+ #define NAND_MFR_AMD		0x01
++#define NAND_MFR_SANDISK	0x45
++#define NAND_MFR_INTEL		0x89
+ 
+ /**
+  * struct nand_flash_dev - NAND Flash Device ID Structure
+-- 
+1.5.4.4
+

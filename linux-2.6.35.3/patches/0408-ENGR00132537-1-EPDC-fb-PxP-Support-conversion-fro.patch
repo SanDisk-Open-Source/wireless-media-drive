@@ -1,0 +1,340 @@
+From 4d0e58e894a9a7d6d0e5c574fe0bb4736c7e9a6a Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 21 Oct 2010 10:03:43 -0500
+Subject: [PATCH] ENGR00132537-1 - EPDC fb/PxP: Support conversion from grayscale to monochrome
+
+- User can specify a flag (EPDC_FLAG_FORCE_MONOCHROME) to have 8-bit grayscale
+converted to monochrome (black or white) via processing in the PxP
+(using the LUT).
+- Added logic to check against the full videomode when identifying the
+desired FB mode.  This allows support for multiple modes with the same
+dimensions.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c       |   44 +++++++++++++++++-
+ drivers/video/mxc/mxc_epdc_fb.c |   94 +++++++++++++++++++++++----------------
+ include/linux/mxcfb.h           |    6 ++-
+ include/linux/pxp_dma.h         |    5 +-
+ 4 files changed, 106 insertions(+), 43 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index e798e1c..2d53261 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -56,6 +56,7 @@ struct pxps {
+ #define	CLK_STAT_OFF		0
+ #define	CLK_STAT_ON		1
+ 	int pxp_ongoing;
++	int lut_state;
+ 
+ 	struct device *dev;
+ 	struct pxp_dma pxp_dma;
+@@ -421,13 +422,34 @@ static void pxp_set_bg(struct pxps *pxp)
+ static void pxp_set_lut(struct pxps *pxp)
+ {
+ 	struct pxp_config_data *pxp_conf = &pxp->pxp_conf_state;
++	int lut_op = pxp_conf->proc_data.lut_transform;
+ 	u32 reg_val;
+ 	int i;
+ 
+-	if (pxp_conf->proc_data.lut_transform == PXP_LUT_NONE) {
++	/* If LUT already configured as needed, return */
++	if (pxp->lut_state == lut_op)
++		return;
++
++	if (lut_op == PXP_LUT_NONE) {
+ 		__raw_writel(BM_PXP_LUT_CTRL_BYPASS,
+ 			     pxp->base + HW_PXP_LUT_CTRL);
+-	} else if (pxp_conf->proc_data.lut_transform == PXP_LUT_INVERT) {
++	} else if (((lut_op & PXP_LUT_INVERT) != 0)
++		&& ((lut_op & PXP_LUT_BLACK_WHITE) != 0)) {
++		/* Fill out LUT table with inverted monochromized values */
++
++		/* Initialize LUT address to 0 and clear bypass bit */
++		__raw_writel(0, pxp->base + HW_PXP_LUT_CTRL);
++
++		/* LUT address pointer auto-increments after each data write */
++		for (i = 0; i < 256; i++) {
++			reg_val =
++			    __raw_readl(pxp->base +
++					HW_PXP_LUT_CTRL) & BM_PXP_LUT_CTRL_ADDR;
++			reg_val = (reg_val < 0x80) ? 0x00 : 0xFF;
++			reg_val = ~reg_val & BM_PXP_LUT_DATA;
++			__raw_writel(reg_val, pxp->base + HW_PXP_LUT);
++		}
++	} else if (lut_op == PXP_LUT_INVERT) {
+ 		/* Fill out LUT table with 8-bit inverted values */
+ 
+ 		/* Initialize LUT address to 0 and clear bypass bit */
+@@ -441,7 +463,24 @@ static void pxp_set_lut(struct pxps *pxp)
+ 			reg_val = ~reg_val & BM_PXP_LUT_DATA;
+ 			__raw_writel(reg_val, pxp->base + HW_PXP_LUT);
+ 		}
++	} else if (lut_op == PXP_LUT_BLACK_WHITE) {
++		/* Fill out LUT table with 8-bit monochromized values */
++
++		/* Initialize LUT address to 0 and clear bypass bit */
++		__raw_writel(0, pxp->base + HW_PXP_LUT_CTRL);
++
++		/* LUT address pointer auto-increments after each data write */
++		for (i = 0; i < 256; i++) {
++			reg_val =
++			    __raw_readl(pxp->base +
++					HW_PXP_LUT_CTRL) & BM_PXP_LUT_CTRL_ADDR;
++			reg_val = (reg_val < 0x80) ? 0xFF : 0x00;
++			reg_val = ~reg_val & BM_PXP_LUT_DATA;
++			__raw_writel(reg_val, pxp->base + HW_PXP_LUT);
++		}
+ 	}
++
++	pxp->lut_state = lut_op;
+ }
+ 
+ static void pxp_set_csc(struct pxps *pxp)
+@@ -1323,6 +1362,7 @@ static int pxp_probe(struct platform_device *pdev)
+ 	pxp->irq = irq;
+ 
+ 	pxp->pxp_ongoing = 0;
++	pxp->lut_state = 0;
+ 
+ 	spin_lock_init(&pxp->lock);
+ 
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index 27db198..829359a 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -985,9 +985,12 @@ static int mxc_epdc_fb_set_par(struct fb_info *info)
+ 	struct pxp_config_data *pxp_conf = &fb_data->pxp_conf;
+ 	struct pxp_proc_data *proc_data = &pxp_conf->proc_data;
+ 	struct fb_var_screeninfo *screeninfo = &fb_data->info.var;
++	struct mxc_epdc_fb_mode *epdc_modes = fb_data->pdata->epdc_mode;
+ 	int i;
+ 	int ret;
+ 
++	mutex_lock(&fb_data->pxp_mutex);
++
+ 	/*
+ 	 * Update PxP config data (used to process FB regions for updates)
+ 	 * based on FB info and processing tasks required
+@@ -1010,11 +1013,9 @@ static int mxc_epdc_fb_set_par(struct fb_info *info)
+ 	 * configure S0 channel parameters
+ 	 * Parameters should match FB format/width/height
+ 	 */
+-	if (screeninfo->grayscale) {
++	if (screeninfo->grayscale)
+ 		pxp_conf->s0_param.pixel_fmt = PXP_PIX_FMT_GREY;
+-		if (screeninfo->grayscale == GRAYSCALE_8BIT_INVERTED)
+-			proc_data->lut_transform = PXP_LUT_INVERT;
+-	} else {
++	else {
+ 		switch (screeninfo->bits_per_pixel) {
+ 		case 16:
+ 			pxp_conf->s0_param.pixel_fmt = PXP_PIX_FMT_RGB565;
+@@ -1044,40 +1045,41 @@ static int mxc_epdc_fb_set_par(struct fb_info *info)
+ 	pxp_conf->out_param.height = screeninfo->yres;
+ 	pxp_conf->out_param.pixel_fmt = PXP_PIX_FMT_GREY;
+ 
++	mutex_unlock(&fb_data->pxp_mutex);
++
+ 	/*
+ 	 * If HW not yet initialized, check to see if we are being sent
+ 	 * an initialization request.
+ 	 */
+ 	if (!fb_data->hw_ready) {
+-		for (i = 0; i < fb_data->pdata->num_modes; i++) {
+-			struct fb_videomode *vmode =
+-				fb_data->pdata->epdc_mode[i].vmode;
+-			/* Check resolution for a match
+-			   with supported panel types */
+-			if ((screeninfo->xres != vmode->xres) ||
+-				(screeninfo->yres != vmode->yres))
+-				continue;
++		struct fb_videomode mode;
+ 
+-			fb_data->cur_mode = &fb_data->pdata->epdc_mode[i];
+-
+-			/* Found a match - Grab timing params */
+-			screeninfo->left_margin = vmode->left_margin;
+-			screeninfo->right_margin = vmode->right_margin;
+-			screeninfo->upper_margin = vmode->upper_margin;
+-			screeninfo->lower_margin = vmode->lower_margin;
+-			screeninfo->hsync_len = vmode->hsync_len;
+-			screeninfo->vsync_len = vmode->vsync_len;
+-
+-			/* Initialize EPDC settings and init panel */
+-			ret =
+-			    mxc_epdc_fb_init_hw((struct fb_info *)fb_data);
+-			if (ret) {
+-				dev_err(fb_data->dev, "Failed to load panel waveform data\n");
+-				return ret;
+-			}
++		fb_var_to_videomode(&mode, screeninfo);
+ 
++		/* Match videomode against epdc modes */
++		for (i = 0; i < fb_data->pdata->num_modes; i++) {
++			if (!fb_mode_is_equal(epdc_modes[i].vmode, &mode))
++				continue;
++			fb_data->cur_mode = &epdc_modes[i];
+ 			break;
+ 		}
++
++		/* Found a match - Grab timing params */
++		screeninfo->left_margin = mode.left_margin;
++		screeninfo->right_margin = mode.right_margin;
++		screeninfo->upper_margin = mode.upper_margin;
++		screeninfo->lower_margin = mode.lower_margin;
++		screeninfo->hsync_len = mode.hsync_len;
++		screeninfo->vsync_len = mode.vsync_len;
++
++		/* Initialize EPDC settings and init panel */
++		ret =
++		    mxc_epdc_fb_init_hw((struct fb_info *)fb_data);
++		if (ret) {
++			dev_err(fb_data->dev,
++				"Failed to load panel waveform data\n");
++			return ret;
++		}
+ 	}
+ 
+ 	mxc_epdc_fb_set_fix(info);
+@@ -1333,7 +1335,7 @@ static int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+ 			"Update region is outside bounds of framebuffer.  Aborting update.\n");
+ 		return -EINVAL;
+ 	}
+-	if (upd_data->use_alt_buffer &&
++	if ((upd_data->flags & EPDC_FLAG_USE_ALT_BUFFER) &&
+ 		((upd_data->update_region.width != upd_data->alt_buffer_data.alt_update_region.width) ||
+ 		(upd_data->update_region.height != upd_data->alt_buffer_data.alt_update_region.height))) {
+ 		dev_err(fb_data->dev,
+@@ -1397,7 +1399,7 @@ static int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+ 	 * Are we using FB or an alternate (overlay)
+ 	 * buffer for source of update?
+ 	 */
+-	if (upd_data->use_alt_buffer) {
++	if (upd_data->flags & EPDC_FLAG_USE_ALT_BUFFER) {
+ 		src_width = upd_data->alt_buffer_data.width;
+ 		src_height = upd_data->alt_buffer_data.height;
+ 		src_upd_region = &upd_data->alt_buffer_data.alt_update_region;
+@@ -1481,7 +1483,7 @@ static int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+ 
+ 	/* Source address either comes from alternate buffer
+ 	   provided in update data, or from the framebuffer. */
+-	if (upd_data->use_alt_buffer)
++	if (upd_data->flags & EPDC_FLAG_USE_ALT_BUFFER)
+ 		sg_dma_address(&fb_data->sg[0]) =
+ 			upd_data->alt_buffer_data.phys_addr + pxp_input_offs;
+ 	else {
+@@ -1502,6 +1504,23 @@ static int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+ 
+ 	mutex_lock(&fb_data->pxp_mutex);
+ 
++	/*
++	 * Set PxP LUT transform type based on update flags.
++	 */
++	fb_data->pxp_conf.proc_data.lut_transform = 0;
++	if (upd_data->flags & EPDC_FLAG_ENABLE_INVERSION)
++		fb_data->pxp_conf.proc_data.lut_transform |= PXP_LUT_INVERT;
++	if (upd_data->flags & EPDC_FLAG_FORCE_MONOCHROME)
++		fb_data->pxp_conf.proc_data.lut_transform |=
++			PXP_LUT_BLACK_WHITE;
++
++	/*
++	 * Toggle inversion processing if 8-bit
++	 * inverted is the current pixel format.
++	 */
++	if (fb_data->info.var.grayscale == GRAYSCALE_8BIT_INVERTED)
++		fb_data->pxp_conf.proc_data.lut_transform ^= PXP_LUT_INVERT;
++
+ 	/* This is a blocking call, so upon return PxP tx should be done */
+ 	ret = pxp_process_update(fb_data, src_width, src_height,
+ 		&pxp_upd_region, x_start_offs);
+@@ -1774,7 +1793,7 @@ static void mxc_epdc_fb_update_pages(struct mxc_epdc_fb_data *fb_data,
+ 	update.update_mode = UPDATE_MODE_FULL;
+ 	update.update_marker = 0;
+ 	update.temp = TEMP_USE_AMBIENT;
+-	update.use_alt_buffer = false;
++	update.flags = 0;
+ 
+ 	mxc_epdc_fb_send_update(&update, &fb_data->info);
+ }
+@@ -2338,7 +2357,7 @@ static int mxc_epdc_fb_init_hw(struct fb_info *info)
+ 	update.waveform_mode = WAVEFORM_MODE_AUTO;
+ 	update.update_marker = INIT_UPDATE_MARKER;
+ 	update.temp = TEMP_USE_AMBIENT;
+-	update.use_alt_buffer = false;
++	update.flags = 0;
+ 
+ 	mxc_epdc_fb_send_update(&update, info);
+ 
+@@ -2374,7 +2393,7 @@ static ssize_t store_update(struct device *device,
+ 	update.update_mode = UPDATE_MODE_FULL;
+ 	update.temp = TEMP_USE_AMBIENT;
+ 	update.update_marker = 0;
+-	update.use_alt_buffer = false;
++	update.flags = 0;
+ 
+ 	mxc_epdc_fb_send_update(&update, info);
+ 
+@@ -2472,8 +2491,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
+ 		goto out_fbdata;
+ 
+ 	dev_dbg(&pdev->dev, "resolution %dx%d, bpp %d\n",
+-		fb_data->cur_mode->vmode->xres,
+-		fb_data->cur_mode->vmode->yres, fb_data->default_bpp);
++		vmode->xres, vmode->yres, fb_data->default_bpp);
+ 
+ 	/*
+ 	 * GPU alignment restrictions dictate framebuffer parameters:
+@@ -2878,7 +2896,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
+ 	update.waveform_mode = WAVEFORM_MODE_AUTO;
+ 	update.update_marker = INIT_UPDATE_MARKER;
+ 	update.temp = TEMP_USE_AMBIENT;
+-	update.use_alt_buffer = false;
++	update.flags = 0;
+ 
+ 	mxc_epdc_fb_send_update(&update, info);
+ 
+diff --git a/include/linux/mxcfb.h b/include/linux/mxcfb.h
+index 0f92ad0..babf3f2 100644
+--- a/include/linux/mxcfb.h
++++ b/include/linux/mxcfb.h
+@@ -78,6 +78,10 @@ struct mxcfb_rect {
+ 
+ #define TEMP_USE_AMBIENT			0x1000
+ 
++#define EPDC_FLAG_ENABLE_INVERSION		0x01
++#define EPDC_FLAG_FORCE_MONOCHROME		0x02
++#define EPDC_FLAG_USE_ALT_BUFFER		0x100
++
+ #define FB_POWERDOWN_DISABLE			-1
+ 
+ struct mxcfb_alt_buffer_data {
+@@ -93,7 +97,7 @@ struct mxcfb_update_data {
+ 	__u32 update_mode;
+ 	__u32 update_marker;
+ 	int temp;
+-	int use_alt_buffer;
++	uint flags;
+ 	struct mxcfb_alt_buffer_data alt_buffer_data;
+ };
+ 
+diff --git a/include/linux/pxp_dma.h b/include/linux/pxp_dma.h
+index adca97d..9155397 100644
+--- a/include/linux/pxp_dma.h
++++ b/include/linux/pxp_dma.h
+@@ -75,8 +75,9 @@ typedef unsigned char bool;
+ #define PXP_PIX_FMT_YUV422P fourcc('4', '2', '2', 'P')	/*!< 16 YUV 4:2:2 */
+ /*! @} */
+ 
+-#define PXP_LUT_NONE		0x0
+-#define PXP_LUT_INVERT		0x1
++#define PXP_LUT_NONE			0x0
++#define PXP_LUT_INVERT			0x1
++#define PXP_LUT_BLACK_WHITE		0x2
+ 
+ #define NR_PXP_VIRT_CHANNEL	16
+ 
+-- 
+1.5.4.4
+

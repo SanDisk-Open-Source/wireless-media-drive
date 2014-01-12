@@ -1,0 +1,29 @@
+From fcdb748cea254c18e3ca85d4a1d3a2254dda6704 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Fri, 15 Oct 2010 17:25:33 +0800
+Subject: [PATCH] ENGR00132532 mxs-mmc: change serial clock polarity
+
+Some mmc cards may not work properly with data change after rising
+edge of SCK.
+Changing to use falling edge of SCK to get better compatibility.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/mmc/host/mxs-mmc.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/host/mxs-mmc.c b/drivers/mmc/host/mxs-mmc.c
+index 3428163..f0a52ed 100644
+--- a/drivers/mmc/host/mxs-mmc.c
++++ b/drivers/mmc/host/mxs-mmc.c
+@@ -885,6 +885,7 @@ static void mxs_mmc_reset(struct mxs_mmc_host *host)
+ 	/* Configure SSP Control Register 1 */
+ 	ssp_ctrl1 =
+ 	    BM_SSP_CTRL1_DMA_ENABLE |
++	    BM_SSP_CTRL1_POLARITY |
+ 	    BM_SSP_CTRL1_RECV_TIMEOUT_IRQ_EN |
+ 	    BM_SSP_CTRL1_DATA_CRC_IRQ_EN |
+ 	    BM_SSP_CTRL1_DATA_TIMEOUT_IRQ_EN |
+-- 
+1.5.4.4
+

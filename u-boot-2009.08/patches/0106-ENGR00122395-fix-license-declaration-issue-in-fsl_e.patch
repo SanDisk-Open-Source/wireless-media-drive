@@ -1,0 +1,29 @@
+From 31ca7ee9538c2845893c1f08086caefbce38e8e1 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 9 Apr 2010 15:45:43 +0800
+Subject: [PATCH] ENGR00122395: fix license declaration issue in fsl_esdhc.h
+
+fix license declaration issue in fsl_esdhc.h.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/fsl_esdhc.h |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/include/fsl_esdhc.h b/include/fsl_esdhc.h
+index 63de09a..9f48afe 100644
+--- a/include/fsl_esdhc.h
++++ b/include/fsl_esdhc.h
+@@ -2,8 +2,7 @@
+  * FSL SD/MMC Defines
+  *-------------------------------------------------------------------
+  *
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Copyright 2007-2010, Freescale Semiconductor, Inc
++ * Copyright (C) 2007-2008, 2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+-- 
+1.5.4.4
+

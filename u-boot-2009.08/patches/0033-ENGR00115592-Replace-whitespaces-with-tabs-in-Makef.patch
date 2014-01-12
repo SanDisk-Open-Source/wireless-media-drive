@@ -1,0 +1,28 @@
+From bf4f60f7c6e8a04d75c348e6db20b731ef56a7bd Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 18 Aug 2009 17:25:15 +0800
+Subject: [PATCH] ENGR00115592: Replace whitespaces with tabs in Makefile
+
+Replace whitespaces with tabs in Makefile.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ Makefile |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index ed10cb9..840bfe7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3240,7 +3240,7 @@ Mx31_3stack_config	: unconfig
+ 
+ mx35_3stack_config      \
+ mx35_3stack_mmc_config: unconfig
+-        @$(MKCONFIG) $(@:_config=) arm arm1136 mx35_3stack freescale mx35
++	@$(MKCONFIG) $(@:_config=) arm arm1136 mx35_3stack freescale mx35
+ 
+ imx51_config		: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 imx51 freescale mx51
+-- 
+1.5.4.4
+

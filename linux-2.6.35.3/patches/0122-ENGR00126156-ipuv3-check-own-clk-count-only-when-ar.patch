@@ -1,0 +1,37 @@
+From 732353a76753c5f200cf97a73cd48b608e708995 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Mon, 16 Aug 2010 16:25:41 +0800
+Subject: [PATCH] ENGR00126156 ipuv3: check own clk count only when around clk rate
+
+If dual display enabled, the second one may not be able to set
+correct clock rate if it's from ext clk.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_disp.c |   10 +++++++---
+ 1 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_disp.c b/drivers/mxc/ipu3/ipu_disp.c
+index ce2c2bc..96a1c0c 100644
+--- a/drivers/mxc/ipu3/ipu_disp.c
++++ b/drivers/mxc/ipu3/ipu_disp.c
+@@ -1012,9 +1012,13 @@ int32_t ipu_init_sync_panel(int disp, uint32_t pixel_clk,
+ 	dev_dbg(g_ipu_dev, "pixel clk = %d\n", pixel_clk);
+ 
+ 	if (sig.ext_clk) {
+-		/* Set the  PLL to be an even multiple of the pixel clock. not round div for tvout*/
+-		if ((clk_get_usecount(g_pixel_clk[0]) == 0) &&
+-				(clk_get_usecount(g_pixel_clk[1]) == 0)) {
++		/*
++		 * Set the  PLL to be an even multiple of the pixel clock.
++		 * Not round div for tvout and ldb.
++		 * Did not consider both DI come from the same ext clk, if
++		 * meet such case, ext clk rate should be set specially.
++		 */
++		if (clk_get_usecount(g_pixel_clk[disp]) == 0) {
+ 			di_parent = clk_get_parent(g_di_clk[disp]);
+ 			if (clk_get(NULL, "tve_clk") != di_parent &&
+ 			    clk_get(NULL, "ldb_di0_clk") != di_parent &&
+-- 
+1.5.4.4
+

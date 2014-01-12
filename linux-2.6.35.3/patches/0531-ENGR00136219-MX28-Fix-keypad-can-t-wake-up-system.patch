@@ -1,0 +1,31 @@
+From d3cdf241531cef1fadcd46fde077c9c2f391ee9e Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Fri, 10 Dec 2010 20:11:09 +0800
+Subject: [PATCH] ENGR00136219 MX28: Fix keypad can't wake up system
+
+Fix keypad can't wake up system
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ arch/arm/mach-mx28/device.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/device.c b/arch/arm/mach-mx28/device.c
+index 586bdf1..d6b44d3 100644
+--- a/arch/arm/mach-mx28/device.c
++++ b/arch/arm/mach-mx28/device.c
+@@ -999,6 +999,11 @@ static struct resource mx28_kbd_res[] = {
+ 	 .start = IRQ_LRADC_CH1,
+ 	 .end   = IRQ_LRADC_CH1,
+ 	 },
++	{
++	.flags = IORESOURCE_IRQ,
++	.start = IRQ_LRADC_BUTTON1,
++	.end = IRQ_LRADC_BUTTON1,
++	}
+ };
+ 
+ static void __init mx28_init_kbd(void)
+-- 
+1.5.4.4
+

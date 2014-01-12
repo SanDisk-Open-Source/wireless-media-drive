@@ -1,0 +1,1440 @@
+From bd6578e46d1ba93ffe6e00147704d7d18c7e5573 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 24 Feb 2010 18:34:13 +0800
+Subject: [PATCH] ENGR00120520: Enable MMU for mx51 and mx35
+
+MMU enable code is missed in mx51 and mx35 u-boot.
+So add these codes.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx35_3stack/lowlevel_init.S |    4 +-
+ board/freescale/mx35_3stack/mx35_3stack.c   |    5 +-
+ board/freescale/mx51_3stack/mx51_3stack.c   |   20 ++++-
+ board/freescale/mx51_bbg/mx51_bbg.c         |   20 ++++-
+ cpu/arm1136/cpu.c                           |   76 ++++++++++++++---
+ cpu/arm1136/mx35/generic.c                  |   13 ++-
+ cpu/arm926ejs/mx25/generic.c                |   14 +++-
+ cpu/arm_cortexa8/cpu.c                      |   99 +++++++++++++++++++--
+ cpu/arm_cortexa8/mx51/generic.c             |   13 ++-
+ drivers/net/mxc_fec.c                       |  129 +++++++++++++++++++++++----
+ include/asm-arm/arch-mx35/mmu.h             |   39 ++++++++-
+ include/asm-arm/arch-mx51/mmu.h             |   82 +++++++++++++++++-
+ include/asm-arm/cache-cp15.h                |   88 ++++++++++++++++++
+ include/asm-arm/fec.h                       |    7 ++-
+ include/asm-arm/io.h                        |    2 +-
+ include/asm-arm/mmu.h                       |   41 ++++++++-
+ include/configs/mx35_3stack.h               |    4 +-
+ include/configs/mx35_3stack_mmc.h           |    4 +-
+ include/configs/mx51_3stack.h               |    4 +-
+ include/configs/mx51_3stack_android.h       |    4 +-
+ include/configs/mx51_bbg.h                  |    4 +-
+ include/configs/mx51_bbg_android.h          |    4 +-
+ lib_arm/Makefile                            |    3 -
+ lib_arm/cache-cp15.c                        |  120 -------------------------
+ 24 files changed, 604 insertions(+), 195 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/lowlevel_init.S b/board/freescale/mx35_3stack/lowlevel_init.S
+index e984306..64a20bd 100644
+--- a/board/freescale/mx35_3stack/lowlevel_init.S
++++ b/board/freescale/mx35_3stack/lowlevel_init.S
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -300,6 +300,8 @@ lowlevel_init:
+ #ifdef BRANCH_PREDICTION_ENABLE
+ 	mcr 15, 0, r0, c15, c2, 4
+ #endif
++	mcr 15, 0, r0, c7, c7, 0        /* invalidate I cache and D cache */
++	mcr 15, 0, r0, c8, c7, 0        /* invalidate TLBs */
+ 	mcr 15, 0, r0, c7, c10, 4       /* Drain the write buffer */
+ 
+ 	/* initializes very early AIPS, what for?
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 5889a31..6480c16 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -75,7 +75,7 @@ int is_soc_rev(int rev)
+ #ifdef CONFIG_ARCH_MMU
+ void board_mmu_init(void)
+ {
+-	unsigned long ttb_base = PHYS_SDRAM_1 + 0x40000;
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
+ 	unsigned long i;
+ 
+ 	/*
+@@ -131,6 +131,9 @@ void board_mmu_init(void)
+ 	X_ARM_MMU_SECTION(0xB20, 0xB20, 0x1E0,
+ 			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
+ 			  ARM_ACCESS_PERM_RW_RW);
++
++	/* Enable MMU */
++	MMU_ON();
+ }
+ #endif
+ 
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index af5d3df..7ec3b1d 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -112,7 +112,12 @@ u32 get_board_rev(void)
+ static inline void setup_soc_rev(void)
+ {
+ 	int reg;
+-	reg = __REG(ROM_SI_REV);
++#ifdef CONFIG_ARCH_MMU
++	reg = __REG(0x20000000 + ROM_SI_REV); /* Virtual address */
++#else
++	reg = __REG(ROM_SI_REV); /* Virtual address */
++#endif
++
+ 	switch (reg) {
+ 	case 0x02:
+ 		system_rev = 0x51000 | CHIP_REV_1_1;
+@@ -144,13 +149,13 @@ void board_mmu_init(void)
+ 	/*
+ 	* Set the TTB register
+ 	*/
+-	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++	asm volatile ("mcr p15, 0, %0, c2, c0, 0" : : "r"(ttb_base) /*:*/);
+ 
+ 	/*
+ 	* Set the Domain Access Control Register
+ 	*/
+ 	i = ARM_ACCESS_DACR_DEFAULT;
+-	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++	asm volatile ("mcr p15, 0, %0, c3, c0, 0" : : "r"(i) /*:*/);
+ 
+ 	/*
+ 	* First clear all TT entries - ie Set them to Faulting
+@@ -192,6 +197,15 @@ void board_mmu_init(void)
+ 	X_ARM_MMU_SECTION(0xCC0, 0xCC0, 0x040,
+ 			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
+ 			ARM_ACCESS_PERM_RW_RW); /* CS4/5/NAND Flash buffer */
++
++	/* Workaround for arm errata #709718 */
++	/* Setup PRRR so device is always mapped to non-shared */
++	asm volatile ("mrc p15, 0, %0, c10, c2, 0" : "=r"(i) : /*:*/);
++	i &= (~(3 << 0x10));
++	asm volatile ("mcr p15, 0, %0, c10, c2, 0" : : "r"(i) /*:*/);
++
++	/* Enable MMU */
++	MMU_ON();
+ }
+ #endif
+ 
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index f4028dc..4446a63 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -115,7 +115,12 @@ u32 get_board_rev(void)
+ static inline void setup_soc_rev(void)
+ {
+ 	int reg;
++#ifdef CONFIG_ARCH_MMU
++	reg = __REG(0x20000000 + ROM_SI_REV); /* Virtual address */
++#else
+ 	reg = __REG(ROM_SI_REV);
++#endif
++
+ 	switch (reg) {
+ 	case 0x02:
+ 		system_rev = 0x51000 | CHIP_REV_1_1;
+@@ -131,7 +136,7 @@ static inline void setup_soc_rev(void)
+ 	}
+ }
+ 
+-static inline void set_board_rev()
++static inline void set_board_rev(void)
+ {
+ 	if ((__REG(GPIO1_BASE_ADDR + 0x0) & (0x1 << 22)) == 0)
+ 		system_rev |= BOARD_REV_2_0 << BOARD_VER_OFFSET;
+@@ -152,13 +157,13 @@ void board_mmu_init(void)
+ 	/*
+ 	* Set the TTB register
+ 	*/
+-	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++	asm volatile ("mcr p15, 0, %0, c2, c0, 0" : : "r"(ttb_base) /*:*/);
+ 
+ 	/*
+ 	* Set the Domain Access Control Register
+ 	*/
+ 	i = ARM_ACCESS_DACR_DEFAULT;
+-	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++	asm volatile ("mcr p15, 0, %0, c3, c0, 0" : : "r"(i) /*:*/);
+ 
+ 	/*
+ 	* First clear all TT entries - ie Set them to Faulting
+@@ -197,6 +202,15 @@ void board_mmu_init(void)
+ 	X_ARM_MMU_SECTION(0xCC0, 0xCC0, 0x040,
+ 			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
+ 			ARM_ACCESS_PERM_RW_RW); /* CS4/5/NAND Flash buffer */
++
++	/* Workaround for arm errata #709718 */
++	/* Setup PRRR so device is always mapped to non-shared */
++	asm volatile ("mrc p15, 0, %0, c10, c2, 0" : "=r"(i) : /*:*/);
++	i &= (~(3 << 0x10));
++	asm volatile ("mcr p15, 0, %0, c10, c2, 0" : : "r"(i) /*:*/);
++
++	/* Enable MMU */
++	MMU_ON();
+ }
+ #endif
+ 
+diff --git a/cpu/arm1136/cpu.c b/cpu/arm1136/cpu.c
+index a4afd89..71f039c 100644
+--- a/cpu/arm1136/cpu.c
++++ b/cpu/arm1136/cpu.c
+@@ -8,7 +8,7 @@
+  * (C) Copyright 2002
+  * Gary Jennejohn, DENX Software Engineering, <garyj@denx.de>
+  *
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -36,8 +36,65 @@
+ #include <common.h>
+ #include <command.h>
+ #include <asm/system.h>
++#include <asm/cache-cp15.h>
++#include <asm/mmu.h>
+ 
+-static void cache_flush(void);
++#define dcache_invalidate_all_l1()	\
++{	\
++	int i = 0;	\
++	/* Clean and Invalidate Entire Data Cache */       \
++	asm volatile ("mcr p15, 0, %0, c7, c14, 0;"	\
++			:	\
++			: "r"(i)	\
++			: "memory");	\
++	asm volatile ("mcr p15, 0, %0, c8, c7, 0;"	\
++			:	\
++			: "r"(i)	\
++			: "memory"); /* Invalidate i+d-TLBs */	\
++}
++
++#define dcache_disable_l1()	\
++{	\
++	int i = 0;	\
++	asm volatile ("mcr p15, 0, %0, c7, c6, 0;"	\
++			:	\
++			: "r"(i)); /* clear data cache */	\
++	asm volatile ("mrc p15, 0, %0, c1, c0, 0;"	\
++			: "=r"(i));	\
++	i &= (~0x0004);	/* disable DCache */	\
++			/* but not MMU and alignment faults */     \
++	asm volatile ("mcr p15, 0, %0, c1, c0, 0;"	\
++			:	\
++			: "r"(i));	\
++}
++
++#define icache_invalidate_all_l1()        \
++{	\
++	/* this macro can discard dirty cache lines (N/A for ICache) */	\
++	int i = 0;	\
++	asm volatile ("mcr p15, 0, %0, c7, c5, 0;"	\
++			:	\
++			: "r"(i)); /* flush ICache */	\
++	asm volatile ("mcr p15, 0, %0, c8, c5, 0;"	\
++			:	\
++			: "r"(i)); /* flush ITLB only */	\
++	asm volatile ("mcr p15, 0, %0, c7, c5, 4;"	\
++			:	\
++			: "r"(i)); /* flush prefetch buffer */	\
++	asm (	\
++	"nop;" /* next few instructions may be via cache */	\
++	"nop;"	\
++	"nop;"	\
++	"nop;"	\
++	"nop;"	\
++	"nop;");	\
++}
++
++#define cache_flush()	\
++{	\
++	dcache_invalidate_all_l1();	\
++	icache_invalidate_all_l1();	\
++}
+ 
+ int cleanup_before_linux (void)
+ {
+@@ -59,12 +116,16 @@ int cleanup_before_linux (void)
+ 		lcd_panel_disable();
+ 	}
+ #endif
++	/* flush I/D-cache */
++	cache_flush();
+ 
+ 	/* turn off I/D-cache */
+ 	icache_disable();
+ 	dcache_disable();
+-	/* flush I/D-cache */
+-	cache_flush();
++
++	/* MMU Off */
++	MMU_OFF();
++
+ /*Workaround to enable L2CC during kernel decompressing*/
+ #ifdef fixup_before_linux
+ 	fixup_before_linux;
+@@ -72,10 +133,3 @@ int cleanup_before_linux (void)
+ 	return 0;
+ }
+ 
+-static void cache_flush(void)
+-{
+-	unsigned long i = 0;
+-
+-	asm ("mcr p15, 0, %0, c7, c7, 0": :"r" (i));  /* invalidate both caches and flush btb */
+-	asm ("mcr p15, 0, %0, c7, c10, 4": :"r" (i)); /* mem barrier to sync things */
+-}
+diff --git a/cpu/arm1136/mx35/generic.c b/cpu/arm1136/mx35/generic.c
+index 7d1bbca..05feda4 100644
+--- a/cpu/arm1136/mx35/generic.c
++++ b/cpu/arm1136/mx35/generic.c
+@@ -27,6 +27,7 @@
+ #include <asm/io.h>
+ #include <asm/errno.h>
+ #include <asm/arch/mx35.h>
++#include <asm/cache-cp15.h>
+ #include "crm_regs.h"
+ 
+ #define CLK_CODE(arm, ahb, sel) (((arm) << 16) + ((ahb) << 8) + (sel))
+@@ -116,7 +117,7 @@ static u32 __decode_pll(u32 reg, u32 infreq)
+ 
+ static u32 __get_mcu_main_clk(void)
+ {
+-	u32 arm_div, fi, fd;
++	u32 arm_div = 0, fi = 0, fd = 0;
+ 	arm_div = __get_arm_div(__REG(CCM_BASE_ADDR + CLKCTL_PDR0), &fi, &fd);
+ 	fi *=
+ 	    __decode_pll(__REG(MCU_PLL),
+@@ -357,6 +358,11 @@ int print_cpuinfo(void)
+ }
+ #endif
+ 
++#if defined(CONFIG_MXC_FEC)
++extern int mxc_fec_initialize(bd_t *bis);
++extern void mxc_fec_set_mac_from_env(char *mac_addr);
++#endif
++
+ /*
+  * Initializes on-chip ethernet controllers.
+  * to override, implement board_eth_init()
+@@ -364,15 +370,16 @@ int print_cpuinfo(void)
+ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
+-	char *env = NULL;
+ 
+ #if defined(CONFIG_MXC_FEC)
++	char *env = NULL;
++
+ 	rc = mxc_fec_initialize(bis);
+-#endif
+ 
+ 	env = getenv("fec_addr");
+ 	if (env)
+ 		mxc_fec_set_mac_from_env(env);
++#endif
+ 
+ 	return rc;
+ }
+diff --git a/cpu/arm926ejs/mx25/generic.c b/cpu/arm926ejs/mx25/generic.c
+index a47d796..5155f9a 100644
+--- a/cpu/arm926ejs/mx25/generic.c
++++ b/cpu/arm926ejs/mx25/generic.c
+@@ -112,6 +112,13 @@ int print_cpuinfo(void)
+ 	mx25_dump_clocks();
+ 	return 0;
+ }
++#endif
++
++#if defined(CONFIG_MXC_FEC)
++extern int mxc_fec_initialize(bd_t *bis);
++extern void mxc_fec_set_mac_from_env(char *mac_addr);
++#endif
++
+ /*
+  * Initializes on-chip ethernet controllers.
+  * to override, implement board_eth_init()
+@@ -119,16 +126,17 @@ int print_cpuinfo(void)
+ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
+-	char *env = NULL;
+ 
+ #if defined(CONFIG_MXC_FEC)
++	char *env = NULL;
++
+ 	rc = mxc_fec_initialize(bis);
+-#endif
+ 
+ 	env = getenv("fec_addr");
+ 	if (env)
+ 		mxc_fec_set_mac_from_env(env);
++#endif
+ 
+ 	return rc;
+ }
+-#endif
++
+diff --git a/cpu/arm_cortexa8/cpu.c b/cpu/arm_cortexa8/cpu.c
+index df96804..e4bd7cf 100644
+--- a/cpu/arm_cortexa8/cpu.c
++++ b/cpu/arm_cortexa8/cpu.c
+@@ -35,6 +35,8 @@
+ #include <command.h>
+ #include <asm/system.h>
+ #include <asm/cache.h>
++#include <asm/cache-cp15.h>
++#include <asm/mmu.h>
+ 
+ #ifndef CONFIG_L2_OFF
+ #ifndef CONFIG_MXC
+@@ -42,7 +44,88 @@
+ #endif
+ #endif
+ 
+-static void cache_flush(void);
++#define cache_flush(void)	\
++{	\
++	asm volatile (	\
++		"stmfd sp!, {r0-r5, r7, r9-r11};"	\
++		"mrc        p15, 1, r0, c0, c0, 1;" /*@ read clidr*/	\
++		/* @ extract loc from clidr */       \
++		"ands       r3, r0, #0x7000000;"	\
++		/* @ left align loc bit field*/      \
++		"mov        r3, r3, lsr #23;"	\
++		/* @ if loc is 0, then no need to clean*/    \
++		"beq        555f;" /* finished;" */	\
++		/* @ start clean at cache level 0*/  \
++		"mov        r10, #0;"	\
++		"111:" /*"loop1: */	\
++		/* @ work out 3x current cache level */	\
++		"add        r2, r10, r10, lsr #1;"	\
++		/* @ extract cache type bits from clidr */    \
++		"mov        r1, r0, lsr r2;"	\
++		/* @ mask of the bits for current cache only */	\
++		"and        r1, r1, #7;"	\
++		/* @ see what cache we have at this level*/  \
++		"cmp        r1, #2;"	\
++		/* @ skip if no cache, or just i-cache*/	\
++		"blt        444f;" /* skip;" */	\
++		/* @ select current cache level in cssr*/   \
++		"mcr        p15, 2, r10, c0, c0, 0;"	\
++		/* @ isb to sych the new cssr&csidr */	\
++		"mcr        p15, 0, r10, c7, c5, 4;"	\
++		/* @ read the new csidr */    \
++		"mrc        p15, 1, r1, c0, c0, 0;"	\
++		/* @ extract the length of the cache lines */ \
++		"and        r2, r1, #7;"	\
++		/* @ add 4 (line length offset) */   \
++		"add        r2, r2, #4;"	\
++		"ldr        r4, =0x3ff;"	\
++		/* @ find maximum number on the way size*/   \
++		"ands       r4, r4, r1, lsr #3;"	\
++		/*"clz  r5, r4;" @ find bit position of way size increment*/ \
++		".word 0xE16F5F14;"	\
++		"ldr        r7, =0x7fff;"	\
++		/* @ extract max number of the index size*/  \
++		"ands       r7, r7, r1, lsr #13;"	\
++		"222:" /* loop2:"  */	\
++		/* @ create working copy of max way size*/   \
++		"mov        r9, r4;"	\
++		"333:" /* loop3:"  */	\
++		/* @ factor way and cache number into r11*/  \
++		"orr        r11, r10, r9, lsl r5;"	\
++		/* @ factor index number into r11*/  \
++		"orr        r11, r11, r7, lsl r2;"	\
++		/* @ clean & invalidate by set/way */	\
++		"mcr        p15, 0, r11, c7, c14, 2;"	\
++		/* @ decrement the way */	\
++		"subs       r9, r9, #1;"	\
++		"bge        333b;" /* loop3;" */	\
++		/* @ decrement the index */	\
++		"subs       r7, r7, #1;"	\
++		"bge        222b;" /* loop2;" */	\
++		"444:" /* skip: */	\
++		/*@ increment cache number */	\
++		"add        r10, r10, #2;"	\
++		"cmp        r3, r10;" 	\
++		"bgt        111b;" /* loop1; */	\
++		"555:" /* "finished:" */	\
++		/* @ swith back to cache level 0 */	\
++		"mov        r10, #0;"	\
++		/* @ select current cache level in cssr */	\
++		"mcr        p15, 2, r10, c0, c0, 0;"	\
++		/* @ isb to sych the new cssr&csidr */	\
++		"mcr        p15, 0, r10, c7, c5, 4;" 	\
++		"ldmfd 	    sp!, {r0-r5, r7, r9-r11};"	\
++		"666:" /* iflush:" */	\
++		"mov        r0, #0x0;"	\
++		/* @ invalidate I+BTB */	\
++		"mcr        p15, 0, r0, c7, c5, 0;" 	\
++		/* @ drain WB */	\
++		"mcr        p15, 0, r0, c7, c10, 4;"	\
++		:	\
++		:	\
++		: "r0" /* Clobber list */	\
++	);	\
++}
+ 
+ int cleanup_before_linux(void)
+ {
+@@ -56,13 +139,14 @@ int cleanup_before_linux(void)
+ 	 */
+ 	disable_interrupts();
+ 
++	/* flush cache */
++	cache_flush();
++
+ 	/* turn off I/D-cache */
+ 	icache_disable();
++	/* invalidate D-cache */
+ 	dcache_disable();
+ 
+-	/* invalidate I-cache */
+-	cache_flush();
+-
+ #ifndef CONFIG_L2_OFF
+ 	/* turn off L2 cache */
+ 	l2_cache_disable();
+@@ -73,6 +157,9 @@ int cleanup_before_linux(void)
+ 	/* mem barrier to sync up things */
+ 	asm("mcr p15, 0, %0, c7, c10, 4": :"r"(i));
+ 
++	/* turn off MMU */
++	MMU_OFF();
++
+ #ifndef CONFIG_L2_OFF
+ 	l2_cache_enable();
+ #endif
+@@ -80,7 +167,3 @@ int cleanup_before_linux(void)
+ 	return 0;
+ }
+ 
+-static void cache_flush(void)
+-{
+-	asm ("mcr p15, 0, %0, c7, c5, 0": :"r" (0));
+-}
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index ee35dd9..0762c03 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -26,6 +26,7 @@
+ #include <common.h>
+ #include <asm/arch/mx51.h>
+ #include <asm/errno.h>
++#include <asm/cache-cp15.h>
+ #include "crm_regs.h"
+ 
+ enum pll_clocks {
+@@ -245,22 +246,24 @@ int print_cpuinfo(void)
+  * Initializes on-chip ethernet controllers.
+  * to override, implement board_eth_init()
+  */
+- #if defined(CONFIG_MXC_FEC)
+- extern int mxc_fec_initialize(bd_t *bis);
+- #endif
++#if defined(CONFIG_MXC_FEC)
++extern int mxc_fec_initialize(bd_t *bis);
++extern void mxc_fec_set_mac_from_env(char *mac_addr);
++#endif
+ 
+ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
+-	char *env = NULL;
+ 
+ #if defined(CONFIG_MXC_FEC)
++	char *env = NULL;
++
+ 	rc = mxc_fec_initialize(bis);
+-#endif
+ 
+ 	env = getenv("fec_addr");
+ 	if (env)
+ 		mxc_fec_set_mac_from_env(env);
++#endif
+ 
+ 	return rc;
+ }
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index c3e813d..ba60d03 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -31,6 +31,11 @@
+ #include <command.h>
+ #include <net.h>
+ #include <miiphy.h>
++#include <linux/types.h>
++
++#ifdef CONFIG_ARCH_MMU
++#include <asm/io.h>
++#endif
+ 
+ #undef	ET_DEBUG
+ #undef	MII_DEBUG
+@@ -141,6 +146,9 @@ struct fec_info_s fec_info[] = {
+ 	 0,			/* rx Index */
+ 	 0,			/* tx Index */
+ 	 0,			/* tx buffer */
++#ifdef CONFIG_ARCH_MMU
++	 { 0 },			/* rx buffer */
++#endif
+ 	 0,			/* initialized flag */
+ 	 },
+ };
+@@ -271,10 +279,10 @@ static inline u16 getFecPhyStatus(volatile fec_t *fecp, unsigned char addr)
+ 	return val;
+ }
+ 
+-static void setFecDuplexSpeed(volatile fec_t *fecp,  unsigned char addr,
++static void setFecDuplexSpeed(volatile fec_t *fecp, unsigned char addr,
+ 			      int dup_spd)
+ {
+-	unsigned short val;
++	unsigned short val = 0;
+ 	int ret;
+ 
+ 	ret = __fec_mii_read(fecp, addr, PHY_BMCR, &val);
+@@ -340,7 +348,7 @@ int fec_send(struct eth_device *dev, volatile void *packet, int length)
+ 	struct fec_info_s *info = dev->priv;
+ 	volatile fec_t *fecp = (fec_t *) (info->iobase);
+ 	int j, rc;
+-	u16 phyStatus;
++	u16 phyStatus = 0;
+ 
+ 	__fec_mii_read(fecp, info->phy_addr, PHY_BMSR, &phyStatus);
+ 
+@@ -361,7 +369,12 @@ int fec_send(struct eth_device *dev, volatile void *packet, int length)
+ 	if (j >= FEC_MAX_TIMEOUT)
+ 		printf("TX not ready\n");
+ 
+-	info->txbd[info->txIdx].cbd_bufaddr = (uint) packet;
++#ifdef CONFIG_ARCH_MMU
++	memcpy(ioremap_nocache(info->txbd[info->txIdx].cbd_bufaddr, length),
++			packet, length);
++#else
++	info->txbd[info->txIdx].cbd_bufaddr = (uint)packet;
++#endif
+ 	info->txbd[info->txIdx].cbd_datlen = length;
+ 	info->txbd[info->txIdx].cbd_sc =
+ 	    (info->txbd[info->txIdx].cbd_sc & BD_ENET_TX_WRAP) |
+@@ -428,6 +441,11 @@ int fec_recv(struct eth_device *dev)
+ 		} else {
+ 			length -= 4;
+ 			/* Pass the packet up to the protocol layers. */
++#ifdef CONFIG_ARCH_MMU
++			memcpy(NetRxPackets[info->rxIdx],
++				ioremap_nocache(info->rxbd[info->rxIdx].cbd_bufaddr, 0),
++				length);
++#endif
+ 			NetReceive(NetRxPackets[info->rxIdx], length);
+ 
+ 			fecp->eir |= FEC_EIR_RXF;
+@@ -483,6 +501,41 @@ void dbgFecRegs(struct eth_device *dev)
+ 	printf("x_drng       %x - %x\n", (int)&fecp->etdsr, fecp->etdsr);
+ 	printf("r_bufsz      %x - %x\n", (int)&fecp->emrbr, fecp->emrbr);
+ 
++	printf("\n\n\n");
++}
++#endif
++
++#ifdef ET_DEBUG
++void dbgFecRegs(struct eth_device *dev)
++{
++	struct fec_info_s *info = dev->priv;
++	volatile fec_t *fecp = (fec_t *) (info->iobase);
++
++	printf("=====\n");
++	printf("ievent       %x - %x\n", (int)&fecp->eir, fecp->eir);
++	printf("imask        %x - %x\n", (int)&fecp->eimr, fecp->eimr);
++	printf("r_des_active %x - %x\n", (int)&fecp->rdar, fecp->rdar);
++	printf("x_des_active %x - %x\n", (int)&fecp->tdar, fecp->tdar);
++	printf("ecntrl       %x - %x\n", (int)&fecp->ecr, fecp->ecr);
++	printf("mii_mframe   %x - %x\n", (int)&fecp->mmfr, fecp->mmfr);
++	printf("mii_speed    %x - %x\n", (int)&fecp->mscr, fecp->mscr);
++	printf("mii_ctrlstat %x - %x\n", (int)&fecp->mibc, fecp->mibc);
++	printf("r_cntrl      %x - %x\n", (int)&fecp->rcr, fecp->rcr);
++	printf("x_cntrl      %x - %x\n", (int)&fecp->tcr, fecp->tcr);
++	printf("padr_l       %x - %x\n", (int)&fecp->palr, fecp->palr);
++	printf("padr_u       %x - %x\n", (int)&fecp->paur, fecp->paur);
++	printf("op_pause     %x - %x\n", (int)&fecp->opd, fecp->opd);
++	printf("iadr_u       %x - %x\n", (int)&fecp->iaur, fecp->iaur);
++	printf("iadr_l       %x - %x\n", (int)&fecp->ialr, fecp->ialr);
++	printf("gadr_u       %x - %x\n", (int)&fecp->gaur, fecp->gaur);
++	printf("gadr_l       %x - %x\n", (int)&fecp->galr, fecp->galr);
++	printf("x_wmrk       %x - %x\n", (int)&fecp->tfwr, fecp->tfwr);
++	printf("r_bound      %x - %x\n", (int)&fecp->frbr, fecp->frbr);
++	printf("r_fstart     %x - %x\n", (int)&fecp->frsr, fecp->frsr);
++	printf("r_drng       %x - %x\n", (int)&fecp->erdsr, fecp->erdsr);
++	printf("x_drng       %x - %x\n", (int)&fecp->etdsr, fecp->etdsr);
++	printf("r_bufsz      %x - %x\n", (int)&fecp->emrbr, fecp->emrbr);
++#if 0
+ 	printf("\n");
+ 	printf("rmon_t_drop        %x - %x\n", (int)&fecp->rmon_t_drop,
+ 	       fecp->rmon_t_drop);
+@@ -546,7 +599,6 @@ void dbgFecRegs(struct eth_device *dev)
+ 	       fecp->ieee_t_fdxfc);
+ 	printf("ieee_t_octets_ok %x - %x\n", (int)&fecp->ieee_t_octets_ok,
+ 	       fecp->ieee_t_octets_ok);
+-
+ 	printf("\n");
+ 	printf("rmon_r_drop        %x - %x\n", (int)&fecp->rmon_r_drop,
+ 	       fecp->rmon_r_drop);
+@@ -598,7 +650,7 @@ void dbgFecRegs(struct eth_device *dev)
+ 	       fecp->ieee_r_fdxfc);
+ 	printf("ieee_r_octets_ok %x - %x\n", (int)&fecp->ieee_r_octets_ok,
+ 	       fecp->ieee_r_octets_ok);
+-
++#endif
+ 	printf("\n\n\n");
+ }
+ #endif
+@@ -622,10 +674,10 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ 	if (info->phy_addr < 0 || info->phy_addr > 0x1F)
+ 		info->phy_addr = mxc_fec_mii_discover_phy(dev);
+ #endif
+-	setFecDuplexSpeed(fecp, (unsigned char)info->phy_addr, info->dup_spd);
++	setFecDuplexSpeed(fecp, (uchar)info->phy_addr, info->dup_spd);
+ #else
+ #ifndef CONFIG_DISCOVER_PHY
+-	setFecDuplexSpeed(fecp, (unsigned char)info->phy_addr,
++	setFecDuplexSpeed(fecp, (uchar)info->phy_addr,
+ 				(FECDUPLEX << 16) | FECSPEED);
+ #endif				/* ifndef CONFIG_SYS_DISCOVER_PHY */
+ #endif				/* CONFIG_CMD_MII || CONFIG_MII */
+@@ -666,7 +718,12 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ 	for (i = 0; i < PKTBUFSRX; i++) {
+ 		info->rxbd[i].cbd_sc = BD_ENET_RX_EMPTY;
+ 		info->rxbd[i].cbd_datlen = 0;	/* Reset */
+-		info->rxbd[i].cbd_bufaddr = (uint) NetRxPackets[i];
++#ifdef CONFIG_ARCH_MMU
++		info->rxbd[i].cbd_bufaddr =
++			(uint)iomem_to_phys(info->rxbuf[i]);
++#else
++		info->rxbd[i].cbd_bufaddr = (uint)NetRxPackets[i];
++#endif
+ 	}
+ 	info->rxbd[PKTBUFSRX - 1].cbd_sc |= BD_ENET_RX_WRAP;
+ 
+@@ -678,13 +735,23 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ 	for (i = 0; i < TX_BUF_CNT; i++) {
+ 		info->txbd[i].cbd_sc = BD_ENET_TX_LAST | BD_ENET_TX_TC;
+ 		info->txbd[i].cbd_datlen = 0;	/* Reset */
+-		info->txbd[i].cbd_bufaddr = (uint) (&info->txbuf[0]);
++#ifdef CONFIG_ARCH_MMU
++		info->txbd[i].cbd_bufaddr =
++			(uint)iomem_to_phys(&info->txbuf[0]);
++#else
++		info->txbd[i].cbd_bufaddr = (uint)&info->txbuf[0];
++#endif
+ 	}
+ 	info->txbd[TX_BUF_CNT - 1].cbd_sc |= BD_ENET_TX_WRAP;
+ 
+ 	/* Set receive and transmit descriptor base */
+-	fecp->erdsr = (unsigned int)(&info->rxbd[0]);
+-	fecp->etdsr = (unsigned int)(&info->txbd[0]);
++#ifdef CONFIG_ARCH_MMU
++	fecp->erdsr = (uint)iomem_to_phys(&info->rxbd[0]);
++	fecp->etdsr = (uint)iomem_to_phys(&info->txbd[0]);
++#else
++	fecp->erdsr = (uint)(&info->rxbd[0]);
++	fecp->etdsr = (uint)(&info->txbd[0]);
++#endif
+ 
+ 	/* Now enable the transmit and receive processing */
+ 	fecp->ecr |= FEC_ECR_ETHER_EN;
+@@ -698,7 +765,7 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ void fec_reset(struct eth_device *dev)
+ {
+ 	struct fec_info_s *info = dev->priv;
+-	volatile fec_t *fecp = (fec_t *) (info->iobase);
++	volatile fec_t *fecp = (fec_t *)(info->iobase);
+ 	int i;
+ 
+ 	fecp->ecr = FEC_ECR_RESET;
+@@ -744,7 +811,7 @@ void mxc_fec_set_mac_from_env(char *mac_addr)
+ int mxc_fec_initialize(bd_t *bis)
+ {
+ 	struct eth_device *dev;
+-	int i;
++	int i, j;
+ 
+ 	for (i = 0; i < sizeof(fec_info) / sizeof(fec_info[0]); i++) {
+ 
+@@ -764,26 +831,50 @@ int mxc_fec_initialize(bd_t *bis)
+ 		dev->recv = fec_recv;
+ 
+ 		/* setup Receive and Transmit buffer descriptor */
++#ifdef CONFIG_ARCH_MMU
+ 		fec_info[i].rxbd =
+-		    (cbd_t *) memalign(CONFIG_SYS_CACHELINE_SIZE,
+-				       (PKTBUFSRX * sizeof(cbd_t)));
++			(cbd_t *)ioremap_nocache((ulong)iomem_to_phys(memalign(CONFIG_SYS_CACHELINE_SIZE,
++						(PKTBUFSRX * sizeof(cbd_t)))),
++						CONFIG_SYS_CACHELINE_SIZE);
+ 		fec_info[i].txbd =
+-		    (cbd_t *) memalign(CONFIG_SYS_CACHELINE_SIZE,
++			(cbd_t *)ioremap_nocache((ulong)iomem_to_phys(memalign(CONFIG_SYS_CACHELINE_SIZE,
++						(TX_BUF_CNT * sizeof(cbd_t)))),
++						CONFIG_SYS_CACHELINE_SIZE);
++		fec_info[i].txbuf =
++			(char *)ioremap_nocache((ulong)iomem_to_phys(memalign(CONFIG_SYS_CACHELINE_SIZE,
++						DBUF_LENGTH)),
++						CONFIG_SYS_CACHELINE_SIZE);
++		for (j = 0; j < PKTBUFSRX; ++j) {
++			fec_info[i].rxbuf[j] =
++				(char *)ioremap_nocache((ulong)iomem_to_phys(memalign(PKTSIZE_ALIGN,
++						PKTSIZE)),
++						PKTSIZE_ALIGN);
++		}
++#else
++		fec_info[i].rxbd =
++			(cbd_t *)memalign(CONFIG_SYS_CACHELINE_SIZE,
++						(PKTBUFSRX * sizeof(cbd_t)));
++		fec_info[i].txbd =
++		    (cbd_t *)memalign(CONFIG_SYS_CACHELINE_SIZE,
+ 				       (TX_BUF_CNT * sizeof(cbd_t)));
+ 		fec_info[i].txbuf =
+ 		    (char *)memalign(CONFIG_SYS_CACHELINE_SIZE, DBUF_LENGTH);
++#endif
++
+ #ifdef ET_DEBUG
+ 		printf("%s: rxbd %x txbd %x ->%x\n", dev->name,
+ 		       (int)fec_info[i].rxbd, (int)fec_info[i].txbd,
+ 		       (int)fec_info[i].txbuf);
+ #endif
+ 
+-		fec_info[i].phy_name = (char *)memalign(CONFIG_SYS_CACHELINE_SIZE, 32);
++		fec_info[i].phy_name =
++			(char *)memalign(CONFIG_SYS_CACHELINE_SIZE, 32);
+ 
+ 		eth_register(dev);
+ 
+ #if defined(CONFIG_MII) || defined(CONFIG_CMD_MII)
+-		miiphy_register(dev->name, mxc_fec_mii_read, mxc_fec_mii_write);
++		miiphy_register(dev->name, mxc_fec_mii_read,
++						mxc_fec_mii_write);
+ #endif
+ 	}
+ 
+diff --git a/include/asm-arm/arch-mx35/mmu.h b/include/asm-arm/arch-mx35/mmu.h
+index a701c72..1e9a96f 100644
+--- a/include/asm-arm/arch-mx35/mmu.h
++++ b/include/asm-arm/arch-mx35/mmu.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -132,4 +132,41 @@ union ARM_MMU_FIRST_LEVEL_DESCRIPTOR {
+ 	ARM_ACCESS_TYPE_NO_ACCESS(14) |	\
+ 	ARM_ACCESS_TYPE_NO_ACCESS(15))
+ 
++/*
++ * Translate the virtual address of ram space to physical address
++ * It is dependent on the implementation of mmu_init
++ */
++inline void *iomem_to_phys(unsigned long virt)
++{
++	if (virt < 0x08000000)
++		return (void *)(virt | PHYS_SDRAM_1);
++
++	if ((virt & 0xF0000000) == PHYS_SDRAM_1)
++		return (void *)(virt & (~0x08000000));
++
++	return (void *)virt;
++}
++
++/*
++ * Remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void __iounmap(void *addr)
++{
++	return;
++}
++
++void *__ioremap(unsigned long offset, size_t size, unsigned long flags)
++{
++	if (1 == flags) {
++		/* 0x88000000~0x87FFFFFF is uncacheable meory
++		space which is mapped to SDRAM */
++		if ((offset & 0xF0000000) == PHYS_SDRAM_1)
++			return (void *)(offset | 0x08000000);
++		else
++			return NULL;
++	} else
++		return (void *)offset;
++}
++
+ #endif
+diff --git a/include/asm-arm/arch-mx51/mmu.h b/include/asm-arm/arch-mx51/mmu.h
+index a701c72..e80cfc9 100644
+--- a/include/asm-arm/arch-mx51/mmu.h
++++ b/include/asm-arm/arch-mx51/mmu.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -14,6 +14,8 @@
+ #ifndef __ARM_ARCH_MMU_H
+ #define __ARM_ARCH_MMU_H
+ 
++#include <linux/types.h>
++
+ /*
+  * Translation Table Base Bit Masks
+  */
+@@ -132,4 +134,82 @@ union ARM_MMU_FIRST_LEVEL_DESCRIPTOR {
+ 	ARM_ACCESS_TYPE_NO_ACCESS(14) |	\
+ 	ARM_ACCESS_TYPE_NO_ACCESS(15))
+ 
++#if defined(CONFIG_MX51_3DS)
++
++/*
++ * Translate the virtual address of ram space to physical address
++ * It is dependent on the implementation of mmu_init
++ */
++inline void *iomem_to_phys(unsigned long virt)
++{
++	if (virt < 0x08000000)
++		return (void *)(virt | PHYS_SDRAM_1);
++
++	if ((virt & 0xF0000000) == PHYS_SDRAM_1)
++		return (void *)(virt & (~0x08000000));
++
++	return (void *)virt;
++}
++
++/*
++ * remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void *__ioremap(unsigned long offset, size_t size, unsigned long flags)
++{
++	if (1 == flags) {
++		/* 0x98000000~0x9FFFFFFF is uncacheable meory
++			space which is mapped to SDRAM */
++		if ((offset & 0xF0000000) == PHYS_SDRAM_1)
++			return (void *)(offset |= 0x08000000);
++		else
++			return NULL;
++	} else
++		return (void *)offset;
++}
++
++#elif defined(CONFIG_MX51_BBG)
++
++/*
++ * Translate the virtual address of ram space to physical address
++ * It is dependent on the implementation of mmu_init
++ */
++inline void *iomem_to_phys(unsigned long virt)
++{
++	if (virt < (PHYS_SDRAM_1_SIZE - 0x100000))
++		return (void *)(virt + PHYS_SDRAM_1);
++
++	if (virt >= 0xE0000000)
++		return (void *)((virt - 0xE0000000) + PHYS_SDRAM_1);
++
++	return (void *)virt;
++}
++
++/*
++ * Remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void __iounmap(void *addr)
++{
++	return;
++}
++
++void *__ioremap(unsigned long offset, size_t size, unsigned long flags)
++{
++	if (1 == flags) {
++		/* 0xE0000000~0xFFFFFFFF is uncacheable
++		meory space which is mapped to SDRAM */
++		if (offset >= PHYS_SDRAM_1 &&
++			offset < (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++			return (void *)(offset - PHYS_SDRAM_1) + 0xE0000000;
++		else
++			return NULL;
++	} else
++		return (void *)offset;
++}
++
++#else
++	#error "No such platforms for MMU!"
++#endif
++
+ #endif
+diff --git a/include/asm-arm/cache-cp15.h b/include/asm-arm/cache-cp15.h
+new file mode 100644
+index 0000000..4996ee0
+--- /dev/null
++++ b/include/asm-arm/cache-cp15.h
+@@ -0,0 +1,88 @@
++/*
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ *
++ * (C) Copyright 2002
++ * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/system.h>
++
++#if !(defined(CONFIG_SYS_NO_ICACHE) && defined(CONFIG_SYS_NO_DCACHE))
++#define cp_delay()	\
++{	\
++	volatile int i;	\
++	/* copro seems to need some delay between reading and writing */	\
++	for (i = 0; i < 100; i++)	\
++		nop();	\
++}
++
++/* cache_bit must be either CR_I or CR_C */
++#define cache_enable(cache_bit)	\
++{	\
++	uint32_t reg;	\
++	reg = get_cr();	/* get control reg. */	\
++	set_cr(reg | cache_bit);	\
++	cp_delay();	\
++}
++
++/* cache_bit must be either CR_I or CR_C */
++#define cache_disable(cache_bit)	\
++{	\
++	uint32_t reg;	\
++	reg = get_cr();	\
++	set_cr(reg & ~cache_bit);	\
++	cp_delay();	\
++}
++
++#endif
++
++#ifdef CONFIG_SYS_NO_ICACHE
++#define icache_enable()
++
++#define icache_disable()
++
++#define icache_status()
++#else
++#define icache_enable()		(cache_enable(CR_I))
++
++#define icache_disable()	(cache_disable(CR_I))
++
++#define icache_status()		((get_cr() & CR_I) != 0)
++#endif
++
++#ifdef CONFIG_SYS_NO_DCACHE
++#define dcache_enable()
++
++#define dcache_disable()
++
++#define dcache_status()
++#else
++#define dcache_enable()		(cache_enable(CR_C))
++
++#define dcache_disable()	\
++{	\
++	cache_disable(CR_C);	\
++}
++
++#define dcache_status()	((get_cr() & CR_C) != 0)
++
++#endif
+diff --git a/include/asm-arm/fec.h b/include/asm-arm/fec.h
+index fd2cc10..4e81fa0 100644
+--- a/include/asm-arm/fec.h
++++ b/include/asm-arm/fec.h
+@@ -6,7 +6,7 @@
+  * Copyright (c) 1997 Dan Malek (dmalek@jlc.net)
+  *
+  * Add FEC Structure and definitions
+- * Copyright 2004-2009 Freescale Semiconductor, Inc.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc.
+  * TsiChung Liew (Tsi-Chung.Liew@freescale.com)
+  *
+  * See file CREDITS for list of people who contributed to this
+@@ -31,6 +31,8 @@
+ #ifndef	fec_h
+ #define	fec_h
+ 
++#include <net.h>
++
+ /* Buffer descriptors used FEC.
+ */
+ typedef struct cpm_buf_desc {
+@@ -111,6 +113,9 @@ struct fec_info_s {
+ 	uint rxIdx;
+ 	uint txIdx;
+ 	char *txbuf;
++#ifdef CONFIG_ARCH_MMU
++	char *rxbuf[PKTBUFSRX];
++#endif
+ 	int initialized;
+ 	struct fec_info_s *next;
+ };
+diff --git a/include/asm-arm/io.h b/include/asm-arm/io.h
+index fec3a7e..b8881f1 100644
+--- a/include/asm-arm/io.h
++++ b/include/asm-arm/io.h
+@@ -198,7 +198,7 @@ extern void __iounmap(void *addr);
+ 	unsigned long _off = (off), _size = (sz);		\
+ 	void *_ret = (void *)0;					\
+ 	if (iomem_valid_addr(_off, _size))			\
+-		_ret = __ioremap(iomem_to_phys(_off),_size,0);	\
++		_ret = __ioremap(iomem_to_phys(_off), _size, nocache);	\
+ 	_ret;							\
+  })
+ 
+diff --git a/include/asm-arm/mmu.h b/include/asm-arm/mmu.h
+index 668dfc9..f1b7574 100644
+--- a/include/asm-arm/mmu.h
++++ b/include/asm-arm/mmu.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -14,6 +14,7 @@
+ #ifndef __ASM_MMU_H
+ #define __ASM_MMU_H
+ 
++#include <asm/system.h>
+ 
+ #define MMU_L1_TYPE         0x03  /* Descriptor type */
+ #define MMU_L1_TYPE_Fault   0x00  /* Invalid */
+@@ -76,4 +77,42 @@
+ #define MMU_Control_Z  0x800    /* Enable branch predicion */
+ #define MMU_Control_RR 0x4000   /* Select non-random cache replacement */
+ 
++#ifdef	CONFIG_ARCH_MMU
++
++#define MMU_ON()	\
++	{	\
++	unsigned long cr = 0;	\
++	asm volatile ("mrc p15, 0, %0, c1, c0;" : "=r"(cr) : /*:*/);	\
++	cr |= (CR_M | CR_A | CR_C | CR_Z);	\
++	asm volatile ("mcr p15, 0, %0, c1, c0;" : : "r"(cr) /*:*/);	\
++	/* Clean instruction pipeline */	\
++	asm volatile (	\
++		"b skip;"	\
++		"nop;"	\
++		"nop;"	\
++		"nop;"	\
++		"skip:"	\
++	);	\
++	}
++
++#define MMU_OFF()	\
++	{	\
++	unsigned long cr = 0;	\
++	asm volatile ("mrc p15, 0, %0, c1, c0;" : "=r"(cr) /*: :*/);	\
++	cr &= (~(CR_M | CR_A | CR_C | CR_I));	\
++	asm volatile ("mcr p15, 0, %0, c1, c0;" : : "r"(cr) /*:*/);	\
++	asm volatile (	\
++		"nop;" /* flush i+d-TLBs */      \
++		"nop;" /* flush i+d-TLBs */      \
++		"nop;" /* flush i+d-TLBs */	\
++	);	\
++	}
++
++#else
++
++#define MMU_ON()
++#define MMU_OFF()
++
++#endif
++
+ #endif
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 21e5acf..bc420b2 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX31ADS Freescale board.
+  *
+@@ -182,6 +182,8 @@
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+ #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index 9a1dd70..c9cc157 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX31ADS Freescale board.
+  *
+@@ -183,6 +183,8 @@
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+ #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*
+  * MMC Configs
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index f6083c5..a942bfe 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -213,9 +213,9 @@
+  */
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-/* TO1 boards */
+-/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
+ #define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 52e7b99..fabb718 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -268,9 +268,9 @@
+  */
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-/* TO1 boards */
+-/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
+ #define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index b2961a2..c17c82c 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -209,9 +209,9 @@
+  */
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-/* TO1 boards */
+-/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
+ #define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index a7685c7..07663be 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -260,9 +260,9 @@
+  */
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-/* TO1 boards */
+-/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
+ #define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+diff --git a/lib_arm/Makefile b/lib_arm/Makefile
+index 0293348..6b1561b 100644
+--- a/lib_arm/Makefile
++++ b/lib_arm/Makefile
+@@ -39,9 +39,6 @@ GLCOBJS	+= div0.o
+ COBJS-y	+= board.o
+ COBJS-y	+= bootm.o
+ COBJS-y	+= cache.o
+-ifndef CONFIG_SYS_NO_CP15_CACHE
+-COBJS-y	+= cache-cp15.o
+-endif
+ COBJS-y	+= interrupts.o
+ COBJS-y	+= reset.o
+ 
+diff --git a/lib_arm/cache-cp15.c b/lib_arm/cache-cp15.c
+deleted file mode 100644
+index 62ed54f..0000000
+--- a/lib_arm/cache-cp15.c
++++ /dev/null
+@@ -1,120 +0,0 @@
+-/*
+- * (C) Copyright 2002
+- * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#include <common.h>
+-#include <asm/system.h>
+-
+-#if !(defined(CONFIG_SYS_NO_ICACHE) && defined(CONFIG_SYS_NO_DCACHE))
+-static void cp_delay (void)
+-{
+-	volatile int i;
+-
+-	/* copro seems to need some delay between reading and writing */
+-	for (i = 0; i < 100; i++)
+-		nop();
+-}
+-
+-/* cache_bit must be either CR_I or CR_C */
+-static void cache_enable(uint32_t cache_bit)
+-{
+-	uint32_t reg;
+-
+-	reg = get_cr();	/* get control reg. */
+-	cp_delay();
+-	set_cr(reg | cache_bit);
+-}
+-
+-/* cache_bit must be either CR_I or CR_C */
+-static void cache_disable(uint32_t cache_bit)
+-{
+-	uint32_t reg;
+-
+-	reg = get_cr();
+-	cp_delay();
+-	set_cr(reg & ~cache_bit);
+-}
+-#endif
+-
+-#ifdef CONFIG_SYS_NO_ICACHE
+-void icache_enable (void)
+-{
+-	return;
+-}
+-
+-void icache_disable (void)
+-{
+-	return;
+-}
+-
+-int icache_status (void)
+-{
+-	return 0;					/* always off */
+-}
+-#else
+-void icache_enable(void)
+-{
+-	cache_enable(CR_I);
+-}
+-
+-void icache_disable(void)
+-{
+-	cache_disable(CR_I);
+-}
+-
+-int icache_status(void)
+-{
+-	return (get_cr() & CR_I) != 0;
+-}
+-#endif
+-
+-#ifdef CONFIG_SYS_NO_DCACHE
+-void dcache_enable (void)
+-{
+-	return;
+-}
+-
+-void dcache_disable (void)
+-{
+-	return;
+-}
+-
+-int dcache_status (void)
+-{
+-	return 0;					/* always off */
+-}
+-#else
+-void dcache_enable(void)
+-{
+-	cache_enable(CR_C);
+-}
+-
+-void dcache_disable(void)
+-{
+-	cache_disable(CR_C);
+-}
+-
+-int dcache_status(void)
+-{
+-	return (get_cr() & CR_C) != 0;
+-}
+-#endif
+-- 
+1.5.4.4
+

@@ -1,0 +1,27 @@
+From b11803c989a82c7b6e2989465ae7e18bfefa12f5 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Wed, 23 Feb 2011 18:13:23 +0800
+Subject: [PATCH] ENGR00139643-2 header file: can not read edid at probe for first power on
+
+Need enable analog regulator.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ include/linux/fsl_devices.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 8c247c5..166d9b4 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -313,6 +313,7 @@ struct mxc_ddc_platform_data {
+ 	u32 di;
+ 	void (*init) (void);
+ 	int (*update) (void);
++	char *analog_regulator;
+ };
+ 
+ struct mxc_tsc_platform_data {
+-- 
+1.5.4.4
+

@@ -1,0 +1,34 @@
+From 771cd80265ff2062bc9b6d4f76db34cafda6fb09 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <r00091@freescale.com>
+Date: Fri, 11 Dec 2009 11:08:45 +0800
+Subject: [PATCH] ENGR00118363 Fix SATA drive failure on Ubuntu 9.10
+
+Fix SATA drive failure on Ubuntu 9.10
+BugLink: https://bugs.launchpad.net/bugs/431963
+
+Signed-off-by: Dinh Nguyen <r00091@freescale.com>
+---
+ drivers/usb/storage/usb.c |    7 +++++--
+ 1 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/storage/usb.c b/drivers/usb/storage/usb.c
+index a7d0bf9..dd9ec0b 100644
+--- a/drivers/usb/storage/usb.c
++++ b/drivers/usb/storage/usb.c
+@@ -334,8 +334,11 @@ static int usb_stor_control_thread(void * __us)
+ 
+ 		/* we've got a command, let's do it! */
+ 		else {
+-			US_DEBUG(usb_stor_show_command(us->srb));
+-			us->proto_handler(us->srb, us);
++			US_DEBUGP(usb_stor_show_command(us->srb));
++#ifdef CONFIG_MACH_MX51_BABBAGE
++			if (us->srb->cmnd[0] != 0x85)
++#endif
++				us->proto_handler(us->srb, us);
+ 		}
+ 
+ 		/* lock access to the state */
+-- 
+1.5.4.4
+

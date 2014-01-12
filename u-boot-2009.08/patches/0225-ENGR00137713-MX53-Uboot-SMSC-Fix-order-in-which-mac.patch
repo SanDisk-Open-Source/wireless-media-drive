@@ -1,0 +1,47 @@
+From 34b78f4a60195a1c3daf758b31620f25f6981e00 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Thu, 6 Jan 2011 15:50:41 -0600
+Subject: [PATCH] ENGR00137713 MX53 Uboot SMSC Fix order in which mac addr bytes are read from IIM
+
+Given that an example mac addr is 00-11-22-33-44-55,
+it should be fused into the IIM at the following locations:
+
+0xC24 - 00
+0xC28 - 11
+0xC2C - 22
+0xC30 - 33
+0xC34 - 44
+0xC38 - 55
+
+Then, when reading the bytes into a mac array, it should be read as follows:
+
+mac[0] - 00
+mac[1] - 11
+mac[2] - 22
+mac[3] - 33
+mac[4] - 44
+mac[5] - 55
+
+Previously, it was read into the array in reverse order.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/net/smc911x.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/smc911x.c b/drivers/net/smc911x.c
+index a36b040..012df8e 100644
+--- a/drivers/net/smc911x.c
++++ b/drivers/net/smc911x.c
+@@ -249,7 +249,7 @@ void smc911x_get_mac_from_iim(unsigned char *mac)
+ 	for (i = 0; i < 6; i++) {
+ 		mac_ptr = IMX_IIM_BASE + IIM_BANK_AREA_1_OFFSET + 0x24 +
+ 			(i << 2);
+-		mac[5-i] = readl(mac_ptr);
++		mac[i] = readl(mac_ptr);
+ 	}
+ }
+ #endif
+-- 
+1.5.4.4
+

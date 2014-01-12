@@ -1,0 +1,37 @@
+From 600541d95109c1537184abf676cafb64575b4361 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Wed, 15 Sep 2010 09:50:23 -0500
+Subject: [PATCH] ENGR00131570 SRTC Driver enable for kernel 2.6.35
+
+Upgrade of SRTC driver to kernel version 2.6.35 required
+that device pointer be provided when calling clk_get_rate
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/rtc/rtc-mxc_v2.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/rtc/rtc-mxc_v2.c b/drivers/rtc/rtc-mxc_v2.c
+index 61e3265..710dc8b 100644
+--- a/drivers/rtc/rtc-mxc_v2.c
++++ b/drivers/rtc/rtc-mxc_v2.c
+@@ -361,6 +361,7 @@ static int mxc_rtc_ioctl(struct device *dev, unsigned int cmd,
+ 
+ 		return 0;
+ 
++	/* NOTE: This IOCTL does not work properly on kernel 2.6.35 */
+ 	case RTC_WAIT_TIME_SET:
+ 
+ 		/* don't block without releasing mutex first */
+@@ -592,7 +593,7 @@ static int mxc_rtc_probe(struct platform_device *pdev)
+ 		}
+ 	}
+ 
+-	clk = clk_get(NULL, "rtc_clk");
++	clk = clk_get(&pdev->dev, "rtc_clk");
+ 	if (clk_get_rate(clk) != 32768) {
+ 		printk(KERN_ALERT "rtc clock is not valid");
+ 		ret = -EINVAL;
+-- 
+1.5.4.4
+

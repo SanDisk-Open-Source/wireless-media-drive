@@ -1,0 +1,117 @@
+From e6ed124f273d9439f03a32bcdea064574c32c1d2 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Fri, 14 Jan 2011 23:42:22 +0800
+Subject: [PATCH] ENGR00137552 MX53: increase VDDGP as 1.2V for 1GHZ
+
+The norminal voltage of VDDGP for 1GHZ is 1.2V in MX53
+TO2.0 datasheet (RevD). So set the CPU frequency
+as 800MHZ firstly since VDDGP is 1.1V after power on.
+After increasing VDDGP as 1.2V, increase CPU as 1GHZ.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx53_loco/lowlevel_init.S |    2 +-
+ board/freescale/mx53_loco/mx53_loco.c     |   15 ++++++++++++++-
+ board/freescale/mx53_smd/lowlevel_init.S  |    2 +-
+ board/freescale/mx53_smd/mx53_smd.c       |   14 ++++++++++++++
+ 4 files changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/board/freescale/mx53_loco/lowlevel_init.S b/board/freescale/mx53_loco/lowlevel_init.S
+index ac374f3..5b76063 100644
+--- a/board/freescale/mx53_loco/lowlevel_init.S
++++ b/board/freescale/mx53_loco/lowlevel_init.S
+@@ -97,7 +97,7 @@
+ 	mov r1, #0x4
+ 	str r1, [r0, #CLKCTL_CCSR]
+ 
+-	setup_pll PLL1_BASE_ADDR, 1000
++	setup_pll PLL1_BASE_ADDR, 800
+ 
+         setup_pll PLL3_BASE_ADDR, 400
+ 
+diff --git a/board/freescale/mx53_loco/mx53_loco.c b/board/freescale/mx53_loco/mx53_loco.c
+index 4f588ea..4c26d8f 100644
+--- a/board/freescale/mx53_loco/mx53_loco.c
++++ b/board/freescale/mx53_loco/mx53_loco.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -299,6 +299,15 @@ static void setup_i2c(unsigned int module_base)
+ 		break;
+ 	}
+ }
++
++void setup_pmic_voltages(void)
++{
++	int value;
++	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
++	/* increase VDDGP as 1.2V for 1GHZ */
++	value = 0x5c;
++	i2c_write(0x48, 0x2e, 1, &value, 1);
++}
+ #endif
+ 
+ #if defined(CONFIG_DWC_AHSATA)
+@@ -549,6 +558,10 @@ int board_init(void)
+ 
+ #ifdef CONFIG_I2C_MXC
+ 	setup_i2c(CONFIG_SYS_I2C_PORT);
++	/* Increase VDDGP voltage */
++	setup_pmic_voltages();
++	/* Switch to 1GHZ */
++	clk_config(CONFIG_REF_CLK_FREQ, 1000, CPU_CLK);
+ #endif
+ 
+ #if defined(CONFIG_DWC_AHSATA)
+diff --git a/board/freescale/mx53_smd/lowlevel_init.S b/board/freescale/mx53_smd/lowlevel_init.S
+index 5feaaf1..60ee843 100644
+--- a/board/freescale/mx53_smd/lowlevel_init.S
++++ b/board/freescale/mx53_smd/lowlevel_init.S
+@@ -97,7 +97,7 @@
+ 	mov r1, #0x4
+ 	str r1, [r0, #CLKCTL_CCSR]
+ 
+-	setup_pll PLL1_BASE_ADDR, 1000
++	setup_pll PLL1_BASE_ADDR, 800
+ 
+         setup_pll PLL3_BASE_ADDR, 400
+ 
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index be1185f..1b44b3c 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -363,6 +363,16 @@ static void setup_i2c(unsigned int module_base)
+ 		break;
+ 	}
+ }
++
++void setup_pmic_voltages(void)
++{
++	int value;
++	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
++	/* increase VDDGP as 1.2V for 1GHZ */
++	value = 0x5c;
++	i2c_write(0x48, 0x2e, 1, &value, 1);
++}
++
+ #endif
+ 
+ #if defined(CONFIG_DWC_AHSATA)
+@@ -684,6 +694,10 @@ int board_init(void)
+ 
+ #ifdef CONFIG_I2C_MXC
+ 	setup_i2c(CONFIG_SYS_I2C_PORT);
++	/* Increase VDDGP voltage */
++	setup_pmic_voltages();
++	/* Switch to 1GHZ */
++	clk_config(CONFIG_REF_CLK_FREQ, 1000, CPU_CLK);
+ #endif
+ 
+ #if defined(CONFIG_DWC_AHSATA)
+-- 
+1.5.4.4
+

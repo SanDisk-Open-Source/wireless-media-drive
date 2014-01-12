@@ -1,0 +1,73 @@
+From 6f3608ce5980cffd869a25d8757b38ad222a1d78 Mon Sep 17 00:00:00 2001
+From: Nancy Chen <Nancy.Chen@freescale.com>
+Date: Wed, 8 Dec 2010 16:54:44 -0600
+Subject: [PATCH] ENGR00136146-1 MX53 TO2 ARD: Change VDDGP and VCC values
+
+1. Changed VDDGP voltage to 1.0V as CPU freq is 160MHz.
+2. Changed suspend values of VDDGP and VCC back to 0.95V
+   as HW issue has been resolved.
+
+Signed-off-by: Nancy Chen <Nancy.Chen@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c              |    2 +-
+ arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c |   12 ++++++------
+ 2 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 470a463..82b1f63 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -390,7 +390,7 @@ static struct cpu_wp cpu_wp_auto[] = {
+ 	 .mfd = 2,
+ 	 .mfn = 1,
+ 	 .cpu_podf = 4,
+-	 .cpu_voltage = 850000,},
++	 .cpu_voltage = 1000000,},
+ };
+ 
+ static struct fb_videomode video_modes[] = {
+diff --git a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+index d1103b5..0253881 100644
+--- a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
++++ b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+@@ -54,7 +54,7 @@ static struct regulator_init_data sw1_init = {
+ 		.boot_on = 1,
+ 		.initial_state = PM_SUSPEND_MEM,
+ 		.state_mem = {
+-			.uV = 1050000,
++			.uV = 950000,
+ 			.mode = REGULATOR_MODE_NORMAL,
+ 			.enabled = 1,
+ 		},
+@@ -66,14 +66,14 @@ static struct regulator_init_data sw1_init = {
+ static struct regulator_init_data sw2_init = {
+ 	.constraints = {
+ 		.name = "SW2",
+-		.min_uV = 644000,
+-		.max_uV = 1331000,
++		.min_uV = 704000,
++		.max_uV = 1456000,
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+ 		.always_on = 1,
+ 		.boot_on = 1,
+ 		.initial_state = PM_SUSPEND_MEM,
+ 		.state_mem = {
+-			.uV = 1025000,
++			.uV = 950000,
+ 			.mode = REGULATOR_MODE_NORMAL,
+ 			.enabled = 1,
+ 		},
+@@ -110,8 +110,8 @@ static struct regulator_init_data ldo1_init = {
+ static struct regulator_init_data ldo2_init = {
+ 	.constraints = {
+ 		.name = "LDO2",
+-		.min_uV = 644000,
+-		.max_uV = 1331000,
++		.min_uV = 704000,
++		.max_uV = 1456000,
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+ 		.valid_modes_mask = REGULATOR_MODE_NORMAL,
+ 		.always_on = 1,
+-- 
+1.5.4.4
+

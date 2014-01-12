@@ -1,0 +1,34 @@
+From c0de272df4e554aec6d4f281ff963fbcfeea6fec Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Thu, 11 Nov 2010 16:33:34 +0800
+Subject: [PATCH] ENGR00133595 NAND : fix the wrong position for ONFI-nand's Block-mark swapping
+
+The ONFI nand needs the GF14.
+So change the block mark's position for ONFI NAND.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+index 1bc1d2e..67c0f73 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+@@ -292,7 +292,12 @@ int gpmi_nfc_set_geometry(struct gpmi_nfc_data *this)
+ 	/* Compute some important facts about chunk geometry. */
+ 
+ 	chunk_data_size_in_bits = geometry->ecc_chunk_size_in_bytes * 8;
+-	chunk_ecc_size_in_bits  = geometry->ecc_strength * 13;
++
++	/* ONFI nand needs GF14 */
++	if (is_onfi_nand(&this->device_info))
++		chunk_ecc_size_in_bits  = geometry->ecc_strength * 14;
++	else
++		chunk_ecc_size_in_bits  = geometry->ecc_strength * 13;
+ 
+ 	chunk_total_size_in_bits =
+ 			chunk_data_size_in_bits + chunk_ecc_size_in_bits;
+-- 
+1.5.4.4
+

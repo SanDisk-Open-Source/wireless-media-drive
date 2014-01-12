@@ -1,0 +1,369 @@
+From 8df54067b614e6debb4a4c4a89dd108c70b42e71 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 18 Mar 2010 18:43:28 +0800
+Subject: [PATCH] ENGR00121731: Add mmu, l1cache, l2cache support for mx53
+
+Add mmu, l1cache, l2cache support for mx53.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx53_evk/mx53_evk.c |   74 +++++++++++++++
+ cpu/arm_cortexa8/mx51/generic.c     |    2 +
+ cpu/arm_cortexa8/mx53/generic.c     |   19 ++++
+ include/asm-arm/arch-mx53/mmu.h     |  174 +++++++++++++++++++++++++++++++++++
+ include/configs/mx53_evk.h          |    5 +
+ 5 files changed, 274 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 1acfcc8..fd8587e 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -39,6 +39,11 @@
+ #include <fsl_esdhc.h>
+ #endif
+ 
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+@@ -93,6 +98,75 @@ inline int is_soc_rev(int rev)
+ 	return (system_rev & 0xFF) - rev;
+ }
+ 
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
++	unsigned long i;
++
++	/*
++	* Set the TTB register
++	*/
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	* Set the Domain Access Control Register
++	*/
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	* First clear all TT entries - ie Set them to Faulting
++	*/
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes          Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0x000, 0x10,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* ROM, 16M */
++	X_ARM_MMU_SECTION(0x070, 0x070, 0x010,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IRAM */
++	X_ARM_MMU_SECTION(0x100, 0x100, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SATA */
++	X_ARM_MMU_SECTION(0x180, 0x180, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IPUv3M */
++	X_ARM_MMU_SECTION(0x200, 0x200, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* GPU */
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x300,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* periperals */
++	X_ARM_MMU_SECTION(0x700, 0x700, 0x400,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 1G */
++	X_ARM_MMU_SECTION(0x700, 0xB00, 0x400,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 1G */
++	X_ARM_MMU_SECTION(0xF00, 0xF00, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS1 EIM control*/
++	X_ARM_MMU_SECTION(0xF7F, 0xF7F, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* NAND Flash buffer */
++	X_ARM_MMU_SECTION(0xF80, 0xF80, 0x001,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* iRam */
++
++	/* Workaround for arm errata #709718 */
++	/* Setup PRRR so device is always mapped to non-shared */
++	asm volatile ("mrc p15, 0, %0, c10, c2, 0" : "=r"(i) : /*:*/);
++	i &= (~(3 << 0x10));
++	asm volatile ("mcr p15, 0, %0, c10, c2, 0" : : "r"(i) /*:*/);
++
++	/* Enable MMU */
++	MMU_ON();
++}
++#endif
++
+ int dram_init(void)
+ {
+ 	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index 0762c03..eb1a023 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -26,7 +26,9 @@
+ #include <common.h>
+ #include <asm/arch/mx51.h>
+ #include <asm/errno.h>
++#ifdef CONFIG_ARCH_CPU_INIT
+ #include <asm/cache-cp15.h>
++#endif
+ #include "crm_regs.h"
+ 
+ enum pll_clocks {
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 01220c3..f75d15a 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -24,6 +24,9 @@
+ #include <asm/arch/mx53.h>
+ #include <asm/errno.h>
+ #include "crm_regs.h"
++#ifdef CONFIG_ARCH_CPU_INIT
++#include <asm/cache-cp15.h>
++#endif
+ 
+ enum pll_clocks {
+ 	PLL1_CLK = MXC_DPLL1_BASE,
+@@ -336,6 +339,7 @@ int cpu_eth_init(bd_t *bis)
+ 	int rc = -ENODEV;
+ #if defined(CONFIG_MXC_FEC)
+ 	char *env = NULL;
++
+ 	rc = mxc_fec_initialize(bis);
+ 
+ 	env = getenv("fec_addr");
+@@ -345,3 +349,18 @@ int cpu_eth_init(bd_t *bis)
+ 	return rc;
+ }
+ 
++#if defined(CONFIG_ARCH_CPU_INIT)
++int arch_cpu_init(void)
++{
++	icache_enable();
++	dcache_enable();
++
++#ifdef CONFIG_L2_OFF
++	l2_cache_disable();
++#else
++	l2_cache_enable();
++#endif
++	return 0;
++}
++#endif
++
+diff --git a/include/asm-arm/arch-mx53/mmu.h b/include/asm-arm/arch-mx53/mmu.h
+new file mode 100644
+index 0000000..5fa2fc0
+--- /dev/null
++++ b/include/asm-arm/arch-mx53/mmu.h
+@@ -0,0 +1,174 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#ifndef __ARM_ARCH_MMU_H
++#define __ARM_ARCH_MMU_H
++
++#include <linux/types.h>
++
++/*
++ * Translation Table Base Bit Masks
++ */
++#define ARM_TRANSLATION_TABLE_MASK               0xFFFFC000
++
++/*
++ * Domain Access Control Bit Masks
++ */
++#define ARM_ACCESS_TYPE_NO_ACCESS(domain_num)    (0x0 << (domain_num)*2)
++#define ARM_ACCESS_TYPE_CLIENT(domain_num)       (0x1 << (domain_num)*2)
++#define ARM_ACCESS_TYPE_MANAGER(domain_num)      (0x3 << (domain_num)*2)
++
++struct ARM_MMU_FIRST_LEVEL_FAULT {
++	unsigned int id:2;
++	unsigned int sbz:30;
++};
++
++#define ARM_MMU_FIRST_LEVEL_FAULT_ID 0x0
++
++struct ARM_MMU_FIRST_LEVEL_PAGE_TABLE {
++	unsigned int id:2;
++	unsigned int imp:2;
++	unsigned int domain:4;
++	unsigned int sbz:1;
++	unsigned int base_address:23;
++};
++
++#define ARM_MMU_FIRST_LEVEL_PAGE_TABLE_ID 0x1
++
++struct ARM_MMU_FIRST_LEVEL_SECTION {
++	unsigned int id:2;
++	unsigned int b:1;
++	unsigned int c:1;
++	unsigned int imp:1;
++	unsigned int domain:4;
++	unsigned int sbz0:1;
++	unsigned int ap:2;
++	unsigned int sbz1:8;
++	unsigned int base_address:12;
++};
++
++#define ARM_MMU_FIRST_LEVEL_SECTION_ID 0x2
++
++struct ARM_MMU_FIRST_LEVEL_RESERVED {
++	unsigned int id:2;
++	unsigned int sbz:30;
++};
++
++#define ARM_MMU_FIRST_LEVEL_RESERVED_ID 0x3
++
++#define ARM_MMU_FIRST_LEVEL_DESCRIPTOR_ADDRESS(ttb_base, table_index) \
++	(unsigned long *)((unsigned long)(ttb_base) + ((table_index) << 2))
++
++#define ARM_FIRST_LEVEL_PAGE_TABLE_SIZE 0x4000
++
++#define ARM_MMU_SECTION(ttb_base, actual_base, virtual_base,		\
++			cacheable, bufferable, perm)			\
++	{								\
++	register union ARM_MMU_FIRST_LEVEL_DESCRIPTOR desc;		\
++	desc.word = 0;							\
++	desc.section.id = ARM_MMU_FIRST_LEVEL_SECTION_ID;		\
++	desc.section.domain = 0;					\
++	desc.section.c = (cacheable);					\
++	desc.section.b = (bufferable);					\
++	desc.section.ap = (perm);					\
++	desc.section.base_address = (actual_base);			\
++	*ARM_MMU_FIRST_LEVEL_DESCRIPTOR_ADDRESS(ttb_base, (virtual_base)) \
++				= desc.word;				\
++	}
++
++#define X_ARM_MMU_SECTION(abase, vbase, size, cache, buff, access)	\
++	{								\
++		int i; int j = abase; int k = vbase;			\
++		for (i = size; i > 0 ; i--, j++, k++)			\
++			ARM_MMU_SECTION(ttb_base, j, k, cache, buff, access); \
++	}
++
++union ARM_MMU_FIRST_LEVEL_DESCRIPTOR {
++	unsigned long word;
++	struct ARM_MMU_FIRST_LEVEL_FAULT fault;
++	struct ARM_MMU_FIRST_LEVEL_PAGE_TABLE page_table;
++	struct ARM_MMU_FIRST_LEVEL_SECTION section;
++	struct ARM_MMU_FIRST_LEVEL_RESERVED reserved;
++};
++
++#define ARM_UNCACHEABLE		0
++#define ARM_CACHEABLE		1
++#define ARM_UNBUFFERABLE	0
++#define ARM_BUFFERABLE		1
++
++#define ARM_ACCESS_PERM_NONE_NONE	0
++#define ARM_ACCESS_PERM_RO_NONE		0
++#define ARM_ACCESS_PERM_RO_RO		0
++#define ARM_ACCESS_PERM_RW_NONE		1
++#define ARM_ACCESS_PERM_RW_RO		2
++#define ARM_ACCESS_PERM_RW_RW		3
++
++/*
++ * Initialization for the Domain Access Control Register
++ */
++#define ARM_ACCESS_DACR_DEFAULT      (	\
++	ARM_ACCESS_TYPE_MANAGER(0)    |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(1)  |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(2)  |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(3)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(4)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(5)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(6)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(7)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(8)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(9)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(10) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(11) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(12) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(13) |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(14) |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(15))
++
++/*
++ * Translate the virtual address of ram space to physical address
++ * It is dependent on the implementation of mmu_init
++ */
++inline void *iomem_to_phys(unsigned long virt)
++{
++	if (virt >= 0xB0000000)
++		return (void *)((virt - 0xB0000000) + PHYS_SDRAM_1);
++
++	return (void *)virt;
++}
++
++/*
++ * remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void *__ioremap(unsigned long offset, size_t size, unsigned long flags)
++{
++	if (1 == flags) {
++		if (offset >= PHYS_SDRAM_1 &&
++			offset < (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++			return (void *)(offset - PHYS_SDRAM_1) + 0xB0000000;
++		else
++			return NULL;
++	} else
++		return (void *)offset;
++}
++
++/*
++ * Remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void __iounmap(void *addr)
++{
++	return;
++}
++
++#endif
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index 010ac76..17650d8 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -36,6 +36,9 @@
+ 
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
+ #define CONFIG_MX53_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+ 
+ #define CONFIG_DISPLAY_CPUINFO
+@@ -197,6 +200,8 @@
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+ #define PHYS_SDRAM_1_SIZE	(1024 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+-- 
+1.5.4.4
+

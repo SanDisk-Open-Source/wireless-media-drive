@@ -1,0 +1,28 @@
+From 296ec69aef404f5eb543be8f3c3e781b497ad718 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Sun, 19 Sep 2010 14:42:52 +0800
+Subject: [PATCH] ENGR00131710 MX53 EVK:Get SSI EXT1 clock correctly for CSI MCLK
+
+Get SSI EXT1 clock correctly for CSI MCLK.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index bd610f2..9eacbf0 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1579,7 +1579,7 @@ static void __init mxc_board_init(void)
+ {
+ 	mxc_ipu_data.di_clk[0] = clk_get(NULL, "ipu_di0_clk");
+ 	mxc_ipu_data.di_clk[1] = clk_get(NULL, "ipu_di1_clk");
+-	mxc_ipu_data.csi_clk[0] = clk_get(NULL, "ssi_ext_clk1");
++	mxc_ipu_data.csi_clk[0] = clk_get(NULL, "ssi_ext1_clk");
+ 	mxc_spdif_data.spdif_core_clk = clk_get(NULL, "spdif_xtal_clk");
+ 	clk_put(mxc_spdif_data.spdif_core_clk);
+ 
+-- 
+1.5.4.4
+

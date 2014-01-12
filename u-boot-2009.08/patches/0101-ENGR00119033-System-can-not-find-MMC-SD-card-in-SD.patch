@@ -1,0 +1,1211 @@
+From 6dd2709514d0f5d151529681efa3430adf09a513 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 29 Mar 2010 12:01:00 +0800
+Subject: [PATCH] ENGR00119033: System can not find MMC/SD card in SD slot 1
+
+System can not find MMC/SD card in SD
+slot 1 when booting from Uboot.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx25_3stack/mx25_3stack.c |  167 ++++++++++++++-----------
+ board/freescale/mx35_3stack/mx35_3stack.c |  133 ++++++++++----------
+ board/freescale/mx51_bbg/mx51_bbg.c       |  192 +++++++++++++++--------------
+ board/freescale/mx53_evk/mx53_evk.c       |  131 +++++++++++---------
+ common/env_mmc.c                          |    8 +-
+ drivers/mmc/imx_esdhc.c                   |   72 +++++++----
+ drivers/mmc/mmc.c                         |   15 ++-
+ include/configs/mx25_3stack.h             |    5 +
+ include/configs/mx28_evk.h                |    3 +
+ include/configs/mx35_3stack.h             |    2 +
+ include/configs/mx35_3stack_mmc.h         |   10 ++-
+ include/configs/mx51_3stack.h             |    5 +
+ include/configs/mx51_3stack_android.h     |    5 +
+ include/configs/mx51_bbg.h                |    5 +
+ include/configs/mx51_bbg_android.h        |    5 +
+ include/configs/mx53_evk.h                |    5 +
+ include/fsl_esdhc.h                       |    9 ++-
+ 17 files changed, 441 insertions(+), 331 deletions(-)
+
+diff --git a/board/freescale/mx25_3stack/mx25_3stack.c b/board/freescale/mx25_3stack/mx25_3stack.c
+index ced6599..e5624c1 100644
+--- a/board/freescale/mx25_3stack/mx25_3stack.c
++++ b/board/freescale/mx25_3stack/mx25_3stack.c
+@@ -74,88 +74,105 @@ int dram_init(void)
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
+-u32 *imx_esdhc_base_addr;
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE, 1, 1},
++	{MMC_SDHC2_BASE, 1, 1},
++};
+ 
+-int esdhc_gpio_init(void)
++int esdhc_gpio_init(bd_t *bis)
+ {
+-	u32 interface_esdhc = 0, val = 0;
+-
+-	interface_esdhc = (readl(CCM_RCSR) & (0x00300000)) >> 20;
+-
+-	switch (interface_esdhc) {
+-	case 0:
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC1_BASE;
+-		/* Pins */
+-		writel(0x10, IOMUXC_BASE + 0x190);	/* SD1_CMD */
+-		writel(0x10, IOMUXC_BASE + 0x194);	/* SD1_CLK */
+-		writel(0x00, IOMUXC_BASE + 0x198);	/* SD1_DATA0 */
+-		writel(0x00, IOMUXC_BASE + 0x19c);	/* SD1_DATA1 */
+-		writel(0x00, IOMUXC_BASE + 0x1a0);	/* SD1_DATA2 */
+-		writel(0x00, IOMUXC_BASE + 0x1a4);	/* SD1_DATA3 */
+-		writel(0x06, IOMUXC_BASE + 0x094);	/* D12 (SD1_DATA4) */
+-		writel(0x06, IOMUXC_BASE + 0x090);	/* D13 (SD1_DATA5) */
+-		writel(0x06, IOMUXC_BASE + 0x08c);	/* D14 (SD1_DATA6) */
+-		writel(0x06, IOMUXC_BASE + 0x088);	/* D15 (SD1_DATA7) */
+-		writel(0x05, IOMUXC_BASE + 0x010);	/* A14 (SD1_WP) */
+-		writel(0x05, IOMUXC_BASE + 0x014);	/* A15 (SD1_DET) */
+-
+-		/* Pads */
+-		writel(0xD1, IOMUXC_BASE + 0x388);	/* SD1_CMD */
+-		writel(0xD1, IOMUXC_BASE + 0x38c);	/* SD1_CLK */
+-		writel(0xD1, IOMUXC_BASE + 0x390);	/* SD1_DATA0 */
+-		writel(0xD1, IOMUXC_BASE + 0x394);	/* SD1_DATA1 */
+-		writel(0xD1, IOMUXC_BASE + 0x398);	/* SD1_DATA2 */
+-		writel(0xD1, IOMUXC_BASE + 0x39c);	/* SD1_DATA3 */
+-		writel(0xD1, IOMUXC_BASE + 0x28c);	/* D12 (SD1_DATA4) */
+-		writel(0xD1, IOMUXC_BASE + 0x288);	/* D13 (SD1_DATA5) */
+-		writel(0xD1, IOMUXC_BASE + 0x284);	/* D14 (SD1_DATA6) */
+-		writel(0xD1, IOMUXC_BASE + 0x280);	/* D15 (SD1_DATA7) */
+-		writel(0xD1, IOMUXC_BASE + 0x230);	/* A14 (SD1_WP) */
+-		writel(0xD1, IOMUXC_BASE + 0x234);	/* A15 (SD1_DET) */
+-
+-		/*
+-		 * Set write protect and card detect gpio as inputs
+-		 * A14 (SD1_WP) and A15 (SD1_DET)
+-		 */
+-		val = ~(3 << 0) & readl(GPIO1_BASE + GPIO_GDIR);
+-		writel(val, GPIO1_BASE + GPIO_GDIR);
+-		break;
+-	case 1:
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC2_BASE;
+-		/* Pins */
+-		writel(0x16, IOMUXC_BASE + 0x0e8);	/* LD8 (SD1_CMD) */
+-		writel(0x16, IOMUXC_BASE + 0x0ec);	/* LD9 (SD1_CLK) */
+-		writel(0x06, IOMUXC_BASE + 0x0f0);	/* LD10 (SD1_DATA0) */
+-		writel(0x06, IOMUXC_BASE + 0x0f4);	/* LD11 (SD1_DATA1) */
+-		writel(0x06, IOMUXC_BASE + 0x0f8);	/* LD12 (SD1_DATA2) */
+-		writel(0x06, IOMUXC_BASE + 0x0fc);	/* LD13 (SD1_DATA3) */
+-		writel(0x02, IOMUXC_BASE + 0x120);	/* CSI_D2 (SD1_DATA4) */
+-		writel(0x02, IOMUXC_BASE + 0x124);	/* CSI_D3 (SD1_DATA5) */
+-		writel(0x02, IOMUXC_BASE + 0x128);	/* CSI_D4 (SD1_DATA6) */
+-		writel(0x02, IOMUXC_BASE + 0x12c);	/* CSI_D5 (SD1_DATA7) */
+-
+-		/* Pads */
+-		writel(0xD1, IOMUXC_BASE + 0x2e0);	/* LD8 (SD1_CMD) */
+-		writel(0xD1, IOMUXC_BASE + 0x2e4);	/* LD9 (SD1_CLK) */
+-		writel(0xD1, IOMUXC_BASE + 0x2e8);	/* LD10 (SD1_DATA0) */
+-		writel(0xD1, IOMUXC_BASE + 0x2ec);	/* LD11 (SD1_DATA1) */
+-		writel(0xD1, IOMUXC_BASE + 0x2f0);	/* LD12 (SD1_DATA2) */
+-		writel(0xD1, IOMUXC_BASE + 0x2f4);	/* LD13 (SD1_DATA3) */
+-		writel(0xD1, IOMUXC_BASE + 0x318);	/* CSI_D2 (SD1_DATA4) */
+-		writel(0xD1, IOMUXC_BASE + 0x31c);	/* CSI_D3 (SD1_DATA5) */
+-		writel(0xD1, IOMUXC_BASE + 0x320);	/* CSI_D4 (SD1_DATA6) */
+-		writel(0xD1, IOMUXC_BASE + 0x324);	/* CSI_D5 (SD1_DATA7) */
+-		break;
+-	default:
+-		break;
++	s32 status = 0;
++	u32 index = 0;
++	u32 val = 0;
++
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			/* Pins */
++			writel(0x10, IOMUXC_BASE + 0x190); /* SD1_CMD */
++			writel(0x10, IOMUXC_BASE + 0x194); /* SD1_CLK */
++			writel(0x00, IOMUXC_BASE + 0x198); /* SD1_DATA0 */
++			writel(0x00, IOMUXC_BASE + 0x19c); /* SD1_DATA1 */
++			writel(0x00, IOMUXC_BASE + 0x1a0); /* SD1_DATA2 */
++			writel(0x00, IOMUXC_BASE + 0x1a4); /* SD1_DATA3 */
++			writel(0x06, IOMUXC_BASE + 0x094); /* D12 (SD1_DATA4) */
++			writel(0x06, IOMUXC_BASE + 0x090); /* D13 (SD1_DATA5) */
++			writel(0x06, IOMUXC_BASE + 0x08c); /* D14 (SD1_DATA6) */
++			writel(0x06, IOMUXC_BASE + 0x088); /* D15 (SD1_DATA7) */
++			writel(0x05, IOMUXC_BASE + 0x010); /* A14 (SD1_WP) */
++			writel(0x05, IOMUXC_BASE + 0x014); /* A15 (SD1_DET) */
++
++			/* Pads */
++			writel(0xD1, IOMUXC_BASE + 0x388); /* SD1_CMD */
++			writel(0xD1, IOMUXC_BASE + 0x38c); /* SD1_CLK */
++			writel(0xD1, IOMUXC_BASE + 0x390); /* SD1_DATA0 */
++			writel(0xD1, IOMUXC_BASE + 0x394); /* SD1_DATA1 */
++			writel(0xD1, IOMUXC_BASE + 0x398); /* SD1_DATA2 */
++			writel(0xD1, IOMUXC_BASE + 0x39c); /* SD1_DATA3 */
++			writel(0xD1, IOMUXC_BASE + 0x28c); /* D12 (SD1_DATA4) */
++			writel(0xD1, IOMUXC_BASE + 0x288); /* D13 (SD1_DATA5) */
++			writel(0xD1, IOMUXC_BASE + 0x284); /* D14 (SD1_DATA6) */
++			writel(0xD1, IOMUXC_BASE + 0x280); /* D15 (SD1_DATA7) */
++			writel(0xD1, IOMUXC_BASE + 0x230); /* A14 (SD1_WP) */
++			writel(0xD1, IOMUXC_BASE + 0x234); /* A15 (SD1_DET) */
++
++			/*
++			 * Set write protect and card detect gpio as inputs
++			 * A14 (SD1_WP) and A15 (SD1_DET)
++			 */
++			val = ~(3 << 0) & readl(GPIO1_BASE + GPIO_GDIR);
++			writel(val, GPIO1_BASE + GPIO_GDIR);
++			break;
++		case 1:
++			/* Pins */
++			writel(0x16, IOMUXC_BASE + 0x0e8); /* LD8 (SD1_CMD) */
++			writel(0x16, IOMUXC_BASE + 0x0ec); /* LD9 (SD1_CLK) */
++			writel(0x06, IOMUXC_BASE + 0x0f0); /* LD10 (SD1_DATA0)*/
++			writel(0x06, IOMUXC_BASE + 0x0f4); /* LD11 (SD1_DATA1)*/
++			writel(0x06, IOMUXC_BASE + 0x0f8); /* LD12 (SD1_DATA2)*/
++			writel(0x06, IOMUXC_BASE + 0x0fc); /* LD13 (SD1_DATA3)*/
++			/* CSI_D2 (SD1_DATA4) */
++			writel(0x02, IOMUXC_BASE + 0x120);
++			/* CSI_D3 (SD1_DATA5) */
++			writel(0x02, IOMUXC_BASE + 0x124);
++			/* CSI_D4 (SD1_DATA6) */
++			writel(0x02, IOMUXC_BASE + 0x128);
++			/* CSI_D5 (SD1_DATA7) */
++			writel(0x02, IOMUXC_BASE + 0x12c);
++
++			/* Pads */
++			writel(0xD1, IOMUXC_BASE + 0x2e0); /* LD8 (SD1_CMD) */
++			writel(0xD1, IOMUXC_BASE + 0x2e4); /* LD9 (SD1_CLK) */
++			writel(0xD1, IOMUXC_BASE + 0x2e8); /* LD10 (SD1_DATA0)*/
++			writel(0xD1, IOMUXC_BASE + 0x2ec); /* LD11 (SD1_DATA1)*/
++			writel(0xD1, IOMUXC_BASE + 0x2f0); /* LD12 (SD1_DATA2)*/
++			writel(0xD1, IOMUXC_BASE + 0x2f4); /* LD13 (SD1_DATA3)*/
++			/* CSI_D2 (SD1_DATA4) */
++			writel(0xD1, IOMUXC_BASE + 0x318);
++			/* CSI_D3 (SD1_DATA5) */
++			writel(0xD1, IOMUXC_BASE + 0x31c);
++			/* CSI_D4 (SD1_DATA6) */
++			writel(0xD1, IOMUXC_BASE + 0x320);
++			/* CSI_D5 (SD1_DATA7) */
++			writel(0xD1, IOMUXC_BASE + 0x324);
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
+ 	}
+ 	return 0;
+ }
+ 
+-int board_mmc_init(void)
++int board_mmc_init(bd_t *bis)
+ {
+-	if (!esdhc_gpio_init())
+-		return fsl_esdhc_mmc_init(gd->bd);
++	if (!esdhc_gpio_init(bis))
++		return 0;
+ 	else
+ 		return -1;
+ }
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 6480c16..4da8f25 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -370,85 +370,82 @@ int board_eth_init(bd_t *bis)
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
+-u32 *imx_esdhc_base_addr;
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC2_BASE_ADDR, 1, 1},
++};
+ 
+-int esdhc_gpio_init(void)
++int esdhc_gpio_init(bd_t *bis)
+ {
+-	u32 interface_esdhc = 0;
+-	u32 pad_val = 0;
+-
+-	interface_esdhc = (readl(IIM_BASE_ADDR + 0x80c)) & (0x000000C0) >> 6;
++	u32 pad_val = 0, index = 0;
++	s32 status = 0;
+ 
+ 	/* IOMUX PROGRAMMING */
+-	switch (interface_esdhc) {
+-	case 0:
+-		imx_esdhc_base_addr = \
+-				(u32 *)MMC_SDHC1_BASE_ADDR;
+-
+-		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+-			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
+-			PAD_CTL_100K_PD | PAD_CTL_SRE_FAST;
+-		mxc_request_iomux(MX35_PIN_SD1_CMD,
+-			MUX_CONFIG_FUNC | MUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX35_PIN_SD1_CMD, pad_val);
+-
+-		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+ 				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
+-				PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
+-		mxc_request_iomux(MX35_PIN_SD1_CLK,
++				PAD_CTL_100K_PD | PAD_CTL_SRE_FAST;
++			mxc_request_iomux(MX35_PIN_SD1_CMD,
+ 				MUX_CONFIG_FUNC | MUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX35_PIN_SD1_CLK, pad_val);
+-		mxc_request_iomux(MX35_PIN_SD1_DATA0,
+-			  MUX_CONFIG_FUNC);
+-		mxc_iomux_set_pad(MX35_PIN_SD1_DATA0, pad_val);
+-		mxc_request_iomux(MX35_PIN_SD1_DATA3,
+-			  MUX_CONFIG_FUNC);
+-		mxc_iomux_set_pad(MX35_PIN_SD1_DATA3, pad_val);
+-
+-		break;
+-	case 1:
+-		imx_esdhc_base_addr = \
+-				(u32 *)MMC_SDHC2_BASE_ADDR;
+-
+-		mxc_request_iomux(MX35_PIN_SD2_CLK,
+-			  MUX_CONFIG_FUNC | MUX_CONFIG_SION);
+-		mxc_request_iomux(MX35_PIN_SD2_CMD,
+-			  MUX_CONFIG_FUNC | MUX_CONFIG_SION);
+-		mxc_request_iomux(MX35_PIN_SD2_DATA0,
+-			  MUX_CONFIG_FUNC);
+-		mxc_request_iomux(MX35_PIN_SD2_DATA3,
+-			  MUX_CONFIG_FUNC);
+-
+-		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+-			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
+-			PAD_CTL_100K_PD | PAD_CTL_SRE_FAST;
+-		mxc_iomux_set_pad(MX35_PIN_SD2_CMD, pad_val);
+-
+-		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+-				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
+-				PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
+-		mxc_iomux_set_pad(MX35_PIN_SD2_CLK, pad_val);
+-		mxc_iomux_set_pad(MX35_PIN_SD2_DATA0, pad_val);
+-		mxc_iomux_set_pad(MX35_PIN_SD2_DATA3, pad_val);
+-
+-		break;
+-	case 2:
+-		imx_esdhc_base_addr = \
+-				(u32 *)MMC_SDHC3_BASE_ADDR;
+-
+-		printf("TO2 ESDHC3 not supported!");
+-		break;
+-	default:
+-		break;
++			mxc_iomux_set_pad(MX35_PIN_SD1_CMD, pad_val);
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++					PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++					PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++			mxc_request_iomux(MX35_PIN_SD1_CLK,
++					MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_iomux_set_pad(MX35_PIN_SD1_CLK, pad_val);
++			mxc_request_iomux(MX35_PIN_SD1_DATA0,
++					MUX_CONFIG_FUNC);
++			mxc_iomux_set_pad(MX35_PIN_SD1_DATA0, pad_val);
++			mxc_request_iomux(MX35_PIN_SD1_DATA3,
++					MUX_CONFIG_FUNC);
++			mxc_iomux_set_pad(MX35_PIN_SD1_DATA3, pad_val);
++
++			break;
++		case 1:
++			mxc_request_iomux(MX35_PIN_SD2_CLK,
++					MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_request_iomux(MX35_PIN_SD2_CMD,
++					MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_request_iomux(MX35_PIN_SD2_DATA0,
++					MUX_CONFIG_FUNC);
++			mxc_request_iomux(MX35_PIN_SD2_DATA3,
++					MUX_CONFIG_FUNC);
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++					PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
++					PAD_CTL_100K_PD | PAD_CTL_SRE_FAST;
++			mxc_iomux_set_pad(MX35_PIN_SD2_CMD, pad_val);
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++					PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++					PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++			mxc_iomux_set_pad(MX35_PIN_SD2_CLK, pad_val);
++			mxc_iomux_set_pad(MX35_PIN_SD2_DATA0, pad_val);
++			mxc_iomux_set_pad(MX35_PIN_SD2_DATA3, pad_val);
++
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
+ 	}
+ 
+-	return 0;
++	return status;
+ }
+ 
+-int board_mmc_init(void)
++int board_mmc_init(bd_t *bis)
+ {
+-	if (!esdhc_gpio_init())
+-		return fsl_esdhc_mmc_init(gd->bd);
++	if (!esdhc_gpio_init(bis))
++		return 0;
+ 	else
+ 		return -1;
+ }
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 4446a63..1d553c1 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -567,108 +567,114 @@ int board_eth_init(bd_t *bis)
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
+-u32 *imx_esdhc_base_addr;
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC2_BASE_ADDR, 1, 1},
++};
+ 
+-int esdhc_gpio_init(void)
++int esdhc_gpio_init(bd_t *bis)
+ {
+-	u32 interface_esdhc = 0;
+ 	s32 status = 0;
+-	u32 pad = 0;
+-	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
+-
+-	interface_esdhc = (soc_sbmr & (0x00180000)) >> 19;
+-
+-	switch (interface_esdhc) {
+-	case 0:
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC1_BASE_ADDR;
+-
+-		mxc_request_iomux(MX51_PIN_SD1_CMD,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_CLK,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-
+-		mxc_request_iomux(MX51_PIN_SD1_DATA0,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_DATA1,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_DATA2,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_DATA3,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		break;
+-	case 1:
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC2_BASE_ADDR;
+-
+-		pad = PAD_CTL_DRV_MAX | PAD_CTL_22K_PU | PAD_CTL_SRE_FAST;
+-
+-		mxc_request_iomux(MX51_PIN_SD2_CMD,
+-			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD2_CLK,
+-			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-
+-		mxc_request_iomux(MX51_PIN_SD2_DATA0,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD2_DATA1,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD2_DATA2,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD2_DATA3,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX51_PIN_SD2_CMD, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD2_CLK, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD2_DATA0, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD2_DATA1, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD2_DATA2, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD2_DATA3, pad);
+-		break;
+-	case 2:
+-		status = -1;
+-		break;
+-	case 3:
+-		status = -1;
+-		break;
+-	default:
+-		status = -1;
+-		break;
++	u32 index = 0;
++
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			mxc_request_iomux(MX51_PIN_SD1_CMD,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_CLK,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++
++			mxc_request_iomux(MX51_PIN_SD1_DATA0,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_DATA1,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_DATA2,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_DATA3,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			break;
++		case 1:
++			mxc_request_iomux(MX51_PIN_SD2_CMD,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD2_CLK,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++
++			mxc_request_iomux(MX51_PIN_SD2_DATA0,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD2_DATA1,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD2_DATA2,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD2_DATA3,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_iomux_set_pad(MX51_PIN_SD2_CMD,
++					PAD_CTL_DRV_MAX | PAD_CTL_22K_PU |
++					PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD2_CLK,
++					PAD_CTL_DRV_MAX | PAD_CTL_22K_PU |
++					PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD2_DATA0,
++					PAD_CTL_DRV_MAX | PAD_CTL_22K_PU |
++					PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD2_DATA1,
++					PAD_CTL_DRV_MAX | PAD_CTL_22K_PU |
++					PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD2_DATA2,
++					PAD_CTL_DRV_MAX | PAD_CTL_22K_PU |
++					PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD2_DATA3,
++					PAD_CTL_DRV_MAX | PAD_CTL_22K_PU |
++					PAD_CTL_SRE_FAST);
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
+ 	}
+ 
+ 	return status;
+ }
+ 
+-int board_mmc_init(void)
++int board_mmc_init(bd_t *bis)
+ {
+-	if (!esdhc_gpio_init())
+-		return fsl_esdhc_mmc_init(gd->bd);
++	if (!esdhc_gpio_init(bis))
++		return 0;
+ 	else
+ 		return -1;
+ }
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 4804b02..9661df6 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -402,72 +402,89 @@ static void setup_fec(void)
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
+-u32 *imx_esdhc_base_addr;
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC3_BASE_ADDR, 1, 1},
++};
+ 
+-int esdhc_gpio_init(void)
++int esdhc_gpio_init(bd_t *bis)
+ {
+-	u32 interface_esdhc = 0;
+ 	s32 status = 0;
+-	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
+-
+-	interface_esdhc = (soc_sbmr & (0x00300000)) >> 20;
+-
+-	switch (interface_esdhc) {
+-	case 0:
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC1_BASE_ADDR;
+-
+-		mxc_request_iomux(MX53_PIN_SD1_CMD, IOMUX_CONFIG_ALT0);
+-		mxc_request_iomux(MX53_PIN_SD1_CLK, IOMUX_CONFIG_ALT0);
+-		mxc_request_iomux(MX53_PIN_SD1_DATA0, IOMUX_CONFIG_ALT0);
+-		mxc_request_iomux(MX53_PIN_SD1_DATA1, IOMUX_CONFIG_ALT0);
+-		mxc_request_iomux(MX53_PIN_SD1_DATA2, IOMUX_CONFIG_ALT0);
+-		mxc_request_iomux(MX53_PIN_SD1_DATA3, IOMUX_CONFIG_ALT0);
+-
+-		mxc_iomux_set_pad(MX53_PIN_SD1_CMD, 0x1E4);
+-		mxc_iomux_set_pad(MX53_PIN_SD1_CLK, 0xD4);
+-		mxc_iomux_set_pad(MX53_PIN_SD1_DATA0, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_SD1_DATA1, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_SD1_DATA2, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_SD1_DATA3, 0x1D4);
+-		break;
+-	case 2:
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC3_BASE_ADDR;
+-
+-		mxc_request_iomux(MX53_PIN_ATA_RESET_B, IOMUX_CONFIG_ALT2);
+-		mxc_request_iomux(MX53_PIN_ATA_IORDY, IOMUX_CONFIG_ALT2);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA8, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA9, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA10, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA11, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA0, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA1, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA2, IOMUX_CONFIG_ALT4);
+-		mxc_request_iomux(MX53_PIN_ATA_DATA3, IOMUX_CONFIG_ALT4);
+-
+-		mxc_iomux_set_pad(MX53_PIN_ATA_RESET_B, 0x1E4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_IORDY, 0xD4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA8, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA9, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA10, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA11, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA0, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA1, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA2, 0x1D4);
+-		mxc_iomux_set_pad(MX53_PIN_ATA_DATA3, 0x1D4);
+-
+-		break;
+-	default:
+-		status = -1;
+-		break;
++	u32 index = 0;
++
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			mxc_request_iomux(MX53_PIN_SD1_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA0,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA1,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA2,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA3,
++						IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX53_PIN_SD1_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_CLK, 0xD4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA0, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA1, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA2, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA3, 0x1D4);
++			break;
++		case 1:
++			mxc_request_iomux(MX53_PIN_ATA_RESET_B,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_IORDY,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_DATA8,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA9,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA10,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA11,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA0,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA1,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA2,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA3,
++						IOMUX_CONFIG_ALT4);
++
++			mxc_iomux_set_pad(MX53_PIN_ATA_RESET_B, 0x1E4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_IORDY, 0xD4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA8, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA9, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA10, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA11, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA0, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA1, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA2, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA3, 0x1D4);
++
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
+ 	}
+ 
+ 	return status;
+ }
+ 
+-int board_mmc_init(void)
++int board_mmc_init(bd_t *bis)
+ {
+-	if (!esdhc_gpio_init())
+-		return fsl_esdhc_mmc_init(gd->bd);
++	if (!esdhc_gpio_init(bis))
++		return 0;
+ 	else
+ 		return -1;
+ }
+diff --git a/common/env_mmc.c b/common/env_mmc.c
+index 8c98ad2..79b5ed3 100644
+--- a/common/env_mmc.c
++++ b/common/env_mmc.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+ 
+  * (C) Copyright 2000-2006
+  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+@@ -112,12 +112,12 @@ inline int write_env(struct mmc *mmc, unsigned long size,
+ 
+ int saveenv(void)
+ {
+-	struct mmc *mmc = find_mmc_device(0);
++	struct mmc *mmc = find_mmc_device(CONFIG_SYS_MMC_ENV_DEV);
+ 
+ 	if (init_mmc_for_env(mmc))
+ 		return 1;
+ 
+-	puts("Writing to MMC... ");
++	printf("Writing to MMC(%d)... ", CONFIG_SYS_MMC_ENV_DEV);
+ 	if (write_env(mmc, CONFIG_ENV_SIZE, \
+ 				CONFIG_ENV_OFFSET, env_ptr)) {
+ 		puts("failed\n");
+@@ -147,7 +147,7 @@ inline int read_env(struct mmc *mmc, unsigned long size,
+ void env_relocate_spec(void)
+ {
+ #if !defined(ENV_IS_EMBEDDED)
+-	struct mmc *mmc = find_mmc_device(0);
++	struct mmc *mmc = find_mmc_device(CONFIG_SYS_MMC_ENV_DEV);
+ 
+ 	if (init_mmc_for_env(mmc))
+ 		return;
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index f9b35ea..78e0607 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -31,10 +31,13 @@
+ #include <config.h>
+ #include <common.h>
+ #include <command.h>
++#include <hwconfig.h>
+ #include <mmc.h>
++#include <part.h>
+ #include <malloc.h>
+ #include <mmc.h>
+ #include <fsl_esdhc.h>
++#include <fdt_support.h>
+ #include <asm/io.h>
+ 
+ 
+@@ -108,7 +111,8 @@ static int esdhc_setup_data(struct mmc *mmc, struct mmc_data *data)
+ 	uint wml_value;
+ 	int timeout;
+ 	u32 tmp;
+-	struct fsl_esdhc *regs = mmc->priv;
++	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
++	struct fsl_esdhc *regs = (struct fsl_esdhc *)cfg->esdhc_base;
+ 
+ 	wml_value = data->blocksize / 4;
+ 
+@@ -157,7 +161,8 @@ esdhc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 	uint	xfertyp;
+ 	uint	irqstat;
+ 	u32	tmp;
+-	volatile struct fsl_esdhc *regs = mmc->priv;
++	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
++	volatile struct fsl_esdhc *regs = (struct fsl_esdhc *)cfg->esdhc_base;
+ 
+ 	writel(-1, &regs->irqstat);
+ 
+@@ -278,7 +283,8 @@ void set_sysctl(struct mmc *mmc, uint clock)
+ {
+ 	int sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
+ 	int div, pre_div;
+-	volatile struct fsl_esdhc *regs = mmc->priv;
++	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
++	volatile struct fsl_esdhc *regs = (struct fsl_esdhc *)cfg->esdhc_base;
+ 	uint clk;
+ 	u32 tmp;
+ 
+@@ -321,7 +327,8 @@ void set_sysctl(struct mmc *mmc, uint clock)
+ 
+ static void esdhc_set_ios(struct mmc *mmc)
+ {
+-	struct fsl_esdhc *regs = mmc->priv;
++	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
++	struct fsl_esdhc *regs = (struct fsl_esdhc *)cfg->esdhc_base;
+ 	u32 tmp;
+ 
+ 	/* Set the clock speed */
+@@ -342,10 +349,8 @@ static void esdhc_set_ios(struct mmc *mmc)
+ 
+ static int esdhc_init(struct mmc *mmc)
+ {
+-	struct fsl_esdhc *regs = mmc->priv;
+-	/*
+-	int timeout = 1000;
+-	*/
++	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
++	struct fsl_esdhc *regs = (struct fsl_esdhc *)cfg->esdhc_base;
+ 	u32 tmp;
+ 
+ 	/* Reset the eSDHC by writing 1 to RSTA bit of SYSCTRL Register */
+@@ -388,41 +393,31 @@ static int esdhc_init(struct mmc *mmc)
+ 	return 0;
+ }
+ 
+-#ifndef CONFIG_SYS_FSL_ESDHC_ADDR
+-extern u32 *imx_esdhc_base_addr;
+-#endif
+-
+-static int esdhc_initialize(bd_t *bis)
++int fsl_esdhc_initialize(bd_t *bis, struct fsl_esdhc_cfg *cfg)
+ {
+-#ifdef CONFIG_SYS_FSL_ESDHC_ADDR
+-	struct fsl_esdhc *regs = (struct fsl_esdhc *)CONFIG_SYS_IMX_ESDHC_ADDR;
+-#else
+-	struct fsl_esdhc *regs = (struct fsl_esdhc *)imx_esdhc_base_addr;
+-#endif
++	struct fsl_esdhc *regs;
+ 	struct mmc *mmc;
+ 	u32 caps;
+ 
++	if (!cfg)
++		return -1;
++
+ 	mmc = malloc(sizeof(struct mmc));
+ 
+ 	sprintf(mmc->name, "FSL_ESDHC");
+-	mmc->priv = regs;
++	regs = (struct fsl_esdhc *)cfg->esdhc_base;
++	mmc->priv = cfg;
+ 	mmc->send_cmd = esdhc_send_cmd;
+ 	mmc->set_ios = esdhc_set_ios;
+ 	mmc->init = esdhc_init;
+ 
+ 	caps = regs->hostcapblt;
+-	/*
+ 	if (caps & ESDHC_HOSTCAPBLT_VS18)
+ 		mmc->voltages |= MMC_VDD_165_195;
+ 	if (caps & ESDHC_HOSTCAPBLT_VS30)
+ 		mmc->voltages |= MMC_VDD_29_30 | MMC_VDD_30_31;
+-	if (caps & ESDHC_HOSTCAPBLT_VS33) {
++	if (caps & ESDHC_HOSTCAPBLT_VS33)
+ 		mmc->voltages |= MMC_VDD_32_33 | MMC_VDD_33_34;
+-	}
+-	*/
+-	mmc->voltages = MMC_VDD_35_36 | MMC_VDD_34_35 | MMC_VDD_33_34 |
+-			MMC_VDD_32_33 | MMC_VDD_31_32 | MMC_VDD_30_31 |
+-			MMC_VDD_29_30 | MMC_VDD_28_29 | MMC_VDD_27_28;
+ 
+ 	mmc->host_caps = MMC_MODE_4BIT | MMC_MODE_8BIT;
+ 
+@@ -439,6 +434,29 @@ static int esdhc_initialize(bd_t *bis)
+ 
+ int fsl_esdhc_mmc_init(bd_t *bis)
+ {
+-	return esdhc_initialize(bis);
++	struct fsl_esdhc_cfg *cfg;
++
++	cfg = malloc(sizeof(struct fsl_esdhc_cfg));
++	memset(cfg, 0, sizeof(struct fsl_esdhc_cfg));
++	cfg->esdhc_base = CONFIG_SYS_FSL_ESDHC_ADDR;
++	return fsl_esdhc_initialize(bis, cfg);
+ }
+ 
++#ifdef CONFIG_OF_LIBFDT
++void fdt_fixup_esdhc(void *blob, bd_t *bd)
++{
++	const char *compat = "fsl,esdhc";
++	const char *status = "okay";
++
++	if (!hwconfig("esdhc")) {
++		status = "disabled";
++		goto out;
++	}
++
++	do_fixup_by_compat_u32(blob, compat, "clock-frequency",
++			       gd->sdhc_clk, 1);
++out:
++	do_fixup_by_compat(blob, compat, "status", status,
++			   strlen(status) + 1, 1);
++}
++#endif
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 01d3210..2f774ee 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -176,7 +176,7 @@ int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size)
+ 	buffer = malloc(blklen);
+ 
+ 	if (!buffer) {
+-		puts("Could not allocate buffer for MMC read!\n");
++		printf("Could not allocate buffer for MMC read!\n");
+ 		return -1;
+ 	}
+ 
+@@ -184,7 +184,7 @@ int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size)
+ 	err = mmc_set_blocklen(mmc, mmc->read_bl_len);
+ 
+ 	if (err)
+-		return err;
++		goto free_buffer;
+ 
+ 	for (i = startblock; i <= endblock; i++) {
+ 		int segment_size;
+@@ -321,7 +321,15 @@ sd_send_op_cond(struct mmc *mmc)
+ 
+ 		cmd.cmdidx = SD_CMD_APP_SEND_OP_COND;
+ 		cmd.resp_type = MMC_RSP_R3;
+-		cmd.cmdarg = mmc->voltages;
++
++		/*
++		 * Most cards do not answer if some reserved bits
++		 * in the ocr are set. However, Some controller
++		 * can set bit 7 (reserved for low voltages), but
++		 * how to manage low voltages SD card is not yet
++		 * specified.
++		 */
++		cmd.cmdarg = mmc->voltages & 0xff8000;
+ 
+ 		if (mmc->version == SD_VERSION_2)
+ 			cmd.cmdarg |= OCR_HCS;
+@@ -978,7 +986,6 @@ int mmc_startup(struct mmc *mmc)
+ 			mmc_set_clock(mmc, 50000000);
+ 		else
+ 			mmc_set_clock(mmc, 25000000);
+-
+ 	} else {
+ 		if (mmc->card_caps & MMC_MODE_4BIT) {
+ 			/* Set the card to use 4 bit*/
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index c58f2eb..fde7b12 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -53,6 +53,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ 
+ #define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
+@@ -110,6 +112,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
+ 	#define CONFIG_IMX_ESDHC_V1
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+diff --git a/include/configs/mx28_evk.h b/include/configs/mx28_evk.h
+index a1ca1aa..8f0b31a 100644
+--- a/include/configs/mx28_evk.h
++++ b/include/configs/mx28_evk.h
+@@ -56,6 +56,8 @@
+ #define CONFIG_AUTO_COMPLETE			/* Command auto complete */
+ #define CONFIG_CMDLINE_EDITING			/* Command history etc */
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ /*
+  * Boot Linux
+  */
+@@ -125,6 +127,7 @@
+ #define CONFIG_MMC
+ #define CONFIG_IMX_SSP_MMC		/* MMC driver based on SSP */
+ #define CONFIG_GENERIC_MMC
++#define CONFIG_SYS_MMC_ENV_DEV	0
+ #define CONFIG_DOS_PARTITION
+ #define CONFIG_CMD_FAT
+ 
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 7af1888..89b9f39 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -35,6 +35,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant increase
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index b8e567a..c0c53fd 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -32,9 +32,14 @@
+ #define CONFIG_MX35		1	/* in a mx31 */
+ #define CONFIG_MX35_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+ 
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant increase
+@@ -153,8 +158,6 @@
+  */
+ #define CONFIG_SYS_LONGHELP	/* undef to save memory */
+ #define CONFIG_SYS_PROMPT	"MX35 U-Boot > "
+-#define CONFIG_ARCH_CPU_INIT
+-#define CONFIG_ARCH_MMU
+ #define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE	256	/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+@@ -196,6 +199,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV		0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ #endif
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index d4af081..31cf943 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -46,6 +46,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant
+@@ -110,6 +112,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM	2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ #endif
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 24d43f3..752fcd7 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -46,6 +46,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant
+@@ -204,6 +206,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM	2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 1887626..121c7a1 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -45,6 +45,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant
+@@ -121,6 +123,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM	2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ #endif
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 97e5ff3..a0bb39e 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -46,6 +46,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant
+@@ -247,6 +249,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM	2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index b65643d..b327a92 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -44,6 +44,8 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_SYS_64BIT_VSPRINTF
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant
+@@ -184,6 +186,9 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
+diff --git a/include/fsl_esdhc.h b/include/fsl_esdhc.h
+index d921b3d..63de09a 100644
+--- a/include/fsl_esdhc.h
++++ b/include/fsl_esdhc.h
+@@ -31,10 +31,10 @@
+ 
+ /* FSL eSDHC-specific constants */
+ #define SYSCTL			0x0002e02c
+-#define SYSCTL_RSTA		0x01000000
+ #define SYSCTL_INITA		0x08000000
+ #define SYSCTL_TIMEOUT_MASK	0x000f0000
+ #define SYSCTL_CLOCK_MASK	0x0000fff0
++#define SYSCTL_RSTA			0x01000000
+ #define SYSCTL_SDCLKEN		0x00000008
+ #define SYSCTL_PEREN		0x00000004
+ #define SYSCTL_HCKEN		0x00000002
+@@ -147,8 +147,15 @@
+ #define ESDHC_HOSTCAPBLT_DMAS	0x00400000
+ #define ESDHC_HOSTCAPBLT_HSS	0x00200000
+ 
++struct fsl_esdhc_cfg {
++	u32	esdhc_base;
++	u32	no_snoop;
++	u32	clk_enable;
++};
++
+ #if defined(CONFIG_FSL_ESDHC) || defined(CONFIG_IMX_MMC)
+ int fsl_esdhc_mmc_init(bd_t *bis);
++int fsl_esdhc_initialize(bd_t *bis, struct fsl_esdhc_cfg *cfg);
+ void fdt_fixup_esdhc(void *blob, bd_t *bd);
+ #else
+ static inline int fsl_esdhc_mmc_init(bd_t *bis) { return -ENOSYS; }
+-- 
+1.5.4.4
+

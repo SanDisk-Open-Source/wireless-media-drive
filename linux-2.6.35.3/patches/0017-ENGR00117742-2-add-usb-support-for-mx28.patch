@@ -1,0 +1,92 @@
+From c44dc00d2aecfcbf30336180f5ecd6a3a633545d Mon Sep 17 00:00:00 2001
+From: Albert Chen <R65187@freescale.com>
+Date: Thu, 28 Jan 2010 09:58:40 +0800
+Subject: [PATCH] ENGR00117742-2  add usb support for mx28
+
+	kernel part
+
+Signed-off-by: Albert Chen <r65187@freescale.com>
+---
+ drivers/usb/core/hub.c |   52 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 52 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/usb/core/hub.c b/drivers/usb/core/hub.c
+index ffc80e3..46a5ad5 100644
+--- a/drivers/usb/core/hub.c
++++ b/drivers/usb/core/hub.c
+@@ -38,6 +38,24 @@
+ #endif
+ #endif
+ 
++#ifdef CONFIG_ARCH_STMP3XXX
++#define STMP3XXX_USB_HOST_HACK
++#endif
++
++#ifdef CONFIG_ARCH_MXS
++#define MXS_USB_HOST_HACK
++
++#include <linux/fsl_devices.h>
++extern void fsl_platform_set_usb_phy_dis(struct fsl_usb2_platform_data *pdata,
++					 bool enable);
++#endif
++
++#ifdef STMP3XXX_USB_HOST_HACK
++#include <linux/fsl_devices.h>
++#include <mach/regs-usbphy.h>
++#include <mach/platform.h>
++#endif
++
+ struct usb_hub {
+ 	struct device		*intfdev;	/* the "interface" device */
+ 	struct usb_device	*hdev;
+@@ -2850,6 +2868,21 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
+ 			break;
+ 		}
+ 	}
++
++#ifdef MXS_USB_HOST_HACK
++	{	/*Must enable HOSTDISCONDETECT after second reset*/
++		if (port1 == 1) {
++			if (udev->speed == USB_SPEED_HIGH) {
++				struct device *dev = hcd->self.controller;
++				struct fsl_usb2_platform_data *pdata;
++				pdata = (struct fsl_usb2_platform_data *)
++					 dev->platform_data;
++				fsl_platform_set_usb_phy_dis(pdata, 1);
++			}
++		}
++	}
++#endif
++
+ 	if (retval)
+ 		goto fail;
+ 
+@@ -2977,6 +3010,25 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
+ 		"port %d, status %04x, change %04x, %s\n",
+ 		port1, portstatus, portchange, portspeed (portstatus));
+ 
++#ifdef MXS_USB_HOST_HACK
++	{
++		struct device *dev = hcd->self.controller;
++		struct fsl_usb2_platform_data *pdata;
++
++		pdata = (struct fsl_usb2_platform_data *)dev->platform_data;
++		if (dev->parent && dev->type) {
++			if (port1 == 1 && pdata->platform_init)
++				pdata->platform_init(NULL);
++		}
++		if (port1 == 1) {
++			if (!(portstatus&USB_PORT_STAT_CONNECTION)) {
++				/* Must clear HOSTDISCONDETECT when disconnect*/
++				fsl_platform_set_usb_phy_dis(pdata, 0);
++			}
++		}
++	}
++#endif
++
+ 	if (hub->has_indicators) {
+ 		set_port_led(hub, port1, HUB_LED_AUTO);
+ 		hub->indicator[port1-1] = INDICATOR_AUTO;
+-- 
+1.5.4.4
+

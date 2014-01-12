@@ -1,0 +1,30 @@
+From 1f3bf4ba26776f8dce9430762d96b8405b051a1c Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Wed, 13 Oct 2010 15:44:30 +0800
+Subject: [PATCH] ENGR00132459-1 MXC: Add platform_data structure for PWM
+
+Add platform_data structure for PWM.
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ include/linux/fsl_devices.h |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 832411c..e2bf4d8 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -473,6 +473,10 @@ struct mxc_esai_platform_data {
+ 	void (*deactivate_esai_ports) (void);
+ };
+ 
++struct mxc_pwm_platform_data {
++	int pwmo_invert;
++};
++
+ /* The name that links the i.MX NAND Flash Controller driver to its devices. */
+ 
+ #define IMX_NFC_DRIVER_NAME  ("imx_nfc")
+-- 
+1.5.4.4
+

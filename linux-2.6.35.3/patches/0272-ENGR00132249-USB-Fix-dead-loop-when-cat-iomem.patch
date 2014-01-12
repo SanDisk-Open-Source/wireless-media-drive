@@ -1,0 +1,85 @@
+From ba6b76747ab51d04c3a50413ddf66007e236d414 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Wed, 18 Aug 2010 13:45:03 +0800
+Subject: [PATCH] ENGR00132249 USB:Fix dead loop when cat iomem
+
+  Apply this fix for mx25.  Has been seperately cherry-picked for
+other platforms.
+
+  The origin code reuse the otg_resource as the resource for udc
+device. This will cause a small bug, the following command will
+print endless log:
+	#cat /proc/iomem
+
+  The reason of the bug is that reuse the otg_resources for the
+udc device will register the otg_resources twice which will make
+the ->child and ->parent of the otg_resources pointer to himself.
+So the above command will traverse in a dead loop for ever.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/mach-mx25/usb_dr.c           |   22 +++++++++++++++++++---
+ arch/arm/plat-mxc/include/mach/mx25.h |    1 +
+ 2 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx25/usb_dr.c b/arch/arm/mach-mx25/usb_dr.c
+index 4a410ed..9dd6c8f 100644
+--- a/arch/arm/mach-mx25/usb_dr.c
++++ b/arch/arm/mach-mx25/usb_dr.c
+@@ -39,7 +39,7 @@ static struct fsl_usb2_platform_data __maybe_unused dr_utmi_config = {
+ };
+ 
+ /*
+- * resources
++ * OTG resources
+  */
+ static struct resource otg_resources[] = {
+ 	[0] = {
+@@ -53,6 +53,22 @@ static struct resource otg_resources[] = {
+ 	       },
+ };
+ 
++/*
++ * UDC resources (same as OTG resource)
++ */
++static struct resource udc_resources[] = {
++	[0] = {
++	       .start = (u32)(USB_OTGREGS_BASE),
++	       .end   = (u32)(USB_OTGREGS_BASE + 0x1ff),
++	       .flags = IORESOURCE_MEM,
++	       },
++	[1] = {
++	       .start = MXC_INT_USB_OTG,
++	       .flags = IORESOURCE_IRQ,
++	       },
++};
++
++
+ static u64 dr_udc_dmamask = ~(u32) 0;
+ static void dr_udc_release(struct device *dev)
+ {
+@@ -75,8 +91,8 @@ static struct platform_device __maybe_unused dr_udc_device = {
+ 		.dma_mask          = &dr_udc_dmamask,
+ 		.coherent_dma_mask = 0xffffffff,
+ 	},
+-	.resource      = otg_resources,
+-	.num_resources = ARRAY_SIZE(otg_resources),
++	.resource      = udc_resources,
++	.num_resources = ARRAY_SIZE(udc_resources),
+ };
+ 
+ static struct platform_device __maybe_unused dr_otg_device = {
+diff --git a/arch/arm/plat-mxc/include/mach/mx25.h b/arch/arm/plat-mxc/include/mach/mx25.h
+index 4c783a3..6526398 100644
+--- a/arch/arm/plat-mxc/include/mach/mx25.h
++++ b/arch/arm/plat-mxc/include/mach/mx25.h
+@@ -297,5 +297,6 @@
+ #define MXC_INT_DRYICE_SEC		MX25_INT_DRYICE_SEC
+ #define RNGB_BASE_ADDR			MX25_RNGB_BASE_ADDR
+ #define MXC_INT_RNG				MX25_INT_RNG
++#define MXC_INT_USB_OTG			MX25_INT_USB_OTG
+ 
+ #endif /* ifndef __MACH_MX25_H__ */
+-- 
+1.5.4.4
+

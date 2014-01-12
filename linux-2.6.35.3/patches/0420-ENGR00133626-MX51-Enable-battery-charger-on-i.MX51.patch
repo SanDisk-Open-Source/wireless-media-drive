@@ -1,0 +1,30 @@
+From cfec4caaba05e44c9ccd3a9b44d818cfe0f8b7b5 Mon Sep 17 00:00:00 2001
+From: Nancy Chen <Nancy.Chen@freescale.com>
+Date: Thu, 11 Nov 2010 13:38:30 -0600
+Subject: [PATCH] ENGR00133626 MX51: Enable battery charger on i.MX51 babbage
+
+MX51: Enable battery charger on i.MX51 babbage.
+The issue that board would be damaged if a battery was not connected
+was fixed on MC13892 version 2.0
+
+Signed-off-by: Nancy Chen <Nancy.Chen@freescale.com>
+---
+ drivers/mxc/pmic/mc13892/pmic_battery.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/pmic/mc13892/pmic_battery.c b/drivers/mxc/pmic/mc13892/pmic_battery.c
+index 6518072..246bd27 100644
+--- a/drivers/mxc/pmic/mc13892/pmic_battery.c
++++ b/drivers/mxc/pmic/mc13892/pmic_battery.c
+@@ -680,7 +680,7 @@ static int pmic_battery_probe(struct platform_device *pdev)
+ 		pr_debug("Battery driver is only applied for MC13892 V2.0\n");
+ 		return -1;
+ 	}
+-	if (machine_is_mx51_babbage() || machine_is_mx50_arm2()) {
++	if (machine_is_mx50_arm2()) {
+ 		pr_debug("mc13892 charger is not used for this platform\n");
+ 		return -1;
+ 	}
+-- 
+1.5.4.4
+

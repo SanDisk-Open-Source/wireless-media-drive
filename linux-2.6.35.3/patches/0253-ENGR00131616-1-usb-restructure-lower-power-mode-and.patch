@@ -1,0 +1,530 @@
+From 37f1e49b3ea3803b2acfef0ee24346763c4c9cb8 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Mon, 27 Sep 2010 09:58:28 +0800
+Subject: [PATCH] ENGR00131616-1 usb: restructure lower power mode and wakeup function
+
+MSL part (squashed with ENGR00131775)
+
+Mainly includes restruct low power mode and wakeup function for all usb modes.
+1. Move more kernel common code changes to fsl driver.
+2. Fix kinds of otg bugs
+3. At idle mode all usb clock and related phy clock will be closed.
+4. Wakeup function are fully verified for all usb modes (device, host
+and otg mode)
+5. The modifications are verified at mx50 platform at 2.6.35
+6. utmirc.c should also be enabled for non-host mode, otherwise, there will
+be a null pointer error.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c  |   18 ++++++-
+ arch/arm/mach-mx5/mx50_rdp.c   |   16 +++++-
+ arch/arm/mach-mx5/usb_dr.c     |  112 ++++++++++++++++++++++++++++++++-------
+ arch/arm/mach-mx5/usb_h1.c     |   41 ++++++++++-----
+ arch/arm/plat-mxc/Makefile     |    2 -
+ arch/arm/plat-mxc/usb_common.c |   23 +++++---
+ 6 files changed, 167 insertions(+), 45 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 62921d4..e713285 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -53,6 +53,7 @@
+ #include <asm/mach/flash.h>
+ #include <mach/common.h>
+ #include <mach/hardware.h>
++#include <mach/arc_otg.h>
+ #include <mach/memory.h>
+ #include <mach/gpio.h>
+ #include <mach/mmc.h>
+@@ -102,6 +103,7 @@
+ #define EPDC_ELCDIF_BACKLIGHT	(1*32 + 18)	/*GPIO_2_18 */
+ #define CSPI_CS1	(3*32 + 13)	/*GPIO_4_13 */
+ #define CSPI_CS2	(3*32 + 11) /*GPIO_4_11*/
++#define USB_OTG_PWR	(5*32 + 25) /*GPIO_6_25*/
+ 
+ extern int __init mx50_arm2_init_mc13892(void);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+@@ -229,7 +231,8 @@ static struct pad_desc  mx50_armadillo2[] = {
+ 	 * one needs to debug owire.
+ 	 */
+ 	MX50_PAD_OWIRE__USBH1_OC,
+-	MX50_PAD_PWM2__USBOTG_PWR,
++	/* using gpio to control otg pwr */
++	MX50_PAD_PWM2__GPIO_6_25,
+ 	MX50_PAD_PWM1__USBOTG_OC,
+ 
+ 	MX50_PAD_SSI_RXC__FEC_MDIO,
+@@ -831,6 +834,12 @@ static struct spi_board_info mxc_dataflash_device[] __initdata = {
+ 	 .platform_data = &mxc_spi_flash_data[0],},
+ };
+ 
++static void mx50_arm2_usb_set_vbus(bool enable)
++{
++	gpio_set_value(USB_OTG_PWR, enable);
++}
++
++
+ static int sdhc_write_protect(struct device *dev)
+ {
+ 	unsigned short rc = 0;
+@@ -1117,6 +1126,11 @@ static void __init mx50_arm2_io_init(void)
+ 	if (enable_gpmi_nand)
+ 		mxc_iomux_v3_setup_multiple_pads(mx50_gpmi_nand, \
+ 					ARRAY_SIZE(mx50_gpmi_nand));
++
++	/* USB OTG PWR */
++	gpio_request(USB_OTG_PWR, "usb otg power");
++	gpio_direction_output(USB_OTG_PWR, 1);
++	gpio_set_value(USB_OTG_PWR, 0);
+ }
+ 
+ /*!
+@@ -1186,6 +1200,8 @@ static void __init mxc_board_init(void)
+ 	*/
+ 	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
+ 	mxc_register_device(&gpmi_nfc_device, &gpmi_nfc_platform_data);
++
++	mx5_set_otghost_vbus_func(mx50_arm2_usb_set_vbus);
+ 	mx5_usb_dr_init();
+ 	mx5_usbh1_init();
+ 
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 03a42c6..81b6345 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -54,6 +54,7 @@
+ #include <mach/common.h>
+ #include <mach/hardware.h>
+ #include <mach/memory.h>
++#include <mach/arc_otg.h>
+ #include <mach/gpio.h>
+ #include <mach/mmc.h>
+ #include <mach/mxc_dvfs.h>
+@@ -89,6 +90,7 @@
+ #define SGTL_OSCEN (5*32 + 8) /*GPIO_6_8*/
+ #define FEC_EN (5*32 + 23) /*GPIO_6_23*/
+ #define FEC_RESET_B (3*32 + 12) /*GPIO_4_12*/
++#define USB_OTG_PWR	(5*32 + 25) /*GPIO_6_25*/
+ 
+ extern int __init mx50_rdp_init_mc13892(void);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+@@ -214,7 +216,8 @@ static struct pad_desc  mx50_rdp[] = {
+ 	 * one needs to debug owire.
+ 	 */
+ 	MX50_PAD_OWIRE__USBH1_OC,
+-	MX50_PAD_PWM2__USBOTG_PWR,
++	/* using gpio to control otg pwr */
++	MX50_PAD_PWM2__GPIO_6_25,
+ 	MX50_PAD_I2C3_SCL__USBOTG_OC,
+ 
+ 	MX50_PAD_SSI_RXC__FEC_MDIO,
+@@ -714,6 +717,11 @@ static struct mxc_fb_platform_data fb_data[] = {
+ 	 },
+ };
+ 
++static void mx50_arm2_usb_set_vbus(bool enable)
++{
++	gpio_set_value(USB_OTG_PWR, enable);
++}
++
+ static int __initdata enable_w1 = { 0 };
+ static int __init w1_setup(char *__unused)
+ {
+@@ -800,6 +808,11 @@ static void __init mx50_rdp_io_init(void)
+ 	gpio_direction_output(FEC_RESET_B, 0);
+ 	udelay(500);
+ 	gpio_set_value(FEC_RESET_B, 1);
++
++	/* USB OTG PWR */
++	gpio_request(USB_OTG_PWR, "usb otg power");
++	gpio_direction_output(USB_OTG_PWR, 1);
++	gpio_set_value(USB_OTG_PWR, 0);
+ }
+ 
+ /*!
+@@ -864,6 +877,7 @@ static void __init mxc_board_init(void)
+ /*
+ 	pm_power_off = mxc_power_off;
+ 	*/
++	mx5_set_otghost_vbus_func(mx50_arm2_usb_set_vbus);
+ 	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
+ 	mx5_usb_dr_init();
+ 	mx5_usbh1_init();
+diff --git a/arch/arm/mach-mx5/usb_dr.c b/arch/arm/mach-mx5/usb_dr.c
+index 0286c7a..6373f54 100644
+--- a/arch/arm/mach-mx5/usb_dr.c
++++ b/arch/arm/mach-mx5/usb_dr.c
+@@ -18,12 +18,11 @@
+ #include <linux/fsl_devices.h>
+ #include <mach/arc_otg.h>
+ #include <mach/hardware.h>
++#include <asm/delay.h>
+ #include "usb.h"
+ 
+-
+ static int usbotg_init_ext(struct platform_device *pdev);
+ static void usbotg_uninit_ext(struct fsl_usb2_platform_data *pdata);
+-static void _wake_up_enable(struct fsl_usb2_platform_data *pdata, bool enable);
+ static void usbotg_clock_gate(bool on);
+ 
+ /*
+@@ -40,7 +39,6 @@ static struct fsl_usb2_platform_data dr_utmi_config = {
+ 	.gpio_usb_active   = gpio_usbotg_hs_active,
+ 	.gpio_usb_inactive = gpio_usbotg_hs_inactive,
+ 	.usb_clock_for_pm  = usbotg_clock_gate,
+-	.wake_up_enable = _wake_up_enable,
+ 	.transceiver       = "utmi",
+ };
+ 
+@@ -80,29 +78,99 @@ static void usbotg_uninit_ext(struct fsl_usb2_platform_data *pdata)
+ 	usbotg_uninit(pdata);
+ }
+ 
+-static void _wake_up_enable(struct fsl_usb2_platform_data *pdata, bool enable)
+-{
+-	if (get_usb_mode(pdata) == FSL_USB_DR_DEVICE) {
+-		if (enable) {
++/* Below two macros are used at otg mode to indicate usb mode*/
++#define ENABLED_BY_HOST   (0x1 << 0)
++#define ENABLED_BY_DEVICE (0x1 << 1)
++static u32 wakeup_irq_enable_src; /* only useful at otg mode */
++static void __wakeup_irq_enable(bool on, int source)
++ {
++	/* otg host and device share the OWIE bit, only when host and device
++	 * all enable the wakeup irq, we can enable the OWIE bit
++	 */
++	if (on) {
++#ifdef CONFIG_MXC_OTG
++		wakeup_irq_enable_src |= source;
++		if (wakeup_irq_enable_src == (ENABLED_BY_HOST | ENABLED_BY_DEVICE)) {
+ 			USBCTRL |= UCTRL_OWIE;
+-			USBCTRL_HOST2 |= UCTRL_H2OVBWK_EN;
+ 			USB_PHY_CTR_FUNC |= USB_UTMI_PHYCTRL_CONF2;
+-		} else {
+-			USBCTRL &= ~UCTRL_OWIE;
+-			USBCTRL_HOST2 &= ~UCTRL_H2OVBWK_EN;
+-			USB_PHY_CTR_FUNC &= ~USB_UTMI_PHYCTRL_CONF2;
+ 		}
++#else
++		USBCTRL |= UCTRL_OWIE;
++		USB_PHY_CTR_FUNC |= USB_UTMI_PHYCTRL_CONF2;
++#endif
+ 	} else {
+-		if (enable) {
+-			USBCTRL |= UCTRL_OWIE;
+-			USBCTRL_HOST2 |= (1 << 5);
+-		} else {
+-			USBCTRL &= ~UCTRL_OWIE;
+-			USBCTRL_HOST2 &= ~(1 << 5);
++		USB_PHY_CTR_FUNC &= ~USB_UTMI_PHYCTRL_CONF2;
++		USBCTRL &= ~UCTRL_OWIE;
++		wakeup_irq_enable_src &= ~source;
++		/* The interrupt must be disabled for at least 3 clock
++		 * cycles of the standby clock(32k Hz) , that is 0.094 ms*/
++		udelay(100);
++	}
++}
++
++static void _host_wakeup_enable(struct fsl_usb2_platform_data *pdata, bool enable)
++{
++	__wakeup_irq_enable(enable, ENABLED_BY_HOST);
++	/* host only care the ID change wakeup event */
++	if (enable) {
++		pr_debug("host wakeup enable\n");
++		USBCTRL_HOST2 |= UCTRL_H2OIDWK_EN;
++	} else {
++		pr_debug("host wakeup disable\n");
++		USBCTRL_HOST2 &= ~UCTRL_H2OIDWK_EN;
++		/* The interrupt must be disabled for at least 3 clock
++		 * cycles of the standby clock(32k Hz) , that is 0.094 ms*/
++		udelay(100);
++	}
++}
++
++static void _device_wakeup_enable(struct fsl_usb2_platform_data *pdata, bool enable)
++{
++	__wakeup_irq_enable(enable, ENABLED_BY_DEVICE);
++	/* if udc is not used by any gadget, we can not enable the vbus wakeup */
++	if (!pdata->port_enables) {
++		USBCTRL_HOST2 &= ~UCTRL_H2OVBWK_EN;
++		return;
++	}
++	if (enable) {
++		pr_debug("device wakeup enable\n");
++		USBCTRL_HOST2 |= UCTRL_H2OVBWK_EN;
++	} else {
++		pr_debug("device wakeup disable\n");
++		USBCTRL_HOST2 &= ~UCTRL_H2OVBWK_EN;
++	}
++}
++
++static u32 low_power_enable_src; /* only useful at otg mode */
++static void __phy_lowpower_suspend(bool enable, int source)
++{
++	if (enable) {
++		low_power_enable_src |= source;
++#ifdef CONFIG_MXC_OTG
++		if (low_power_enable_src == (ENABLED_BY_HOST | ENABLED_BY_DEVICE)) {
++			pr_debug("phy lowpower enabled\n");
++			UOG_PORTSC1 |= PORTSC_PHCD;
+ 		}
++#else
++		UOG_PORTSC1 |= PORTSC_PHCD;
++#endif
++	} else {
++		pr_debug("phy lowpower disable\n");
++		UOG_PORTSC1 &= ~PORTSC_PHCD;
++		low_power_enable_src &= ~source;
+ 	}
+ }
+ 
++static void _host_phy_lowpower_suspend(bool enable)
++{
++	__phy_lowpower_suspend(enable, ENABLED_BY_HOST);
++}
++
++static void _device_phy_lowpower_suspend(bool enable)
++{
++	__phy_lowpower_suspend(enable, ENABLED_BY_DEVICE);
++}
++
+ static void usbotg_clock_gate(bool on)
+ {
+ 	struct clk *usb_clk;
+@@ -125,11 +193,11 @@ static void usbotg_clock_gate(bool on)
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 	} else {
+-		usb_clk = clk_get(NULL, "usboh3_clk");
++		usb_clk = clk_get(NULL, "usb_phy1_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(NULL, "usb_phy1_clk");
++		usb_clk = clk_get(NULL, "usboh3_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+@@ -153,11 +221,15 @@ void __init mx5_usb_dr_init(void)
+ #endif
+ #ifdef CONFIG_USB_EHCI_ARC_OTG
+ 	dr_utmi_config.operating_mode = DR_HOST_MODE;
++	dr_utmi_config.wake_up_enable = _host_wakeup_enable;
++	dr_utmi_config.phy_lowpower_suspend = _host_phy_lowpower_suspend;
+ 	platform_device_add_data(&mxc_usbdr_host_device, &dr_utmi_config, sizeof(dr_utmi_config));
+ 	platform_device_register(&mxc_usbdr_host_device);
+ #endif
+ #ifdef CONFIG_USB_GADGET_ARC
+ 	dr_utmi_config.operating_mode = DR_UDC_MODE;
++	dr_utmi_config.wake_up_enable = _device_wakeup_enable;
++	dr_utmi_config.phy_lowpower_suspend = _device_phy_lowpower_suspend;
+ 	platform_device_add_data(&mxc_usbdr_udc_device, &dr_utmi_config, sizeof(dr_utmi_config));
+ 	platform_device_register(&mxc_usbdr_udc_device);
+ #endif
+diff --git a/arch/arm/mach-mx5/usb_h1.c b/arch/arm/mach-mx5/usb_h1.c
+index 0a68bf2..ef1b030 100644
+--- a/arch/arm/mach-mx5/usb_h1.c
++++ b/arch/arm/mach-mx5/usb_h1.c
+@@ -17,13 +17,13 @@
+ #include <linux/clk.h>
+ #include <linux/platform_device.h>
+ #include <linux/fsl_devices.h>
++#include <asm/delay.h>
+ #include <mach/arc_otg.h>
+ #include <asm/mach-types.h>
+ #include <asm/mach/arch.h>
+ #include "usb.h"
+ #include "iomux.h"
+ #include "mx51_pins.h"
+-
+ /*
+  * USB Host1 HS port
+  */
+@@ -67,10 +67,25 @@ static void gpio_usbh1_inactive(void)
+ 
+ static void _wake_up_enable(struct fsl_usb2_platform_data *pdata, bool enable)
+ {
++	printk(KERN_DEBUG "host1, %s, enable is %d\n", __func__, enable);
+ 	if (enable)
+ 		USBCTRL |= UCTRL_H1WIE;
+-	else
++	else {
+ 		USBCTRL &= ~UCTRL_H1WIE;
++		/* The interrupt must be disabled for at least 3
++		* cycles of the standby clock(32k Hz) , that is 0.094 ms*/
++		udelay(100);
++	}
++}
++
++static void _phy_lowpower_suspend(bool enable)
++{
++	pr_debug("host1, %s, enable is %d\n", __func__, enable);
++	if (enable) {
++		UH1_PORTSC1 |= PORTSC_PHCD;
++	} else {
++		UH1_PORTSC1 &= ~PORTSC_PHCD;
++	}
+ }
+ 
+ static void usbotg_clock_gate(bool on)
+@@ -78,28 +93,27 @@ static void usbotg_clock_gate(bool on)
+ 	struct clk *usb_clk;
+ 
+ 	if (on) {
+-		usb_clk = clk_get(NULL, "usboh3_clk");
++		usb_clk = clk_get(NULL, "usb_ahb_clk");
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(NULL, "usb_ahb_clk");
+-		clk_enable(usb_clk);
++		usb_clk = clk_get(NULL, "usboh3_clk");
++		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+ 		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+-
+ 	} else {
+-		usb_clk = clk_get(NULL, "usboh3_clk");
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(NULL, "usb_ahb_clk");
++		usb_clk = clk_get(NULL, "usboh3_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(NULL, "usb_phy2_clk");
++		usb_clk = clk_get(NULL, "usb_ahb_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 	}
+@@ -115,7 +129,7 @@ static int fsl_usb_host_init_ext(struct platform_device *pdev)
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(&pdev->dev, "usb_phy2_clk");
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+@@ -124,7 +138,7 @@ static int fsl_usb_host_init_ext(struct platform_device *pdev)
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 	} else if (cpu_is_mx50()) {
+-		usb_clk = clk_get(&pdev->dev, "usb_phy2_clk");
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+ 	}
+@@ -158,11 +172,11 @@ static void fsl_usb_host_uninit_ext(struct fsl_usb2_platform_data *pdata)
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(&pdata->pdev->dev, "usb_phy2_clk");
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 	} else if (cpu_is_mx50()) {
+-		usb_clk = clk_get(&pdata->pdev->dev, "usb_phy2_clk");
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
+ 	}
+@@ -179,6 +193,7 @@ static struct fsl_usb2_platform_data usbh1_config = {
+ 	.power_budget = 500,	/* 500 mA max power */
+ 	.wake_up_enable = _wake_up_enable,
+ 	.usb_clock_for_pm  = usbotg_clock_gate,
++	.phy_lowpower_suspend = _phy_lowpower_suspend,
+ 	.transceiver = "utmi",
+ };
+ 
+diff --git a/arch/arm/plat-mxc/Makefile b/arch/arm/plat-mxc/Makefile
+index 26b0e96..8760afa 100644
+--- a/arch/arm/plat-mxc/Makefile
++++ b/arch/arm/plat-mxc/Makefile
+@@ -43,12 +43,10 @@ obj-$(CONFIG_CPU_FREQ_IMX)    += cpufreq.o
+ obj-$(CONFIG_MXC_DVFS_PER) 	+= dvfs_per.o
+ 
+ # USB support
+-ifdef CONFIG_USB_EHCI_ARC
+ obj-$(CONFIG_ISP1504_MXC) += isp1504xc.o
+ obj-$(CONFIG_ISP1301_MXC) += isp1301xc.o
+ obj-$(CONFIG_MC13783_MXC) += mc13783_xc.o
+ obj-$(CONFIG_UTMI_MXC) += utmixc.o
+ obj-$(CONFIG_USB) += serialxc.o
+-endif
+ 
+ obj-y += devices/
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index a13b2c7..0d17ff6 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -284,7 +284,7 @@ static void usbh1_set_utmi_xcvr(void)
+ 	USBCTRL &= ~UCTRL_H1WIE; /* Host1 Wakeup Intr Disable */
+ 	USB_PHY_CTR_FUNC |= USB_UH1_OC_DIS; /* Over current disable */
+ 
+-	if (machine_is_mx50_arm2()) {
++	if (cpu_is_mx50()) {
+ 		USBCTRL |= UCTRL_H1PM; /* Host1 Power Mask */
+ 		USB_PHY_CTR_FUNC &= ~USB_UH1_OC_DIS; /* Over current enable */
+ 		/* Over current polarity low active */
+@@ -716,9 +716,6 @@ static void otg_set_utmi_xcvr(void)
+ 		USBCTRL &= ~UCTRL_PP;
+ 	} else if (cpu_is_mx50()) {
+ 		USB_PHY_CTR_FUNC |= USB_UTMI_PHYCTRL_OC_DIS;
+-		if (machine_is_mx50_arm2())
+-			/* OTG Power pin polarity low */
+-			USBCTRL |= UCTRL_O_PWR_POL;
+ 	} else {
+ 		/* USBOTG_PWR low active */
+ 		USBCTRL &= ~UCTRL_PP;
+@@ -811,9 +808,9 @@ int usbotg_init(struct platform_device *pdev)
+ 	pdata->xcvr_type = xops->xcvr_type;
+ 	pdata->pdev = pdev;
+ 
++	if (fsl_check_usbclk() != 0)
++		return -EINVAL;
+ 	if (!mxc_otg_used) {
+-		if (fsl_check_usbclk() != 0)
+-			return -EINVAL;
+ 		if (cpu_is_mx50())
+ 			/* Turn on AHB CLK for OTG*/
+ 			USB_CLKONOFF_CTRL &= ~OTG_AHBCLK_OFF;
+@@ -883,6 +880,16 @@ void usbotg_uninit(struct fsl_usb2_platform_data *pdata)
+ }
+ EXPORT_SYMBOL(usbotg_uninit);
+ 
++void usb_debounce_id_pin(void)
++{
++
++	/* Because the IC design needs to remove the glitch on ID so the otgsc bit 8 will
++	 * be delayed max 2 ms to show the real ID pin value
++	 */
++	mdelay(3);
++}
++EXPORT_SYMBOL(usb_debounce_id_pin);
++
+ int usb_host_wakeup_irq(struct device *wkup_dev)
+ {
+ 	int wakeup_req = 0;
+@@ -892,8 +899,8 @@ int usb_host_wakeup_irq(struct device *wkup_dev)
+ 		wakeup_req = USBCTRL & UCTRL_H1WIR;
+ 	} else if (!strcmp("DR", pdata->name)) {
+ 		wakeup_req = USBCTRL & UCTRL_OWIR;
+-		/* If DR is in device mode, let udc handle it */
+-		if (wakeup_req && ((UOG_USBMODE & 0x3) == 0x2))
++		usb_debounce_id_pin();
++		if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID))
+ 			wakeup_req = 0;
+ 	}
+ 
+-- 
+1.5.4.4
+

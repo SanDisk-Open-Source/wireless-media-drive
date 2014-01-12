@@ -1,0 +1,50 @@
+From 875650bdcacebf42302d4c4f017b48e9c83611b9 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Fri, 3 Dec 2010 13:29:00 +0800
+Subject: [PATCH] ENGR00134285 LDB:Correct the way to match registered fb info
+
+In the probe function of LDB framebuffer driver, we will
+try to match the LVDS video modes defined in the driver.
+For LDB separate mode, we need to find two video modes matched,
+whereas, for other LDB modes, we need to find only one video
+mode matched.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/video/mxc/ldb.c |   10 ++++++----
+ 1 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/video/mxc/ldb.c b/drivers/video/mxc/ldb.c
+index d2707b8..258c519 100644
+--- a/drivers/video/mxc/ldb.c
++++ b/drivers/video/mxc/ldb.c
+@@ -814,12 +814,14 @@ static int ldb_probe(struct platform_device *pdev)
+ 
+ 	for (i = 0; i < num_registered_fb; i++) {
+ 		if (registered_fb[i]->var.vmode == FB_VMODE_NONINTERLACED) {
+-			ldb.fbi[i] = registered_fb[i];
+-
+-			mode = fb_match_mode(&ldb.fbi[i]->var, &ldb.modelist);
++			mode = fb_match_mode(&registered_fb[i]->var,
++						&ldb.modelist);
+ 			if (mode) {
+ 				dev_dbg(g_ldb_dev, "fb mode found\n");
++				ldb.fbi[i] = registered_fb[i];
+ 				fb_videomode_to_var(&ldb.fbi[i]->var, mode);
++			} else if (i == 0 && ldb.chan_mode_opt != LDB_SEP) {
++				continue;
+ 			} else {
+ 				dev_warn(g_ldb_dev,
+ 						"can't find video mode\n");
+@@ -870,7 +872,7 @@ static int ldb_probe(struct platform_device *pdev)
+ 			if (i == 0)
+ 				primary = true;
+ 
+-			if (ldb.fbi[1] != NULL)
++			if (ldb.fbi[1] != NULL || ldb.chan_mode_opt != LDB_SEP)
+ 				break;
+ 		}
+ 	}
+-- 
+1.5.4.4
+

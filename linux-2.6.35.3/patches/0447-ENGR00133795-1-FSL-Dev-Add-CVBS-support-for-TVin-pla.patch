@@ -1,0 +1,27 @@
+From 63c5c3d50b6f1f86deb9a1989d270c7975d4caf0 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 17 Nov 2010 13:48:12 +0800
+Subject: [PATCH] ENGR00133795-1 FSL Dev:Add CVBS support for TVin platform data
+
+This patch adds CVBS support for TVin platform data.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ include/linux/fsl_devices.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index d1faf3a..5d78280 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -311,6 +311,7 @@ struct mxc_tvin_platform_data {
+ 	char *pvdd_reg;
+ 	void (*pwdn) (int pwdn);
+ 	void (*reset) (void);
++	bool cvbs;
+ };
+ 
+ struct mxc_epdc_fb_mode {
+-- 
+1.5.4.4
+

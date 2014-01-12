@@ -1,0 +1,29 @@
+From 55d182d86fc345bc434cb4a1e83e746116f0fae8 Mon Sep 17 00:00:00 2001
+From: Alan Tull <r80115@freescale.com>
+Date: Wed, 11 Aug 2010 12:38:43 -0500
+Subject: [PATCH] ENGR00126208 babbage: put i2c2_sda on key col5
+
+Fix iomux setting that crept in with the recent iomux v3 stuff.
+Put i2c2_sda on key col5 for imx51 babbage board.
+
+Signed-off-by: Alan Tull <r80115@freescale.com>
+---
+ arch/arm/mach-mx5/mx51_babbage.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 1df422c..cb437ec 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -190,7 +190,7 @@ static struct pad_desc mx51babbage_pads[] = {
+ 
+ 	MX51_PAD_GPIO_1_2__PWM_PWMO,
+ 
+-	MX51_PAD_GPIO_1_3__I2C2_SDA,
++	MX51_PAD_KEY_COL5__I2C2_SDA,
+ 	MX51_PAD_KEY_COL4__I2C2_SCL,
+ 
+ 	MX51_PAD_SD1_CMD__SD1_CMD,
+-- 
+1.5.4.4
+

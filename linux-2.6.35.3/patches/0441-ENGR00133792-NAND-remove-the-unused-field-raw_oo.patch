@@ -1,0 +1,136 @@
+From d01b20b3c9eaab254a080bca4a08784cc66d3b3a Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Wed, 17 Nov 2010 11:16:35 +0800
+Subject: [PATCH] ENGR00133792 NAND : remove the unused field : raw_oob_mode
+
+The field raw_oob_mode is useless now.
+So remove it to make the code tidy and clean.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c |   63 ------------------------------
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h     |   13 ------
+ 2 files changed, 0 insertions(+), 76 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index 7bc5d07..9dfd76e 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -835,56 +835,6 @@ exit_payload:
+ }
+ 
+ /**
+- * mil_hook_read_oob() - Hooked MTD Interface read_oob().
+- *
+- * This function is a veneer that replaces the function originally installed by
+- * the NAND Flash MTD code. See the description of the raw_oob_mode field in
+- * struct mil for more information about this.
+- *
+- * @mtd:   A pointer to the MTD.
+- * @from:  The starting address to read.
+- * @ops:   Describes the operation.
+- */
+-static int mil_hook_read_oob(struct mtd_info *mtd,
+-					loff_t from, struct mtd_oob_ops *ops)
+-{
+-	register struct nand_chip  *chip = mtd->priv;
+-	struct gpmi_nfc_data       *this = chip->priv;
+-	struct mil                 *mil  = &this->mil;
+-	int                        ret;
+-
+-	mil->raw_oob_mode = ops->mode == MTD_OOB_RAW;
+-	ret = mil->hooked_read_oob(mtd, from, ops);
+-	mil->raw_oob_mode = false;
+-	return ret;
+-}
+-
+-/**
+- * mil_hook_write_oob() - Hooked MTD Interface write_oob().
+- *
+- * This function is a veneer that replaces the function originally installed by
+- * the NAND Flash MTD code. See the description of the raw_oob_mode field in
+- * struct mil for more information about this.
+- *
+- * @mtd:   A pointer to the MTD.
+- * @to:    The starting address to write.
+- * @ops:   Describes the operation.
+- */
+-static int mil_hook_write_oob(struct mtd_info *mtd,
+-					loff_t to, struct mtd_oob_ops *ops)
+-{
+-	register struct nand_chip  *chip = mtd->priv;
+-	struct gpmi_nfc_data       *this = chip->priv;
+-	struct mil                 *mil  = &this->mil;
+-	int                        ret;
+-
+-	mil->raw_oob_mode = ops->mode == MTD_OOB_RAW;
+-	ret = mil->hooked_write_oob(mtd, to, ops);
+-	mil->raw_oob_mode = false;
+-	return ret;
+-}
+-
+-/**
+  * mil_hook_block_markbad() - Hooked MTD Interface block_markbad().
+  *
+  * This function is a veneer that replaces the function originally installed by
+@@ -975,12 +925,6 @@ static int mil_hook_block_markbad(struct mtd_info *mtd, loff_t ofs)
+  * caller wants an ECC-based or raw view of the page is not propagated down to
+  * this driver.
+  *
+- * Since our OOB *is* covered by ECC, we need this information. So, we hook the
+- * ecc.read_oob and ecc.write_oob function pointers in the owning
+- * struct mtd_info with our own functions. These hook functions set the
+- * raw_oob_mode field so that, when control finally arrives here, we'll know
+- * what to do.
+- *
+  * @mtd:     A pointer to the owning MTD.
+  * @nand:    A pointer to the owning NAND Flash MTD.
+  * @page:    The page number to read.
+@@ -2520,13 +2464,6 @@ int gpmi_nfc_mil_init(struct gpmi_nfc_data *this)
+ 	 * Hook some operations at the MTD level. See the descriptions of the
+ 	 * saved function pointer fields for details about why we hook these.
+ 	 */
+-
+-	mil->hooked_read_oob      = mtd->read_oob;
+-	mtd->read_oob             = mil_hook_read_oob;
+-
+-	mil->hooked_write_oob     = mtd->write_oob;
+-	mtd->write_oob            = mil_hook_write_oob;
+-
+ 	mil->hooked_block_markbad = mtd->block_markbad;
+ 	mtd->block_markbad        = mil_hook_block_markbad;
+ 
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+index 561dfb2..dfaccd1 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+@@ -131,12 +131,6 @@ struct resources {
+  * @saved_bbt:               A saved pointer to the in-memory NAND Flash MTD bad
+  *                           block table. See show_device_ignorebad() for more
+  *                           details.
+- * @raw_oob_mode:            Indicates the OOB is to be read/written in "raw"
+- *                           mode. See mil_ecc_read_oob() for details.
+- * @hooked_read_oob:         A pointer to the ecc.read_oob() function we
+- *                           "hooked." See mil_ecc_read_oob() for details.
+- * @hooked_write_oob:        A pointer to the ecc.write_oob() function pointer
+- *                           we "hooked." See mil_ecc_read_oob() for details.
+  * @marking_a_bad_block:     Indicates the caller is marking a bad block. See
+  *                           mil_ecc_write_oob() for details.
+  * @hooked_block_markbad:    A pointer to the block_markbad() function we
+@@ -191,13 +185,6 @@ struct mil {
+ 	void                   *saved_bbt;
+ 
+ 	/* MTD Function Pointer Hooks */
+-
+-	int                    raw_oob_mode;
+-	int                    (*hooked_read_oob)(struct mtd_info *mtd,
+-					loff_t from, struct mtd_oob_ops *ops);
+-	int                    (*hooked_write_oob)(struct mtd_info *mtd,
+-					loff_t to, struct mtd_oob_ops *ops);
+-
+ 	int                    marking_a_bad_block;
+ 	int                    (*hooked_block_markbad)(struct mtd_info *mtd,
+ 					loff_t ofs);
+-- 
+1.5.4.4
+

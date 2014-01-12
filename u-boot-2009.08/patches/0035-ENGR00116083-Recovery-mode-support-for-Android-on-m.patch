@@ -1,0 +1,1943 @@
+From c1383a7a5b47035bf08809bf973536af16047640 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Sun, 30 Aug 2009 22:04:05 +0800
+Subject: [PATCH] ENGR00116083: Recovery mode support for Android on mx51.
+
+Recovery mode support for Android on mx51.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ Makefile                                  |    2 +
+ board/freescale/imx51/imx51.c             |   98 +++++
+ board/freescale/mx51_3stack/mx51_3stack.c |  108 +++++-
+ drivers/input/Makefile                    |    1 +
+ drivers/input/mxc_keyb.c                  |  598 +++++++++++++++++++++++++++++
+ drivers/mtd/nand/mxc_nand.c               |    2 +-
+ include/asm-arm/arch-mx51/keypad.h        |   65 ++++
+ include/configs/imx51.h                   |    6 +-
+ include/configs/imx51_android.h           |  297 ++++++++++++++
+ include/configs/mx25_3stack.h             |    4 +-
+ include/configs/mx35_3stack.h             |    2 +-
+ include/configs/mx51_3stack.h             |   35 ++-
+ include/configs/mx51_3stack_android.h     |  289 ++++++++++++++
+ include/mxc_keyb.h                        |  201 ++++++++++
+ 14 files changed, 1695 insertions(+), 13 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 840bfe7..b131cc7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3242,9 +3242,11 @@ mx35_3stack_config      \
+ mx35_3stack_mmc_config: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 mx35_3stack freescale mx35
+ 
++imx51_android_config	\
+ imx51_config		: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 imx51 freescale mx51
+ 
++mx51_3stack_android_config	\
+ mx51_3stack_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx51_3stack freescale mx51
+ 
+diff --git a/board/freescale/imx51/imx51.c b/board/freescale/imx51/imx51.c
+index c8efa0f..364f224 100644
+--- a/board/freescale/imx51/imx51.c
++++ b/board/freescale/imx51/imx51.c
+@@ -29,6 +29,8 @@
+ #include <asm/arch/iomux.h>
+ #include <asm/errno.h>
+ #include <i2c.h>
++#include <mxc_keyb.h>
++#include <asm/arch/keypad.h>
+ #include "board-imx51.h"
+ #include <asm/arch/imx_spi.h>
+ #include <asm/arch/imx_spi_pmic.h>
+@@ -457,6 +459,24 @@ int sdhc_init(void)
+ 
+ #endif
+ 
++#if defined(CONFIG_MXC_KPD)
++int setup_mxc_kpd()
++{
++	mxc_request_iomux(MX51_PIN_KEY_COL0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL3, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL4, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL5, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW3, IOMUX_CONFIG_ALT0);
++
++	return 0;
++}
++#endif
++
+ int board_init(void)
+ {
+ 	setup_soc_rev();
+@@ -474,7 +494,85 @@ int board_init(void)
+ #ifdef BOARD_LATE_INIT
+ int board_late_init(void)
+ {
++#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++	struct kpp_key_info key_info = {0, 0};
++	int switch_delay = CONFIG_ANDROID_BOOTMOD_DELAY;
++	int state = 0, boot_mode_switch = 0;
++#endif
++
+ 	power_init();
++
++#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++	mxc_kpp_init();
++
++	puts("Press home + power to enter recovery mode ...\n");
++
++	while ((switch_delay > 0) && (!boot_mode_switch)) {
++		int i;
++
++		--switch_delay;
++		/* delay 100 * 10ms */
++		for (i = 0; !boot_mode_switch && i < 100; ++i) {
++			/* A state machine to scan home + power key */
++			/* Check for home + power */
++			if (mxc_kpp_getc(&key_info)) {
++				switch (state) {
++				case 0:
++					/* First press */
++					if (TEST_HOME_KEY_DEPRESS(key_info.val, key_info.evt)) {
++						/* Press Home */
++						state = 1;
++					} else if (TEST_POWER_KEY_DEPRESS(key_info.val, key_info.evt)) {
++						state = 2;
++					} else {
++						state = 0;
++					}
++					break;
++				case 1:
++					/* Home is already pressed, try to detect Power */
++					if (TEST_POWER_KEY_DEPRESS(key_info.val,
++						    key_info.evt)) {
++						boot_mode_switch = 1;
++					} else {
++					    if (TEST_HOME_KEY_DEPRESS(key_info.val,
++							key_info.evt))
++						state = 1;
++					    else
++						state = 0;
++					}
++					break;
++				case 2:
++					/* Power is already pressed, try to detect Home */
++					if (TEST_HOME_KEY_DEPRESS(key_info.val,
++						    key_info.evt)) {
++						boot_mode_switch = 1;
++					} else {
++						if (TEST_POWER_KEY_DEPRESS(key_info.val,
++							    key_info.evt))
++							state = 2;
++						else
++							state = 0;
++					}
++					break;
++				default:
++					break;
++				}
++
++				if (1 == boot_mode_switch) {
++					printf("Boot mode switched to recovery mode!\n");
++					/* Set env to recovery mode */
++					setenv("bootargs_android", CONFIG_ANDROID_RECOVERY_BOOTARGS);
++					setenv("bootcmd_android", CONFIG_ANDROID_RECOVERY_BOOTCMD);
++					setenv("bootcmd", "run bootcmd_android");
++					break;
++				}
++			}
++		}
++		for (i = 0; i < 100; ++i)
++			udelay(10000);
++	}
++#endif
++
+ 	return 0;
+ }
+ #endif
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 9ddee40..3d8756e 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -29,6 +29,8 @@
+ #include <asm/arch/mx51_pins.h>
+ #include <asm/arch/iomux.h>
+ #include <i2c.h>
++#include <mxc_keyb.h>
++#include <asm/arch/keypad.h>
+ #include "board-mx51_3stack.h"
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+@@ -175,6 +177,84 @@ int board_init(void)
+ #ifdef BOARD_LATE_INIT
+ int board_late_init(void)
+ {
++#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++	struct kpp_key_info key_info = {0, 0};
++	int switch_delay = CONFIG_ANDROID_BOOTMOD_DELAY;
++	int state = 0, boot_mode_switch = 0;
++#endif
++
++
++#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++	mxc_kpp_init();
++
++	puts("Press home + power to enter recovery mode ...\n");
++
++	while ((switch_delay > 0) && (!boot_mode_switch)) {
++		int i;
++
++		--switch_delay;
++		/* delay 100 * 10ms */
++		for (i = 0; !boot_mode_switch && i < 100; ++i) {
++			/* A state machine to scan home + power key */
++			/* Check for home + power */
++			if (mxc_kpp_getc(&key_info)) {
++				switch (state) {
++				case 0:
++					/* First press */
++					if (TEST_HOME_KEY_DEPRESS(key_info.val, key_info.evt)) {
++						/* Press Home */
++						state = 1;
++					} else if (TEST_POWER_KEY_DEPRESS(key_info.val, key_info.evt)) {
++						state = 2;
++					} else {
++						state = 0;
++					}
++					break;
++				case 1:
++					/* Home is already pressed, try to detect Power */
++					if (TEST_POWER_KEY_DEPRESS(key_info.val,
++						    key_info.evt)) {
++						boot_mode_switch = 1;
++					} else {
++					    if (TEST_HOME_KEY_DEPRESS(key_info.val,
++							key_info.evt))
++						state = 2;
++					    else
++						state = 0;
++					}
++					break;
++				case 2:
++					/* Power is already pressed, try to detect Home */
++					if (TEST_HOME_KEY_DEPRESS(key_info.val,
++						    key_info.evt)) {
++						boot_mode_switch = 1;
++					} else {
++						if (TEST_POWER_KEY_DEPRESS(key_info.val,
++							    key_info.evt))
++							state = 1;
++						else
++							state = 0;
++					}
++					break;
++				default:
++					break;
++				}
++
++				if (1 == boot_mode_switch) {
++					printf("Boot mode switched to recovery mode!\n");
++					/* Set env to recovery mode */
++					setenv("bootargs_android", CONFIG_ANDROID_RECOVERY_BOOTARGS);
++					setenv("bootcmd_android", CONFIG_ANDROID_RECOVERY_BOOTCMD);
++					setenv("bootcmd", "run bootcmd_android");
++					break;
++				}
++			}
++		}
++		for (i = 0; i < 100; ++i)
++			udelay(10000);
++	}
++#endif
++
+ 	return 0;
+ }
+ #endif
+@@ -182,6 +262,15 @@ int board_late_init(void)
+ int checkboard(void)
+ {
+ 	printf("Board: MX51 3STACK [");
++
++	if (system_rev & CHIP_REV_2_0) {
++		printf("2.0 [");
++	} else if (system_rev & CHIP_REV_1_1) {
++		printf("1.1 [");
++	} else {
++		printf("1.0 [");
++	}
++
+ 	switch (__REG(SRC_BASE_ADDR + 0x8)) {
+ 	case 0x0001:
+ 		printf("POR");
+@@ -216,7 +305,6 @@ int board_eth_init(bd_t *bis)
+ int sdhc_init(void)
+ {
+ 	u32 interface_esdhc = 0;
+-	u32 pad_val = 0;
+ 	s32 status = 0;
+ 
+ 	interface_esdhc = (readl(SRC_BASE_ADDR + 0x4) & (0x00180000)) >> 19;
+@@ -288,3 +376,21 @@ int sdhc_init(void)
+ }
+ 
+ #endif
++
++#if defined(CONFIG_MXC_KPD)
++int setup_mxc_kpd()
++{
++	mxc_request_iomux(MX51_PIN_KEY_COL0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL3, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL4, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_COL5, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_KEY_ROW3, IOMUX_CONFIG_ALT0);
++
++	return 0;
++}
++#endif
+diff --git a/drivers/input/Makefile b/drivers/input/Makefile
+index 9a14407..fcf9643 100644
+--- a/drivers/input/Makefile
++++ b/drivers/input/Makefile
+@@ -30,6 +30,7 @@ ifdef CONFIG_PS2KBD
+ COBJS-y += keyboard.o pc_keyb.o
+ COBJS-$(CONFIG_PS2MULT) += ps2mult.o ps2ser.o
+ endif
++COBJS-${CONFIG_MXC_KPD} += mxc_keyb.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/input/mxc_keyb.c b/drivers/input/mxc_keyb.c
+new file mode 100644
+index 0000000..8682b79
+--- /dev/null
++++ b/drivers/input/mxc_keyb.c
+@@ -0,0 +1,598 @@
++/*
++ * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @file mxc_keyb.c
++ *
++ * @brief Driver for the Freescale Semiconductor MXC keypad port.
++ *
++ * The keypad driver is designed as a standard Input driver which interacts
++ * with low level keypad port hardware. Upon opening, the Keypad driver
++ * initializes the keypad port. When the keypad interrupt happens the driver
++ * calles keypad polling timer and scans the keypad matrix for key
++ * press/release. If all key press/release happened it comes out of timer and
++ * waits for key press interrupt. The scancode for key press and release events
++ * are passed to Input subsytem.
++ *
++ * @ingroup keypad
++ */
++
++#include <asm/io.h>
++#include <common.h>
++#include <asm/errno.h>
++#include <asm/arch/keypad.h>
++#include <linux/types.h>
++#include <malloc.h>
++
++/*
++ *  * Module header file
++ *   */
++#include <mxc_keyb.h>
++
++/*!
++ * Comment KPP_DEBUG to disable debug messages
++ */
++
++#undef	KPP_DEBUG
++
++#ifdef	KPP_DEBUG
++#define	KPP_PRINTF(fmt, args...)	printf(fmt , ##args)
++
++static void mxc_kpp_dump_regs()
++{
++	unsigned short t1, t2, t3;
++
++	t1 = __raw_readw(KPCR);
++	t2 = __raw_readw(KPSR);
++	t3 = __raw_readw(KDDR);
++	/*
++	KPP_PRINTF("KPCR=0x%04x, KPSR=0x%04x, KDDR=0x%04x\n",
++		t1, t2, t3);
++		*/
++}
++#else
++#define KPP_PRINTF(fmt, args...)
++#endif
++
++static u16 mxc_key_mapping[] = CONFIG_MXC_KEYMAPPING;
++
++/*!
++ * This structure holds the keypad private data structure.
++ */
++static struct keypad_priv kpp_dev;
++
++/*! Indicates if the key pad device is enabled. */
++
++/*! This static variable indicates whether a key event is pressed/released. */
++static unsigned short KPress;
++
++/*! cur_rcmap and prev_rcmap array is used to detect key press and release. */
++static unsigned short *cur_rcmap;	/* max 64 bits (8x8 matrix) */
++static unsigned short *prev_rcmap;
++
++/*!
++ * Debounce polling period(10ms) in system ticks.
++ */
++static unsigned short KScanRate = (10 * CONFIG_SYS_HZ) / 1000;
++
++/*!
++ * These arrays are used to store press and release scancodes.
++ */
++static short **press_scancode;
++static short **release_scancode;
++
++static const unsigned short *mxckpd_keycodes;
++static unsigned short mxckpd_keycodes_size;
++
++/*!
++ * These functions are used to configure and the GPIO pins for keypad to
++ * activate and deactivate it.
++ */
++extern void setup_mxc_kpd(void);
++
++/*!
++ * This function is called to scan the keypad matrix to find out the key press
++ * and key release events. Make scancode and break scancode are generated for
++ * key press and key release events.
++ *
++ * The following scanning sequence are done for
++ * keypad row and column scanning,
++ * -# Write 1's to KPDR[15:8], setting column data to 1's
++ * -# Configure columns as totem pole outputs(for quick discharging of keypad
++ * capacitance)
++ * -# Configure columns as open-drain
++ * -# Write a single column to 0, others to 1.
++ * -# Sample row inputs and save data. Multiple key presses can be detected on
++ * a single column.
++ * -# Repeat steps the above steps for remaining columns.
++ * -# Return all columns to 0 in preparation for standby mode.
++ * -# Clear KPKD and KPKR status bit(s) by writing to a 1,
++ *    Set the KPKR synchronizer chain by writing "1" to KRSS register,
++ *    Clear the KPKD synchronizer chain by writing "1" to KDSC register
++ *
++ * @result    Number of key pressed/released.
++ */
++static int mxc_kpp_scan_matrix()
++{
++	unsigned short reg_val;
++	int col, row;
++	short scancode = 0;
++	int keycnt = 0;		/* How many keys are still pressed */
++
++	/*
++	 * wmb() linux kernel function which guarantees orderings in write
++	 * operations
++	 */
++	/* wmb(); */
++
++	/* save cur keypad matrix to prev */
++	memcpy(prev_rcmap, cur_rcmap, kpp_dev.kpp_rows * sizeof(prev_rcmap[0]));
++	memset(cur_rcmap, 0, kpp_dev.kpp_rows * sizeof(cur_rcmap[0]));
++
++	for (col = 0; col < kpp_dev.kpp_cols; col++) {	/* Col */
++		/* 2. Write 1.s to KPDR[15:8] setting column data to 1.s */
++		reg_val = __raw_readw(KPDR);
++		reg_val |= 0xff00;
++		__raw_writew(reg_val, KPDR);
++
++		/*
++		 * 3. Configure columns as totem pole outputs(for quick
++		 * discharging of keypad capacitance)
++		 */
++		reg_val = __raw_readw(KPCR);
++		reg_val &= 0x00ff;
++		__raw_writew(reg_val, KPCR);
++
++		udelay(2);
++
++#ifdef KPP_DEBUG
++		mxc_kpp_dump_regs();
++#endif
++
++		/*
++		 * 4. Configure columns as open-drain
++		 */
++		reg_val = __raw_readw(KPCR);
++		reg_val |= ((1 << kpp_dev.kpp_cols) - 1) << 8;
++		__raw_writew(reg_val, KPCR);
++
++		/*
++		 * 5. Write a single column to 0, others to 1.
++		 * 6. Sample row inputs and save data. Multiple key presses
++		 * can be detected on a single column.
++		 * 7. Repeat steps 2 - 6 for remaining columns.
++		 */
++
++		/* Col bit starts at 8th bit in KPDR */
++		reg_val = __raw_readw(KPDR);
++		reg_val &= ~(1 << (8 + col));
++		__raw_writew(reg_val, KPDR);
++
++		/* Delay added to avoid propagating the 0 from column to row
++		 * when scanning. */
++
++		udelay(5);
++
++#ifdef KPP_DEBUG
++		mxc_kpp_dump_regs();
++#endif
++
++		/* Read row input */
++		reg_val = __raw_readw(KPDR);
++		for (row = 0; row < kpp_dev.kpp_rows; row++) {	/* sample row */
++			if (TEST_BIT(reg_val, row) == 0) {
++				cur_rcmap[row] = BITSET(cur_rcmap[row], col);
++				keycnt++;
++			}
++		}
++	}
++
++	/*
++	 * 8. Return all columns to 0 in preparation for standby mode.
++	 * 9. Clear KPKD and KPKR status bit(s) by writing to a .1.,
++	 * set the KPKR synchronizer chain by writing "1" to KRSS register,
++	 * clear the KPKD synchronizer chain by writing "1" to KDSC register
++	 */
++	reg_val = 0x00;
++	__raw_writew(reg_val, KPDR);
++	reg_val = __raw_readw(KPDR);
++	reg_val = __raw_readw(KPSR);
++	reg_val |= KBD_STAT_KPKD | KBD_STAT_KPKR | KBD_STAT_KRSS |
++	    KBD_STAT_KDSC;
++	__raw_writew(reg_val, KPSR);
++
++#ifdef KPP_DEBUG
++	mxc_kpp_dump_regs();
++#endif
++
++	/* Check key press status change */
++
++	/*
++	 * prev_rcmap array will contain the previous status of the keypad
++	 * matrix.  cur_rcmap array will contains the present status of the
++	 * keypad matrix. If a bit is set in the array, that (row, col) bit is
++	 * pressed, else it is not pressed.
++	 *
++	 * XORing these two variables will give us the change in bit for
++	 * particular row and column.  If a bit is set in XOR output, then that
++	 * (row, col) has a change of status from the previous state.  From
++	 * the diff variable the key press and key release of row and column
++	 * are found out.
++	 *
++	 * If the key press is determined then scancode for key pressed
++	 * can be generated using the following statement:
++	 *    scancode = ((row * 8) + col);
++	 *
++	 * If the key release is determined then scancode for key release
++	 * can be generated using the following statement:
++	 *    scancode = ((row * 8) + col) + MXC_KEYRELEASE;
++	 */
++	for (row = 0; row < kpp_dev.kpp_rows; row++) {
++		unsigned char diff;
++
++		/*
++		 * Calculate the change in the keypad row status
++		 */
++		diff = prev_rcmap[row] ^ cur_rcmap[row];
++
++		for (col = 0; col < kpp_dev.kpp_cols; col++) {
++			if ((diff >> col) & 0x1) {
++				/* There is a status change on col */
++				if ((prev_rcmap[row] & BITSET(0, col)) == 0) {
++					/*
++					 * Previous state is 0, so now
++					 * a key is pressed
++					 */
++					scancode =
++					    ((row * kpp_dev.kpp_cols) +
++					     col);
++					KPress = 1;
++					kpp_dev.iKeyState = KStateUp;
++
++					KPP_PRINTF("Press   (%d, %d) scan=%d "
++						 "Kpress=%d\n",
++						 row, col, scancode, KPress);
++					press_scancode[row][col] =
++					    (short)scancode;
++				} else {
++					/*
++					 * Previous state is not 0, so
++					 * now a key is released
++					 */
++					scancode =
++					    (row * kpp_dev.kpp_cols) +
++					    col + MXC_KEYRELEASE;
++					KPress = 0;
++					kpp_dev.iKeyState = KStateDown;
++
++					KPP_PRINTF
++					    ("Release (%d, %d) scan=%d Kpress=%d\n",
++					     row, col, scancode, KPress);
++					release_scancode[row][col] =
++					    (short)scancode;
++					keycnt++;
++				}
++			}
++		}
++	}
++
++	return keycnt;
++}
++
++static int mxc_kpp_reset()
++{
++	unsigned short reg_val;
++	int i;
++
++	/*
++	* Stop scanning and wait for interrupt.
++	* Enable press interrupt and disable release interrupt.
++	*/
++	__raw_writew(0x00FF, KPDR);
++	reg_val = __raw_readw(KPSR);
++	reg_val |= (KBD_STAT_KPKR | KBD_STAT_KPKD);
++	reg_val |= KBD_STAT_KRSS | KBD_STAT_KDSC;
++	__raw_writew(reg_val, KPSR);
++	reg_val |= KBD_STAT_KDIE;
++	reg_val &= ~KBD_STAT_KRIE;
++	__raw_writew(reg_val, KPSR);
++
++#ifdef KPP_DEBUG
++	mxc_kpp_dump_regs();
++#endif
++
++	/*
++	* No more keys pressed... make sure unwanted key codes are
++	* not given upstairs
++	*/
++	for (i = 0; i < kpp_dev.kpp_rows; i++) {
++		memset(press_scancode[i], -1,
++			sizeof(press_scancode[0][0]) * kpp_dev.kpp_cols);
++		memset(release_scancode[i], -1,
++			sizeof(release_scancode[0][0]) *
++			kpp_dev.kpp_cols);
++	}
++
++	return 0;
++}
++
++int mxc_kpp_getc(struct kpp_key_info *key_info)
++{
++	int col, row;
++	static int key_cnt;
++	unsigned short reg_val;
++	short scancode = 0;
++
++	reg_val = __raw_readw(KPSR);
++
++	if (!key_cnt) {
++		if (reg_val & KBD_STAT_KPKD) {
++			/*
++			* Disable key press(KDIE status bit) interrupt
++			*/
++			reg_val &= ~KBD_STAT_KDIE;
++			__raw_writew(reg_val, KPSR);
++
++#ifdef KPP_DEBUG
++			mxc_kpp_dump_regs();
++#endif
++
++			key_cnt = mxc_kpp_scan_matrix();
++		} else {
++			return 0;
++		}
++	}
++
++	/*
++	* This switch case statement is the
++	* implementation of state machine of debounc
++	* logic for key press/release.
++	* The explaination of state machine is as
++	* follows:
++	*
++	* KStateUp State:
++	* This is in intial state of the state machine
++	* this state it checks for any key presses.
++	* The key press can be checked using the
++	* variable KPress. If KPress is set, then key
++	* press is identified and switches the to
++	* KStateFirstDown state for key press to
++	* debounce.
++	*
++	* KStateFirstDown:
++	* After debounce delay(10ms), if the KPress is
++	* still set then pass scancode generated to
++	* input device and change the state to
++	* KStateDown, else key press debounce is not
++	* satisfied so change the state to KStateUp.
++	*
++	* KStateDown:
++	* In this state it checks for any key release.
++	* If KPress variable is cleared, then key
++	* release is indicated and so, switch the
++	* state to KStateFirstUp else to state
++	* KStateDown.
++	*
++	* KStateFirstUp:
++	* After debounce delay(10ms), if the KPress is
++	* still reset then pass the key release
++	* scancode to input device and change
++	* the state to KStateUp else key release is
++	* not satisfied so change the state to
++	* KStateDown.
++	*/
++
++	for (row = 0; row < kpp_dev.kpp_rows; row++) {
++		for (col = 0; col < kpp_dev.kpp_cols; col++) {
++			if ((press_scancode[row][col] != -1)) {
++				/* Still Down, so add scancode */
++				scancode =
++				    press_scancode[row][col];
++
++				key_info->val = mxckpd_keycodes[scancode];
++				key_info->evt = KDepress;
++
++				KPP_PRINTF("KStateFirstDown: scan=%d val=%d\n",
++					scancode, mxckpd_keycodes[scancode]);
++				kpp_dev.iKeyState = KStateDown;
++				press_scancode[row][col] = -1;
++
++				goto key_detect;
++			}
++		}
++	}
++
++	for (row = 0; row < kpp_dev.kpp_rows; row++) {
++		for (col = 0; col < kpp_dev.kpp_cols; col++) {
++			if ((release_scancode[row][col] != -1)) {
++				scancode =
++				    release_scancode[row][col];
++				scancode =
++					scancode - MXC_KEYRELEASE;
++
++				key_info->val = mxckpd_keycodes[scancode];
++				key_info->evt = KRelease;
++
++				KPP_PRINTF("KStateFirstUp: scan=%d val=%d\n",
++					scancode, mxckpd_keycodes[scancode]);
++
++				kpp_dev.iKeyState = KStateUp;
++				release_scancode[row][col] = -1;
++
++				goto key_detect;
++			}
++		}
++	}
++
++	return 0;
++
++key_detect:
++	/* udelay(KScanRate); */
++	key_cnt = mxc_kpp_scan_matrix();
++
++	if (0 == key_cnt)
++		mxc_kpp_reset();
++	return 1;
++}
++
++/*!
++ * This function is called to free the allocated memory for local arrays
++ */
++static void mxc_kpp_free_allocated(void)
++{
++	int i;
++
++	if (press_scancode) {
++		for (i = 0; i < kpp_dev.kpp_rows; i++) {
++			if (press_scancode[i])
++				free(press_scancode[i]);
++		}
++		free(press_scancode);
++	}
++
++	if (release_scancode) {
++		for (i = 0; i < kpp_dev.kpp_rows; i++) {
++			if (release_scancode[i])
++				free(release_scancode[i]);
++		}
++		free(release_scancode);
++	}
++
++	if (cur_rcmap)
++		free(cur_rcmap);
++
++	if (prev_rcmap)
++		free(prev_rcmap);
++}
++
++/*!
++ * This function is called during the driver binding process.
++ *
++ * @param   pdev  the device structure used to store device specific
++ *                information that is used by the suspend, resume and remove
++ *                functions.
++ *
++ * @return  The function returns 0 on successful registration. Otherwise returns
++ *          specific error code.
++ */
++int mxc_kpp_init()
++{
++	int i;
++	int retval;
++	unsigned int reg_val;
++
++	kpp_dev.kpp_cols = CONFIG_MXC_KPD_COLMAX;
++	kpp_dev.kpp_rows = CONFIG_MXC_KPD_ROWMAX;
++
++	/* clock and IOMUX configuration for keypad */
++	setup_mxc_kpd();
++
++	/* Configure keypad */
++
++	/* Enable number of rows in keypad (KPCR[7:0])
++	 * Configure keypad columns as open-drain (KPCR[15:8])
++	 *
++	 * Configure the rows/cols in KPP
++	 * LSB nibble in KPP is for 8 rows
++	 * MSB nibble in KPP is for 8 cols
++	 */
++	reg_val = __raw_readw(KPCR);
++	reg_val |= (1  << kpp_dev.kpp_rows) - 1;	/* LSB */
++	reg_val |= ((1 << kpp_dev.kpp_cols) - 1) << 8;	/* MSB */
++	__raw_writew(reg_val, KPCR);
++
++	/* Write 0's to KPDR[15:8] */
++	reg_val = __raw_readw(KPDR);
++	reg_val &= 0x00ff;
++	__raw_writew(reg_val, KPDR);
++
++	/* Configure columns as output,
++	 * rows as input (KDDR[15:0]) */
++	reg_val = __raw_readw(KDDR);
++	reg_val |= 0xff00;
++	reg_val &= 0xff00;
++	__raw_writew(reg_val, KDDR);
++
++	/* Clear the KPKD Status Flag
++	 * and Synchronizer chain. */
++	reg_val = __raw_readw(KPSR);
++	reg_val &= ~(KBD_STAT_KPKR | KBD_STAT_KPKD);
++	reg_val |= KBD_STAT_KPKD;
++	reg_val |= KBD_STAT_KRSS | KBD_STAT_KDSC;
++	__raw_writew(reg_val, KPSR);
++	/* Set the KDIE control bit, and clear the KRIE
++	 * control bit (avoid false release events). */
++	reg_val |= KBD_STAT_KDIE;
++	reg_val &= ~KBD_STAT_KRIE;
++	__raw_writew(reg_val, KPSR);
++
++#ifdef KPP_DEBUG
++	mxc_kpp_dump_regs();
++#endif
++
++	mxckpd_keycodes = mxc_key_mapping;
++	mxckpd_keycodes_size = kpp_dev.kpp_cols * kpp_dev.kpp_rows;
++
++	if ((mxckpd_keycodes == (void *)0)
++	    || (mxckpd_keycodes_size == 0)) {
++		retval = -ENODEV;
++		goto err;
++	}
++
++	/* allocate required memory */
++	press_scancode   = (short **)malloc(kpp_dev.kpp_rows * sizeof(press_scancode[0]));
++	release_scancode = (short **)malloc(kpp_dev.kpp_rows * sizeof(release_scancode[0]));
++
++	if (!press_scancode || !release_scancode) {
++		retval = -ENOMEM;
++		goto err;
++	}
++
++	for (i = 0; i < kpp_dev.kpp_rows; i++) {
++		press_scancode[i] = (short *)malloc(kpp_dev.kpp_cols
++					    * sizeof(press_scancode[0][0]));
++		release_scancode[i] =
++		    (short *)malloc(kpp_dev.kpp_cols * sizeof(release_scancode[0][0]));
++
++		if (!press_scancode[i] || !release_scancode[i]) {
++			retval = -ENOMEM;
++			goto err;
++		}
++	}
++
++	cur_rcmap =
++	    (unsigned short *)malloc(kpp_dev.kpp_rows * sizeof(cur_rcmap[0]));
++	prev_rcmap =
++	    (unsigned short *)malloc(kpp_dev.kpp_rows * sizeof(prev_rcmap[0]));
++
++	if (!cur_rcmap || !prev_rcmap) {
++		retval = -ENOMEM;
++		goto err;
++	}
++
++	for (i = 0; i < kpp_dev.kpp_rows; i++) {
++		memset(press_scancode[i], -1,
++		       sizeof(press_scancode[0][0]) * kpp_dev.kpp_cols);
++		memset(release_scancode[i], -1,
++		       sizeof(release_scancode[0][0]) * kpp_dev.kpp_cols);
++	}
++	memset(cur_rcmap, 0, kpp_dev.kpp_rows * sizeof(cur_rcmap[0]));
++	memset(prev_rcmap, 0, kpp_dev.kpp_rows * sizeof(prev_rcmap[0]));
++
++	return 0;
++
++err:
++	mxc_kpp_free_allocated();
++	return retval;
++}
++
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index f6dd23b..cf27c66 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -547,7 +547,7 @@ static u16 mxc_do_status_auto(struct mtd_info *mtd)
+ 		 */
+ 		do {
+ 			raw_write(NFC_AUTO_STATE, REG_NFC_OPS);
+-		#ifdef CONFIG_MX51
++		#if defined(CONFIG_MX51_3DS) || defined(CONFIG_MX51_BBG)
+ 			/* mx51to2 NFC need wait the op done */
+ 			if (is_soc_rev(CHIP_REV_2_0) == 0)
+ 				wait_op_done(TROP_US_DELAY);
+diff --git a/include/asm-arm/arch-mx51/keypad.h b/include/asm-arm/arch-mx51/keypad.h
+new file mode 100644
+index 0000000..23ae4fe
+--- /dev/null
++++ b/include/asm-arm/arch-mx51/keypad.h
+@@ -0,0 +1,65 @@
++/*
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX51-3Stack Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef _MXC_KEYPAD_H_
++#define _MXC_KEYPAD_H_
++
++#include <config.h>
++
++#define KEY_1                   2
++#define KEY_2                   3
++#define KEY_3                   4
++#define KEY_F1                  59
++#define KEY_UP                  103
++#define KEY_F2                  60
++
++#define KEY_4                   5
++#define KEY_5                   6
++#define KEY_6                   7
++#define KEY_LEFT                105
++#define KEY_SELECT              0x161
++#define KEY_RIGHT               106
++
++#define KEY_7                   8
++#define KEY_8                   9
++#define KEY_9                   10
++#define KEY_F3                  61
++#define KEY_DOWN                108
++#define KEY_F4                  62
++
++#define KEY_0                   11
++#define KEY_OK                  0x160
++#define KEY_ESC                 1
++#define KEY_ENTER               28
++#define KEY_MENU                139     /* Menu (show menu) */
++#define KEY_BACK                158     /* AC Back */
++
++#if defined(CONFIG_MX51_BBG)
++#define TEST_HOME_KEY_DEPRESS(k, e)  (((k) == (KEY_F1)) && (((e) == (KDepress))))
++#define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_RIGHT)) && (((e) == (KDepress))))
++#elif defined(CONFIG_MX51_3DS)
++#define TEST_HOME_KEY_DEPRESS(k, e)  (((k) == (KEY_MENU)) && (((e) == (KDepress))))
++#define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_F2)) && (((e) == (KDepress))))
++#else
++# error Undefined board type!
++#endif
++
++#endif
+diff --git a/include/configs/imx51.h b/include/configs/imx51.h
+index 8d81fff..23347d1 100644
+--- a/include/configs/imx51.h
++++ b/include/configs/imx51.h
+@@ -32,7 +32,7 @@
+ #define CONFIG_L2_OFF
+ 
+ #define CONFIG_MXC		1
+-#define CONFIG_MX51		1	/* in a mx51 */
++#define CONFIG_MX51_BBG		1	/* in a mx51 */
+ #define CONFIG_FLASH_HEADER	1
+ #define CONFIG_FLASH_HEADER_OFFSET 0x400
+ #define CONFIG_FLASH_HEADER_BARKER 0xB1
+@@ -244,11 +244,11 @@
+ 	#define CONFIG_ENV_OFFSET	0x100000
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+-	#define CONFIG_ENV_OFFSET	(1024 * 1024)
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+ 	#define CONFIG_ENV_SPI_CS		1
+-	#define CONFIG_ENV_OFFSET       (1024 * 1024)
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #else
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+diff --git a/include/configs/imx51_android.h b/include/configs/imx51_android.h
+new file mode 100644
+index 0000000..55bcfbf
+--- /dev/null
++++ b/include/configs/imx51_android.h
+@@ -0,0 +1,297 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX51-3Stack Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx51.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_SYS_APCS_GNU
++#define CONFIG_L2_OFF
++
++#define CONFIG_MXC		1
++#define CONFIG_MX51_BBG		1	/* in a mx51 */
++#define CONFIG_FLASH_HEADER	1
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++#define CONFIG_FLASH_HEADER_BARKER 0xB1
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
++#define CONFIG_MX51_CLK32	32768
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX51_UART	1
++#define CONFIG_MX51_UART1	1
++
++/*
++ * SPI Configs
++ * */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_SPI
++#define CONFIG_IMX_SPI_PMIC
++#define CONFIG_IMX_SPI_PMIC_CS 0
++
++#define MAX_SPI_BYTES		(64 * 4)
++
++/*
++ * MMC Configs
++ * */
++#define CONFIG_FSL_MMC		1
++
++#define CONFIG_MMC              1
++#define CONFIG_CMD_MMC
++#define CONFIG_DOS_PARTITION	1
++#define CONFIG_CMD_FAT		1
++#define CONFIG_MMC_BASE         0x0
++
++/*
++ * Eth Configs
++ */
++#define CONFIG_HAS_ETH1
++#define CONFIG_NET_MULTI 1
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_DISCOVER_PHY
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	0x1F
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++
++/*
++ * Android support Configs
++ */
++#include <asm/arch/keypad.h>
++
++#define CONFIG_FSL_ANDROID
++
++#define CONFIG_MXC_KPD
++#define CONFIG_MXC_KEYMAPPING \
++	{	\
++		KEY_1, KEY_2, KEY_3, KEY_F1, KEY_UP, KEY_F2, \
++		KEY_4, KEY_5, KEY_6, KEY_LEFT, KEY_SELECT, KEY_RIGHT, \
++		KEY_7, KEY_8, KEY_9, KEY_F3, KEY_DOWN, KEY_F4, \
++		KEY_0, KEY_OK, KEY_ESC, KEY_ENTER, KEY_MENU, KEY_BACK, \
++	}
++/*
++	{	\
++		KEY_3,         KEY_2,        KEY_0, KEY_OK, KEY_ESC, KEY_ENTER,
++		KEY_F1,	KEY_4, KEY_6, KEY_5,
++		KEY_LEFT,      KEY_1,        KEY_ , KEY_8,  KEY_9,   KEY_RIGHT,
++	}
++	*/
++#define CONFIG_MXC_KPD_COLMAX 4
++#define CONFIG_MXC_KPD_ROWMAX 4
++#define CONFIG_ANDROID_NORMAL_BOOTARGS "ip=dhcp mem=480M init=/init wvga calibration"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD  "run bootargs_base bootargs_android;mmcinit;cp.b 0x100000 ${loadaddr} 0x250000;bootm"
++#define CONFIG_ANDROID_BOOTMOD_DELAY 3
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++/* Enable below configure when supporting nand */
++/* #define CONFIG_CMD_NAND */
++#define CONFIG_CMD_ENV
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot_addr=0xa0000000\0"				\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"rd_loadaddr=0x90B00000\0"	\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
++		"bootcmd=run bootcmd_android\0"				\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootcmd_android=run bootargs_base bootargs_android; "	\
++			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
++			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
++		"prg_uboot=tftpboot ${loadaddr} ${uboot}; "		\
++			"protect off ${uboot_addr} 0xa003ffff; "	\
++			"erase ${uboot_addr} 0xa003ffff; "		\
++			"cp.b ${loadaddr} ${uboot_addr} ${filesize}; "	\
++			"setenv filesize; saveenv\0"
++
++/*Support LAN9217*/
++/*
++#define CONFIG_DRIVER_SMC911X	1
++#define CONFIG_DRIVER_SMC911X_16_BIT 1
++#define CONFIG_DRIVER_SMC911X_BASE_VARIABLE mx51_io_base_addr
++*/
++
++/*
++ * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
++ * U-Boot, RedBoot and Linux: the ethernet Rx signal is reaching the CS8900A
++ * controller inverted. The controller is capable of detecting and correcting
++ * this, but it needs 4 network packets for that. Which means, at startup, you
++ * will not receive answers to the first 4 packest, unless there have been some
++ * broadcasts on the network, or your board is on a hub. Reducing the ARP
++ * timeout from default 5 seconds to 200ms we speed up the initial TFTP
++ * transfer, should the user wish one, significantly.
++ */
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"BBG U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++/* TO1 boards */
++/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH driver setup
++ */
++#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
++
++/* Monitor at beginning of flash */
++#if defined(CONFIG_FSL_SF)
++	#define CONFIG_FSL_ENV_IN_SF
++#elif defined(CONFIG_FSL_MMC)
++	#define CONFIG_FSL_ENV_IN_MMC
++#elif defined(CONFIG_CMD_NAND)
++	#define CONFIG_FSL_ENV_IN_NAND
++#endif
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++/*
++ * JFFS2 partitions
++ */
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index 5e343ea..93e4b9a 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -205,11 +205,11 @@
+ 	#define CONFIG_ENV_OFFSET	0x80000
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+-	#define CONFIG_ENV_OFFSET	0x100000
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+ 	#define CONFIG_ENV_SPI_CS		1
+-	#define CONFIG_ENV_OFFSET      		0x100000
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
+ #else
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 9939964..b78f48e 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -211,7 +211,7 @@
+ 
+ #if defined(CONFIG_FSL_ENV_IN_NAND)
+ 	#define CONFIG_ENV_IS_IN_NAND 1
+-	#define CONFIG_ENV_OFFSET       0x100000
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IS_IN_FLASH)
+ 	#define CONFIG_ENV_IS_IN_FLASH	1
+ #endif
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 9cb463d..2cee9d6 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -3,7 +3,7 @@
+  *
+  * (C) Copyright 2009 Freescale Semiconductor, Inc.
+  *
+- * Configuration settings for the MX31ADS Freescale board.
++ * Configuration settings for the MX51-3Stack Freescale board.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -32,7 +32,7 @@
+ #define CONFIG_L2_OFF
+ 
+ #define CONFIG_MXC		1
+-#define CONFIG_MX51		1	/* in a mx51 */
++#define CONFIG_MX51_3DS		1	/* in a mx51 */
+ #define CONFIG_FLASH_HEADER	1
+ #define CONFIG_FLASH_HEADER_OFFSET 0x400
+ #define CONFIG_FLASH_HEADER_BARKER 0xB1
+@@ -68,6 +68,23 @@
+ #define CONFIG_MX51_UART	1
+ #define CONFIG_MX51_UART1	1
+ 
++
++/*
++ * MMC Configs
++ * */
++#define CONFIG_FSL_MMC		1
++
++#define CONFIG_MMC              1
++#define CONFIG_CMD_MMC
++#define CONFIG_DOS_PARTITION	1
++#define CONFIG_CMD_FAT		1
++#define CONFIG_MMC_BASE         0x0
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+ #define CONFIG_CONS_INDEX	1
+@@ -179,10 +196,18 @@
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ 
+ /* Monitor at beginning of flash */
+-#define CONFIG_ENV_IS_IN_NAND 1
+-#define CONFIG_ENV_SECT_SIZE	(1024 * 1024)
++#define CONFIG_FSL_ENV_IN_NAND
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE		CONFIG_ENV_SECT_SIZE
+-#define CONFIG_ENV_OFFSET		0x100000
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
+ /*
+  * JFFS2 partitions
+  */
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+new file mode 100644
+index 0000000..c4958c0
+--- /dev/null
++++ b/include/configs/mx51_3stack_android.h
+@@ -0,0 +1,289 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX51-3Stack Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx51.h>
++#include <asm/arch/keypad.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_SYS_APCS_GNU
++#define CONFIG_L2_OFF
++
++#define CONFIG_MXC		1
++#define CONFIG_MX51_3DS		1	/* in a mx51 */
++#define CONFIG_FLASH_HEADER	1
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++#define CONFIG_FLASH_HEADER_BARKER 0xB1
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
++#define CONFIG_MX51_CLK32	32768
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX51_UART	1
++#define CONFIG_MX51_UART1	1
++
++/*
++ * SPI Configs
++ * */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_SPI
++#define CONFIG_IMX_SPI_PMIC
++#define CONFIG_IMX_SPI_PMIC_CS 0
++
++#define MAX_SPI_BYTES		(64 * 4)
++
++/*
++ * MMC Configs
++ * */
++#define CONFIG_FSL_MMC		1
++
++#define CONFIG_MMC              1
++#define CONFIG_CMD_MMC
++#define CONFIG_DOS_PARTITION	1
++#define CONFIG_CMD_FAT		1
++#define CONFIG_MMC_BASE         0x0
++
++/*
++ * Eth Configs
++ */
++#define CONFIG_HAS_ETH1
++#define CONFIG_NET_MULTI 1
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_DISCOVER_PHY
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	0x1F
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++
++/*
++ * Android support Configs
++ */
++#include <asm/arch/keypad.h>
++
++#define CONFIG_FSL_ANDROID
++
++#define CONFIG_MXC_KPD
++#define CONFIG_MXC_KEYMAPPING \
++	{	\
++		KEY_1, KEY_2, KEY_3, KEY_F1, KEY_UP, KEY_F2, \
++		KEY_4, KEY_5, KEY_6, KEY_LEFT, KEY_SELECT, KEY_RIGHT, \
++		KEY_7, KEY_8, KEY_9, KEY_F3, KEY_DOWN, KEY_F4, \
++		KEY_0, KEY_OK, KEY_ESC, KEY_ENTER, KEY_MENU, KEY_BACK, \
++	}
++#define CONFIG_MXC_KPD_COLMAX 6
++#define CONFIG_MXC_KPD_ROWMAX 4
++#define CONFIG_ANDROID_NORMAL_BOOTARGS "ip=dhcp mem=480M init=/init wvga calibration"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD  "run bootargs_base bootargs_android;mmcinit;cp.b 0x100000 ${loadaddr} 0x250000;bootm"
++#define CONFIG_ANDROID_BOOTMOD_DELAY 3
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_NAND
++#define CONFIG_CMD_ENV
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=smc911x\0"					\
++		"uboot_addr=0xa0000000\0"				\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"rd_loadaddr=0x90B00000\0"
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
++		"bootcmd=run bootcmd_android\0"				\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootcmd_android=run bootargs_base bootargs_android; "	\
++			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
++			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
++		"prg_uboot=tftpboot ${loadaddr} ${uboot}; "		\
++			"protect off ${uboot_addr} 0xa003ffff; "	\
++			"erase ${uboot_addr} 0xa003ffff; "		\
++			"cp.b ${loadaddr} ${uboot_addr} ${filesize}; "	\
++			"setenv filesize; saveenv\0"
++
++/*Support LAN9217*/
++#define CONFIG_DRIVER_SMC911X	1
++#define CONFIG_DRIVER_SMC911X_16_BIT 1
++#define CONFIG_DRIVER_SMC911X_BASE_VARIABLE mx51_io_base_addr
++
++/*
++ * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
++ * U-Boot, RedBoot and Linux: the ethernet Rx signal is reaching the CS8900A
++ * controller inverted. The controller is capable of detecting and correcting
++ * this, but it needs 4 network packets for that. Which means, at startup, you
++ * will not receive answers to the first 4 packest, unless there have been some
++ * broadcasts on the network, or your board is on a hub. Reducing the ARP
++ * timeout from default 5 seconds to 200ms we speed up the initial TFTP
++ * transfer, should the user wish one, significantly.
++ */
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"MX51 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++/* TO1 boards */
++/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH driver setup
++ */
++#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
++
++/* Monitor at beginning of flash */
++#if defined(CONFIG_FSL_SF)
++	#define CONFIG_FSL_ENV_IN_SF
++#elif defined(CONFIG_FSL_MMC)
++	#define CONFIG_FSL_ENV_IN_MMC
++#elif defined(CONFIG_CMD_NAND)
++	#define CONFIG_FSL_ENV_IN_NAND
++#endif
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++/*
++ * JFFS2 partitions
++ */
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++
++#endif				/* __CONFIG_H */
+diff --git a/include/mxc_keyb.h b/include/mxc_keyb.h
+new file mode 100644
+index 0000000..50c6a20
+--- /dev/null
++++ b/include/mxc_keyb.h
+@@ -0,0 +1,201 @@
++/*
++ * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @defgroup keypad Keypad Driver
++ */
++
++/*!
++ * @file mxc_keyb.h
++ *
++ * @brief MXC keypad header file.
++ *
++ * @ingroup keypad
++ */
++#ifndef __MXC_KEYB_H__
++#define __MXC_KEYB_H__
++
++/*!
++ * Keypad Module Name
++ */
++#define MOD_NAME  "mxckpd"
++
++/*!
++ * Keypad irq number
++ */
++#define KPP_IRQ  MXC_INT_KPP
++
++/*!
++ * XLATE mode selection
++ */
++#define KEYPAD_XLATE        0
++
++/*!
++ * RAW mode selection
++ */
++#define KEYPAD_RAW          1
++
++/*!
++ * Maximum number of keys.
++ */
++#define MAXROW			8
++#define MAXCOL			8
++#define MXC_MAXKEY		(MAXROW * MAXCOL)
++
++/*!
++ * This define indicates break scancode for every key release. A constant
++ * of 128 is added to the key press scancode.
++ */
++#define  MXC_KEYRELEASE   128
++
++/*
++ * _reg_KPP_KPCR   _reg_KPP_KPSR _reg_KPP_KDDR _reg_KPP_KPDR
++ * Keypad Control Register Address
++ */
++#define KPCR    (KPP_BASE_ADDR + 0x00)
++
++/*
++ * Keypad Status Register Address
++ */
++#define KPSR    (KPP_BASE_ADDR + 0x02)
++
++/*
++ * Keypad Data Direction Address
++ */
++#define KDDR    (KPP_BASE_ADDR + 0x04)
++
++/*
++ * Keypad Data Register
++ */
++#define KPDR    (KPP_BASE_ADDR + 0x06)
++
++/*
++ * Key Press Interrupt Status bit
++ */
++#define KBD_STAT_KPKD        0x01
++
++/*
++ * Key Release Interrupt Status bit
++ */
++#define KBD_STAT_KPKR        0x02
++
++/*
++ * Key Depress Synchronizer Chain Status bit
++ */
++#define KBD_STAT_KDSC        0x04
++
++/*
++ * Key Release Synchronizer Status bit
++ */
++#define KBD_STAT_KRSS        0x08
++
++/*
++ * Key Depress Interrupt Enable Status bit
++ */
++#define KBD_STAT_KDIE        0x100
++
++/*
++ * Key Release Interrupt Enable
++ */
++#define KBD_STAT_KRIE        0x200
++
++/*
++ * Keypad Clock Enable
++ */
++#define KBD_STAT_KPPEN       0x400
++
++/*!
++ * Buffer size of keypad queue. Should be a power of 2.
++ */
++#define KPP_BUF_SIZE    128
++
++/*!
++ * Test whether bit is set for integer c
++ */
++#define TEST_BIT(c, n) ((c) & (0x1 << (n)))
++
++/*!
++ * Set nth bit in the integer c
++ */
++#define BITSET(c, n)   ((c) | (1 << (n)))
++
++/*!
++ * Reset nth bit in the integer c
++ */
++#define BITRESET(c, n) ((c) & ~(1 << (n)))
++
++enum KeyEvent {
++	KDepress,
++	KRelease
++};
++
++/*!
++ * This enum represents the keypad state machine to maintain debounce logic
++ * for key press/release.
++ */
++enum KeyState {
++
++	/*!
++	 * Key press state.
++	 */
++	KStateUp,
++
++	/*!
++	 * Key press debounce state.
++	 */
++	KStateFirstDown,
++
++	/*!
++	 * Key release state.
++	 */
++	KStateDown,
++
++	/*!
++	 * Key release debounce state.
++	 */
++	KStateFirstUp
++};
++
++/*!
++ * Keypad Private Data Structure
++ */
++typedef struct keypad_priv {
++
++	/*!
++	 * Keypad state machine.
++	 */
++	enum KeyState iKeyState;
++
++	/*!
++	 * Number of rows configured in the keypad matrix
++	 */
++	unsigned long kpp_rows;
++
++	/*!
++	 * Number of Columns configured in the keypad matrix
++	 */
++	unsigned long kpp_cols;
++} keypad_priv;
++
++/*!
++ * Keypad Data Structure
++ * */
++struct kpp_key_info {
++	enum KeyEvent evt;
++	unsigned short val;
++};
++
++int mxc_kpp_init();
++int mxc_kpp_getc(struct kpp_key_info *);
++
++#endif				/* __MXC_KEYB_H__ */
+-- 
+1.5.4.4
+

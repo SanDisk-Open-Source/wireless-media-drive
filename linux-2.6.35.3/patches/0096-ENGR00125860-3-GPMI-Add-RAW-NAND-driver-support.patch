@@ -1,0 +1,40 @@
+From 0741a6d32a3cd96280f4c7b023f652bfcf362006 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 4 Aug 2010 14:04:22 +0800
+Subject: [PATCH] ENGR00125860-3 GPMI:Add RAW NAND driver support
+
+1. Enable CONFIG_MTD_NAND_GPMI_NFC in imx5_defconfig
+in order to build in GPMI-NAND driver,
+
+2. Enable CONFIG_MTD_CONCAT in imx5_defconfig,
+in order to support mtd concat feature
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index eccc04b..d226152 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -560,7 +560,7 @@ CONFIG_PROC_EVENTS=y
+ CONFIG_MTD=y
+ # CONFIG_MTD_DEBUG is not set
+ # CONFIG_MTD_TESTS is not set
+-# CONFIG_MTD_CONCAT is not set
++CONFIG_MTD_CONCAT=y
+ CONFIG_MTD_PARTITIONS=y
+ # CONFIG_MTD_REDBOOT_PARTS is not set
+ CONFIG_MTD_CMDLINE_PARTS=y
+@@ -641,6 +641,7 @@ CONFIG_MTD_NAND_MXC_V3=y
+ # CONFIG_MTD_NAND_MXC_SWECC is not set
+ # CONFIG_MTD_NAND_MXC_FORCE_CE is not set
+ # CONFIG_MXC_NAND_LOW_LEVEL_ERASE is not set
++CONFIG_MTD_NAND_GPMI_NFC=y
+ # CONFIG_MTD_NAND_PLATFORM is not set
+ # CONFIG_MTD_ALAUDA is not set
+ # CONFIG_MTD_ONENAND is not set
+-- 
+1.5.4.4
+

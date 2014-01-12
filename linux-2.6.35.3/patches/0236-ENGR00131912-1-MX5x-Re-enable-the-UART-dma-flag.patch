@@ -1,0 +1,96 @@
+From f15b8d93f8180da441e273b8ce309fcfec46fd64 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Sat, 25 Sep 2010 13:57:14 +0800
+Subject: [PATCH] ENGR00131912-1 MX5x: Re-enable the UART dma flag
+
+Due to the dma enable flag used by clock.c, there's some
+clock settings and dependency between uart and aips_tz1 are
+controled by it. Enable this flag to let uart dma mode work.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ arch/arm/mach-mx5/serial.c |    6 +++++-
+ arch/arm/mach-mx5/serial.h |    5 +++++
+ 2 files changed, 10 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/serial.c b/arch/arm/mach-mx5/serial.c
+index 123db39..18dfcfb 100644
+--- a/arch/arm/mach-mx5/serial.c
++++ b/arch/arm/mach-mx5/serial.c
+@@ -46,6 +46,7 @@ static uart_mxc_port mxc_ports[] = {
+ 	       .ir_mode = NO_IRDA,
+ 	       .enabled = 1,
+ 	       .cts_threshold = UART1_UCR4_CTSTL,
++	       .dma_enabled = UART1_DMA_ENABLE,
+ 	       .dma_rxbuf_size = UART1_DMA_RXBUFSIZE,
+ 	       .rx_threshold = UART1_UFCR_RXTL,
+ 	       .tx_threshold = UART1_UFCR_TXTL,
+@@ -65,6 +66,7 @@ static uart_mxc_port mxc_ports[] = {
+ 	       .ir_mode = NO_IRDA,
+ 	       .enabled = 1,
+ 	       .cts_threshold = UART2_UCR4_CTSTL,
++	       .dma_enabled = UART2_DMA_ENABLE,
+ 	       .dma_rxbuf_size = UART2_DMA_RXBUFSIZE,
+ 	       .rx_threshold = UART2_UFCR_RXTL,
+ 	       .tx_threshold = UART2_UFCR_TXTL,
+@@ -84,7 +86,7 @@ static uart_mxc_port mxc_ports[] = {
+ 	       .ir_mode = NO_IRDA,
+ 	       .enabled = 1,
+ 	       .cts_threshold = UART3_UCR4_CTSTL,
+-	       .dma_enabled = 1,
++	       .dma_enabled = UART3_DMA_ENABLE,
+ 	       .dma_rxbuf_size = UART3_DMA_RXBUFSIZE,
+ 	       .rx_threshold = UART3_UFCR_RXTL,
+ 	       .tx_threshold = UART3_UFCR_TXTL,
+@@ -104,6 +106,7 @@ static uart_mxc_port mxc_ports[] = {
+ 	       .ir_mode = NO_IRDA,
+ 	       .enabled = 1,
+ 	       .cts_threshold = UART4_UCR4_CTSTL,
++	       .dma_enabled = UART4_DMA_ENABLE,
+ 	       .dma_rxbuf_size = UART4_DMA_RXBUFSIZE,
+ 	       .rx_threshold = UART4_UFCR_RXTL,
+ 	       .tx_threshold = UART4_UFCR_TXTL,
+@@ -123,6 +126,7 @@ static uart_mxc_port mxc_ports[] = {
+ 	       .ir_mode = NO_IRDA,
+ 	       .enabled = 1,
+ 	       .cts_threshold = UART5_UCR4_CTSTL,
++	       .dma_enabled = UART5_DMA_ENABLE,
+ 	       .dma_rxbuf_size = UART5_DMA_RXBUFSIZE,
+ 	       .rx_threshold = UART5_UFCR_RXTL,
+ 	       .tx_threshold = UART5_UFCR_TXTL,
+diff --git a/arch/arm/mach-mx5/serial.h b/arch/arm/mach-mx5/serial.h
+index d487a96..d7a4337 100644
+--- a/arch/arm/mach-mx5/serial.h
++++ b/arch/arm/mach-mx5/serial.h
+@@ -42,23 +42,28 @@
+  * value.
+  */
+ #define UART1_UFCR_TXTL         16
++#define UART1_DMA_ENABLE	0
+ /* UART 2 configuration */
+ #define UART2_UCR4_CTSTL        -1
++#define UART2_DMA_ENABLE	1
+ #define UART2_DMA_RXBUFSIZE     512
+ #define UART2_UFCR_RXTL         16
+ #define UART2_UFCR_TXTL         16
+ /* UART 3 configuration */
+ #define UART3_UCR4_CTSTL        16
++#define UART3_DMA_ENABLE	1
+ #define UART3_DMA_RXBUFSIZE     1024
+ #define UART3_UFCR_RXTL         16
+ #define UART3_UFCR_TXTL         16
+ /* UART 4 configuration */
+ #define UART4_UCR4_CTSTL        -1
++#define UART4_DMA_ENABLE	0
+ #define UART4_DMA_RXBUFSIZE     512
+ #define UART4_UFCR_RXTL         16
+ #define UART4_UFCR_TXTL         16
+ /* UART 5 configuration */
+ #define UART5_UCR4_CTSTL        -1
++#define UART5_DMA_ENABLE	0
+ #define UART5_DMA_RXBUFSIZE     512
+ #define UART5_UFCR_RXTL         16
+ #define UART5_UFCR_TXTL         16
+-- 
+1.5.4.4
+

@@ -1,0 +1,446 @@
+From 3f6618866662a3edcd8ff13c4eef74dc4186a448 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 19 Nov 2010 11:44:29 +0800
+Subject: [PATCH] ENGR00132603-1 mxc_iim: Add mach support for sense and fuse function in mxc_iim
+
+This patch add code in msl for adding sense and fuse.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ arch/arm/mach-mx25/devices.c             |   11 +++-
+ arch/arm/mach-mx3/devices.c              |   18 ++++++-
+ arch/arm/mach-mx5/devices.c              |    7 ++-
+ arch/arm/mach-mx5/mx51_babbage.c         |   35 ++++++++++++-
+ arch/arm/mach-mx5/mx53_ard.c             |   35 ++++++++++++-
+ arch/arm/mach-mx5/mx53_evk.c             |   35 ++++++++++++-
+ arch/arm/plat-mxc/include/mach/mx25.h    |    6 ++
+ arch/arm/plat-mxc/include/mach/mx35.h    |    6 ++
+ arch/arm/plat-mxc/include/mach/mx5x.h    |    8 +++
+ arch/arm/plat-mxc/include/mach/mxc_iim.h |   86 ++++++++++++++++++++++++++++++
+ 10 files changed, 239 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-mx25/devices.c b/arch/arm/mach-mx25/devices.c
+index e05f842..532ee52 100644
+--- a/arch/arm/mach-mx25/devices.c
++++ b/arch/arm/mach-mx25/devices.c
+@@ -34,6 +34,7 @@
+ #include <mach/hardware.h>
+ #include <mach/mmc.h>
+ #include <mach/sdma.h>
++#include <mach/mxc_iim.h>
+ 
+ #include "iomux.h"
+ #include "sdma_script_code.h"
+@@ -686,16 +687,22 @@ static void mxc_init_surround_audio(void)
+ static struct resource mxc_iim_resources[] = {
+ 	{
+ 	 .start = MX25_IIM_BASE_ADDR,
+-	 .end = MX25_IIM_BASE_ADDR + SZ_4K - 1,
++	 .end = MX25_IIM_BASE_ADDR + SZ_16K - 1,
+ 	 .flags = IORESOURCE_MEM,
+ 	 },
+ };
+ 
++static struct mxc_iim_data iim_data = {
++	.bank_start = MXC_IIM_BANK_START_ADDR,
++	.bank_end   = MXC_IIM_BANK_END_ADDR,
++};
++
+ static struct platform_device mxc_iim_device = {
+ 	.name = "mxc_iim",
+ 	.id = 0,
+ 	.num_resources = ARRAY_SIZE(mxc_iim_resources),
+-	.resource = mxc_iim_resources
++	.resource = mxc_iim_resources,
++	.dev.platform_data = &iim_data,
+ };
+ 
+ static inline void mxc_init_iim(void)
+diff --git a/arch/arm/mach-mx3/devices.c b/arch/arm/mach-mx3/devices.c
+index 184b748..73f9754 100644
+--- a/arch/arm/mach-mx3/devices.c
++++ b/arch/arm/mach-mx3/devices.c
+@@ -29,6 +29,7 @@
+ #include <mach/mx3_camera.h>
+ #include <mach/sdma.h>
+ #include <mach/mxc_dptc.h>
++#include <mach/mxc_iim.h>
+ 
+ #include "devices.h"
+ 
+@@ -750,18 +751,31 @@ static struct platform_device mxc_dptc_device = {
+ static struct resource mxc_iim_resources[] = {
+ 	{
+ 	 .start = MX31_IIM_BASE_ADDR,
+-	 .end = MX31_IIM_BASE_ADDR + SZ_4K - 1,
++	 .end = MX31_IIM_BASE_ADDR + SZ_16K - 1,
+ 	 .flags = IORESOURCE_MEM,
+ 	 },
+ };
+ 
++static struct mxc_iim_data iim_data = {
++	.bank_start = MXC_IIM_BANK_START_ADDR,
++	.bank_end   = MXC_IIM_BANK_END_ADDR,
++};
++
+ static struct platform_device mxc_iim_device = {
+ 	.name = "mxc_iim",
+ 	.id = 0,
+ 	.num_resources = ARRAY_SIZE(mxc_iim_resources),
+-	.resource = mxc_iim_resources
++	.resource = mxc_iim_resources,
++	.dev.platform_data = &iim_data,
+ };
+ 
++static inline void mxc_init_iim(void)
++{
++	if (platform_device_register(&mxc_iim_device) < 0)
++		dev_err(&mxc_iim_device.dev,
++			"Unable to register mxc iim device\n");
++}
++
+ static struct resource pata_fsl_resources[] = {
+ 	{
+ 		.start = MX31_ATA_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 7efb86a..bacd603 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -979,9 +979,14 @@ struct platform_device sdram_autogating_device = {
+ static struct resource mxc_iim_resources[] = {
+ 	{
+ 		.start = IIM_BASE_ADDR,
+-		.end = IIM_BASE_ADDR + SZ_4K - 1,
++		.end = IIM_BASE_ADDR + SZ_16K - 1,
+ 		.flags = IORESOURCE_MEM,
+ 	},
++	{
++		.start = MXC_INT_IIM,
++		.end = MXC_INT_IIM,
++		.flags = IORESOURCE_IRQ,
++	},
+ };
+ 
+ struct platform_device mxc_iim_device = {
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index fff2233..a645716 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -46,6 +46,7 @@
+ #include <mach/mxc_edid.h>
+ #include <mach/iomux-mx51.h>
+ #include <mach/i2c.h>
++#include <mach/mxc_iim.h>
+ 
+ #include "devices.h"
+ #include "crm_regs.h"
+@@ -517,6 +518,38 @@ static struct mxc_fb_platform_data fb_data[] = {
+ 	 },
+ };
+ 
++static void mxc_iim_enable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++	/* Enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg |= 0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static void mxc_iim_disable_fuse(void)
++{
++	u32 reg;
++
++	/* Disable fuse blown */
++	if (!ccm_base)
++		return;
++
++	reg = readl(ccm_base + 0x64);
++	reg &= ~0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static struct mxc_iim_data iim_data = {
++	.bank_start = MXC_IIM_MX51_BANK_START_ADDR,
++	.bank_end   = MXC_IIM_MX51_BANK_END_ADDR,
++	.enable_fuse = mxc_iim_enable_fuse,
++	.disable_fuse = mxc_iim_disable_fuse,
++};
++
+ extern int primary_di;
+ static int __init mxc_init_fb(void)
+ {
+@@ -1207,7 +1240,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&sdram_autogating_device, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+-	mxc_register_device(&mxc_iim_device, NULL);
++	mxc_register_device(&mxc_iim_device, &iim_data);
+ 	mxc_register_device(&mxc_pwm1_device, NULL);
+ 	mxc_register_device(&mxc_pwm1_backlight_device,
+ 		&mxc_pwm_backlight_data);
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 164ca83..960c31c 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -61,6 +61,7 @@
+ #include <mach/mxc_dvfs.h>
+ #include <mach/iomux-mx53.h>
+ #include <mach/i2c.h>
++#include <mach/mxc_iim.h>
+ 
+ #include "crm_regs.h"
+ #include "devices.h"
+@@ -629,6 +630,38 @@ static struct ldb_platform_data ldb_data = {
+ 	.ext_ref = 1,
+ };
+ 
++static void mxc_iim_enable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++
++	/* enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg |= 0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static void mxc_iim_disable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++	/* enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg &= ~0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static struct mxc_iim_data iim_data = {
++	.bank_start = MXC_IIM_MX53_BANK_START_ADDR,
++	.bank_end   = MXC_IIM_MX53_BANK_END_ADDR,
++	.enable_fuse = mxc_iim_enable_fuse,
++	.disable_fuse = mxc_iim_disable_fuse,
++};
++
+ static struct pad_desc mx53_ard_esai_pads[] = {
+ 	MX53_PAD_FEC_MDIO__ESAI_SCKR,
+ 	MX53_PAD_FEC_REF_CLK__ESAI_FSR,
+@@ -1399,7 +1432,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 	mxc_register_device(&busfreq_device, NULL);
+ 
+-	mxc_register_device(&mxc_iim_device, NULL);
++	mxc_register_device(&mxc_iim_device, &iim_data);
+ 
+ 	mxc_register_device(&mxc_pwm1_device, &mxc_pwm1_platform_data);
+ 	mxc_register_device(&mxc_pwm1_backlight_device,
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 4a6b049..2591f6d 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -60,6 +60,7 @@
+ #include <mach/mxc_dvfs.h>
+ #include <mach/iomux-mx53.h>
+ #include <mach/i2c.h>
++#include <mach/mxc_iim.h>
+ 
+ #include "crm_regs.h"
+ #include "devices.h"
+@@ -771,6 +772,38 @@ static struct ldb_platform_data ldb_data = {
+ 	.ext_ref = 1,
+ };
+ 
++static void mxc_iim_enable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++
++	/* enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg |= 0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static void mxc_iim_disable_fuse(void)
++{
++	u32 reg;
++
++	if (!ccm_base)
++		return;
++	/* enable fuse blown */
++	reg = readl(ccm_base + 0x64);
++	reg &= ~0x10;
++	writel(reg, ccm_base + 0x64);
++}
++
++static struct mxc_iim_data iim_data = {
++	.bank_start = MXC_IIM_MX53_BANK_START_ADDR,
++	.bank_end   = MXC_IIM_MX53_BANK_END_ADDR,
++	.enable_fuse = mxc_iim_enable_fuse,
++	.disable_fuse = mxc_iim_disable_fuse,
++};
++
+ static struct pad_desc mx53esai_pads[] = {
+ 	MX53_PAD_FEC_MDIO__ESAI_SCKR,
+ 	MX53_PAD_FEC_REF_CLK__ESAI_FSR,
+@@ -1719,7 +1752,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+ 	*/
+ 
+-	mxc_register_device(&mxc_iim_device, NULL);
++	mxc_register_device(&mxc_iim_device, &iim_data);
+ 	if (!board_is_mx53_arm2()) {
+ 		mxc_register_device(&mxc_pwm2_device, NULL);
+ 		mxc_register_device(&mxc_pwm1_backlight_device,
+diff --git a/arch/arm/plat-mxc/include/mach/mx25.h b/arch/arm/plat-mxc/include/mach/mx25.h
+index 6526398..f66d461 100644
+--- a/arch/arm/plat-mxc/include/mach/mx25.h
++++ b/arch/arm/plat-mxc/include/mach/mx25.h
+@@ -299,4 +299,10 @@
+ #define MXC_INT_RNG				MX25_INT_RNG
+ #define MXC_INT_USB_OTG			MX25_INT_USB_OTG
+ 
++/*!
++ * IIM Bank info
++ **/
++#define MXC_IIM_BANK_START_ADDR 0x0000
++#define MXC_IIM_BANK_END_ADDR   0x007c
++
+ #endif /* ifndef __MACH_MX25_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/mx35.h b/arch/arm/plat-mxc/include/mach/mx35.h
+index 20d342a..9dbe06d 100644
+--- a/arch/arm/plat-mxc/include/mach/mx35.h
++++ b/arch/arm/plat-mxc/include/mach/mx35.h
+@@ -261,4 +261,10 @@
+ #define MXC_INT_FEC MX35_INT_FEC
+ #endif
+ 
++/*!
++ * IIM bank info
++ */
++#define MXC_IIM_BANK_START_ADDR 0x0000
++#define MXC_IIM_BANK_END_ADDR   0x007c
++
+ #endif /* ifndef __MACH_MX35_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/mx5x.h b/arch/arm/plat-mxc/include/mach/mx5x.h
+index 8d053e0..351a78b 100644
+--- a/arch/arm/plat-mxc/include/mach/mx5x.h
++++ b/arch/arm/plat-mxc/include/mach/mx5x.h
+@@ -670,4 +670,12 @@
+ #define MXC_INT_APBHDMA_CHAN14	124
+ #define MXC_INT_APBHDMA_CHAN15	125
+ 
++/*!
++ * IIM bank info
++ */
++#define MXC_IIM_MX51_BANK_START_ADDR 0x0800
++#define MXC_IIM_MX51_BANK_END_ADDR   0x147c
++#define MXC_IIM_MX53_BANK_START_ADDR 0x0800
++#define MXC_IIM_MX53_BANK_END_ADDR   0x183c
++
+ #endif				/*  __ASM_ARCH_MXC_MX5X_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_iim.h b/arch/arm/plat-mxc/include/mach/mxc_iim.h
+new file mode 100644
+index 0000000..de98687
+--- /dev/null
++++ b/arch/arm/plat-mxc/include/mach/mxc_iim.h
+@@ -0,0 +1,86 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __IMX_IIM_H__
++#define __IMX_IIM_H__
++
++#include <linux/mutex.h>
++#include <linux/cdev.h>
++
++/* IIM Control Registers */
++struct iim_regs {
++	u32 stat;
++	u32 statm;
++	u32 err;
++	u32 emask;
++	u32 fctl;
++	u32 ua;
++	u32 la;
++	u32 sdat;
++	u32 prev;
++	u32 srev;
++	u32 preg_p;
++	u32 scs0;
++	u32 scs1;
++	u32 scs2;
++	u32 scs3;
++};
++
++#define IIM_STAT_BUSY   (1 << 7)
++#define IIM_STAT_PRGD   (1 << 1)
++#define IIM_STAT_SNSD   (1 << 0)
++
++#define IIM_ERR_PRGE    (1 << 7)
++#define IIM_ERR_WPE     (1 << 6)
++#define IIM_ERR_OPE     (1 << 5)
++#define IIM_ERR_RPE     (1 << 4)
++#define IIM_ERR_WLRE    (1 << 3)
++#define IIM_ERR_SNSE    (1 << 2)
++#define IIM_ERR_PARITYE (1 << 1)
++
++#define IIM_PROD_REV_SH         3
++#define IIM_PROD_REV_LEN        5
++#define IIM_SREV_REV_SH         4
++#define IIM_SREV_REV_LEN        4
++#define PROD_SIGNATURE_MX51     0x1
++
++#define IIM_ERR_SHIFT       8
++#define POLL_FUSE_PRGD      (IIM_STAT_PRGD | (IIM_ERR_PRGE << IIM_ERR_SHIFT))
++#define POLL_FUSE_SNSD      (IIM_STAT_SNSD | (IIM_ERR_SNSE << IIM_ERR_SHIFT))
++
++struct mxc_iim_data {
++	const s8	*name;
++	u32	virt_base;
++	u32	reg_base;
++	u32	reg_end;
++	u32	reg_size;
++	u32	bank_start;
++	u32	bank_end;
++	u32	irq;
++	u32	action;
++	struct mutex mutex;
++	struct completion completion;
++	spinlock_t lock;
++	struct clk *clk;
++	struct device *dev;
++	void   (*enable_fuse)(void);
++	void   (*disable_fuse)(void);
++};
++
++#endif
+-- 
+1.5.4.4
+

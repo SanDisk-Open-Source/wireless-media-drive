@@ -1,0 +1,52 @@
+From 03863136932546d67b4282744cc1e3e3119d2497 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 28 Mar 2011 13:51:12 +0800
+Subject: [PATCH] ENGR00141184: MX53 SMD: spi nor: the expected SPI-NOR partitions are not created
+
+For in mxc platforms, we use arm/mach/flash.h for flash_platform_data
+definition, but our driver m25p80 uses linux/spi/flash.h.
+These two flash_platform_data structures are different.
+This may cause an issue in creating partitions.
+
+Now in mx53 smd, we choose flash_platform_data in linux/spi/flash.h.
+This can uniform the flash_platform_data structure.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index d48b096..110264f 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -54,7 +54,7 @@
+ #include <asm/mach/arch.h>
+ #include <asm/mach/time.h>
+ #include <asm/mach/keypad.h>
+-#include <asm/mach/flash.h>
++#include <linux/spi/flash.h>
+ #include <mach/memory.h>
+ #include <mach/gpio.h>
+ #include <mach/mmc.h>
+@@ -744,7 +744,7 @@ static struct mtd_partition m25p32_partitions[] = {
+ };
+ 
+ static struct flash_platform_data m25p32_spi_flash_data = {
+-	.name = "m25p80",
++	.name = "m25p32",
+ 	.parts = m25p32_partitions,
+ 	.nr_parts = ARRAY_SIZE(m25p32_partitions),
+ 	.type = "m25p32",
+@@ -755,7 +755,7 @@ static struct spi_board_info m25p32_spi1_board_info[] __initdata = {
+ #if defined(CONFIG_MTD_MXC_M25P80) || defined(CONFIG_MTD_MXC_M25P80_MODULE)
+ 	{
+ 		/* the modalias must be the same as spi device driver name */
+-		.modalias = "m25p80",           /* Name of spi_driver for this device */
++		.modalias = "m25p32",           /* Name of spi_driver for this device */
+ 		.max_speed_hz = 20000000,       /* max spi SCK clock speed in HZ */
+ 		.bus_num = 1,                   /* Framework bus number */
+ 		.chip_select = 1,               /* Framework chip select. */
+-- 
+1.5.4.4
+

@@ -1,0 +1,29 @@
+From e5141be40d5023187a12d29549e019e5197ec2f9 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Mon, 28 Feb 2011 18:17:13 +0800
+Subject: [PATCH] ENGR00139866 Config: add USB ACM Modem config for MX53_SMD
+
+MX53_SMD Have a Amazon modem, which need USB ACM modem
+support in kernel, enable this in default config.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 1e5fa83..5ea1558 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1790,7 +1790,7 @@ CONFIG_USB_EHCI_ROOT_HUB_TT=y
+ #
+ # USB Device Class drivers
+ #
+-# CONFIG_USB_ACM is not set
++CONFIG_USB_ACM=y
+ # CONFIG_USB_PRINTER is not set
+ # CONFIG_USB_WDM is not set
+ # CONFIG_USB_TMC is not set
+-- 
+1.5.4.4
+

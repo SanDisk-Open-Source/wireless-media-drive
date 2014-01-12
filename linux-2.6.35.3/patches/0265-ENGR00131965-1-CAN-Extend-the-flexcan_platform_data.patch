@@ -1,0 +1,28 @@
+From 30b33b4ce59b8d0e35272385b195b42929179f98 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Tue, 28 Sep 2010 10:56:31 +0800
+Subject: [PATCH] ENGR00131965-1 CAN: Extend the flexcan_platform_data structure
+
+Extend the flexcan_platform_data structure, adding root_clk_id
+to choose the root clock for the CAN module in CCM.
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ include/linux/fsl_devices.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 93d02d3..832411c 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -418,6 +418,7 @@ struct mxc_mlb_platform_data {
+ struct flexcan_platform_data {
+ 	char *core_reg;
+ 	char *io_reg;
++	char *root_clk_id;
+ 	void (*xcvr_enable) (int id, int en);
+ 	void (*active) (int id);
+ 	void (*inactive) (int id);
+-- 
+1.5.4.4
+

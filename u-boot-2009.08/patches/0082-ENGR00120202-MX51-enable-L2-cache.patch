@@ -1,0 +1,166 @@
+From 8a42ad8f7feea158bf3589a90981f7499032a5cd Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 18 Jan 2010 16:17:06 +0800
+Subject: [PATCH] ENGR00120202 MX51: enable L2 cache
+
+Enable L2 cache in MX51 for uboot and kernel
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ cpu/arm_cortexa8/mx51/Makefile        |    2 +-
+ cpu/arm_cortexa8/mx51/cache.c         |   44 +++++++++++++++++++++++++++++++++
+ cpu/arm_cortexa8/mx51/generic.c       |    5 +++
+ include/configs/mx51_3stack.h         |    1 -
+ include/configs/mx51_3stack_android.h |    1 -
+ include/configs/mx51_bbg.h            |    3 +-
+ include/configs/mx51_bbg_android.h    |    3 +-
+ 7 files changed, 52 insertions(+), 7 deletions(-)
+
+diff --git a/cpu/arm_cortexa8/mx51/Makefile b/cpu/arm_cortexa8/mx51/Makefile
+index 940b05c..435f26f 100644
+--- a/cpu/arm_cortexa8/mx51/Makefile
++++ b/cpu/arm_cortexa8/mx51/Makefile
+@@ -27,7 +27,7 @@ include $(TOPDIR)/config.mk
+ 
+ LIB	= $(obj)lib$(SOC).a
+ 
+-COBJS	= interrupts.o serial.o generic.o iomux.o timer.o
++COBJS	= interrupts.o serial.o generic.o iomux.o timer.o cache.o
+ SOBJS = mxc_nand_load.o
+ 
+ SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
+diff --git a/cpu/arm_cortexa8/mx51/cache.c b/cpu/arm_cortexa8/mx51/cache.c
+new file mode 100644
+index 0000000..7c79f2f
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx51/cache.c
+@@ -0,0 +1,44 @@
++/*
++ * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/cache.h>
++
++void l2_cache_enable(void)
++{
++	asm("mrc 15, 0, r0, c1, c0, 1");
++	asm("orr r0, r0, #0x2");
++	asm("mcr 15, 0, r0, c1, c0, 1");
++}
++
++void l2_cache_disable(void)
++{
++	asm("mrc 15, 0, r0, c1, c0, 1");
++	asm("bic r0, r0, #0x2");
++	asm("mcr 15, 0, r0, c1, c0, 1");
++}
++
++/*dummy function for L2 ON*/
++u32 get_device_type(void)
++{
++	return 0;
++}
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index 4920c5c..ee35dd9 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -270,6 +270,11 @@ int arch_cpu_init(void)
+ {
+ 	icache_enable();
+ 	dcache_enable();
++#ifdef CONFIG_L2_OFF
++	l2_cache_disable();
++#else
++	l2_cache_enable();
++#endif
+ 	return 0;
+ }
+ #endif
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index fd7116c..292e2cc 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -29,7 +29,6 @@
+  /* High Level Configuration Options */
+ #define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
+ #define CONFIG_SYS_APCS_GNU
+-#define CONFIG_L2_OFF
+ 
+ #define CONFIG_MXC		1
+ #define CONFIG_MX51_3DS		1	/* in a mx51 */
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 6d10c2a..52e7b99 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -29,7 +29,6 @@
+  /* High Level Configuration Options */
+ #define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
+ #define CONFIG_SYS_APCS_GNU
+-#define CONFIG_L2_OFF
+ 
+ #define CONFIG_MXC		1
+ #define CONFIG_MX51_3DS		1	/* in a mx51 */
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index c5c3ae9..aee33ba 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX51-3Stack Freescale board.
+  *
+@@ -28,7 +28,6 @@
+ 
+  /* High Level Configuration Options */
+ #define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
+-#define CONFIG_L2_OFF
+ 
+ #define CONFIG_MXC		1
+ #define CONFIG_MX51_BBG		1	/* in a mx51 */
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index d2cccbc..a7685c7 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX51-3Stack Freescale board.
+  *
+@@ -29,7 +29,6 @@
+  /* High Level Configuration Options */
+ #define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
+ #define CONFIG_SYS_APCS_GNU
+-#define CONFIG_L2_OFF
+ 
+ #define CONFIG_MXC		1
+ #define CONFIG_MX51_BBG		1	/* in a mx51 */
+-- 
+1.5.4.4
+

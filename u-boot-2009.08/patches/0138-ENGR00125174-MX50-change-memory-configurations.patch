@@ -1,0 +1,51 @@
+From 592ec82029b2c69386bdf9c82af4614687afe191 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 16 Jul 2010 16:04:29 +0800
+Subject: [PATCH] ENGR00125174: MX50: change memory configurations
+
+Currently we set mx508 memory as 128M which is not
+enough for android running.
+Based on hardware team's input, mDDR boards support
+512MB totally, while we only mount half of them.
+LPDDR2 boards support 512MB.
+So we will modify mddr configuration as 256M and
+LPDDR2 as 512M.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx50_arm2.h        |    2 +-
+ include/configs/mx50_arm2_lpddr2.h |    4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+index 5a5b0f8..fbede97 100644
+--- a/include/configs/mx50_arm2.h
++++ b/include/configs/mx50_arm2.h
+@@ -219,7 +219,7 @@
+  */
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-#define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define PHYS_SDRAM_1_SIZE	(256 * 1024 * 1024)
+ #define iomem_valid_addr(addr, size) \
+ 	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index 47801f6..505b859 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -218,9 +218,9 @@
+ /*-----------------------------------------------------------------------
+  * Physical Memory Map
+  */
+-#define CONFIG_NR_DRAM_BANKS	1
++#define CONFIG_NR_DRAM_BANKS	2
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-#define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define PHYS_SDRAM_1_SIZE	(256 * 1024 * 1024)
+ #define iomem_valid_addr(addr, size) \
+ 	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+-- 
+1.5.4.4
+

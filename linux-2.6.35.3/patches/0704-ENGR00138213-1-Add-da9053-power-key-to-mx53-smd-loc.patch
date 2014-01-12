@@ -1,0 +1,117 @@
+From 2159cd60ec06ed1d32471f52f1c3f60a11cd676d Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Wed, 19 Jan 2011 20:42:35 +0800
+Subject: [PATCH] ENGR00138213-1 Add da9053 power key to mx53 smd &loco
+
+Add da9053 power key config, add key up event
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ drivers/input/misc/Kconfig        |   10 ++++++++++
+ drivers/input/misc/Makefile       |    2 +-
+ drivers/input/misc/da9052_onkey.c |   30 +++++++++++++++++++++++-------
+ 3 files changed, 34 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/input/misc/Kconfig b/drivers/input/misc/Kconfig
+index c44b9ea..e407e14 100644
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+@@ -390,4 +390,14 @@ config INPUT_PCAP
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called pcap_keys.
+ 
++config INPUT_DA9052_ONKEY
++	tristate "Dialog DA9052 Onkey"
++	depends on PMIC_DA9052
++	help
++	  Support the ONKEY of Dialog DA9052 PMICs as an input device
++	  reporting power button status.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called da9052_onkey.
++
+ endif
+diff --git a/drivers/input/misc/Makefile b/drivers/input/misc/Makefile
+index 71fe57d..c8231a7 100644
+--- a/drivers/input/misc/Makefile
++++ b/drivers/input/misc/Makefile
+@@ -37,4 +37,4 @@ obj-$(CONFIG_INPUT_WINBOND_CIR)		+= winbond-cir.o
+ obj-$(CONFIG_INPUT_WISTRON_BTNS)	+= wistron_btns.o
+ obj-$(CONFIG_INPUT_WM831X_ON)		+= wm831x-on.o
+ obj-$(CONFIG_INPUT_YEALINK)		+= yealink.o
+-
++obj-$(CONFIG_INPUT_DA9052_ONKEY)	+= da9052_onkey.o
+diff --git a/drivers/input/misc/da9052_onkey.c b/drivers/input/misc/da9052_onkey.c
+index 636b406..dc3bf46 100644
+--- a/drivers/input/misc/da9052_onkey.c
++++ b/drivers/input/misc/da9052_onkey.c
+@@ -1,6 +1,7 @@
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/input.h>
++#include <linux/delay.h>
+ #include <linux/platform_device.h>
+ 
+ #include <linux/mfd/da9052/da9052.h>
+@@ -12,29 +13,43 @@ struct da9052_onkey_data {
+ 	struct da9052 *da9052;
+ 	struct da9052_eh_nb eh_data;
+ 	struct input_dev *input;
++	struct delayed_work polling_work;
+ };
+ 
+-static void da9052_onkey_report_event(struct da9052_eh_nb *eh_data,
+-				unsigned int event)
++static void da9052_onkey_work_func(struct work_struct *work)
+ {
+ 	struct da9052_onkey_data *da9052_onkey =
+-		container_of(eh_data, struct da9052_onkey_data, eh_data);
++		container_of(work, struct da9052_onkey_data, polling_work.work);
+ 	struct da9052_ssc_msg msg;
+ 	unsigned int ret;
++	int value;
+ 
+-	/* Read the Evnet Register */
+-	msg.addr = DA9052_EVENTB_REG;
+ 	da9052_lock(da9052_onkey->da9052);
++	msg.addr = DA9052_STATUSA_REG;
+ 	ret = da9052_onkey->da9052->read(da9052_onkey->da9052, &msg);
+ 	if (ret) {
+ 		da9052_unlock(da9052_onkey->da9052);
+ 		return;
+ 	}
+ 	da9052_unlock(da9052_onkey->da9052);
+-	msg.data = msg.data & DA9052_EVENTB_ENONKEY;
++	value = (msg.data & DA9052_STATUSA_NONKEY) ? 0 : 1;
+ 
+-	input_report_key(da9052_onkey->input, KEY_POWER, msg.data);
++	input_report_key(da9052_onkey->input, KEY_POWER, value);
+ 	input_sync(da9052_onkey->input);
++
++	/* if key down, polling for up */
++	if (value)
++		schedule_delayed_work(&da9052_onkey->polling_work, HZ/10);
++}
++
++static void da9052_onkey_report_event(struct da9052_eh_nb *eh_data,
++				unsigned int event)
++{
++	struct da9052_onkey_data *da9052_onkey =
++		container_of(eh_data, struct da9052_onkey_data, eh_data);
++	cancel_delayed_work(&da9052_onkey->polling_work);
++	schedule_delayed_work(&da9052_onkey->polling_work, 0);
++
+ }
+ 
+ static int __devinit da9052_onkey_probe(struct platform_device *pdev)
+@@ -62,6 +77,7 @@ static int __devinit da9052_onkey_probe(struct platform_device *pdev)
+ 	da9052_onkey->input->name = "da9052-onkey";
+ 	da9052_onkey->input->phys = "da9052-onkey/input0";
+ 	da9052_onkey->input->dev.parent = &pdev->dev;
++	INIT_DELAYED_WORK(&da9052_onkey->polling_work, da9052_onkey_work_func);
+ 
+ 	/* Set the EH structure */
+ 	da9052_onkey->eh_data.eve_type = ONKEY_EVE;
+-- 
+1.5.4.4
+

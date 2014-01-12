@@ -1,0 +1,1188 @@
+From bb0e9ecb6138b79c8355ca1d78106685a9146d46 Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Fri, 15 Oct 2010 09:09:00 +0800
+Subject: [PATCH] ENGR00131932-1 MX51, MX53, sdma: Upgrade SDMA scripts to v1.1.0 version
+
+Upgrade sdma mx51 script to v1.1
+http://compass.freescale.net/go/220269616
+
+Upgrade sdma mx53 script to v1.1
+http://compass.freescale.net/go/211002731
+
+These new scripts support ssi dual fifo.
+
+Pan Qihong-B30266 provide the usage:
+-----------
+mcu_2_ssiapp and ssiapp_2_mcu are supporting
+SSI tx/rx residing on peripheral DMA region.
+
+mcu_2_ssish and ssish_2_mcu are supporting
+SSI tx/rx residing on shared peripheral DMA region.
+
+With all these 4 scripts, will support all the 3 SSIs.
+----------
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ arch/arm/mach-mx5/devices.h               |    1 +
+ arch/arm/mach-mx5/dma.c                   |  119 ++++++++-----
+ arch/arm/mach-mx5/mx51_babbage.c          |    1 +
+ arch/arm/mach-mx5/sdma_script_code.h      |  170 -------------------
+ arch/arm/mach-mx5/sdma_script_code_mx51.h |  256 +++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/sdma_script_code_mx53.h |  179 +++++++++++----------
+ arch/arm/plat-mxc/include/mach/sdma.h     |   11 ++
+ arch/arm/plat-mxc/sdma/sdma.c             |   46 +++++
+ 8 files changed, 484 insertions(+), 299 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 75e76f2..27f9db9 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -54,6 +54,7 @@ extern struct platform_device mxc_dvfs_core_device;
+ extern struct platform_device mxc_dvfs_per_device;
+ extern struct platform_device mxc_ssi1_device;
+ extern struct platform_device mxc_ssi2_device;
++extern struct platform_device mxc_ssi3_device;
+ extern struct platform_device mxc_esai_device;
+ extern struct platform_device mxc_alsa_spdif_device;
+ extern struct platform_device mx51_lpmode_device;
+diff --git a/arch/arm/mach-mx5/dma.c b/arch/arm/mach-mx5/dma.c
+index 1de75c4..2a21089 100644
+--- a/arch/arm/mach-mx5/dma.c
++++ b/arch/arm/mach-mx5/dma.c
+@@ -18,7 +18,7 @@
+ #include <mach/mxc_uart.h>
+ 
+ #include "serial.h"
+-#include "sdma_script_code.h"
++#include "sdma_script_code_mx51.h"
+ #include "sdma_script_code_mx53.h"
+ #include "sdma_script_code_mx50.h"
+ 
+@@ -29,8 +29,13 @@
+ #define MXC_SSI_TX1_REG           0x4
+ #define MXC_SSI_RX0_REG           0x8
+ #define MXC_SSI_RX1_REG           0xC
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++#define MXC_SSI_TXFIFO_WML        0x8
++#define MXC_SSI_RXFIFO_WML        0xC
++#else
+ #define MXC_SSI_TXFIFO_WML        0x4
+ #define MXC_SSI_RXFIFO_WML        0x6
++#endif
+ #define MXC_SPDIF_TXFIFO_WML      0x8
+ #define MXC_SPDIF_RXFIFO_WML      0x8
+ #define MXC_SPDIF_TX_REG          0x2C
+@@ -281,7 +286,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_8bit_tx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_rx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_RX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -295,7 +300,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_rx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_tx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_TX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -309,7 +314,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_tx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_24bit_rx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_RX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -323,7 +328,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_24bit_rx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_24bit_tx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_TX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -365,7 +370,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_8bit_tx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_rx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_RX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -379,7 +384,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_rx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_tx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_TX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -393,7 +398,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_16bit_tx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_24bit_rx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_RX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -407,7 +412,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi1_24bit_rx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi1_24bit_tx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI1_BASE_ADDR + MXC_SSI_TX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -449,7 +454,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_8bit_tx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_rx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_RX0_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = per_2_emi,
+@@ -463,7 +468,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_rx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_tx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_TX0_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = emi_2_per,
+@@ -477,7 +482,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_tx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_24bit_rx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_RX0_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = per_2_emi,
+@@ -491,7 +496,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_24bit_rx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_24bit_tx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_TX0_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = emi_2_per,
+@@ -533,7 +538,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_8bit_tx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_rx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_RX1_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = per_2_emi,
+@@ -547,7 +552,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_rx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_tx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_TX1_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = emi_2_per,
+@@ -561,7 +566,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_16bit_tx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_24bit_rx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_RX1_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = per_2_emi,
+@@ -575,7 +580,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi2_24bit_rx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi2_24bit_tx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI2_BASE_ADDR + MXC_SSI_TX1_REG,
+ 			.peripheral_type = SSI_SP,
+ 			.transfer_type = emi_2_per,
+@@ -617,7 +622,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_8bit_tx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_rx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_RX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -631,7 +636,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_rx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_tx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_TX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -645,7 +650,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_tx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_24bit_rx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_RX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -659,7 +664,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_24bit_rx0_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_24bit_tx0_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_TX0_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -701,7 +706,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_8bit_tx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_rx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_RX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -715,7 +720,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_rx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_tx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u16)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_TX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -729,7 +734,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_16bit_tx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_24bit_rx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_RXFIFO_WML,
++			.watermark_level = MXC_SSI_RXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_RX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = per_2_emi,
+@@ -743,7 +748,7 @@ static mxc_sdma_channel_params_t mxc_sdma_ssi3_24bit_rx1_params = {
+ 
+ static mxc_sdma_channel_params_t mxc_sdma_ssi3_24bit_tx1_params = {
+ 	.chnl_params = {
+-			.watermark_level = MXC_SSI_TXFIFO_WML,
++			.watermark_level = MXC_SSI_TXFIFO_WML * (sizeof(u32)),
+ 			.per_address = SSI3_BASE_ADDR + MXC_SSI_TX1_REG,
+ 			.peripheral_type = SSI,
+ 			.transfer_type = emi_2_per,
+@@ -1416,7 +1421,7 @@ EXPORT_SYMBOL(mxc_get_static_channels);
+ static void __init mx51_sdma_get_script_info(sdma_script_start_addrs *sdma_script_addr)
+ {
+ 	/* AP<->BP */
+-	sdma_script_addr->mxc_sdma_ap_2_ap_addr = ap_2_ap_ADDR;
++	sdma_script_addr->mxc_sdma_ap_2_ap_addr = ap_2_ap_ADDR_MX51;
+ 	sdma_script_addr->mxc_sdma_ap_2_bp_addr = -1;
+ 	sdma_script_addr->mxc_sdma_bp_2_ap_addr = -1;
+ 	sdma_script_addr->mxc_sdma_ap_2_ap_fixed_addr = -1;
+@@ -1432,28 +1437,28 @@ static void __init mx51_sdma_get_script_info(sdma_script_start_addrs *sdma_scrip
+ 	sdma_script_addr->mxc_sdma_mcu_2_firi_addr = -1;
+ 
+ 	/* uart */
+-	sdma_script_addr->mxc_sdma_uart_2_per_addr = uart_2_per_ADDR;
+-	sdma_script_addr->mxc_sdma_uart_2_mcu_addr = uart_2_mcu_ADDR;
++	sdma_script_addr->mxc_sdma_uart_2_per_addr = uart_2_per_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_uart_2_mcu_addr = uart_2_mcu_ADDR_MX51;
+ 
+ 	/* UART SH */
+-	sdma_script_addr->mxc_sdma_uartsh_2_per_addr = uartsh_2_per_ADDR;
+-	sdma_script_addr->mxc_sdma_uartsh_2_mcu_addr = uartsh_2_mcu_ADDR;
++	sdma_script_addr->mxc_sdma_uartsh_2_per_addr = uartsh_2_per_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_uartsh_2_mcu_addr = uartsh_2_mcu_ADDR_MX51;
+ 
+ 	/* SHP */
+-	sdma_script_addr->mxc_sdma_per_2_shp_addr = per_2_shp_ADDR;
+-	sdma_script_addr->mxc_sdma_shp_2_per_addr = shp_2_per_ADDR;
+-	sdma_script_addr->mxc_sdma_mcu_2_shp_addr = mcu_2_shp_ADDR;
+-	sdma_script_addr->mxc_sdma_shp_2_mcu_addr = shp_2_mcu_ADDR;
++	sdma_script_addr->mxc_sdma_per_2_shp_addr = per_2_shp_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_shp_2_per_addr = shp_2_per_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_mcu_2_shp_addr = mcu_2_shp_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_shp_2_mcu_addr = shp_2_mcu_ADDR_MX51;
+ 
+ 	/* ATA */
+-	sdma_script_addr->mxc_sdma_mcu_2_ata_addr = mcu_2_ata_ADDR;
+-	sdma_script_addr->mxc_sdma_ata_2_mcu_addr = ata_2_mcu_ADDR;
++	sdma_script_addr->mxc_sdma_mcu_2_ata_addr = mcu_2_ata_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_ata_2_mcu_addr = ata_2_mcu_ADDR_MX51;
+ 
+ 	/* app */
+-	sdma_script_addr->mxc_sdma_app_2_per_addr = app_2_per_ADDR;
+-	sdma_script_addr->mxc_sdma_app_2_mcu_addr = app_2_mcu_ADDR;
+-	sdma_script_addr->mxc_sdma_per_2_app_addr = per_2_app_ADDR;
+-	sdma_script_addr->mxc_sdma_mcu_2_app_addr = mcu_2_app_ADDR;
++	sdma_script_addr->mxc_sdma_app_2_per_addr = app_2_per_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_app_2_mcu_addr = app_2_mcu_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_per_2_app_addr = per_2_app_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_mcu_2_app_addr = mcu_2_app_ADDR_MX51;
+ 
+ 	/* MSHC */
+ 	sdma_script_addr->mxc_sdma_mshc_2_mcu_addr = -1;
+@@ -1461,18 +1466,30 @@ static void __init mx51_sdma_get_script_info(sdma_script_start_addrs *sdma_scrip
+ 
+ 	/* spdif */
+ 	sdma_script_addr->mxc_sdma_spdif_2_mcu_addr = -1;
+-	sdma_script_addr->mxc_sdma_mcu_2_spdif_addr = mcu_2_spdif_ADDR;
++	sdma_script_addr->mxc_sdma_mcu_2_spdif_addr = mcu_2_spdif_ADDR_MX51;
+ 
+ 	/* IPU */
+-	sdma_script_addr->mxc_sdma_ext_mem_2_ipu_addr = ext_mem__ipu_ram_ADDR;
++	sdma_script_addr->mxc_sdma_ext_mem_2_ipu_addr =
++						ext_mem__ipu_ram_ADDR_MX51;
+ 
+ 	/* DVFS */
+ 	sdma_script_addr->mxc_sdma_dptc_dvfs_addr = -1;
+ 
++	/* SSI */
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++	sdma_script_addr->mxc_sdma_mcu_2_ssiapp_addr = mcu_2_ssiapp_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_ssiapp_2_mcu_addr = ssiapp_2_mcu_ADDR_MX51;
++
++	sdma_script_addr->mxc_sdma_mcu_2_ssish_addr = mcu_2_ssish_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_ssish_2_mcu_addr = ssish_2_mcu_ADDR_MX51;
++#endif
++
+ 	/* core */
+-	sdma_script_addr->mxc_sdma_start_addr = (unsigned short *)sdma_code;
+-	sdma_script_addr->mxc_sdma_ram_code_start_addr = RAM_CODE_START_ADDR;
+-	sdma_script_addr->mxc_sdma_ram_code_size = RAM_CODE_SIZE;
++	sdma_script_addr->mxc_sdma_start_addr =
++					(unsigned short *)sdma_code_mx51;
++	sdma_script_addr->mxc_sdma_ram_code_start_addr =
++						RAM_CODE_START_ADDR_MX51;
++	sdma_script_addr->mxc_sdma_ram_code_size = RAM_CODE_SIZE_MX51;
+ }
+ 
+ static void __init mx53_sdma_get_script_info(sdma_script_start_addrs *sdma_script_addr)
+@@ -1525,7 +1542,8 @@ static void __init mx53_sdma_get_script_info(sdma_script_start_addrs *sdma_scrip
+ 	sdma_script_addr->mxc_sdma_spdif_2_mcu_addr = spdif_2_mcu_ADDR_MX53;
+ 	sdma_script_addr->mxc_sdma_mcu_2_spdif_addr = mcu_2_spdif_ADDR_MX53;
+ 
+-	sdma_script_addr->mxc_sdma_asrc_2_mcu_addr = asrc__mcu_ADDR_MX53;
++	/* asrc script address change to use shp_2_mcu since v01.01 */
++	sdma_script_addr->mxc_sdma_asrc_2_mcu_addr = shp_2_mcu_ADDR_MX53;
+ 
+ 	/* IPU */
+ 	sdma_script_addr->mxc_sdma_ext_mem_2_ipu_addr = mcu_2_app_ADDR_MX53;
+@@ -1533,6 +1551,15 @@ static void __init mx53_sdma_get_script_info(sdma_script_start_addrs *sdma_scrip
+ 	/* DVFS */
+ 	sdma_script_addr->mxc_sdma_dptc_dvfs_addr = -1;
+ 
++	/* SSI */
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++	sdma_script_addr->mxc_sdma_mcu_2_ssiapp_addr = mcu_2_ssiapp_ADDR_MX53;
++	sdma_script_addr->mxc_sdma_ssiapp_2_mcu_addr = ssiapp_2_mcu_ADDR_MX53;
++
++	sdma_script_addr->mxc_sdma_mcu_2_ssish_addr = mcu_2_ssish_ADDR_MX53;
++	sdma_script_addr->mxc_sdma_ssish_2_mcu_addr = ssish_2_mcu_ADDR_MX53;
++#endif
++
+ 	/* core */
+ 	sdma_script_addr->mxc_sdma_start_addr = (unsigned short *)sdma_code_mx53;
+ 	sdma_script_addr->mxc_sdma_ram_code_start_addr = RAM_CODE_START_ADDR_MX53;
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index e2199c0..3a6ec04 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -1217,6 +1217,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxcsdhc2_device, &mmc2_data);
+ 	mxc_register_device(&mxc_ssi1_device, NULL);
+ 	mxc_register_device(&mxc_ssi2_device, NULL);
++	mxc_register_device(&mxc_ssi3_device, NULL);
+ 	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
+ 	mxc_register_device(&mxc_fec_device, NULL);
+ 	mxc_register_device(&mxc_v4l2_device, NULL);
+diff --git a/arch/arm/mach-mx5/sdma_script_code.h b/arch/arm/mach-mx5/sdma_script_code.h
+deleted file mode 100644
+index 2accca7..0000000
+--- a/arch/arm/mach-mx5/sdma_script_code.h
++++ /dev/null
+@@ -1,170 +0,0 @@
+-/*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.  */
+-
+-/*
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA  */
+-
+-/*!
+- * @file sdma_script_code.h
+- * @brief This file contains functions of SDMA scripts code initialization
+- *
+- * The file was generated automatically. Based on sdma scripts library.
+- *
+- * @ingroup SDMA
+- */
+-/*******************************************************************************
+-
+-			SDMA RELEASE LABEL: 	"SS15_ELVIS"
+-
+-*******************************************************************************/
+-
+-#ifndef __SDMA_SCRIPT_CODE_H__
+-#define __SDMA_SCRIPT_CODE_H__
+-
+-/*!
+-* SDMA ROM scripts start addresses and sizes
+-*/
+-
+-#define start_ADDR	0
+-#define start_SIZE	24
+-
+-#define core_ADDR	80
+-#define core_SIZE	232
+-
+-#define common_ADDR	312
+-#define common_SIZE	330
+-
+-#define ap_2_ap_ADDR	642
+-#define ap_2_ap_SIZE	41
+-
+-#define app_2_mcu_ADDR	683
+-#define app_2_mcu_SIZE	64
+-
+-#define mcu_2_app_ADDR	747
+-#define mcu_2_app_SIZE	70
+-
+-#define uart_2_mcu_ADDR	817
+-#define uart_2_mcu_SIZE	75
+-
+-#define shp_2_mcu_ADDR	892
+-#define shp_2_mcu_SIZE	69
+-
+-#define mcu_2_shp_ADDR	961
+-#define mcu_2_shp_SIZE	72
+-
+-#define app_2_per_ADDR	1033
+-#define app_2_per_SIZE	66
+-
+-#define per_2_app_ADDR	1099
+-#define per_2_app_SIZE	74
+-
+-#define per_2_shp_ADDR	1173
+-#define per_2_shp_SIZE	78
+-
+-#define shp_2_per_ADDR	1251
+-#define shp_2_per_SIZE	72
+-
+-#define uartsh_2_mcu_ADDR	1323
+-#define uartsh_2_mcu_SIZE	69
+-
+-#define mcu_2_ata_ADDR	1392
+-#define mcu_2_ata_SIZE	81
+-
+-#define ata_2_mcu_ADDR	1473
+-#define ata_2_mcu_SIZE	96
+-
+-#define loop_DMAs_routines_ADDR	1569
+-#define loop_DMAs_routines_SIZE	227
+-
+-#define test_ADDR	1796
+-#define test_SIZE	63
+-
+-#define signature_ADDR	1023
+-#define signature_SIZE	1
+-
+-/*!
+-* SDMA RAM scripts start addresses and sizes
+-*/
+-
+-#define ext_mem__ipu_ram_ADDR	6144
+-#define ext_mem__ipu_ram_SIZE	123
+-
+-#define mcu_2_spdif_ADDR	6267
+-#define mcu_2_spdif_SIZE	59
+-
+-#define uart_2_per_ADDR	6326
+-#define uart_2_per_SIZE	73
+-
+-#define uartsh_2_per_ADDR	6399
+-#define uartsh_2_per_SIZE	67
+-
+-/*!
+-* SDMA RAM image start address and size
+-*/
+-
+-#define RAM_CODE_START_ADDR		6144
+-#define RAM_CODE_SIZE			322
+-
+-/*!
+-* Buffer that holds the SDMA RAM image
+-*/
+-__attribute__ ((__aligned__(4)))
+-#ifndef CONFIG_XIP_KERNEL
+-const
+-#endif
+-static const short sdma_code[] = {
+-	0x0e70, 0x0611, 0x5616, 0xc13c, 0x7d2a, 0x5ade, 0x008e, 0xc14e,
+-	0x7c26, 0x5be0, 0x5ef0, 0x5ce8, 0x0688, 0x08ff, 0x0011, 0x28ff,
+-	0x00bc, 0x53f6, 0x05df, 0x7d0b, 0x6dc5, 0x03df, 0x7d03, 0x6bd5,
+-	0xd84f, 0x982b, 0x6b05, 0xc681, 0x7e27, 0x7f29, 0x982b, 0x6d01,
+-	0x03df, 0x7d05, 0x6bd5, 0xc6ab, 0x7e18, 0x7f1a, 0x982b, 0x6b05,
+-	0xc621, 0x7e07, 0x7f06, 0x52de, 0x53e6, 0xc159, 0x7dd7, 0x0200,
+-	0x9803, 0x0007, 0x6004, 0x680c, 0x53f6, 0x028e, 0x00a3, 0xc256,
+-	0x048b, 0x0498, 0x0454, 0x068a, 0x982b, 0x0207, 0x680c, 0x6ddf,
+-	0x0107, 0x68ff, 0x60d0, 0x9834, 0x0207, 0x68ff, 0x6d28, 0x0107,
+-	0x6004, 0x680c, 0x9834, 0x0007, 0x68ff, 0x60d0, 0x9834, 0x0288,
+-	0x03a5, 0x3b03, 0x3d03, 0x4d00, 0x7d0a, 0x0804, 0x00a5, 0x00da,
+-	0x7d1a, 0x02a0, 0x7b01, 0x65d8, 0x7eee, 0x65ff, 0x7eec, 0x0804,
+-	0x02d0, 0x7d11, 0x4b00, 0x7c0f, 0x008a, 0x3003, 0x6dcf, 0x6bdf,
+-	0x0015, 0x0015, 0x7b02, 0x65d8, 0x0000, 0x7edd, 0x63ff, 0x7edb,
+-	0x3a03, 0x6dcd, 0x6bdd, 0x008a, 0x7b02, 0x65d8, 0x0000, 0x7ed3,
+-	0x65ff, 0x7ed1, 0x0006, 0xc1d9, 0xc1e3, 0x57db, 0x52f3, 0x6a01,
+-	0x008f, 0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x56fb, 0x0478,
+-	0x7d28, 0x0479, 0x7c16, 0x0015, 0x0015, 0x0388, 0x620a, 0x0808,
+-	0x7801, 0x0217, 0x5a06, 0x7f1d, 0x620a, 0x0808, 0x7801, 0x0217,
+-	0x5a26, 0x7f17, 0x2301, 0x4b00, 0x7cf1, 0x0b70, 0x0311, 0x5313,
+-	0x98aa, 0x0015, 0x0015, 0x0015, 0x7804, 0x620b, 0x5a06, 0x620b,
+-	0x5a26, 0x7c07, 0x0000, 0x55eb, 0x4d00, 0x7d06, 0xc1fa, 0x57db,
+-	0x9880, 0x0007, 0x680c, 0xc213, 0xc20a, 0x987d, 0xc1e3, 0x57db,
+-	0x52f3, 0x6ad5, 0x56fb, 0x028e, 0x1a94, 0x6ac3, 0x62c8, 0x0269,
+-	0x7d1e, 0x1e94, 0x6ee3, 0x62d0, 0x5aeb, 0x62c8, 0x0248, 0x6ed3,
+-	0x6ac8, 0x2694, 0x52eb, 0x6ad5, 0x6ee3, 0x62c8, 0x026e, 0x7d27,
+-	0x6ac8, 0x7f23, 0x2501, 0x4d00, 0x7d26, 0x028e, 0x1a98, 0x6ac3,
+-	0x62c8, 0x6ec3, 0x0260, 0x7df1, 0x62d0, 0xc27a, 0x98fb, 0x6ee3,
+-	0x008f, 0x2001, 0x00d5, 0x7d01, 0x008d, 0x05a0, 0x62c8, 0x026e,
+-	0x7d0e, 0x6ac8, 0x7f0a, 0x2001, 0x7cf9, 0x6add, 0x7f06, 0x0000,
+-	0x4d00, 0x7d09, 0xc1fa, 0x57db, 0x98ba, 0x0007, 0x6aff, 0x62d0,
+-	0xc27a, 0x0458, 0x0454, 0x6add, 0x7ff8, 0xc20a, 0x98b7, 0xc1d9,
+-	0xc1e3, 0x57db, 0x52f3, 0x6ad5, 0x56fb, 0x028e, 0x1a94, 0x5202,
+-	0x0269, 0x7d17, 0x1e94, 0x5206, 0x0248, 0x5a06, 0x2694, 0x5206,
+-	0x026e, 0x7d26, 0x6ac8, 0x7f22, 0x2501, 0x4d00, 0x7d27, 0x028e,
+-	0x1a98, 0x5202, 0x0260, 0x7df3, 0x6add, 0x7f18, 0x62d0, 0xc27a,
+-	0x993e, 0x008f, 0x2001, 0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5206,
+-	0x026e, 0x7d0e, 0x6ac8, 0x7f0a, 0x2001, 0x7cf9, 0x6add, 0x7f06,
+-	0x0000, 0x4d00, 0x7d0b, 0xc1fa, 0x57db, 0x9904, 0x0007, 0x6aff,
+-	0x6add, 0x7ffc, 0x62d0, 0xc27a, 0x0458, 0x0454, 0x6add, 0x7ff6,
+-	0xc20a, 0x9901
+-};
+-#endif
+diff --git a/arch/arm/mach-mx5/sdma_script_code_mx51.h b/arch/arm/mach-mx5/sdma_script_code_mx51.h
+new file mode 100644
+index 0000000..9a396c9
+--- /dev/null
++++ b/arch/arm/mach-mx5/sdma_script_code_mx51.h
+@@ -0,0 +1,256 @@
++/*
++ * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved */
++
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
++
++/*!
++ * @file sdma_script_code.h
++ * @brief This file contains functions of SDMA scripts code initialization
++ *
++ * The file was generated automatically. Based on sdma scripts library.
++ *
++ * @ingroup SDMA
++ */
++/*******************************************************************************
++
++			SDMA RELEASE LABEL:	"SS15_ELVIS V1.1"
++
++*******************************************************************************/
++
++#ifndef __SDMA_SCRIPT_CODE_H__
++#define __SDMA_SCRIPT_CODE_H__
++
++/*!
++* SDMA ROM scripts start addresses and sizes
++*/
++
++#define start_ADDR_MX51   0
++#define start_SIZE_MX51   24
++
++#define core_ADDR_MX51   80
++#define core_SIZE_MX51   232
++
++#define common_ADDR_MX51   312
++#define common_SIZE_MX51   330
++
++#define ap_2_ap_ADDR_MX51   642
++#define ap_2_ap_SIZE_MX51   41
++
++#define app_2_mcu_ADDR_MX51   683
++#define app_2_mcu_SIZE_MX51   64
++
++#define mcu_2_app_ADDR_MX51   747
++#define mcu_2_app_SIZE_MX51   70
++
++#define uart_2_mcu_ADDR_MX51   817
++#define uart_2_mcu_SIZE_MX51   75
++
++#define shp_2_mcu_ADDR_MX51   892
++#define shp_2_mcu_SIZE_MX51   69
++
++#define mcu_2_shp_ADDR_MX51   961
++#define mcu_2_shp_SIZE_MX51   72
++
++#define app_2_per_ADDR_MX51   1033
++#define app_2_per_SIZE_MX51   66
++
++#define per_2_app_ADDR_MX51   1099
++#define per_2_app_SIZE_MX51   74
++
++#define per_2_shp_ADDR_MX51   1173
++#define per_2_shp_SIZE_MX51   78
++
++#define shp_2_per_ADDR_MX51   1251
++#define shp_2_per_SIZE_MX51   72
++
++#define uartsh_2_mcu_ADDR_MX51   1323
++#define uartsh_2_mcu_SIZE_MX51   69
++
++#define mcu_2_ata_ADDR_MX51   1392
++#define mcu_2_ata_SIZE_MX51   81
++
++#define ata_2_mcu_ADDR_MX51   1473
++#define ata_2_mcu_SIZE_MX51   96
++
++#define loop_DMAs_routines_ADDR_MX51   1569
++#define loop_DMAs_routines_SIZE_MX51   227
++
++#define test_ADDR_MX51   1796
++#define test_SIZE_MX51   63
++
++#define signature_ADDR_MX51   1023
++#define signature_SIZE_MX51   1
++
++/*!
++* SDMA RAM scripts start addresses and sizes
++*/
++
++#define ext_mem__ipu_ram_ADDR_MX51   6144
++#define ext_mem__ipu_ram_SIZE_MX51   123
++
++#define firi_2_mcu_ADDR_MX51   6267
++#define firi_2_mcu_SIZE_MX51   97
++
++#define mcu_2_firi_ADDR_MX51   6364
++#define mcu_2_firi_SIZE_MX51   79
++
++#define mcu_2_spdif_ADDR_MX51   6443
++#define mcu_2_spdif_SIZE_MX51   59
++
++#define mcu_2_ssiapp_ADDR_MX51   6502
++#define mcu_2_ssiapp_SIZE_MX51   98
++
++#define mcu_2_ssish_ADDR_MX51   6600
++#define mcu_2_ssish_SIZE_MX51   89
++
++#define ssiapp_2_mcu_ADDR_MX51   6689
++#define ssiapp_2_mcu_SIZE_MX51   94
++
++#define ssish_2_mcu_ADDR_MX51   6783
++#define ssish_2_mcu_SIZE_MX51   84
++
++#define uart_2_per_ADDR_MX51   6867
++#define uart_2_per_SIZE_MX51   73
++
++#define uartsh_2_per_ADDR_MX51   6940
++#define uartsh_2_per_SIZE_MX51   67
++
++/*!
++* SDMA RAM image start address and size
++*/
++
++#define RAM_CODE_START_ADDR_MX51     6144
++#define RAM_CODE_SIZE_MX51           863
++
++/*!
++* Buffer that holds the SDMA RAM image
++*/
++__attribute__ ((__aligned__(4)))
++#ifndef CONFIG_XIP_KERNEL
++const
++#endif
++static const short sdma_code_mx51[] = {
++0x0e70, 0x0611, 0x5616, 0xc13c, 0x7d2a, 0x5ade, 0x008e, 0xc14e,
++0x7c26, 0x5be0, 0x5ef0, 0x5ce8, 0x0688, 0x08ff, 0x0011, 0x28ff,
++0x00bc, 0x53f6, 0x05df, 0x7d0b, 0x6dc5, 0x03df, 0x7d03, 0x6bd5,
++0xd84f, 0x982b, 0x6b05, 0xc681, 0x7e27, 0x7f29, 0x982b, 0x6d01,
++0x03df, 0x7d05, 0x6bd5, 0xc6ab, 0x7e18, 0x7f1a, 0x982b, 0x6b05,
++0xc621, 0x7e07, 0x7f06, 0x52de, 0x53e6, 0xc159, 0x7dd7, 0x0200,
++0x9803, 0x0007, 0x6004, 0x680c, 0x53f6, 0x028e, 0x00a3, 0xc256,
++0x048b, 0x0498, 0x0454, 0x068a, 0x982b, 0x0207, 0x680c, 0x6ddf,
++0x0107, 0x68ff, 0x60d0, 0x9834, 0x0207, 0x68ff, 0x6d28, 0x0107,
++0x6004, 0x680c, 0x9834, 0x0007, 0x68ff, 0x60d0, 0x9834, 0x0288,
++0x03a5, 0x3b03, 0x3d03, 0x4d00, 0x7d0a, 0x0804, 0x00a5, 0x00da,
++0x7d1a, 0x02a0, 0x7b01, 0x65d8, 0x7eee, 0x65ff, 0x7eec, 0x0804,
++0x02d0, 0x7d11, 0x4b00, 0x7c0f, 0x008a, 0x3003, 0x6dcf, 0x6bdf,
++0x0015, 0x0015, 0x7b02, 0x65d8, 0x0000, 0x7edd, 0x63ff, 0x7edb,
++0x3a03, 0x6dcd, 0x6bdd, 0x008a, 0x7b02, 0x65d8, 0x0000, 0x7ed3,
++0x65ff, 0x7ed1, 0x0006, 0x2618, 0x1e10, 0x0b70, 0x0311, 0x5313,
++0x58d3, 0x008b, 0x5efb, 0xc13c, 0x7d55, 0x5ac0, 0x5bc8, 0xc14e,
++0x7c51, 0x0388, 0x6d04, 0x0dff, 0x0511, 0x1dff, 0x05bc, 0x56fb,
++0x6ec3, 0x62c8, 0x7e38, 0x0264, 0x7d0b, 0x0212, 0x3aff, 0x02df,
++0x7c05, 0x008f, 0x05a0, 0x0015, 0x0015, 0xd8b5, 0x0400, 0x988f,
++0x56fb, 0x6ec3, 0x62c8, 0x0212, 0x3aff, 0x008a, 0x4800, 0x7d02,
++0x05a0, 0xd8c0, 0x6a28, 0x7f24, 0x008b, 0x52c0, 0x53c8, 0x04a5,
++0xc159, 0x7dd4, 0x0401, 0x0200, 0x9886, 0x1e08, 0x6ec3, 0x7802,
++0x62c8, 0x6a0b, 0x7e10, 0x6a28, 0x7f13, 0x0000, 0x2608, 0x0006,
++0x1e08, 0x6ec1, 0x7802, 0x62c8, 0x6a09, 0x7e05, 0x6a28, 0x7f08,
++0x0000, 0x2608, 0x0006, 0x0007, 0x68cc, 0x6a28, 0x7f01, 0x98d9,
++0x0007, 0x6a0c, 0x6a0c, 0x6204, 0x6a04, 0x6a2b, 0x6a28, 0x0007,
++0x680c, 0x0454, 0x0200, 0x9883, 0x0b70, 0x0311, 0x5313, 0x58d3,
++0x008b, 0x5efb, 0xc13c, 0x7d45, 0x5ac0, 0x5bc8, 0xc14e, 0x56f8,
++0x7c40, 0x6ed1, 0x0388, 0x6d00, 0x0dff, 0x0511, 0x1dff, 0x05bc,
++0x4d00, 0x7d2f, 0x0e70, 0x0611, 0x522e, 0x02b9, 0x4a00, 0x7c09,
++0x52fe, 0x50d3, 0x02b8, 0x4a00, 0x7c04, 0x62ff, 0x7e1c, 0x0400,
++0x98f2, 0x008f, 0x00d5, 0x7d0b, 0x008d, 0x05a0, 0x56fb, 0x6ed1,
++0x7802, 0x6209, 0x6ac8, 0x0000, 0x7e11, 0x7f0d, 0x98f0, 0x05a0,
++0x0015, 0x0015, 0x56fb, 0x6ed3, 0x7802, 0x620b, 0x6ac8, 0x0000,
++0x7e05, 0x7f01, 0x98f0, 0x0007, 0x68cc, 0x9920, 0x0007, 0x6a0c,
++0x0454, 0x62ff, 0x7efb, 0x008b, 0x52c0, 0x53c8, 0xc159, 0x7dbd,
++0x0401, 0x0200, 0x98e2, 0xc1d9, 0xc1e3, 0x57db, 0x52f3, 0x6a01,
++0x008f, 0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x56fb, 0x0478,
++0x7d28, 0x0479, 0x7c16, 0x0015, 0x0015, 0x0388, 0x620a, 0x0808,
++0x7801, 0x0217, 0x5a06, 0x7f1d, 0x620a, 0x0808, 0x7801, 0x0217,
++0x5a26, 0x7f17, 0x2301, 0x4b00, 0x7cf1, 0x0b70, 0x0311, 0x5313,
++0x995a, 0x0015, 0x0015, 0x0015, 0x7804, 0x620b, 0x5a06, 0x620b,
++0x5a26, 0x7c07, 0x0000, 0x55eb, 0x4d00, 0x7d06, 0xc1fa, 0x57db,
++0x9930, 0x0007, 0x680c, 0xc213, 0xc20a, 0x992d, 0xc1e3, 0x57db,
++0x5fe3, 0x57e3, 0x52f3, 0x6a01, 0x008f, 0x00d5, 0x7d01, 0x008d,
++0x05a0, 0x5deb, 0x0478, 0x7d03, 0x0479, 0x7d2c, 0x7c36, 0x0479,
++0x7c1f, 0x56ee, 0x0f00, 0x0660, 0x7d05, 0x6509, 0x7e43, 0x620a,
++0x7e41, 0x9986, 0x620a, 0x7e3e, 0x6509, 0x7e3c, 0x0512, 0x0512,
++0x02ad, 0x0760, 0x7d03, 0x55fb, 0x6dd3, 0x9991, 0x55fb, 0x1d04,
++0x6dd3, 0x6ac8, 0x7f2f, 0x1f01, 0x2003, 0x4800, 0x7ce4, 0x99b9,
++0x55fb, 0x6dd7, 0x0015, 0x7805, 0x6209, 0x6ac8, 0x6209, 0x6ac8,
++0x6dd7, 0x99b8, 0x55fb, 0x6dd7, 0x0015, 0x0015, 0x7805, 0x620a,
++0x6ac8, 0x620a, 0x6ac8, 0x6dd7, 0x99b8, 0x55fb, 0x6dd7, 0x0015,
++0x0015, 0x0015, 0x7805, 0x620b, 0x6ac8, 0x620b, 0x6ac8, 0x6dd7,
++0x7c09, 0x6ddf, 0x7f07, 0x0000, 0x55eb, 0x4d00, 0x7d07, 0xc1fa,
++0x57e3, 0x996c, 0x0007, 0x68cc, 0x680c, 0xc213, 0xc20a, 0x9969,
++0xc1d9, 0xc1e3, 0x57db, 0x5fe3, 0x57e3, 0x52f3, 0x6a21, 0x008f,
++0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x56fb, 0x0478, 0x7d03,
++0x0479, 0x7d2a, 0x7c31, 0x0479, 0x7c20, 0x0b70, 0x0311, 0x53eb,
++0x0f00, 0x0360, 0x7d05, 0x6509, 0x7e37, 0x620a, 0x7e35, 0x99ec,
++0x620a, 0x7e32, 0x6509, 0x7e30, 0x0512, 0x0512, 0x02ad, 0x0760,
++0x7c02, 0x5a06, 0x99f4, 0x5a26, 0x7f27, 0x1f01, 0x2003, 0x4800,
++0x7ce8, 0x0b70, 0x0311, 0x5313, 0x9a15, 0x0015, 0x7804, 0x6209,
++0x5a06, 0x6209, 0x5a26, 0x9a14, 0x0015, 0x0015, 0x7804, 0x620a,
++0x5a06, 0x620a, 0x5a26, 0x9a14, 0x0015, 0x0015, 0x0015, 0x7804,
++0x620b, 0x5a06, 0x620b, 0x5a26, 0x7c07, 0x0000, 0x55eb, 0x4d00,
++0x7d06, 0xc1fa, 0x57e3, 0x99cf, 0x0007, 0x680c, 0xc213, 0xc20a,
++0x99cc, 0xc1e3, 0x57db, 0x52fb, 0x6ac3, 0x52f3, 0x6a05, 0x008f,
++0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x0478, 0x7d03, 0x0479,
++0x7d2b, 0x7c1e, 0x0479, 0x7c33, 0x56ee, 0x0f00, 0x55fb, 0x0760,
++0x7d02, 0x6dc3, 0x9a3d, 0x1d04, 0x6dc3, 0x62c8, 0x7e3c, 0x0660,
++0x7d02, 0x0210, 0x0212, 0x6a09, 0x7f36, 0x0212, 0x6a09, 0x7f33,
++0x0212, 0x6a09, 0x7f30, 0x1f01, 0x2003, 0x4800, 0x7ce7, 0x9a71,
++0x55fb, 0x6dc7, 0x0015, 0x0015, 0x0015, 0x7805, 0x62c8, 0x6a0b,
++0x62c8, 0x6a0b, 0x6dc7, 0x9a70, 0x55fb, 0x6dc7, 0x0015, 0x0015,
++0x7805, 0x62c8, 0x6a0a, 0x62c8, 0x6a0a, 0x6dc7, 0x9a70, 0x55fb,
++0x6dc7, 0x0015, 0x7805, 0x62c8, 0x6a09, 0x62c8, 0x6a09, 0x6dc7,
++0x7c0a, 0x6a28, 0x57db, 0x7f07, 0x0000, 0x55eb, 0x4d00, 0x7d05,
++0xc1fa, 0x57db, 0x9a27, 0xc277, 0x0454, 0xc20a, 0x9a22, 0xc1d9,
++0xc1e3, 0x57db, 0x52f3, 0x6a05, 0x008f, 0x00d5, 0x7d01, 0x008d,
++0x05a0, 0x56fb, 0x0478, 0x7d03, 0x0479, 0x7d29, 0x7c1f, 0x0479,
++0x7c2e, 0x5de3, 0x0d70, 0x0511, 0x55ed, 0x0f00, 0x0760, 0x7d02,
++0x5206, 0x9a9b, 0x5226, 0x7e33, 0x0560, 0x7d02, 0x0210, 0x0212,
++0x6a09, 0x7f2d, 0x0212, 0x6a09, 0x7f2a, 0x0212, 0x6a09, 0x7f27,
++0x1f01, 0x2003, 0x4800, 0x7cea, 0x55e3, 0x9ac6, 0x0015, 0x0015,
++0x0015, 0x7804, 0x5206, 0x6a0b, 0x5226, 0x6a0b, 0x9ac5, 0x0015,
++0x0015, 0x7804, 0x5206, 0x6a0a, 0x5226, 0x6a0a, 0x9ac5, 0x0015,
++0x7804, 0x5206, 0x6a09, 0x5226, 0x6a09, 0x7c09, 0x6a28, 0x7f07,
++0x0000, 0x57db, 0x4d00, 0x7d05, 0xc1fa, 0x57db, 0x9a84, 0xc277,
++0x0454, 0xc20a, 0x9a81, 0xc1e3, 0x57db, 0x52f3, 0x6ad5, 0x56fb,
++0x028e, 0x1a94, 0x6ac3, 0x62c8, 0x0269, 0x7d1e, 0x1e94, 0x6ee3,
++0x62d0, 0x5aeb, 0x62c8, 0x0248, 0x6ed3, 0x6ac8, 0x2694, 0x52eb,
++0x6ad5, 0x6ee3, 0x62c8, 0x026e, 0x7d27, 0x6ac8, 0x7f23, 0x2501,
++0x4d00, 0x7d26, 0x028e, 0x1a98, 0x6ac3, 0x62c8, 0x6ec3, 0x0260,
++0x7df1, 0x62d0, 0xc27a, 0x9b18, 0x6ee3, 0x008f, 0x2001, 0x00d5,
++0x7d01, 0x008d, 0x05a0, 0x62c8, 0x026e, 0x7d0e, 0x6ac8, 0x7f0a,
++0x2001, 0x7cf9, 0x6add, 0x7f06, 0x0000, 0x4d00, 0x7d09, 0xc1fa,
++0x57db, 0x9ad7, 0x0007, 0x6aff, 0x62d0, 0xc27a, 0x0458, 0x0454,
++0x6add, 0x7ff8, 0xc20a, 0x9ad4, 0xc1d9, 0xc1e3, 0x57db, 0x52f3,
++0x6ad5, 0x56fb, 0x028e, 0x1a94, 0x5202, 0x0269, 0x7d17, 0x1e94,
++0x5206, 0x0248, 0x5a06, 0x2694, 0x5206, 0x026e, 0x7d26, 0x6ac8,
++0x7f22, 0x2501, 0x4d00, 0x7d27, 0x028e, 0x1a98, 0x5202, 0x0260,
++0x7df3, 0x6add, 0x7f18, 0x62d0, 0xc27a, 0x9b5b, 0x008f, 0x2001,
++0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5206, 0x026e, 0x7d0e, 0x6ac8,
++0x7f0a, 0x2001, 0x7cf9, 0x6add, 0x7f06, 0x0000, 0x4d00, 0x7d0b,
++0xc1fa, 0x57db, 0x9b21, 0x0007, 0x6aff, 0x6add, 0x7ffc, 0x62d0,
++0xc27a, 0x0458, 0x0454, 0x6add, 0x7ff6, 0xc20a, 0x9b1e
++};
++#endif
++
+diff --git a/arch/arm/mach-mx5/sdma_script_code_mx53.h b/arch/arm/mach-mx5/sdma_script_code_mx53.h
+index 25f192d..bfdf747 100644
+--- a/arch/arm/mach-mx5/sdma_script_code_mx53.h
++++ b/arch/arm/mach-mx5/sdma_script_code_mx53.h
+@@ -26,18 +26,19 @@
+  */
+ /************************************************************************************
+ 
+-	SDMA RELEASE LABEL:     "SDMA_RITA.01.00.00"
++	SDMA RELEASE LABEL:	"SDMA_RITA.01.01.00"
+ 
+ *************************************************************************************/
+ 
+-#ifndef __SDMA_SCRIPT_CODE_MX53_H__
+-#define __SDMA_SCRIPT_CODE_MX53_H__
++#ifndef SDMA_SCRIPT_CODE_H
++#define SDMA_SCRIPT_CODE_H
++
+ 
+ /*!
+ * SDMA ROM scripts start addresses and sizes
+ */
+ 
+-#define start_ADDR_MX53   0
++#define start_ADDR_MX53 0
+ #define start_SIZE_MX53   22
+ 
+ #define core_ADDR_MX53   80
+@@ -76,7 +77,7 @@
+ #define firi_2_mcu_ADDR_MX53   1193
+ #define firi_2_mcu_SIZE_MX53   97
+ 
+-#define mcu_2_firi_ADDR_MX53  1290
++#define mcu_2_firi_ADDR_MX53   1290
+ #define mcu_2_firi_SIZE_MX53   79
+ 
+ #define loop_DMAs_routines_ADDR_MX53   1369
+@@ -92,24 +93,27 @@
+ * SDMA RAM scripts start addresses and sizes
+ */
+ 
+-#define asrc__mcu_ADDR_MX53   6144
+-#define asrc__mcu_SIZE_MX53   114
++#define mcu_2_ssiapp_ADDR_MX53   6144
++#define mcu_2_ssiapp_SIZE_MX53   98
+ 
+-#define mcu_2_ssiapp_ADDR_MX53   6258
+-#define mcu_2_ssiapp_SIZE_MX53   96
++#define mcu_2_ssish_ADDR_MX53   6242
++#define mcu_2_ssish_SIZE_MX53   89
+ 
+-#define p_2_p_ADDR_MX53   6354
++#define p_2_p_ADDR_MX53   6331
+ #define p_2_p_SIZE_MX53   254
+ 
+-#define ssiapp_2_mcu_ADDR_MX53   6608
+-#define ssiapp_2_mcu_SIZE_MX53   93
++#define ssiapp_2_mcu_ADDR_MX53   6585
++#define ssiapp_2_mcu_SIZE_MX53   94
++
++#define ssish_2_mcu_ADDR_MX53   6679
++#define ssish_2_mcu_SIZE_MX53   84
+ 
+ /*!
+ * SDMA RAM image start address and size
+ */
+ 
+ #define RAM_CODE_START_ADDR_MX53     6144
+-#define RAM_CODE_SIZE_MX53           557
++#define RAM_CODE_SIZE_MX53           619
+ 
+ /*!
+ * Buffer that holds the SDMA RAM image
+@@ -119,75 +123,84 @@ __attribute__ ((__aligned__(4)))
+ const
+ #endif
+ static const short sdma_code_mx53[] = {
+-	0xc1d9, 0xc1e3, 0x56f3, 0x57db, 0x047a, 0x7d07, 0x072f, 0x076e,
+-	0x7d02, 0x6ec7, 0x9813, 0x6ed7, 0x9813, 0x074f, 0x076e, 0x7d02,
+-	0x6e01, 0x9813, 0x6e05, 0x5ce3, 0x048f, 0x0410, 0x3c0f, 0x5c93,
+-	0x0eff, 0x06bf, 0x06d5, 0x7d01, 0x068d, 0x05a6, 0x5deb, 0x55fb,
+-	0x008e, 0x0768, 0x7d02, 0x0769, 0x7c04, 0x06d4, 0x7d01, 0x008c,
+-	0x04a0, 0x06a0, 0x076f, 0x7d0c, 0x076e, 0x7d05, 0x7802, 0x62c8,
+-	0x5a05, 0x7c2b, 0x9845, 0x7802, 0x5205, 0x6ac8, 0x7c26, 0x9845,
+-	0x076e, 0x7d05, 0x7802, 0x620b, 0x5a05, 0x7c21, 0x9845, 0x7802,
+-	0x5205, 0x6a0b, 0x7c1c, 0x6a28, 0x7f1a, 0x0768, 0x7d02, 0x0769,
+-	0x7c0a, 0x4c00, 0x7c08, 0x0768, 0x7d03, 0x5a05, 0x7f11, 0x9852,
+-	0x5205, 0x7e0e, 0x5493, 0x4e00, 0x7ccb, 0x0000, 0x54e3, 0x55eb,
+-	0x4d00, 0x7d0a, 0xc1fa, 0x57db, 0x9814, 0x68cc, 0x9860, 0x680c,
+-	0x009e, 0x0007, 0x54e3, 0xd866, 0xc20a, 0x9802, 0x55eb, 0x009d,
+-	0x058c, 0x0aff, 0x0211, 0x1aff, 0x05ba, 0x05a0, 0x04b2, 0x04ad,
+-	0x0454, 0x0006, 0xc1e3, 0x57db, 0x52f3, 0x6a01, 0x008f, 0x00d5,
+-	0x7d01, 0x008d, 0x05a0, 0x5deb, 0x0478, 0x7d03, 0x0479, 0x7d2c,
+-	0x7c36, 0x0479, 0x7c1f, 0x56ee, 0x0f00, 0x0660, 0x7d05, 0x6509,
+-	0x7e43, 0x620a, 0x7e41, 0x9890, 0x620a, 0x7e3e, 0x6509, 0x7e3c,
+-	0x0512, 0x0512, 0x02ad, 0x0760, 0x7d03, 0x55fb, 0x6dd3, 0x989b,
+-	0x55fb, 0x1d04, 0x6dd3, 0x6ac8, 0x7f2f, 0x1f01, 0x2003, 0x4800,
+-	0x7ce4, 0x98c3, 0x55fb, 0x6dd7, 0x0015, 0x7805, 0x6209, 0x6ac8,
+-	0x6209, 0x6ac8, 0x6dd7, 0x98c2, 0x55fb, 0x6dd7, 0x0015, 0x0015,
+-	0x7805, 0x620a, 0x6ac8, 0x620a, 0x6ac8, 0x6dd7, 0x98c2, 0x55fb,
+-	0x6dd7, 0x0015, 0x0015, 0x0015, 0x7805, 0x620b, 0x6ac8, 0x620b,
+-	0x6ac8, 0x6dd7, 0x7c09, 0x6ddf, 0x7f07, 0x0000, 0x55eb, 0x4d00,
+-	0x7d07, 0xc1fa, 0x57db, 0x9876, 0x0007, 0x68cc, 0x680c, 0xc213,
+-	0xc20a, 0x9873, 0x0b70, 0x0311, 0x5313, 0x076c, 0x7c01, 0xc1d9,
+-	0x5efb, 0x068a, 0x076b, 0x7c01, 0xc1d9, 0x5ef3, 0x59db, 0x58d3,
+-	0x018f, 0x0110, 0x390f, 0x008b, 0xc13c, 0x7d2b, 0x5ac0, 0x5bc8,
+-	0xc14e, 0x7c27, 0x0388, 0x0689, 0x5ce3, 0x0dff, 0x0511, 0x1dff,
+-	0x05bc, 0x073e, 0x4d00, 0x7d18, 0x0870, 0x0011, 0x077e, 0x7d09,
+-	0x077d, 0x7d02, 0x5228, 0x98fd, 0x52f8, 0x54db, 0x02bc, 0x02cc,
+-	0x7c09, 0x077c, 0x7d02, 0x5228, 0x9906, 0x52f8, 0x54d3, 0x02bc,
+-	0x02cc, 0x7d09, 0x0400, 0x98f4, 0x008b, 0x52c0, 0x53c8, 0xc159,
+-	0x7dd6, 0x0200, 0x98e4, 0x08ff, 0x00bf, 0x077f, 0x7d15, 0x0488,
+-	0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x028f, 0x0212, 0x0212,
+-	0x3aff, 0x05da, 0x7c02, 0x073e, 0x992f, 0x02a4, 0x02dd, 0x7d02,
+-	0x073e, 0x992f, 0x075e, 0x992f, 0x55eb, 0x0598, 0x5deb, 0x52f3,
+-	0x54fb, 0x076a, 0x7d26, 0x076c, 0x7d01, 0x996c, 0x076b, 0x7c57,
+-	0x0769, 0x7d04, 0x0768, 0x7d02, 0x0e01, 0x9946, 0x5893, 0x00d6,
+-	0x7d01, 0x008e, 0x5593, 0x05a0, 0x5d93, 0x06a0, 0x7802, 0x5502,
+-	0x5d04, 0x7c1d, 0x4e00, 0x7c08, 0x0769, 0x7d03, 0x5502, 0x7e17,
+-	0x9953, 0x5d04, 0x7f14, 0x0689, 0x5093, 0x4800, 0x7d01, 0x993e,
+-	0x99b7, 0x0015, 0x7806, 0x5502, 0x5d04, 0x074f, 0x5502, 0x5d24,
+-	0x072f, 0x7c01, 0x99b7, 0x0017, 0x076f, 0x7c01, 0x2001, 0x5593,
+-	0x009d, 0x0007, 0xd9be, 0x990c, 0x6cd3, 0x0769, 0x7d04, 0x0768,
+-	0x7d02, 0x0e01, 0x997b, 0x5893, 0x00d6, 0x7d01, 0x008e, 0x5593,
+-	0x05a0, 0x5d93, 0x06a0, 0x7802, 0x5502, 0x6dc8, 0x7c0f, 0x4e00,
+-	0x7c08, 0x0769, 0x7d03, 0x5502, 0x7e09, 0x9988, 0x6dc8, 0x7f06,
+-	0x0689, 0x5093, 0x4800, 0x7d01, 0x9973, 0x99b7, 0x99b1, 0x6ac3,
+-	0x0769, 0x7d04, 0x0768, 0x7d02, 0x0e01, 0x999e, 0x5893, 0x00d6,
+-	0x7d01, 0x008e, 0x5593, 0x05a0, 0x5d93, 0x06a0, 0x7802, 0x65c8,
+-	0x5d04, 0x7c0f, 0x4e00, 0x7c08, 0x0769, 0x7d03, 0x65c8, 0x7e09,
+-	0x99ab, 0x5d04, 0x7f06, 0x0689, 0x5093, 0x4800, 0x7d01, 0x9996,
+-	0x99b7, 0x5593, 0x009d, 0x0007, 0x6cff, 0xd9be, 0x990c, 0x0000,
+-	0x54e3, 0x55eb, 0x4d00, 0x7c01, 0x990c, 0x98f4, 0x54e3, 0x55eb,
+-	0x0aff, 0x0211, 0x1aff, 0x077f, 0x7c02, 0x05a0, 0x99cb, 0x009d,
+-	0x058c, 0x05ba, 0x05a0, 0x0210, 0x04ba, 0x04ad, 0x0454, 0x0006,
+-	0xc1e3, 0x57db, 0x52fb, 0x6ac3, 0x52f3, 0x6a05, 0x008f, 0x00d5,
+-	0x7d01, 0x008d, 0x05a0, 0x5deb, 0x0478, 0x7d03, 0x0479, 0x7d2b,
+-	0x7c1e, 0x0479, 0x7c33, 0x56ee, 0x0f00, 0x55fb, 0x0760, 0x7d02,
+-	0x6dc3, 0x99ec, 0x1d04, 0x6dc3, 0x62c8, 0x7e3b, 0x0660, 0x7d02,
+-	0x0210, 0x0212, 0x6a09, 0x7f35, 0x0212, 0x6a09, 0x7f32, 0x0212,
+-	0x6a09, 0x7f2f, 0x1f01, 0x2003, 0x4800, 0x7ce7, 0x9a20, 0x55fb,
+-	0x6dc7, 0x0015, 0x0015, 0x0015, 0x7805, 0x62c8, 0x6a0b, 0x62c8,
+-	0x6a0b, 0x6dc7, 0x9a1f, 0x55fb, 0x6dc7, 0x0015, 0x0015, 0x7805,
+-	0x62c8, 0x6a0a, 0x62c8, 0x6a0a, 0x6dc7, 0x9a1f, 0x55fb, 0x6dc7,
+-	0x0015, 0x7805, 0x62c8, 0x6a09, 0x62c8, 0x6a09, 0x6dc7, 0x7c09,
+-	0x6a28, 0x7f07, 0x0000, 0x55eb, 0x4d00, 0x7d05, 0xc1fa, 0x57db,
+-	0x99d6, 0xc277, 0x0454, 0xc20a, 0x99d1
++0xc1e3, 0x57db, 0x5fe3, 0x57e3, 0x52f3, 0x6a01, 0x008f, 0x00d5,
++0x7d01, 0x008d, 0x05a0, 0x5deb, 0x0478, 0x7d03, 0x0479, 0x7d2c,
++0x7c36, 0x0479, 0x7c1f, 0x56ee, 0x0f00, 0x0660, 0x7d05, 0x6509,
++0x7e43, 0x620a, 0x7e41, 0x9820, 0x620a, 0x7e3e, 0x6509, 0x7e3c,
++0x0512, 0x0512, 0x02ad, 0x0760, 0x7d03, 0x55fb, 0x6dd3, 0x982b,
++0x55fb, 0x1d04, 0x6dd3, 0x6ac8, 0x7f2f, 0x1f01, 0x2003, 0x4800,
++0x7ce4, 0x9853, 0x55fb, 0x6dd7, 0x0015, 0x7805, 0x6209, 0x6ac8,
++0x6209, 0x6ac8, 0x6dd7, 0x9852, 0x55fb, 0x6dd7, 0x0015, 0x0015,
++0x7805, 0x620a, 0x6ac8, 0x620a, 0x6ac8, 0x6dd7, 0x9852, 0x55fb,
++0x6dd7, 0x0015, 0x0015, 0x0015, 0x7805, 0x620b, 0x6ac8, 0x620b,
++0x6ac8, 0x6dd7, 0x7c09, 0x6ddf, 0x7f07, 0x0000, 0x55eb, 0x4d00,
++0x7d07, 0xc1fa, 0x57e3, 0x9806, 0x0007, 0x68cc, 0x680c, 0xc213,
++0xc20a, 0x9803, 0xc1d9, 0xc1e3, 0x57db, 0x5fe3, 0x57e3, 0x52f3,
++0x6a21, 0x008f, 0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x56fb,
++0x0478, 0x7d03, 0x0479, 0x7d2a, 0x7c31, 0x0479, 0x7c20, 0x0b70,
++0x0311, 0x53eb, 0x0f00, 0x0360, 0x7d05, 0x6509, 0x7e37, 0x620a,
++0x7e35, 0x9886, 0x620a, 0x7e32, 0x6509, 0x7e30, 0x0512, 0x0512,
++0x02ad, 0x0760, 0x7c02, 0x5a06, 0x988e, 0x5a26, 0x7f27, 0x1f01,
++0x2003, 0x4800, 0x7ce8, 0x0b70, 0x0311, 0x5313, 0x98af, 0x0015,
++0x7804, 0x6209, 0x5a06, 0x6209, 0x5a26, 0x98ae, 0x0015, 0x0015,
++0x7804, 0x620a, 0x5a06, 0x620a, 0x5a26, 0x98ae, 0x0015, 0x0015,
++0x0015, 0x7804, 0x620b, 0x5a06, 0x620b, 0x5a26, 0x7c07, 0x0000,
++0x55eb, 0x4d00, 0x7d06, 0xc1fa, 0x57e3, 0x9869, 0x0007, 0x680c,
++0xc213, 0xc20a, 0x9866, 0x0b70, 0x0311, 0x5313, 0x076c, 0x7c01,
++0xc1d9, 0x5efb, 0x068a, 0x076b, 0x7c01, 0xc1d9, 0x5ef3, 0x59db,
++0x58d3, 0x018f, 0x0110, 0x390f, 0x008b, 0xc13c, 0x7d2b, 0x5ac0,
++0x5bc8, 0xc14e, 0x7c27, 0x0388, 0x0689, 0x5ce3, 0x0dff, 0x0511,
++0x1dff, 0x05bc, 0x073e, 0x4d00, 0x7d18, 0x0870, 0x0011, 0x077e,
++0x7d09, 0x077d, 0x7d02, 0x5228, 0x98e6, 0x52f8, 0x54db, 0x02bc,
++0x02cc, 0x7c09, 0x077c, 0x7d02, 0x5228, 0x98ef, 0x52f8, 0x54d3,
++0x02bc, 0x02cc, 0x7d09, 0x0400, 0x98dd, 0x008b, 0x52c0, 0x53c8,
++0xc159, 0x7dd6, 0x0200, 0x98cd, 0x08ff, 0x00bf, 0x077f, 0x7d15,
++0x0488, 0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x028f, 0x0212,
++0x0212, 0x3aff, 0x05da, 0x7c02, 0x073e, 0x9918, 0x02a4, 0x02dd,
++0x7d02, 0x073e, 0x9918, 0x075e, 0x9918, 0x55eb, 0x0598, 0x5deb,
++0x52f3, 0x54fb, 0x076a, 0x7d26, 0x076c, 0x7d01, 0x9955, 0x076b,
++0x7c57, 0x0769, 0x7d04, 0x0768, 0x7d02, 0x0e01, 0x992f, 0x5893,
++0x00d6, 0x7d01, 0x008e, 0x5593, 0x05a0, 0x5d93, 0x06a0, 0x7802,
++0x5502, 0x5d04, 0x7c1d, 0x4e00, 0x7c08, 0x0769, 0x7d03, 0x5502,
++0x7e17, 0x993c, 0x5d04, 0x7f14, 0x0689, 0x5093, 0x4800, 0x7d01,
++0x9927, 0x99a0, 0x0015, 0x7806, 0x5502, 0x5d04, 0x074f, 0x5502,
++0x5d24, 0x072f, 0x7c01, 0x99a0, 0x0017, 0x076f, 0x7c01, 0x2001,
++0x5593, 0x009d, 0x0007, 0xd9a7, 0x98f5, 0x6cd3, 0x0769, 0x7d04,
++0x0768, 0x7d02, 0x0e01, 0x9964, 0x5893, 0x00d6, 0x7d01, 0x008e,
++0x5593, 0x05a0, 0x5d93, 0x06a0, 0x7802, 0x5502, 0x6dc8, 0x7c0f,
++0x4e00, 0x7c08, 0x0769, 0x7d03, 0x5502, 0x7e09, 0x9971, 0x6dc8,
++0x7f06, 0x0689, 0x5093, 0x4800, 0x7d01, 0x995c, 0x99a0, 0x999a,
++0x6ac3, 0x0769, 0x7d04, 0x0768, 0x7d02, 0x0e01, 0x9987, 0x5893,
++0x00d6, 0x7d01, 0x008e, 0x5593, 0x05a0, 0x5d93, 0x06a0, 0x7802,
++0x65c8, 0x5d04, 0x7c0f, 0x4e00, 0x7c08, 0x0769, 0x7d03, 0x65c8,
++0x7e09, 0x9994, 0x5d04, 0x7f06, 0x0689, 0x5093, 0x4800, 0x7d01,
++0x997f, 0x99a0, 0x5593, 0x009d, 0x0007, 0x6cff, 0xd9a7, 0x98f5,
++0x0000, 0x54e3, 0x55eb, 0x4d00, 0x7c01, 0x98f5, 0x98dd, 0x54e3,
++0x55eb, 0x0aff, 0x0211, 0x1aff, 0x077f, 0x7c02, 0x05a0, 0x99b4,
++0x009d, 0x058c, 0x05ba, 0x05a0, 0x0210, 0x04ba, 0x04ad, 0x0454,
++0x0006, 0xc1e3, 0x57db, 0x52fb, 0x6ac3, 0x52f3, 0x6a05, 0x008f,
++0x00d5, 0x7d01, 0x008d, 0x05a0, 0x5deb, 0x0478, 0x7d03, 0x0479,
++0x7d2b, 0x7c1e, 0x0479, 0x7c33, 0x56ee, 0x0f00, 0x55fb, 0x0760,
++0x7d02, 0x6dc3, 0x99d5, 0x1d04, 0x6dc3, 0x62c8, 0x7e3c, 0x0660,
++0x7d02, 0x0210, 0x0212, 0x6a09, 0x7f36, 0x0212, 0x6a09, 0x7f33,
++0x0212, 0x6a09, 0x7f30, 0x1f01, 0x2003, 0x4800, 0x7ce7, 0x9a09,
++0x55fb, 0x6dc7, 0x0015, 0x0015, 0x0015, 0x7805, 0x62c8, 0x6a0b,
++0x62c8, 0x6a0b, 0x6dc7, 0x9a08, 0x55fb, 0x6dc7, 0x0015, 0x0015,
++0x7805, 0x62c8, 0x6a0a, 0x62c8, 0x6a0a, 0x6dc7, 0x9a08, 0x55fb,
++0x6dc7, 0x0015, 0x7805, 0x62c8, 0x6a09, 0x62c8, 0x6a09, 0x6dc7,
++0x7c0a, 0x6a28, 0x57db, 0x7f07, 0x0000, 0x55eb, 0x4d00, 0x7d05,
++0xc1fa, 0x57db, 0x99bf, 0xc277, 0x0454, 0xc20a, 0x99ba, 0xc1d9,
++0xc1e3, 0x57db, 0x52f3, 0x6a05, 0x008f, 0x00d5, 0x7d01, 0x008d,
++0x05a0, 0x56fb, 0x0478, 0x7d03, 0x0479, 0x7d29, 0x7c1f, 0x0479,
++0x7c2e, 0x5de3, 0x0d70, 0x0511, 0x55ed, 0x0f00, 0x0760, 0x7d02,
++0x5206, 0x9a33, 0x5226, 0x7e33, 0x0560, 0x7d02, 0x0210, 0x0212,
++0x6a09, 0x7f2d, 0x0212, 0x6a09, 0x7f2a, 0x0212, 0x6a09, 0x7f27,
++0x1f01, 0x2003, 0x4800, 0x7cea, 0x55e3, 0x9a5e, 0x0015, 0x0015,
++0x0015, 0x7804, 0x5206, 0x6a0b, 0x5226, 0x6a0b, 0x9a5d, 0x0015,
++0x0015, 0x7804, 0x5206, 0x6a0a, 0x5226, 0x6a0a, 0x9a5d, 0x0015,
++0x7804, 0x5206, 0x6a09, 0x5226, 0x6a09, 0x7c09, 0x6a28, 0x7f07,
++0x0000, 0x57db, 0x4d00, 0x7d05, 0xc1fa, 0x57db, 0x9a1c, 0xc277,
++0x0454, 0xc20a, 0x9a19
+ };
+ #endif
++
+diff --git a/arch/arm/plat-mxc/include/mach/sdma.h b/arch/arm/plat-mxc/include/mach/sdma.h
+index f764cfd..d134d9d 100644
+--- a/arch/arm/plat-mxc/include/mach/sdma.h
++++ b/arch/arm/plat-mxc/include/mach/sdma.h
+@@ -321,10 +321,21 @@ typedef struct {
+ 
+ 	int mxc_sdma_utra_addr;
+ 
++	/*! address of peripheral ssi to mcu script */
++	int mxc_sdma_ssiapp_2_mcu_addr;
++	/*! address of mcu to peripheral ssi script */
++	int mxc_sdma_mcu_2_ssiapp_addr;
++
++	/*! address of shared peripheral ssi to mcu script */
++	int mxc_sdma_ssish_2_mcu_addr;
++	/*! address of mcu to shared peripheral ssi script */
++	int mxc_sdma_mcu_2_ssish_addr;
++
+ 	/*! address where ram code starts */
+ 	int mxc_sdma_ram_code_start_addr;
+ 	/*! size of the ram code */
+ 	int mxc_sdma_ram_code_size;
++
+ 	/*! RAM image address */
+ 	unsigned short *mxc_sdma_start_addr;
+ } sdma_script_start_addrs;
+diff --git a/arch/arm/plat-mxc/sdma/sdma.c b/arch/arm/plat-mxc/sdma/sdma.c
+index 5968102..a8191da 100644
+--- a/arch/arm/plat-mxc/sdma/sdma.c
++++ b/arch/arm/plat-mxc/sdma/sdma.c
+@@ -303,8 +303,12 @@ static unsigned short sdma_get_pc(sdma_periphT peripheral_type,
+ 		default:
+ 			res = -EINVAL;
+ 		}
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++	} else if (peripheral_type == CSPI || peripheral_type == EXT) {
++#else
+ 	} else if (peripheral_type == CSPI || peripheral_type == EXT ||
+ 		   peripheral_type == SSI) {
++#endif
+ 		switch (transfer_type) {
+ 		case per_2_int:
+ 			res = sdma_script_addrs.mxc_sdma_app_2_per_addr;
+@@ -321,9 +325,15 @@ static unsigned short sdma_get_pc(sdma_periphT peripheral_type,
+ 		default:
+ 			res = -EINVAL;
+ 		}
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++	} else if (peripheral_type == MMC ||
++		   peripheral_type == SDHC || peripheral_type == CSPI_SP ||
++		   peripheral_type == ESAI || peripheral_type == MSHC_SP) {
++#else
+ 	} else if (peripheral_type == SSI_SP || peripheral_type == MMC ||
+ 		   peripheral_type == SDHC || peripheral_type == CSPI_SP ||
+ 		   peripheral_type == ESAI || peripheral_type == MSHC_SP) {
++#endif
+ 		switch (transfer_type) {
+ 		case per_2_int:
+ 			res = sdma_script_addrs.mxc_sdma_shp_2_per_addr;
+@@ -392,6 +402,42 @@ static unsigned short sdma_get_pc(sdma_periphT peripheral_type,
+ 		} else {
+ 			res = -EINVAL;
+ 		}
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++	} else if (peripheral_type == SSI) {
++		switch (transfer_type) {
++		case per_2_int:
++			res = sdma_script_addrs.mxc_sdma_ssiapp_2_mcu_addr;
++			break;
++		case per_2_emi:
++			res = sdma_script_addrs.mxc_sdma_ssiapp_2_mcu_addr;
++			break;
++		case int_2_per:
++			res = sdma_script_addrs.mxc_sdma_mcu_2_ssiapp_addr;
++			break;
++		case emi_2_per:
++			res = sdma_script_addrs.mxc_sdma_mcu_2_ssiapp_addr;
++			break;
++		default:
++			res = -EINVAL;
++		}
++	} else if (peripheral_type == SSI_SP) {
++		switch (transfer_type) {
++		case per_2_int:
++			res = sdma_script_addrs.mxc_sdma_ssish_2_mcu_addr;
++			break;
++		case int_2_per:
++			res = sdma_script_addrs.mxc_sdma_mcu_2_ssish_addr;
++			break;
++		case per_2_emi:
++			res = sdma_script_addrs.mxc_sdma_ssish_2_mcu_addr;
++			break;
++		case emi_2_per:
++			res = sdma_script_addrs.mxc_sdma_mcu_2_ssish_addr;
++			break;
++		default:
++			res = -EINVAL;
++		}
++#endif
+ 	}
+ 
+ 	if (res < 0) {
+-- 
+1.5.4.4
+

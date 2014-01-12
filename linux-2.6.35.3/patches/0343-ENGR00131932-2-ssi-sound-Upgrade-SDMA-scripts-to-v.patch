@@ -1,0 +1,70 @@
+From f3e7e14b77b21f693b91eccfa06981878b67906a Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Fri, 15 Oct 2010 09:10:43 +0800
+Subject: [PATCH] ENGR00131932-2 ssi, sound: Upgrade SDMA scripts to v1.1.0 version
+
+New sdma script support double ssi fifo.
+This feature is not enabled by default in mx51 and mx53 configs.
+
+Enable double ssi fifo for audio, if underrun/overrun happens,
+It is possible to cuase stereo channel swapped and can't be recovered.
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ sound/soc/imx/Kconfig               |    6 ++++++
+ sound/soc/imx/imx-3stack-sgtl5000.c |    5 ++++-
+ sound/soc/imx/imx-ssi.c             |    6 +++++-
+ 3 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/imx/Kconfig b/sound/soc/imx/Kconfig
+index 38b7dcd..291c196 100644
+--- a/sound/soc/imx/Kconfig
++++ b/sound/soc/imx/Kconfig
+@@ -97,4 +97,10 @@ config SND_SOC_IMX_3STACK_CS42888
+ 	  Say Y if you want to add support for Soc audio on IMX 3STACK
+ 	  with the CS42888
+ 
++config MXC_SSI_DUAL_FIFO
++	bool "MXC SSI enable dual fifoes"
++	def_bool y
++	depends on SND_MXC_SOC_SSI && (ARCH_MX51 || ARCH_MX53)
++	help
++	  Say Y if you want to use 2 ssi fifo for audio transfer
+ endif
+diff --git a/sound/soc/imx/imx-3stack-sgtl5000.c b/sound/soc/imx/imx-3stack-sgtl5000.c
+index c1b7d40..cccc0bd 100644
+--- a/sound/soc/imx/imx-3stack-sgtl5000.c
++++ b/sound/soc/imx/imx-3stack-sgtl5000.c
+@@ -585,8 +585,11 @@ static int __devinit imx_3stack_sgtl5000_probe(struct platform_device *pdev)
+ 
+ 	if (plat->src_port == 2)
+ 		sgtl5000_cpu_dai = imx_ssi_dai[2];
+-	else
++	else if (plat->src_port == 1)
+ 		sgtl5000_cpu_dai = imx_ssi_dai[0];
++	else if (plat->src_port == 7)
++		sgtl5000_cpu_dai = imx_ssi_dai[4];
++
+ 
+ 	imx_3stack_dai.cpu_dai = sgtl5000_cpu_dai;
+ 
+diff --git a/sound/soc/imx/imx-ssi.c b/sound/soc/imx/imx-ssi.c
+index 20e29c1..3d4dde4 100644
+--- a/sound/soc/imx/imx-ssi.c
++++ b/sound/soc/imx/imx-ssi.c
+@@ -325,7 +325,11 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
+ 	/* tdm - only for stereo atm */
+ 	if (priv->network_mode)
+ 		scr |= SSI_SCR_NET;
+-
++#ifdef CONFIG_MXC_SSI_DUAL_FIFO
++	stcr |= SSI_STCR_TFEN1;
++	srcr |= SSI_SRCR_RFEN1;
++	scr |= SSI_SCR_TCH_EN;
++#endif
+ 	__raw_writel(stcr, ioaddr + SSI_STCR);
+ 	__raw_writel(srcr, ioaddr + SSI_SRCR);
+ 	__raw_writel(scr, ioaddr + SSI_SCR);
+-- 
+1.5.4.4
+

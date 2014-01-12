@@ -1,0 +1,35 @@
+From da755b938f72f03538d2a04ef2953dbfca427071 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Tue, 28 Sep 2010 11:42:43 +0800
+Subject: [PATCH] ENGR00132491-3 ath6kl upgrade: enable WEXT implicitely
+
+Atheros ath6kl driver is based on WEXT subsystem and therefore
+needs to select CONFIG_WIRELESS_EXT for compiling.
+
+However in the latest kernel such as 2.6.35,
+this option can no longer be configured using menuconfig.
+
+So we select it when the user selects ath6kl driver to compile.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/net/wireless/ath6kl/Kconfig |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/wireless/ath6kl/Kconfig b/drivers/net/wireless/ath6kl/Kconfig
+index 97735a4..fa4c244 100644
+--- a/drivers/net/wireless/ath6kl/Kconfig
++++ b/drivers/net/wireless/ath6kl/Kconfig
+@@ -2,6 +2,9 @@ config ATH6K_LEGACY
+ 	tristate "Atheros AR600x support (non mac80211)"
+ 	depends on MMC
+ 	depends on WLAN
++	select WIRELESS_EXT
++	select WEXT_SPY
++	select WEXT_PRIV
+ 	help
+ 	This module adds support for wireless adapters based on Atheros AR600x chipset running over SDIO. If you choose to build it as a module, it will be called ath6kl.
+ 
+-- 
+1.5.4.4
+

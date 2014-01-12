@@ -1,0 +1,163 @@
+<HEAD><TITLE>Sendo um servidor de DNS mestre</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Tendo MaraDNS como um servidor DNS mestre</H1>
+
+Um servidor de DNS mestre (às vezes chamado primário) é um servidor
+de DNS que outros servidores de DNS podem transferir arquivos de 
+zona automaticamente. Existe limitações para deste modo de transferência
+de arquivos de zona; arquivos de zona transferidos deste modo perdem 
+todos os comentários e a ordenação dos registros no arquivo de zona  
+normalmente é mudado.  
+
+<p>
+Em outras palavras, o DNS tem um mecanismo para automaticamente ter 
+múltiplo diferentes servidores com os mesmos dados do arquivo de 
+zona.  Isto é semelhante ao programa ao <tt>rsync</tt>; assim  
+permite a pessoa mudar um arquivo de zona na máquina mestre, 
+e então as máquinas escravos automaticamente transferiram o arquivo 
+de zona da máquina mestre.  
+
+<p>
+Isto é útil quando se quiser ter múltiplas máquinas que servem dados de DNS.  
+Também é útil quando se quer registrar um domínio, mas só tem único IP válido.
+Existem vários serviços de DNS secundário (escravo) grátis na internet que se 
+pode usar para ter um segundo IP para um servidor de DNS de um domínio.  
+
+<p>
+Para configurar isto, é preciso rodar o daemon <tt>zoneserver</tt> além
+do daemon <tt>maradns</tt>. Ambos os daemons usam o mesmo arquivo
+de configuração <tt>mararc</tt>; Existe algumas variáveis no <tt>mararc</tt>
+que afetam o daemon <tt>zoneserver</tt> mas não o <tt>maradns</tt> 
+(e vice-versa).  
+			
+<p>
+Ao configurar um servidor de DNS mestre, só uma variável adicional
+no <tt>mararc</tt> precisa ser configurada, <tt>zone_transfer_acl</tt>.
+Esta variável precisa listar os IPs dos servidores de DNS escravos que transferirão as
+zonas do servidor mestre. Por exemplo, se os servidores de DNS escravos 
+possuem os IPs 192.168.72.34, 10.34.56.98, e 172.17.23.37, a linha, se 
+parecerá assim:  
+
+<blockquote>
+<tt>zone_transfer_acl = "192.168.72.34, 10.34.56.98, 172.17.23.37"</tt>
+</blockquote>
+
+Se você não conhece o IP do servidor de DNS escravo, você pode permitir 
+qualquer computador da internet conectar-se ao servidor de zona:
+
+<blockquote><tt>zone_transfer_acl = "0.0.0.0/0"</tt></blockquote>
+
+Note que isto fará potencialmente informações privadas públicas.
+
+<p>
+
+Algo assim também pode ser feito:
+
+<blockquote>
+<tt>zone_transfer_acl = "192.168.42.0/24, 10.0.0.0/8, 172.19.0.0/16"</tt>
+</blockquote>
+
+Isto permitirá qualquer IP que começe com "192.168.42" conectar-se ao
+servidor de zona, qualquer IP que começe com "10" conectar-se ao servidor
+de zona,  e qualquer IP que começe com "172.19" conectar-se ao servidor
+de zona.  
+
+<p>
+Aqui é um exemplo do arquivo mararc com o ip 10.1.2.3, e serve a zona 
+<tt>example.com </tt> para o IPs 192.168.72.34, 10.34.56.98, e  
+172.17.23.37:  
+
+<pre>
+ipv4_bind_addresses = "10.1.2.3"
+chroot_dir = "/etc/maradns"
+csv2 = {}
+csv2["example.com."] = "db.example.com"
+zone_transfer_acl = "192.168.72.34, 10.34.56.98, 172.17.23.37"
+</pre>
+
+<hr>
+
+<h2>Como registros SOA afetam os servidores de zona escravo?</h2>
+
+O registro de SOA diz para o servidor de zona escravo com que 
+freqüência conferir se um arquivo de zona precisa ser recarregado.  
+Aqui é como um registro SOA se parece:  
+
+<blockquote><tt>
+example.com. SOA example.com. hostmaster@example.com.
+1 7200 3600 604800 1800</tt>
+</blockquote>
+
+O primeiro campo é o nome da zona para qual esse registro SOA é. 
+
+<p>
+O segundo campo conta ao parser do csv2 que este é um registro
+de SOA.
+
+<p>
+O terceiro campo é o nome da máquina que é o servidor de DNS 
+mestre para esta zona.  
+
+<p>
+O quarto campo é o endereço de e-mail da pessoa que administra
+essa zona.
+
+<p>
+O quinto campo (primeiro campo numérico) é o que chamo de 
+número "serial". Este número é usado pelo servidores de DNS
+escravo para ver se o arquivo de zona sofreu alterações. Este 
+número deveria ser aumentado toda vez que um arquivo de zona
+é mudado.  MaraDNS, quando gera um registro SOA sintético, vê 
+quando o arquivo de zona foi mudado pela última vez, e usa um selo
+de tempo que atualiza a cada seis segundos como um número de série
+de SOA.
+
+<p>
+O sexto campo (segundo campo numérico) é o "refresh" para o domínio;
+este é com que freqüência (em segundos) um servidor de DNS escravo
+poderá conferir se o número serial do servidor de DNS mestre mudou.
+
+<p>
+O sétimo campo (terceiro campo numérico) é o "retry" para o domínio; 
+quando o servidor de dns mestre não está rodando, este é com que 
+freqüência o servidor de dns escravo conferirá se o servidor mestre 
+está ativo novamente. Este valor, como todos os valores de tempo,
+está em segundos.
+
+<p>
+O oitávo campo (quarto campo numérico) é o "expire" para o domínio; 
+Isto é quanto tempo o servidor escravo esperará antes de já não tentar
+obter uma zona de um servidor mestre quando o mesmo não estiver 
+rodando. Este deverá ser um valor grande.
+<p>
+
+O nono campo (quinto campo numérico) é o "minimum" para o domínio;  
+isto não afeta como MaraDNS processa um arquivo de zona e não é usado  
+por servidores de dns escravo (determina TTL padrão/mínimo com outro  
+servidores de dns).
+
+<hr>
+
+O programa <tt>zoneserver</tt> também pode ser usado para servir
+outros registros DNS sobre TCP; veja o arquivo <A href=dnstcp.html>dnstcp</A> 
+para detalhes.
+
+</BODY></HTML>

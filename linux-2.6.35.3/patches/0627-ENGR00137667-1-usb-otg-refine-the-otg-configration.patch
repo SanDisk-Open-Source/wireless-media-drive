@@ -1,0 +1,70 @@
+From 723cdb38b346a48b6053aed280e32f454853ad42 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Thu, 6 Jan 2011 16:46:11 +0800
+Subject: [PATCH] ENGR00137667-1 usb-otg: refine the otg configration
+
+CONFIG_USB_OTG & CONFIG_USB_OTG_UTILS is better to be only
+selected by CONFIG_MXC_OTG. In that case, the user only
+needs to select/de-select one config to enable/disable usb otg configuration.
+
+However, the user needs to disable host or device function for otg port
+if the user does not choose CONFIG_MXC_OTG. The reason for that is
+there are two usb drivers for host and udc, but they uses the same resources.
+So, we only needs to use one driver for non-otg mode.
+
+Reported-by: Robby Cai <r63905@freescale.com>
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/Kconfig |    3 +--
+ drivers/usb/host/Kconfig   |    1 -
+ drivers/usb/otg/Kconfig    |    1 +
+ 3 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/gadget/Kconfig b/drivers/usb/gadget/Kconfig
+index cc5f056..908756d 100644
+--- a/drivers/usb/gadget/Kconfig
++++ b/drivers/usb/gadget/Kconfig
+@@ -477,7 +477,6 @@ config USB_GADGET_ARC
+ 	boolean "Freescale USB Device Controller"
+ 	depends on ARCH_MXC || ARCH_STMP3XXX || ARCH_MXS
+ 	select USB_GADGET_DUALSPEED
+-	select USB_OTG_UTILS
+ 	select USB_GADGET_DUALSPEED if USB_GADGET_FSL_1504 || USB_GADGET_FSL_UTMI
+ 	help
+ 	   Some Freescale processors have a USBOTG controller,
+@@ -578,7 +577,7 @@ config USB_GADGET_DUALSPEED
+ config USB_OTG
+ 	boolean "OTG Support"
+ 	depends on (USB_GADGET_OMAP && ARCH_OMAP_OTG && USB_OHCI_HCD) || \
+-		   (USB_GADGET_ARC && (ARCH_MXC || ARCH_STMP3XXX || ARCH_MXS) && USB_EHCI_HCD)
++		   (USB_GADGET_ARC && (ARCH_MXC || ARCH_STMP3XXX || ARCH_MXS) && USB_EHCI_HCD && MXC_OTG)
+ 	help
+ 	   The most notable feature of USB OTG is support for a
+ 	   "Dual-Role" device, which can act as either a device
+diff --git a/drivers/usb/host/Kconfig b/drivers/usb/host/Kconfig
+index f90afd3..226f6c8 100644
+--- a/drivers/usb/host/Kconfig
++++ b/drivers/usb/host/Kconfig
+@@ -62,7 +62,6 @@ config USB_EHCI_HCD
+ config USB_EHCI_ARC
+ 	bool "Support for Freescale controller"
+ 	depends on USB_EHCI_HCD && (ARCH_MXC || ARCH_STMP3XXX || ARCH_MXS)
+-	select USB_OTG_UTILS
+ 	---help---
+ 	   Some Freescale processors have an integrated High Speed
+ 	   USBOTG controller, which supports EHCI host mode.
+diff --git a/drivers/usb/otg/Kconfig b/drivers/usb/otg/Kconfig
+index 283e1b7..d061b1c 100644
+--- a/drivers/usb/otg/Kconfig
++++ b/drivers/usb/otg/Kconfig
+@@ -72,6 +72,7 @@ config NOP_USB_XCEIV
+ config MXC_OTG
+ 	tristate "USB OTG pin detect support"
+ 	select USB_OTG
++	select USB_OTG_UTILS
+ 	depends on USB_GADGET_ARC && USB_EHCI_HCD
+ 	help
+ 	  Support for USB OTG PIN detect on MXC platforms.
+-- 
+1.5.4.4
+

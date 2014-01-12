@@ -1,0 +1,69 @@
+From a4e6f5dba3859e6ae5261d07577ac3c5dc883234 Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Tue, 25 Jan 2011 16:31:00 +0800
+Subject: [PATCH] ENGR00138477 USB: perfect usb debug file
+
+Open usb clock before view usb debug file. avoid system hang when view
+usb debug information in suspend state.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |   10 ++++++----
+ drivers/usb/otg/fsl_otg.c       |    3 ++-
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 4e9e356..d1f9af2 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -2391,6 +2391,7 @@ static int fsl_proc_read(char *page, char **start, off_t off, int count,
+ 	if (off != 0)
+ 		return 0;
+ 
++	dr_clk_gate(true);
+ 	spin_lock_irqsave(&udc->lock, flags);
+ 
+ 	/* ------basic driver infomation ---- */
+@@ -2613,12 +2614,13 @@ static int fsl_proc_read(char *page, char **start, off_t off, int count,
+ 						req->req.length, req->req.buf);
+ 					size -= t;
+ 					next += t;
+-					} /* end for each_entry of ep req */
+-				}	/* end for else */
+-			}	/* end for if(ep->queue) */
+-		}		/* end (ep->desc) */
++				} /* end for each_entry of ep req */
++			}	/* end for else */
++		}	/* end for if(ep->queue) */
++	}		/* end (ep->desc) */
+ 
+ 	spin_unlock_irqrestore(&udc->lock, flags);
++	dr_clk_gate(false);
+ 
+ 	*eof = 1;
+ 	return count - size;
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index 9fe5eb7..51f1df4 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -1088,6 +1088,7 @@ static int otg_proc_read(char *page, char **start, off_t off, int count,
+ 	if (off != 0)
+ 		return 0;
+ 
++	fsl_otg_clk_gate(true);
+ 	spin_lock_irqsave(&fsm->lock, flags);
+ 
+ 	/* ------basic driver infomation ---- */
+@@ -1192,8 +1193,8 @@ static int otg_proc_read(char *page, char **start, off_t off, int count,
+ 	size -= t;
+ 	next += t;
+ #endif
+-
+ 	spin_unlock_irqrestore(&fsm->lock, flags);
++	fsl_otg_clk_gate(false);
+ 
+ 	*eof = 1;
+ 	return count - size;
+-- 
+1.5.4.4
+

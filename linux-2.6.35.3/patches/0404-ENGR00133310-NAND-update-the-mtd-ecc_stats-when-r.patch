@@ -1,0 +1,44 @@
+From 60055f62a9e5bc1cd9415bc4e517b5a12e8f8fac Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Fri, 5 Nov 2010 16:54:07 +0800
+Subject: [PATCH] ENGR00133310 NAND : update the mtd->ecc_stats when reading page failed
+
+If tell the real correcting infomation to the upper layer of
+MTD, the torture thread of UBIFS will do the torture test in
+a very often frequency. This will eat up all the reservation blocks
+of the UBIFS.
+
+So tell the real correcting infomation only when the failure occured,
+or the corrected times nearly reached the ECC threshold.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c |   12 ++++++++----
+ 1 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index 181cb47..c7a0b76 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -677,10 +677,14 @@ static int mil_ecc_read_page(struct mtd_info *mtd, struct nand_chip *nand,
+ 
+ 	}
+ 
+-	/* Propagate ECC status to the owning MTD. */
+-
+-	mtd->ecc_stats.failed    += failed;
+-	mtd->ecc_stats.corrected += corrected;
++	/*
++	 * Propagate ECC status to the owning MTD only when failed or
++	 * corrected times nearly reaches our ECC correction threshold.
++	 */
++	if (failed || corrected >= (nfc_geo->ecc_strength - 1)) {
++		mtd->ecc_stats.failed    += failed;
++		mtd->ecc_stats.corrected += corrected;
++	}
+ 
+ 	/*
+ 	 * It's time to deliver the OOB bytes. See mil_ecc_read_oob() for
+-- 
+1.5.4.4
+

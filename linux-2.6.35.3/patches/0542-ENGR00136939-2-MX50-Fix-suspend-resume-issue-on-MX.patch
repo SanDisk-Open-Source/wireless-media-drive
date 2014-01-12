@@ -1,0 +1,35 @@
+From 443bf7a861d9720b546b6df15458bcf3814b9d58 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 15 Dec 2010 13:52:22 -0600
+Subject: [PATCH] ENGR00136939-2: MX50: Fix suspend/resume issue on MX50 RDP
+
+Register SPI device first so that it will be the last device
+to be suspended and first device to be resumed.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 13fcc9a..4d7eaab 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1381,11 +1381,12 @@ static void __init mxc_board_init(void)
+ 	mxc_cpu_common_init();
+ 	mx50_rdp_io_init();
+ 
++	mxc_register_device(&mxcspi1_device, &mxcspi1_data);
++	mxc_register_device(&mxcspi3_device, &mxcspi3_data);
++
+ 	mxc_register_device(&mxc_dma_device, NULL);
+ 	mxc_register_device(&mxs_dma_apbh_device, &dma_apbh_data);
+ 	mxc_register_device(&mxc_wdt_device, NULL);
+-	mxc_register_device(&mxcspi1_device, &mxcspi1_data);
+-	mxc_register_device(&mxcspi3_device, &mxcspi3_data);
+ 	mxc_register_device(&mxci2c_devices[0], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[2], &mxci2c_data);
+-- 
+1.5.4.4
+

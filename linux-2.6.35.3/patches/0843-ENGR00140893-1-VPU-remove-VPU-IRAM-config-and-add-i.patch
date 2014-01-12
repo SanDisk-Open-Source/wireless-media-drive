@@ -1,0 +1,92 @@
+From cae508376e74c7e3aa11f840d0b9f040d2459e95 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Tue, 22 Mar 2011 18:39:36 +0800
+Subject: [PATCH] ENGR00140893-1 VPU: remove VPU IRAM config and add iram info to plat data.
+
+One kernel image is requested, however, we need to enable iram
+for performance improvement on mx53, and disable it on mx51 due
+to known issue. So use platform data to pass vpu iram disable/enable
+flag. And considering requested iram size also can be different per
+requirement, iram size is also set in platform data.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ drivers/mxc/vpu/Kconfig     |    8 --------
+ drivers/mxc/vpu/mxc_vpu.c   |   12 ++++++------
+ include/linux/fsl_devices.h |    2 ++
+ 3 files changed, 8 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/mxc/vpu/Kconfig b/drivers/mxc/vpu/Kconfig
+index 37e55e0..144a4c2 100644
+--- a/drivers/mxc/vpu/Kconfig
++++ b/drivers/mxc/vpu/Kconfig
+@@ -12,14 +12,6 @@ config MXC_VPU
+ 	  The VPU codec device provides codec function for H.264/MPEG4/H.263,
+ 	  as well as MPEG2/VC-1/DivX on some platforms.
+ 
+-config MXC_VPU_IRAM
+-	  tristate "Use IRAM as temporary buffer for VPU to enhance performace"
+-	  depends on (ARCH_MX37 || ARCH_MX5)
+-	  default y
+-	---help---
+-	  The VPU can use internal RAM as temporary buffer to save external
+-	  memroy bandwith, thus to enhance video performance.
+-
+ config MXC_VPU_DEBUG
+ 	bool "MXC VPU debugging"
+ 	depends on MXC_VPU != n
+diff --git a/drivers/mxc/vpu/mxc_vpu.c b/drivers/mxc/vpu/mxc_vpu.c
+index 67b9ebb..0c202c0 100644
+--- a/drivers/mxc/vpu/mxc_vpu.c
++++ b/drivers/mxc/vpu/mxc_vpu.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2006-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2006-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -593,13 +593,13 @@ static int vpu_dev_probe(struct platform_device *pdev)
+ 
+ 	vpu_plat = pdev->dev.platform_data;
+ 
+-	if (VPU_IRAM_SIZE)
+-		iram_alloc(VPU_IRAM_SIZE, &addr);
++	if (vpu_plat && vpu_plat->iram_enable && vpu_plat->iram_size)
++		iram_alloc(vpu_plat->iram_size, &addr);
+ 	if (addr == 0)
+ 		iram.start = iram.end = 0;
+ 	else {
+ 		iram.start = addr;
+-		iram.end = addr + VPU_IRAM_SIZE - 1;
++		iram.end = addr +  vpu_plat->iram_size - 1;
+ 	}
+ 
+ 	if (cpu_is_mx32()) {
+@@ -682,8 +682,8 @@ static int vpu_dev_remove(struct platform_device *pdev)
+ 	destroy_workqueue(vpu_data.workqueue);
+ 
+ 	iounmap(vpu_base);
+-	if (VPU_IRAM_SIZE)
+-		iram_free(iram.start, VPU_IRAM_SIZE);
++	if (vpu_plat && vpu_plat->iram_enable && vpu_plat->iram_size)
++		iram_free(iram.start,  vpu_plat->iram_size);
+ 
+ 	return 0;
+ }
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 166d9b4..99112b1 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -504,6 +504,8 @@ struct ldb_platform_data {
+ };
+ 
+  struct mxc_vpu_platform_data {
++	bool iram_enable;
++	int  iram_size;
+ 	void (*reset) (void);
+ };
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,42 @@
+From 0165c042aeb22bc03a3e833de5f316a39bdbe92c Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Sun, 26 Sep 2010 21:15:20 +0800
+Subject: [PATCH] ENGR00131944 Fix imx-test build failure issue on mx25
+
+Fix imx-test build failure issue on mx25
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/mach-mx25/devices.c          |    4 ++--
+ arch/arm/plat-mxc/include/mach/mx25.h |    1 +
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx25/devices.c b/arch/arm/mach-mx25/devices.c
+index b78b173..70a681e 100644
+--- a/arch/arm/mach-mx25/devices.c
++++ b/arch/arm/mach-mx25/devices.c
+@@ -90,8 +90,8 @@ void mxc_sdma_get_script_info(sdma_script_start_addrs *sdma_script_addr)
+ 
+ static struct resource sdma_resources[] = {
+ 	{
+-		.start = MX25_SDMA_BASE_ADDR,
+-		.end = MX25_SDMA_BASE_ADDR + SZ_4K - 1,
++		.start = SDMA_BASE_ADDR,
++		.end = SDMA_BASE_ADDR + SZ_4K - 1,
+ 		.flags = IORESOURCE_MEM,
+ 	},
+ 	{
+diff --git a/arch/arm/plat-mxc/include/mach/mx25.h b/arch/arm/plat-mxc/include/mach/mx25.h
+index faba051..f142508 100644
+--- a/arch/arm/plat-mxc/include/mach/mx25.h
++++ b/arch/arm/plat-mxc/include/mach/mx25.h
+@@ -288,5 +288,6 @@
+ #define CSI_BASE_ADDR			MX25_CSI_BASE_ADDR
+ #define AUDMUX_BASE_ADDR		MX25_AUDMUX_BASE_ADDR
+ #define MXC_INT_ESAI			MX25_INT_ESAI
++#define SDMA_BASE_ADDR			MX25_SDMA_BASE_ADDR
+ 
+ #endif /* ifndef __MACH_MX25_H__ */
+-- 
+1.5.4.4
+

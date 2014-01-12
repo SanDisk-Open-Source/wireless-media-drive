@@ -1,0 +1,93 @@
+From 6d4073fc0147d0526926b50d0a7c1112a2c448c2 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 12 Jan 2011 16:48:39 -0600
+Subject: [PATCH] ENGR00137924-1: Added API to read IOMUX settings
+
+Added APIs to read single and multiple IOMUX pad settings.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/iomux-v3.h |    7 ++++-
+ arch/arm/plat-mxc/iomux-v3.c              |   31 ++++++++++++++++++++++++++++-
+ 2 files changed, 35 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-v3.h b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+index c18e69b..02e06dd 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-v3.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+@@ -1,4 +1,5 @@
+ /*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc.
+  * Copyright (C) 2009 by Jan Weitzel Phytec Messtechnik GmbH,
+  *			<armlinux@phytec.de>
+  *
+@@ -97,15 +98,17 @@ struct pad_cfg {
+ #define PAD_CTL_SRE_SLOW		(0 << 0)
+ 
+ /*
+- * setups a single pad in the iomuxer
++ * read/write a single pad in the iomuxer
+  */
++int mxc_iomux_v3_get_pad(struct pad_desc *pad);
+ int mxc_iomux_v3_setup_pad(struct pad_desc *pad);
+ int mxc_iomux_v3_setup_pad_ext(struct pad_cfg *pad);
+ 
+ /*
+- * setups mutliple pads
++ * read/write mutliple pads
+  * convenient way to call the above function with tables
+  */
++int mxc_iomux_v3_get_multiple_pads(struct pad_desc *pad_list, unsigned count);
+ int mxc_iomux_v3_setup_multiple_pads(struct pad_desc *pad_list, unsigned count);
+ int mxc_iomux_v3_setup_multiple_pads_ext(struct pad_cfg *pad_list,
+ 								unsigned count);
+diff --git a/arch/arm/plat-mxc/iomux-v3.c b/arch/arm/plat-mxc/iomux-v3.c
+index 6196321..8734103 100644
+--- a/arch/arm/plat-mxc/iomux-v3.c
++++ b/arch/arm/plat-mxc/iomux-v3.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc.
+  * Copyright (C) 2008 by Sascha Hauer <kernel@pengutronix.de>
+  * Copyright (C) 2009 by Jan Weitzel Phytec Messtechnik GmbH,
+  *                       <armlinux@phytec.de>
+@@ -32,6 +32,35 @@
+ static void __iomem *base;
+ 
+ /*
++ * Read a single pad in the iomuxer
++ */
++int mxc_iomux_v3_get_pad(struct pad_desc *pad)
++{
++	pad->mux_mode = __raw_readl(base + pad->mux_ctrl_ofs) & 0xFF;
++	pad->pad_ctrl = __raw_readl(base + pad->pad_ctrl_ofs) & 0x1FFFF;
++	pad->select_input = __raw_readl(base + pad->select_input_ofs) & 0x7;
++
++	return 0;
++}
++EXPORT_SYMBOL(mxc_iomux_v3_get_pad);
++
++/*
++ * Read multiple pads in the iomuxer
++ */
++int mxc_iomux_v3_get_multiple_pads(struct pad_desc *pad_list, unsigned count)
++{
++	struct pad_desc *p = pad_list;
++	int i;
++	int ret;
++
++	for (i = 0; i < count; i++) {
++		mxc_iomux_v3_get_pad(p);
++		p++;
++	}
++	return 0;
++}
++EXPORT_SYMBOL(mxc_iomux_v3_get_multiple_pads);
++/*
+  * setups a single pad in the iomuxer
+  */
+ int mxc_iomux_v3_setup_pad(struct pad_desc *pad)
+-- 
+1.5.4.4
+

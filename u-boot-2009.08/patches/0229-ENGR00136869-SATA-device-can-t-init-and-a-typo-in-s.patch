@@ -1,0 +1,47 @@
+From 84d9443bc45af09dcc8712536becf52fdb8c0de5 Mon Sep 17 00:00:00 2001
+From: Terry <r65388@freescale.com>
+Date: Tue, 11 Jan 2011 19:05:51 +0800
+Subject: [PATCH] ENGR00136869: SATA device can't init and a typo in sata help
+
+SATA device can't init and a typo in sata help.
+Add delay in sata detect proceduce.
+
+Currently, I have met 3 problems for this issue.
+1. Seagate HD. It needs 1000 for timeout.
+2. Hitachi HD. It needs 10000 for timeout.
+3. In sata env case, it needs 100000 for timeout.
+
+10000000 for timeout is just to avoid a dead loop,
+And suppose this timeout should be enough for all normal
+case.
+It doesn't mean all HD need to wait this long time,
+If tfd is ok, the loop will be breaked immediately.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/block/dwc_ahsata.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/block/dwc_ahsata.c b/drivers/block/dwc_ahsata.c
+index 2f0a1f8..d0dc838 100644
+--- a/drivers/block/dwc_ahsata.c
++++ b/drivers/block/dwc_ahsata.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  * Terry Lv <r65388@freescale.com>
+  *
+  * See file CREDITS for list of people who contributed to this
+@@ -558,7 +558,7 @@ static int ahci_port_start(struct ahci_probe_ent *probe_ent,
+ 		(struct sata_port_regs *)pp->port_mmio;
+ 	u32 port_status;
+ 	u32 mem;
+-	int timeout = 1000;
++	int timeout = 10000000;
+ 
+ 	debug("Enter start port: %d\n", port);
+ 	port_status = readl(&(port_mmio->ssts));
+-- 
+1.5.4.4
+

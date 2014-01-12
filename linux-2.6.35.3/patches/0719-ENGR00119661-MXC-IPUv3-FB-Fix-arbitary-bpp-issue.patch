@@ -1,0 +1,63 @@
+From 22b4f6339b794ec8b0985dbf4da6d3615118f891 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Mon, 24 Jan 2011 10:00:50 +0800
+Subject: [PATCH] ENGR00119661 MXC IPUv3 FB:Fix arbitary bpp issue
+
+We used to force the framebuffer bpp to be default bpp
+set by the user in the kernel boot up command line.
+This patch fixes this issue. This patch also
+gets TVE framebuffer bpp value from IPUv3 framebuffer.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ drivers/video/mxc/mxc_ipuv3_fb.c |    1 -
+ drivers/video/mxc/tve.c          |   10 +++++-----
+ 2 files changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_ipuv3_fb.c b/drivers/video/mxc/mxc_ipuv3_fb.c
+index 5905c86..7e0b7a4 100644
+--- a/drivers/video/mxc/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc/mxc_ipuv3_fb.c
+@@ -606,7 +606,6 @@ static int mxcfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
+ 	if (var->yres_virtual < var->yres)
+ 		var->yres_virtual = var->yres;
+ 
+-	var->bits_per_pixel = mxc_fbi->default_bpp;
+ 	if ((var->bits_per_pixel != 32) && (var->bits_per_pixel != 24) &&
+ 	    (var->bits_per_pixel != 16) && (var->bits_per_pixel != 12) &&
+ 	    (var->bits_per_pixel != 8))
+diff --git a/drivers/video/mxc/tve.c b/drivers/video/mxc/tve.c
+index 1fcb2c0..e508e2d 100644
+--- a/drivers/video/mxc/tve.c
++++ b/drivers/video/mxc/tve.c
+@@ -1328,22 +1328,22 @@ static int tve_probe(struct platform_device *pdev)
+ 
+ 	/* is primary display? */
+ 	if (primary) {
+-		struct fb_var_screeninfo var;
+ 		const struct fb_videomode *mode;
+ 
+-		memset(&var, 0, sizeof(var));
+ 		mode = fb_match_mode(&tve_fbi->var, &tve_modelist.list);
+ 		if (mode) {
+ 			pr_debug("TVE: fb mode found\n");
+-			fb_videomode_to_var(&var, mode);
+-			var.yres_virtual = var.yres * 3;
++			fb_videomode_to_var(&tve_fbi->var, mode);
++			tve_fbi->var.yres_virtual = tve_fbi->var.yres * 3;
+ 		} else {
+ 			pr_warning("TVE: can not find video mode\n");
+ 			goto done;
+ 		}
+ 		acquire_console_sem();
+ 		tve_fbi->flags |= FBINFO_MISC_USEREVENT;
+-		fb_set_var(tve_fbi, &var);
++		tve_fbi->var.activate |= FB_ACTIVATE_FORCE;
++		fb_set_var(tve_fbi, &tve_fbi->var);
++		tve_fbi->var.activate &= ~FB_ACTIVATE_FORCE;
+ 		tve_fbi->flags &= ~FBINFO_MISC_USEREVENT;
+ 		release_console_sem();
+ 
+-- 
+1.5.4.4
+

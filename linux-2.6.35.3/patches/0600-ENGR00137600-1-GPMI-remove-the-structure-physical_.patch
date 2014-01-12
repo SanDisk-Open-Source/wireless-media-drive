@@ -1,0 +1,70 @@
+From 5b5b45fcea9e770003907082058dbbd653b25fd7 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Wed, 5 Jan 2011 10:14:13 +0800
+Subject: [PATCH] ENGR00137600-1 GPMI : remove the structure physical_geometry{}
+
+The MTD/NAND structrues have all the infomation the physical_geometry{}
+reserves. The physical_geometry{} makes the code too much layers, and
+makes the code much harder to understand.
+
+So remove it to make the code more readable.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h |   26 --------------------------
+ 1 files changed, 0 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+index e76700c..3ba69d8 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+@@ -203,30 +203,6 @@ struct mil {
+ };
+ 
+ /**
+- * struct physical_geometry - Physical geometry description.
+- *
+- * This structure describes the physical geometry of the medium.
+- *
+- * @chip_count:                    The number of chips in the medium.
+- * @chip_size_in_bytes:            The size, in bytes, of a single chip
+- *                                 (excluding the out-of-band bytes).
+- * @block_size_in_bytes:           The size, in bytes, of a single block
+- *                                 (excluding the out-of-band bytes).
+- * @page_data_size_in_bytes:       The size, in bytes, of the data area in a
+- *                                 page (excluding the out-of-band bytes).
+- * @page_oob_size_in_bytes:        The size, in bytes, of the out-of-band area
+- *                                 in a page.
+- */
+-
+-struct physical_geometry {
+-	unsigned int  chip_count;
+-	uint64_t      chip_size_in_bytes;
+-	unsigned int  block_size_in_bytes;
+-	unsigned int  page_data_size_in_bytes;
+-	unsigned int  page_oob_size_in_bytes;
+-};
+-
+-/**
+  * struct nfc_geometry - NFC geometry description.
+  *
+  * This structure describes the NFC's view of the medium geometry.
+@@ -301,7 +277,6 @@ struct boot_rom_geometry {
+  * @resources:           Information about system resources used by this driver.
+  * @device_info:         A structure that contains detailed information about
+  *                       the NAND Flash device.
+- * @physical_geometry:   A description of the medium's physical geometry.
+  * @nfc:                 A pointer to a structure that represents the underlying
+  *                       NFC hardware.
+  * @nfc_geometry:        A description of the medium geometry as viewed by the
+@@ -326,7 +301,6 @@ struct gpmi_nfc_data {
+ 
+ 	/* Flash Hardware */
+ 	struct nand_device_info        device_info;
+-	struct physical_geometry       physical_geometry;
+ 
+ 	/* NFC HAL */
+ 	struct nfc_hal                 *nfc;
+-- 
+1.5.4.4
+

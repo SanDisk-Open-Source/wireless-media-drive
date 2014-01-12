@@ -1,0 +1,334 @@
+From b78d67317ca2775920d8a988c243d51ffac00f22 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 7 Apr 2011 20:59:57 -0500
+Subject: [PATCH] ENGR00140983-4 - SII902X fb: Support HDMI driven through LCDIF module
+
+- Defined new API to allow client display FB drivers to pass
+videomode information to the LCDIF.
+- SII902X added calls to enable/disable pins through platform-level
+function pointers.
+- Changed SII902X driver to ensure that HDMI detect routine
+gets called once FB is registered, if a hotplug interrupt has
+previously been detected.
+- Added call to display boot logo once FB is registered.
+- Modified LCDIF to incorporate videomodes passed in from
+client display FB drivers.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_elcdif_fb.c |   85 +++++++++++++++++++++++++++++++++++--
+ drivers/video/mxc/mxcfb_sii902x.c |   68 ++++++++++++++++++-----------
+ include/linux/mxcfb.h             |    2 +
+ 3 files changed, 125 insertions(+), 30 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_elcdif_fb.c b/drivers/video/mxc/mxc_elcdif_fb.c
+index 90dfe55..d9708f1 100644
+--- a/drivers/video/mxc/mxc_elcdif_fb.c
++++ b/drivers/video/mxc/mxc_elcdif_fb.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  */
+ 
+ /*
+@@ -85,6 +85,12 @@ struct elcdif_signal_cfg {
+ 	unsigned Vsync_pol:1;	/* true = active high */
+ };
+ 
++struct mxcfb_mode {
++	int dev_mode;
++	int num_modes;
++	struct fb_videomode *mode;
++};
++
+ static int mxc_elcdif_fb_blank(int blank, struct fb_info *info);
+ static int mxc_elcdif_fb_map_video_memory(struct fb_info *info);
+ static int mxc_elcdif_fb_unmap_video_memory(struct fb_info *info);
+@@ -96,6 +102,7 @@ static bool g_elcdif_axi_clk_enable;
+ static bool g_elcdif_pix_clk_enable;
+ static struct clk *g_elcdif_axi_clk;
+ static struct clk *g_elcdif_pix_clk;
++static __initdata struct mxcfb_mode mxc_disp_mode;
+ 
+ static inline void setup_dotclk_panel(u32 pixel_clk,
+ 				      u16 v_pulse_width,
+@@ -516,6 +523,31 @@ static inline void mxc_init_elcdif(void)
+ 	return;
+ }
+ 
++void mxcfb_elcdif_register_mode(const struct fb_videomode *modedb,
++	int num_modes, int dev_mode)
++{
++	struct fb_videomode *mode;
++	int mode_sum;
++
++	mode = kzalloc(num_modes * sizeof(struct fb_videomode), GFP_KERNEL);
++
++	if (mxc_disp_mode.num_modes)
++		memcpy(mode, mxc_disp_mode.mode,
++			mxc_disp_mode.num_modes * sizeof(struct fb_videomode));
++	if (modedb)
++		memcpy(mode + mxc_disp_mode.num_modes, modedb,
++			num_modes * sizeof(struct fb_videomode));
++
++	if (mxc_disp_mode.num_modes)
++		kfree(mxc_disp_mode.mode);
++
++	mxc_disp_mode.mode = mode;
++	mxc_disp_mode.num_modes += num_modes;
++	mxc_disp_mode.dev_mode = dev_mode;
++
++	return;
++}
++
+ int mxc_elcdif_frame_addr_setup(dma_addr_t phys)
+ {
+ 	int ret = 0;
+@@ -1200,6 +1232,9 @@ static int mxc_elcdif_fb_probe(struct platform_device *pdev)
+ 	struct resource *res;
+ 	struct fb_info *fbi;
+ 	struct mxc_fb_platform_data *pdata = pdev->dev.platform_data;
++	const struct fb_videomode *mode;
++	struct fb_videomode m;
++	int num;
+ 
+ 	fbi = framebuffer_alloc(sizeof(struct mxc_elcdif_fb_data), &pdev->dev);
+ 	if (fbi == NULL) {
+@@ -1260,20 +1295,55 @@ static int mxc_elcdif_fb_probe(struct platform_device *pdev)
+ 	if (pdata && !data->output_pix_fmt)
+ 		data->output_pix_fmt = pdata->interface_pix_fmt;
+ 
++	INIT_LIST_HEAD(&fbi->modelist);
++
+ 	if (pdata && pdata->mode && pdata->num_modes)
+ 		fb_videomode_to_modelist(pdata->mode, pdata->num_modes,
+ 				&fbi->modelist);
+ 
++	if (mxc_disp_mode.num_modes) {
++		int i;
++		mode = mxc_disp_mode.mode;
++		num = mxc_disp_mode.num_modes;
++
++		for (i = 0; i < num; i++) {
++			/*
++			 * FIXME now we do not support interlaced
++			 * mode for ddc mode
++			 */
++			if ((mxc_disp_mode.dev_mode
++				& MXC_DISP_DDC_DEV) &&
++				(mode[i].vmode & FB_VMODE_INTERLACED))
++				continue;
++			else
++				fb_add_videomode(&mode[i], &fbi->modelist);
++		}
++	}
++
+ 	if (!fb_mode && pdata && pdata->mode_str)
+ 		fb_mode = pdata->mode_str;
+ 
+ 	if (fb_mode) {
+ 		ret = fb_find_mode(&fbi->var, fbi, fb_mode, NULL, 0, NULL,
+ 				   default_bpp);
+-		if ((!ret || (ret > 2)) && pdata && pdata->mode &&
+-		    pdata->num_modes)
+-			fb_find_mode(&fbi->var, fbi, fb_mode, pdata->mode,
++		if ((ret == 1) || (ret == 2)) {
++			fb_var_to_videomode(&m, &fbi->var);
++			mode = fb_find_nearest_mode(&m,
++				&fbi->modelist);
++			fb_videomode_to_var(&fbi->var, mode);
++		} else if (pdata && pdata->mode && pdata->num_modes) {
++			ret = fb_find_mode(&fbi->var, fbi, fb_mode, pdata->mode,
+ 					pdata->num_modes, NULL, default_bpp);
++			if (!ret) {
++				dev_err(fbi->device,
++					"No valid video mode found");
++				goto err2;
++			}
++		} else {
++			dev_err(fbi->device,
++				"No valid video mode found");
++			goto err2;
++		}
+ 	}
+ 
+ 	mxc_elcdif_fb_check_var(&fbi->var, fbi);
+@@ -1307,6 +1377,13 @@ static int mxc_elcdif_fb_probe(struct platform_device *pdev)
+ 	 */
+ 	clk_set_rate(g_elcdif_pix_clk, 25000000);
+ 
++	fbi->var.activate |= FB_ACTIVATE_FORCE;
++	acquire_console_sem();
++	fbi->flags |= FBINFO_MISC_USEREVENT;
++	ret = fb_set_var(fbi, &fbi->var);
++	fbi->flags &= ~FBINFO_MISC_USEREVENT;
++	release_console_sem();
++
+ 	ret = register_framebuffer(fbi);
+ 	if (ret)
+ 		goto err3;
+diff --git a/drivers/video/mxc/mxcfb_sii902x.c b/drivers/video/mxc/mxcfb_sii902x.c
+index a1c748e..c0dd5c8 100644
+--- a/drivers/video/mxc/mxcfb_sii902x.c
++++ b/drivers/video/mxc/mxcfb_sii902x.c
+@@ -59,13 +59,12 @@ static int g_enable_hdmi;
+ struct sii902x_data {
+ 	struct platform_device *pdev;
+ 	struct i2c_client *client;
+-	struct regulator *io_reg;
+-	struct regulator *analog_reg;
+ 	struct delayed_work det_work;
+ 	struct fb_info *fbi;
+ 	struct mxc_edid_cfg edid_cfg;
+ 	u8 cable_plugin;
+ 	u8 edid[SII_EDID_LEN];
++	bool waiting_for_fb;
+ } sii902x;
+ 
+ static void sii902x_poweron(void);
+@@ -279,6 +278,9 @@ static irqreturn_t sii902x_detect_handler(int irq, void *data)
+ {
+ 	if (sii902x.fbi)
+ 		schedule_delayed_work(&(sii902x.det_work), msecs_to_jiffies(20));
++	else
++		sii902x.waiting_for_fb = true;
++
+ 	return IRQ_HANDLED;
+ }
+ 
+@@ -287,20 +289,14 @@ static int sii902x_fb_event(struct notifier_block *nb, unsigned long val, void *
+ 	struct fb_event *event = v;
+ 	struct fb_info *fbi = event->info;
+ 
+-	/* assume sii902x on DI0 only */
+-	if ((IPU_DISP_PORT)) {
+-		if (strcmp(event->info->fix.id, "DISP3 BG - DI1"))
+-			return 0;
+-	} else {
+-		if (strcmp(event->info->fix.id, "DISP3 BG"))
+-			return 0;
+-	}
+-
+ 	switch (val) {
+ 	case FB_EVENT_FB_REGISTERED:
+-		if (sii902x.fbi != NULL)
+-			break;
+-		sii902x.fbi = fbi;
++		if (sii902x.fbi == NULL) {
++			sii902x.fbi = fbi;
++			if (sii902x.waiting_for_fb)
++				det_worker(NULL);
++		}
++		fb_show_logo(fbi, 0);
+ 		break;
+ 	case FB_EVENT_MODE_CHANGE:
+ 		sii902x_setup(fbi);
+@@ -339,16 +335,10 @@ static int __devinit sii902x_probe(struct i2c_client *client,
+ 
+ 	sii902x.client = client;
+ 
+-	sii902x.io_reg = regulator_get(&sii902x.client->dev, plat->io_reg);
+-	if (!IS_ERR(sii902x.io_reg)) {
+-		regulator_set_voltage(sii902x.io_reg, 3300000, 3300000);
+-		regulator_enable(sii902x.io_reg);
+-	}
+-	sii902x.analog_reg = regulator_get(&sii902x.client->dev, plat->analog_reg);
+-	if (!IS_ERR(sii902x.analog_reg)) {
+-		regulator_set_voltage(sii902x.analog_reg, 1300000, 1300000);
+-		regulator_enable(sii902x.analog_reg);
+-	}
++	/* Claim HDMI pins */
++	if (plat->get_pins)
++		if (!plat->get_pins())
++			return -EACCES;
+ 
+ 	if (plat->reset) {
+ 		sii902x_reset = plat->reset;
+@@ -383,13 +373,20 @@ static int __devinit sii902x_probe(struct i2c_client *client,
+ 	}
+ 
+ 	/* try to read edid */
+-	if (sii902x_read_edid(&edid_fbi) < 0)
++	ret = sii902x_read_edid(&edid_fbi);
++	if (ret < 0)
+ 		dev_warn(&sii902x.client->dev, "Can not read edid\n");
++
+ #if defined(CONFIG_MXC_IPU_V3) && defined(CONFIG_FB_MXC_SYNC_PANEL)
+-	else
++	if (ret >= 0)
+ 		mxcfb_register_mode(IPU_DISP_PORT, edid_fbi.monspecs.modedb,
+ 				edid_fbi.monspecs.modedb_len, MXC_DISP_DDC_DEV);
+ #endif
++#if defined(CONFIG_FB_MXC_ELCDIF_FB)
++	if (ret >= 0)
++		mxcfb_elcdif_register_mode(edid_fbi.monspecs.modedb,
++				edid_fbi.monspecs.modedb_len, MXC_DISP_DDC_DEV);
++#endif
+ 
+ 	if (sii902x.client->irq) {
+ 		ret = request_irq(sii902x.client->irq, sii902x_detect_handler,
+@@ -425,8 +422,15 @@ static int __devinit sii902x_probe(struct i2c_client *client,
+ 
+ static int __devexit sii902x_remove(struct i2c_client *client)
+ {
++	struct mxc_lcd_platform_data *plat = sii902x.client->dev.platform_data;
++
+ 	fb_unregister_client(&nb);
+ 	sii902x_poweroff();
++
++	/* Release HDMI pins */
++	if (plat->put_pins)
++		plat->put_pins();
++
+ 	return 0;
+ }
+ 
+@@ -444,6 +448,12 @@ static int sii902x_resume(struct i2c_client *client)
+ 
+ static void sii902x_poweron(void)
+ {
++	struct mxc_lcd_platform_data *plat = sii902x.client->dev.platform_data;
++
++	/* Enable pins to HDMI */
++	if (plat->enable_pins)
++		plat->enable_pins();
++
+ 	/* Turn on DVI or HDMI */
+ 	if (sii902x.edid_cfg.hdmi_cap)
+ 		i2c_smbus_write_byte_data(sii902x.client, 0x1A, 0x01);
+@@ -454,12 +464,18 @@ static void sii902x_poweron(void)
+ 
+ static void sii902x_poweroff(void)
+ {
++	struct mxc_lcd_platform_data *plat = sii902x.client->dev.platform_data;
++
+ 	/* disable tmds before changing resolution */
+ 	if (sii902x.edid_cfg.hdmi_cap)
+ 		i2c_smbus_write_byte_data(sii902x.client, 0x1A, 0x11);
+ 	else
+ 		i2c_smbus_write_byte_data(sii902x.client, 0x1A, 0x10);
+ 
++	/* Disable pins to HDMI */
++	if (plat->disable_pins)
++		plat->disable_pins();
++
+ 	return;
+ }
+ 
+diff --git a/include/linux/mxcfb.h b/include/linux/mxcfb.h
+index c097eef..3c70c00 100644
+--- a/include/linux/mxcfb.h
++++ b/include/linux/mxcfb.h
+@@ -162,6 +162,8 @@ int mxcfb_set_refresh_mode(struct fb_info *fbi, int mode,
+ void mxcfb_register_mode(int disp_port,
+ 		const struct fb_videomode *modedb,
+ 		int num_modes, int dev_mode);
++void mxcfb_elcdif_register_mode(const struct fb_videomode *modedb,
++		int num_modes, int dev_mode);
+ 
+ void mxcfb_register_presetup(int disp_port,
+ 		int (*pre_setup)(struct fb_info *info));
+-- 
+1.5.4.4
+

@@ -1,0 +1,287 @@
+From 23b1dd8f4e7b94ea99dcd5debc9532c150cb8067 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 6 Sep 2010 15:10:26 +0800
+Subject: [PATCH] ENGR00127171-2 MX23/MX28: Fix MSL build error at 2.6.35
+
+Fix kernel upgrade cause mx23/mx28 build failure
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ arch/arm/Kconfig                             |   13 ++++++++++
+ arch/arm/Makefile                            |    3 ++
+ arch/arm/mach-mx23/include/mach/mx23.h       |   13 ----------
+ arch/arm/mach-mx23/include/mach/regs-power.h |    2 +-
+ arch/arm/mach-mx23/pm.c                      |    1 +
+ arch/arm/mach-mx23/power.c                   |    2 +
+ arch/arm/mach-mx28/device.c                  |    1 +
+ arch/arm/mach-mx28/pm.c                      |    1 +
+ arch/arm/mach-mx28/power.c                   |    2 +
+ arch/arm/plat-mxs/Kconfig                    |    2 +
+ arch/arm/plat-mxs/include/mach/debug-macro.S |    2 +-
+ arch/arm/plat-mxs/include/mach/device.h      |   34 --------------------------
+ arch/arm/plat-mxs/include/mach/memory.h      |    9 -------
+ arch/arm/plat-mxs/unique-id.c                |    1 +
+ 14 files changed, 28 insertions(+), 58 deletions(-)
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 4b2cab8..22febb0 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -365,6 +365,17 @@ config ARCH_STMP3XXX
+ 	help
+ 	  Support for systems based on the Freescale 3xxx CPUs.
+ 
++config ARCH_MXS
++	bool "Freescale i.MXS family soc"
++	select HAVE_CLK
++	select ARCH_REQUIRE_GPIOLIB
++	select GENERIC_TIME
++	select GENERIC_CLOCKEVENTS
++	select GENERIC_GPIO
++	select COMMON_CLKDEV
++	help
++	  Support for Freescale i.MXS family of processors.
++
+ config ARCH_NETX
+ 	bool "Hilscher NetX based"
+ 	select CPU_ARM926T
+@@ -853,6 +864,8 @@ source "arch/arm/mach-mv78xx0/Kconfig"
+ 
+ source "arch/arm/plat-mxc/Kconfig"
+ 
++source "arch/arm/plat-mxs/Kconfig"
++
+ source "arch/arm/mach-netx/Kconfig"
+ 
+ source "arch/arm/mach-nomadik/Kconfig"
+diff --git a/arch/arm/Makefile b/arch/arm/Makefile
+index 64ba313..767874d 100644
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -150,6 +150,8 @@ machine-$(CONFIG_ARCH_MX2)		:= mx2
+ machine-$(CONFIG_ARCH_MX25)		:= mx25
+ machine-$(CONFIG_ARCH_MX3)		:= mx3
+ machine-$(CONFIG_ARCH_MX5)		:= mx5
++machine-$(CONFIG_ARCH_MX28)             := mx28
++machine-$(CONFIG_ARCH_MX23)             := mx23
+ machine-$(CONFIG_ARCH_MXC91231)		:= mxc91231
+ machine-$(CONFIG_ARCH_NETX)		:= netx
+ machine-$(CONFIG_ARCH_NOMADIK)		:= nomadik
+@@ -190,6 +192,7 @@ machine-$(CONFIG_MACH_SPEAR600)		:= spear6xx
+ # Platform directory name.  This list is sorted alphanumerically
+ # by CONFIG_* macro name.
+ plat-$(CONFIG_ARCH_MXC)		:= mxc
++plat-$(CONFIG_ARCH_MXS)         := mxs
+ plat-$(CONFIG_ARCH_OMAP)	:= omap
+ plat-$(CONFIG_ARCH_S3C64XX)	:= samsung
+ plat-$(CONFIG_ARCH_STMP3XXX)	:= stmp3xxx
+diff --git a/arch/arm/mach-mx23/include/mach/mx23.h b/arch/arm/mach-mx23/include/mach/mx23.h
+index 6e1d2aa..c22ce12 100644
+--- a/arch/arm/mach-mx23/include/mach/mx23.h
++++ b/arch/arm/mach-mx23/include/mach/mx23.h
+@@ -95,17 +95,4 @@
+ #define MXS_LL_UART_VADDR MX23_SOC_IO_ADDRESS(DUART_PHYS_ADDR)
+ #endif
+ 
+-#ifndef __ASSEMBLY__
+-/* for using the mma7450.c file ,we
+-need to define this struct */
+-struct mxc_mma7450_platform_data {
+-	char *reg_dvdd_io;
+-	char *reg_avdd;
+-	void (*gpio_pin_get) (void);
+-	void (*gpio_pin_put) (void);
+-	int int1;
+-	int int2;
+-};
+-#endif
+-
+ #endif /* __ASM_ARCH_MACH_MX23_H__ */
+diff --git a/arch/arm/mach-mx23/include/mach/regs-power.h b/arch/arm/mach-mx23/include/mach/regs-power.h
+index 30d5b02..5b74943 100644
+--- a/arch/arm/mach-mx23/include/mach/regs-power.h
++++ b/arch/arm/mach-mx23/include/mach/regs-power.h
+@@ -1,7 +1,7 @@
+ /*
+  * Freescale POWER Register Definitions
+  *
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2010 Freescale Semiconductor, Inc.
+  * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+diff --git a/arch/arm/mach-mx23/pm.c b/arch/arm/mach-mx23/pm.c
+index 0538326..8512be1 100644
+--- a/arch/arm/mach-mx23/pm.c
++++ b/arch/arm/mach-mx23/pm.c
+@@ -26,6 +26,7 @@
+ #include <linux/io.h>
+ #include <linux/irq.h>
+ #include <linux/kthread.h>
++#include <linux/slab.h>
+ 
+ #include <asm/cacheflush.h>
+ #include <asm/mach-types.h>
+diff --git a/arch/arm/mach-mx23/power.c b/arch/arm/mach-mx23/power.c
+index 4f4f6b8..9a7a3ee 100644
+--- a/arch/arm/mach-mx23/power.c
++++ b/arch/arm/mach-mx23/power.c
+@@ -23,6 +23,8 @@
+ #include <linux/platform_device.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/regulator/machine.h>
++#include <linux/slab.h>
++
+ #include <mach/power.h>
+ #include <mach/regulator.h>
+ #include <mach/regs-power.h>
+diff --git a/arch/arm/mach-mx28/device.c b/arch/arm/mach-mx28/device.c
+index 1d7b424..55a02dc 100644
+--- a/arch/arm/mach-mx28/device.c
++++ b/arch/arm/mach-mx28/device.c
+@@ -29,6 +29,7 @@
+ #include <linux/phy.h>
+ #include <linux/fec.h>
+ #include <linux/gpmi-nfc.h>
++#include <linux/fsl_devices.h>
+ 
+ #include <asm/mach/map.h>
+ 
+diff --git a/arch/arm/mach-mx28/pm.c b/arch/arm/mach-mx28/pm.c
+index 830f57b..12de132 100644
+--- a/arch/arm/mach-mx28/pm.c
++++ b/arch/arm/mach-mx28/pm.c
+@@ -26,6 +26,7 @@
+ #include <linux/io.h>
+ #include <linux/irq.h>
+ #include <linux/kthread.h>
++#include <linux/slab.h>
+ 
+ #include <asm/cacheflush.h>
+ #include <asm/mach-types.h>
+diff --git a/arch/arm/mach-mx28/power.c b/arch/arm/mach-mx28/power.c
+index c1dde20..27566a8 100644
+--- a/arch/arm/mach-mx28/power.c
++++ b/arch/arm/mach-mx28/power.c
+@@ -23,6 +23,8 @@
+ #include <linux/regulator/consumer.h>
+ #include <linux/regulator/machine.h>
+ #include <linux/io.h>
++#include <linux/slab.h>
++
+ #include <mach/power.h>
+ #include <mach/regulator.h>
+ #include <mach/regs-power.h>
+diff --git a/arch/arm/plat-mxs/Kconfig b/arch/arm/plat-mxs/Kconfig
+index 63768f8..831a24b 100644
+--- a/arch/arm/plat-mxs/Kconfig
++++ b/arch/arm/plat-mxs/Kconfig
+@@ -13,6 +13,7 @@ config ARCH_MX28
+ 	select MXS_ICOLL
+ 	select MXS_DMA_ENGINE
+ 	select MXS_AUART_DMA_SUPPORT
++	select ARCH_HAS_CPUFREQ
+ 	---help---
+ 	 Support Freescale MX28 chips
+ 
+@@ -24,6 +25,7 @@ config ARCH_MX23
+ 	select MXS_ICOLL
+ 	select MXS_DMA_ENGINE
+ 	select MXS_AUART_DMA_SUPPORT
++	select ARCH_HAS_CPUFREQ
+ 	---help---
+ 	Support Freescale MX23 chips
+ 
+diff --git a/arch/arm/plat-mxs/include/mach/debug-macro.S b/arch/arm/plat-mxs/include/mach/debug-macro.S
+index 651bdcd..147cda3 100644
+--- a/arch/arm/plat-mxs/include/mach/debug-macro.S
++++ b/arch/arm/plat-mxs/include/mach/debug-macro.S
+@@ -18,7 +18,7 @@
+ 
+ #include <mach/hardware.h>
+ 
+-		.macro	addruart,rx
++		.macro	addruart,rx,tmp
+ 		mrc	p15, 0, \rx, c1, c0
+ 		tst	\rx, #1			@ MMU enabled?
+ 	 	ldreq   \rx, =MXS_LL_UART_PADDR @ physical
+diff --git a/arch/arm/plat-mxs/include/mach/device.h b/arch/arm/plat-mxs/include/mach/device.h
+index 9598ccd..65663e3 100644
+--- a/arch/arm/plat-mxs/include/mach/device.h
++++ b/arch/arm/plat-mxs/include/mach/device.h
+@@ -124,40 +124,6 @@ struct mxs_spi_platform_data {
+ 	int (*hw_pin_release)(void);
+ };
+ 
+-struct flexcan_platform_data {
+-	char *core_reg;
+-	char *io_reg;
+-	void (*xcvr_enable) (int id, int en);
+-	void (*active) (int id);
+-	void (*inactive) (int id);
+-	/* word 1 */
+-	unsigned int br_presdiv:8;
+-	unsigned int br_rjw:2;
+-	unsigned int br_propseg:3;
+-	unsigned int br_pseg1:3;
+-	unsigned int br_pseg2:3;
+-	unsigned int maxmb:6;
+-	unsigned int xmit_maxmb:6;
+-	unsigned int wd1_resv:1;
+-
+-	/* word 2 */
+-	unsigned int fifo:1;
+-	unsigned int wakeup:1;
+-	unsigned int srx_dis:1;
+-	unsigned int wak_src:1;
+-	unsigned int bcc:1;
+-	unsigned int lprio:1;
+-	unsigned int abort:1;
+-	unsigned int br_clksrc:1;
+-	unsigned int loopback:1;
+-	unsigned int smp:1;
+-	unsigned int boff_rec:1;
+-	unsigned int tsyn:1;
+-	unsigned int listen:1;
+-	unsigned int ext_msg:1;
+-	unsigned int std_msg:1;
+-};
+-
+ struct mxs_audio_platform_data {
+ 	int intr_id_hp;
+ 	int ext_ram;
+diff --git a/arch/arm/plat-mxs/include/mach/memory.h b/arch/arm/plat-mxs/include/mach/memory.h
+index 79c86db..051b160 100644
+--- a/arch/arm/plat-mxs/include/mach/memory.h
++++ b/arch/arm/plat-mxs/include/mach/memory.h
+@@ -51,15 +51,6 @@ static inline void __arch_adjust_zones(int node, unsigned long *zone_size,
+ 	__arch_adjust_zones(node, size, holes)
+ 
+ #endif
+-/*
+- * Virtual view <-> DMA view memory address translations
+- * virt_to_bus: Used to translate the virtual address to an
+- *		address suitable to be passed to set_dma_addr
+- * bus_to_virt: Used to convert an address for DMA operations
+- *		to an address that the kernel can use.
+- */
+-#define __virt_to_bus(x)	 __virt_to_phys(x)
+-#define __bus_to_virt(x)	 __phys_to_virt(x)
+ 
+ #define ISA_DMA_THRESHOLD	(0x0003ffffULL)
+ 
+diff --git a/arch/arm/plat-mxs/unique-id.c b/arch/arm/plat-mxs/unique-id.c
+index 35c0fcd..adb8286 100644
+--- a/arch/arm/plat-mxs/unique-id.c
++++ b/arch/arm/plat-mxs/unique-id.c
+@@ -24,6 +24,7 @@
+ #include <linux/err.h>
+ #include <linux/timer.h>
+ #include <linux/spinlock.h>
++#include <linux/slab.h>
+ 
+ #include <mach/unique-id.h>
+ 
+-- 
+1.5.4.4
+

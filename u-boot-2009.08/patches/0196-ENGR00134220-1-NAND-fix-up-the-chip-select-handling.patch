@@ -1,0 +1,143 @@
+From d509a056972ea643382f4763768faeeb3aecc6f0 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Fri, 3 Dec 2010 11:08:12 +0800
+Subject: [PATCH] ENGR00134220-1 NAND: fix up the chip select handling
+
+When the NAND has multi-cs, the chip select other than
+cs0 is not handled correctly which will lead to NAND not
+function as expected
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nand.c          |   26 ++++++++++++++++----------
+ include/asm-arm/arch-mx51/mxc_nand.h |    6 +++++-
+ include/asm-arm/arch-mx53/mxc_nand.h |    6 +++++-
+ 3 files changed, 26 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index a098c8f..eb20f58 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -324,21 +324,28 @@ static void send_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 	u8 *obuf = info->oob_buf;
+ 	u32 dlen = mtd->writesize / j;
+ 	u32 olen = mtd->oobsize / j;
++	u32 ncs = 0;
+ 
+ 	/* adjust the addr value
+ 	 * since ADD_OP mode is 01
+ 	 */
+-	if (j > 1)
++	if (cmd == NAND_CMD_ERASE2)
++		page_addr = addr_low;
++
++	ncs = NFC_GET_NFC_ACTIVE_CS();
++
++	if (j > 1) {
+ 		page_addr *= j;
+-	else
++	} else {
+ 		page_addr *= this->numchips;
++		page_addr += ncs;
++	}
+ 
+ 	switch (cmd) {
+ 	case NAND_CMD_PAGEPROG:
+ 		for (i = 0; i < j; i++) {
+ 			/* reset addr cycle */
+-			if (j > 1)
+-				mxc_nand_addr_cycle(mtd, 0, page_addr++);
++			mxc_nand_addr_cycle(mtd, 0, page_addr++);
+ 
+ 			/* data transfer */
+ 			nfc_memcpy(MAIN_AREA0, dbuf, dlen);
+@@ -365,8 +372,7 @@ static void send_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 	case NAND_CMD_READSTART:
+ 		for (i = 0; i < j; i++) {
+ 			/* reset addr cycle */
+-			if (j > 1)
+-				mxc_nand_addr_cycle(mtd, 0, page_addr++);
++			mxc_nand_addr_cycle(mtd, 0, page_addr++);
+ 
+ 			NFC_SET_RBA(0);
+ 			raw_write(0, REG_NFC_OPS_STAT);
+@@ -388,10 +394,6 @@ static void send_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 		break;
+ 	case NAND_CMD_ERASE2:
+ 		for (i = 0; i < j; i++) {
+-			if (!i) {
+-				page_addr = addr_low;
+-				page_addr *= (j > 1 ? j : this->numchips);
+-			}
+ 			mxc_nand_addr_cycle(mtd, -1, page_addr++);
+ 			raw_write(0, REG_NFC_OPS_STAT);
+ 			raw_write(NFC_AUTO_ERASE, REG_NFC_OPS);
+@@ -552,6 +554,7 @@ static u16 mxc_do_status_auto(struct mtd_info *mtd)
+ #ifdef CONFIG_MXC_NFC_SP_AUTO
+ 	int i = 0;
+ 	u32 mask = 0xFF << 16;
++	int cs = NFC_GET_NFC_ACTIVE_CS();
+ 	struct nand_chip *this = mtd->priv;
+ 	struct nand_info *info = this->priv;
+ 
+@@ -576,6 +579,9 @@ static u16 mxc_do_status_auto(struct mtd_info *mtd)
+ 		if (status & NAND_STATUS_FAIL)
+ 			break;
+ 	}
++
++	/* Restore active CS */
++	NFC_SET_NFC_ACTIVE_CS(cs);
+ #endif
+ 	return status;
+ }
+diff --git a/include/asm-arm/arch-mx51/mxc_nand.h b/include/asm-arm/arch-mx51/mxc_nand.h
+index 843f080..4c37620 100644
+--- a/include/asm-arm/arch-mx51/mxc_nand.h
++++ b/include/asm-arm/arch-mx51/mxc_nand.h
+@@ -287,7 +287,7 @@ do { \
+ #define UNLOCK_ADDR(start_addr, end_addr)     \
+ { \
+ 	int i = 0; \
+-	for (; i < NAND_MAX_CHIPS; i++)  \
++	for (; i < NFC_GET_MAXCHIP_SP(); i++)  \
+ 		raw_write(start_addr | \
+ 		(end_addr << NFC_UNLOCK_END_ADDR_SHIFT), \
+ 		REG_UNLOCK_BLK_ADD0 + (i << 2)); \
+@@ -298,6 +298,10 @@ do { \
+ 	(NFC_FIELD_RESET(NFC_ACTIVE_CS_WIDTH, NFC_ACTIVE_CS_SHIFT))) | \
+ 	((val) << NFC_ACTIVE_CS_SHIFT), NFC_CONFIG1);
+ 
++#define NFC_GET_NFC_ACTIVE_CS() \
++	((raw_read(NFC_CONFIG1) >> NFC_ACTIVE_CS_SHIFT) & \
++	((1 << NFC_ACTIVE_CS_WIDTH) - 1))
++
+ #define NFC_GET_MAXCHIP_SP() 		8
+ 
+ #define NFC_SET_BLS(val) ((raw_read(REG_NFC_BLS) & NFC_BLS_RESET) | val)
+diff --git a/include/asm-arm/arch-mx53/mxc_nand.h b/include/asm-arm/arch-mx53/mxc_nand.h
+index 68c2dc6..eb0a3b4 100644
+--- a/include/asm-arm/arch-mx53/mxc_nand.h
++++ b/include/asm-arm/arch-mx53/mxc_nand.h
+@@ -275,7 +275,7 @@ do { \
+ #define UNLOCK_ADDR(start_addr, end_addr)     \
+ { \
+ 	int i = 0; \
+-	for (; i < NAND_MAX_CHIPS; i++)  \
++	for (; i < NFC_GET_MAXCHIP_SP(); i++)  \
+ 		raw_write(start_addr | \
+ 		(end_addr << NFC_UNLOCK_END_ADDR_SHIFT), \
+ 		REG_UNLOCK_BLK_ADD0 + (i << 2)); \
+@@ -286,6 +286,10 @@ do { \
+ 	(NFC_FIELD_RESET(NFC_ACTIVE_CS_WIDTH, NFC_ACTIVE_CS_SHIFT))) | \
+ 	((val) << NFC_ACTIVE_CS_SHIFT), NFC_CONFIG1);
+ 
++#define NFC_GET_NFC_ACTIVE_CS() \
++	((raw_read(NFC_CONFIG1) >> NFC_ACTIVE_CS_SHIFT) & \
++	((1 << NFC_ACTIVE_CS_WIDTH) - 1))
++
+ #define NFC_GET_MAXCHIP_SP()		8
+ 
+ #define NFC_SET_BLS(val) ((raw_read(REG_NFC_BLS) & NFC_BLS_RESET) | val)
+-- 
+1.5.4.4
+

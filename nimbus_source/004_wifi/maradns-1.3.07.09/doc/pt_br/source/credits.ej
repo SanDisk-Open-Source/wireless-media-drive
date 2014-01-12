@@ -1,0 +1,17 @@
+<HEAD>
+<TITLE>Arquivo de créditos MaraDNS</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+</HEAD>
+<BODY>
+
+Um das coisas mais encantadoras em escrever software livre é a 
+quantidade incrível de pessoas se oferecendo para ajudar o MaraDNS.
+Várias pessoas proporcionaram uma ajuda inestimável relatando bug,
+fazendo sugestões, provendo consertos e relatórios a respeito do MaraDNS
+em outros sistemas operacionais, e fazendo do MaraDNS um programa superior.
+
+<p>
+<include "source/créditos.embed">
+
+</BODY>
+

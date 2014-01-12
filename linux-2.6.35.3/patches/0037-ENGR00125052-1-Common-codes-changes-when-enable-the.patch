@@ -1,0 +1,132 @@
+From 27663597dfe1aa5336db166882a41069249fd777 Mon Sep 17 00:00:00 2001
+From: Rob Herring <r.herring@freescale.com>
+Date: Fri, 30 Jul 2010 14:57:09 -0500
+Subject: [PATCH] ENGR00125052-1 Common codes changes when enable the eMMC44 DDR
+
+The modifications of linux kernel common codes
+when enable the eMMC44 DDR mode
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+
+Conflicts:
+
+	drivers/mmc/core/mmc.c
+	include/linux/mmc/host.h
+	include/linux/mmc/mmc.h
+---
+ drivers/mmc/core/mmc.c   |   22 +++++++++++++++++++---
+ include/linux/mmc/card.h |    2 ++
+ include/linux/mmc/host.h |    2 ++
+ include/linux/mmc/mmc.h  |    3 +++
+ 4 files changed, 26 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mmc/core/mmc.c b/drivers/mmc/core/mmc.c
+index 89f7a25..bd55760 100644
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+@@ -122,7 +122,7 @@ static int mmc_decode_csd(struct mmc_card *card)
+ 	 * v1.2 has extra information in bits 15, 11 and 10.
+ 	 */
+ 	csd_struct = UNSTUFF_BITS(resp, 126, 2);
+-	if (csd_struct != 1 && csd_struct != 2) {
++	if (csd_struct < 1 || csd_struct > 3) {
+ 		printk(KERN_ERR "%s: unrecognised CSD structure version %d\n",
+ 			mmc_hostname(card->host), csd_struct);
+ 		return -EINVAL;
+@@ -226,6 +226,8 @@ static int mmc_read_ext_csd(struct mmc_card *card)
+ 			mmc_card_set_blockaddr(card);
+ 	}
+ 
++	card->ext_csd.card_type = ext_csd[EXT_CSD_CARD_TYPE];
++
+ 	switch (ext_csd[EXT_CSD_CARD_TYPE] & EXT_CSD_CARD_TYPE_MASK) {
+ 	case EXT_CSD_CARD_TYPE_52 | EXT_CSD_CARD_TYPE_26:
+ 		card->ext_csd.hs_max_dtr = 52000000;
+@@ -238,6 +240,9 @@ static int mmc_read_ext_csd(struct mmc_card *card)
+ 		printk(KERN_WARNING "%s: card is mmc v4 but doesn't "
+ 			"support any high-speed modes.\n",
+ 			mmc_hostname(card->host));
++		printk(KERN_WARNING "%s: card type is 0x%x\n",
++			mmc_hostname(card->host), ext_csd[EXT_CSD_CARD_TYPE]);
++		goto out;
+ 	}
+ 
+ 	if (card->ext_csd.rev >= 3) {
+@@ -447,10 +452,21 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
+ 	 * Activate wide bus (if supported).
+ 	 */
+ 	if ((card->csd.mmca_vsn >= CSD_SPEC_VER_4) &&
+-	    (host->caps & (MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA))) {
++		(host->caps & (MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA
++			       | MMC_CAP_DATA_DDR))) {
+ 		unsigned ext_csd_bit, bus_width;
+ 
+-		if (host->caps & MMC_CAP_8_BIT_DATA) {
++		if ((host->caps & MMC_CAP_8_BIT_DATA) &&
++				(host->caps & MMC_CAP_DATA_DDR) &&
++				(card->ext_csd.card_type & MMC_DDR_MODE_MASK)) {
++			ext_csd_bit = EXT_CSD_BUS_WIDTH_8_DDR;
++			bus_width = MMC_BUS_WIDTH_8 | MMC_BUS_WIDTH_DDR;
++		} else if ((host->caps & MMC_CAP_4_BIT_DATA) &&
++				(host->caps & MMC_CAP_DATA_DDR) &&
++				(card->ext_csd.card_type & MMC_DDR_MODE_MASK)) {
++			ext_csd_bit = EXT_CSD_BUS_WIDTH_4_DDR;
++			bus_width = MMC_BUS_WIDTH_4 | MMC_BUS_WIDTH_DDR;
++		} else if (host->caps & MMC_CAP_8_BIT_DATA) {
+ 			ext_csd_bit = EXT_CSD_BUS_WIDTH_8;
+ 			bus_width = MMC_BUS_WIDTH_8;
+ 		} else {
+diff --git a/include/linux/mmc/card.h b/include/linux/mmc/card.h
+index d02d2c6..abaab31 100644
+--- a/include/linux/mmc/card.h
++++ b/include/linux/mmc/card.h
+@@ -44,6 +44,8 @@ struct mmc_ext_csd {
+ 	unsigned int		sa_timeout;		/* Units: 100ns */
+ 	unsigned int		hs_max_dtr;
+ 	unsigned int		sectors;
++	unsigned int		card_type;
++#define MMC_DDR_MODE_MASK 	(0x3<<2)
+ };
+ 
+ struct sd_scr {
+diff --git a/include/linux/mmc/host.h b/include/linux/mmc/host.h
+index f65913c..e77d754 100644
+--- a/include/linux/mmc/host.h
++++ b/include/linux/mmc/host.h
+@@ -44,6 +44,7 @@ struct mmc_ios {
+ #define MMC_BUS_WIDTH_1		0
+ #define MMC_BUS_WIDTH_4		2
+ #define MMC_BUS_WIDTH_8		3
++#define MMC_BUS_WIDTH_DDR	8
+ 
+ 	unsigned char	timing;			/* timing specification used */
+ 
+@@ -155,6 +156,7 @@ struct mmc_host {
+ #define MMC_CAP_DISABLE		(1 << 7)	/* Can the host be disabled */
+ #define MMC_CAP_NONREMOVABLE	(1 << 8)	/* Nonremovable e.g. eMMC */
+ #define MMC_CAP_WAIT_WHILE_BUSY	(1 << 9)	/* Waits while card is busy */
++#define MMC_CAP_DATA_DDR	(1 << 10)	/* Can the host do ddr transfers */
+ 
+ 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
+ 
+diff --git a/include/linux/mmc/mmc.h b/include/linux/mmc/mmc.h
+index 8a49cbf..4d54f3d 100644
+--- a/include/linux/mmc/mmc.h
++++ b/include/linux/mmc/mmc.h
+@@ -269,10 +269,13 @@ struct _mmc_csd {
+ #define EXT_CSD_CARD_TYPE_26	(1<<0)	/* Card can run at 26MHz */
+ #define EXT_CSD_CARD_TYPE_52	(1<<1)	/* Card can run at 52MHz */
+ #define EXT_CSD_CARD_TYPE_MASK	0x3	/* Mask out reserved and DDR bits */
++#define EXT_CSD_CARD_TYPE_DDR_52	(1<<2)	/* Card can run at DDR 52MHz */
+ 
+ #define EXT_CSD_BUS_WIDTH_1	0	/* Card is in 1 bit mode */
+ #define EXT_CSD_BUS_WIDTH_4	1	/* Card is in 4 bit mode */
+ #define EXT_CSD_BUS_WIDTH_8	2	/* Card is in 8 bit mode */
++#define EXT_CSD_BUS_WIDTH_4_DDR	5	/* Card is in 4 bit ddr mode */
++#define EXT_CSD_BUS_WIDTH_8_DDR	6	/* Card is in 8 bit ddr mode */
+ 
+ /*
+  * MMC_SWITCH access modes
+-- 
+1.5.4.4
+

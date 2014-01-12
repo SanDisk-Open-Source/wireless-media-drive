@@ -1,0 +1,31 @@
+From cd0cf0ce16aa681d681d210a3513357d5ca02490 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Wed, 23 Mar 2011 20:33:06 +0800
+Subject: [PATCH] ENGR00141058 MX50_RDP: Android Fix typo in recoevry command line
+
+A typo is in last commit, will cause android recovery not
+work.
+
+Add a space between two string.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ include/configs/mx50_rdp_android.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/configs/mx50_rdp_android.h b/include/configs/mx50_rdp_android.h
+index ac4cc80..0b8997c 100644
+--- a/include/configs/mx50_rdp_android.h
++++ b/include/configs/mx50_rdp_android.h
+@@ -315,7 +315,7 @@
+ #define CONFIG_ANDROID_RECOVERY
+ #define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
+ 	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4"	\
+-	"rootfs=ext4 keypad"
++	" rootfs=ext4 keypad"
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+ 	"run bootargs_base bootargs_android_recovery;"  \
+ 	"mmc read 0 ${loadaddr} 0x800 0x2000;bootm"
+-- 
+1.5.4.4
+

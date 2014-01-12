@@ -1,0 +1,753 @@
+From e4f2035ea5507b954fcf0bc0e1362b61245de68c Mon Sep 17 00:00:00 2001
+From: Alan Carvalho de Assis <alan.assis@freescale.com>
+Date: Thu, 5 Mar 2009 09:26:00 -0300
+Subject: [PATCH] ENGR00107840 Add U-Boot for MX25 PDK board
+
+These patches add functional support to iMX25PDK.
+Currently only the internal FEC is supported.
+
+Signed-off-by: Alan Carvalho de Assis <alan.assis@freescale.com>
+---
+ Makefile                                    |    3 +
+ board/freescale/mx25_3stack/Makefile        |   53 +++++++
+ board/freescale/mx25_3stack/config.mk       |    1 +
+ board/freescale/mx25_3stack/dcdheader.S     |   99 +++++++++++++
+ board/freescale/mx25_3stack/lowlevel_init.S |   72 ++++++++++
+ board/freescale/mx25_3stack/mx25_3stack.c   |  187 +++++++++++++++++++++++++
+ board/freescale/mx25_3stack/u-boot.lds      |   62 ++++++++
+ include/configs/mx25_3stack.h               |  200 +++++++++++++++++++++++++++
+ 8 files changed, 677 insertions(+), 0 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 4ece425..a445f14 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3204,6 +3204,9 @@ apollon_config		: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 apollon NULL omap24xx
+ 	@echo "CONFIG_ONENAND_U_BOOT = y" >> $(obj)include/config.mk
+ 
++mx25_3stack_config	:	unconfig
++	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx25_3stack freescale mx25
++
+ imx31_litekit_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 imx31_litekit NULL mx31
+ 
+diff --git a/board/freescale/mx25_3stack/Makefile b/board/freescale/mx25_3stack/Makefile
+new file mode 100644
+index 0000000..ac308fe
+--- /dev/null
++++ b/board/freescale/mx25_3stack/Makefile
+@@ -0,0 +1,53 @@
++#
++# (c) Copyright 2009 Freescale Semiconductor
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= mx25_3stack.o
++SOBJS	:= lowlevel_init.o dcdheader.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/freescale/mx25_3stack/config.mk b/board/freescale/mx25_3stack/config.mk
+new file mode 100644
+index 0000000..4c401e7
+--- /dev/null
++++ b/board/freescale/mx25_3stack/config.mk
+@@ -0,0 +1 @@
++TEXT_BASE = 0x83F00000
+diff --git a/board/freescale/mx25_3stack/dcdheader.S b/board/freescale/mx25_3stack/dcdheader.S
+new file mode 100644
+index 0000000..2bd61ed
+--- /dev/null
++++ b/board/freescale/mx25_3stack/dcdheader.S
+@@ -0,0 +1,99 @@
++/*
++ *  Copyright (c) 2009  Freescale Semiconductor
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#include <config.h>
++#include <version.h>
++
++.extern reset
++
++#define DCDGEN(i,type, addr, data) \
++dcd_##i:			;\
++    .long type			;\
++    .long addr			;\
++    .long data
++
++.globl _initheader
++_initheader:
++	b	reset
++	.org 0x400
++app_code_jump_v:	.long reset
++app_code_barker:	.long 0xB1
++app_code_csf:		.long 0
++hwcfg_ptr_ptr:		.long hwcfg_ptr
++super_root_key:		.long 0
++hwcfg_ptr:		.long dcd_data
++app_dest_ptr:		.long TEXT_BASE
++dcd_data:		.long 0xB17219E9
++
++#ifdef MXC_MEMORY_MDDR
++dcd_len:		.long 12*15
++#else
++dcd_len:		.long 12*24
++#endif
++
++/* WEIM config-CS5 init -- CPLD */
++DCDGEN( 1, 4, 0xB8002050, 0x0000D843) /* CS5_CSCRU */
++DCDGEN( 2, 4, 0xB8002054, 0x22252521) /* CS5_CSCRL */
++DCDGEN( 3, 4, 0xB8002058, 0x22220A00) /* CS5_CSCRA */
++#ifdef MXC_MEMORY_MDDR
++/* MDDR init */
++DCDGEN( 4, 4, 0xB8001010, 0x00000004) /* enable mDDR */
++DCDGEN( 5, 4, 0xB8001000, 0x92100000) /* precharge command */
++DCDGEN( 6, 1, 0x80000400, 0x12344321) /* precharge all dummy write */
++DCDGEN( 7, 4, 0xB8001000, 0xA2100000) /* auto-refresh command */
++DCDGEN( 8, 4, 0x80000000, 0x12344321) /* dummy write for refresh */
++DCDGEN( 9, 4, 0x80000000, 0x12344321) /* dummy write for refresh */
++DCDGEN(10, 4, 0xB8001000, 0xB2100000) /* Load Mode Reg command - cas=3 bl=8 */
++DCDGEN(11, 1, 0x80000033, 0xda)	/* dummy write -- address has the mode bits */
++DCDGEN(12, 1, 0x81000000, 0xff) /* dummy write -- address has the mode bits */
++DCDGEN(13, 4, 0xB8001000, 0x82216880)
++DCDGEN(14, 4, 0xB8001004, 0x00295729)
++#else
++/* DDR2 init */
++DCDGEN( 4, 4, 0xB8001004, 0x0076E83A)	/* initial value for ESDCFG0 */
++DCDGEN( 5, 4, 0xB8001010, 0x00000204)	/* ESD_MISC */
++DCDGEN( 6, 4, 0xB8001000, 0x92210000)	/* CS0 precharge command */
++DCDGEN( 7, 4, 0x80000f00, 0x12344321)	/* precharge all dummy write */
++DCDGEN( 8, 4, 0xB8001000, 0xB2210000)	/* Load Mode Register command */
++DCDGEN( 9, 1, 0x82000000, 0xda)		/* dummy write Load EMR2 */
++DCDGEN(10, 1, 0x83000000, 0xda)		/* dummy write Load EMR3 */
++DCDGEN(11, 1, 0x81000400, 0xda)		/* dummy write Load EMR1; enable DLL */
++DCDGEN(12, 1, 0x80000333, 0xda)		/* dummy write Load MR; reset DLL */
++
++DCDGEN(13, 4, 0xB8001000, 0x92210000)	/* CS0 precharge command */
++DCDGEN(14, 1, 0x80000400, 0x12345678)	/* precharge all dummy write */
++
++DCDGEN(15, 4, 0xB8001000, 0xA2210000)	/* select manual refresh mode */
++DCDGEN(16, 4, 0x80000000, 0x87654321)	/* manual refresh */
++DCDGEN(17, 4, 0x80000000, 0x87654321)	/* manual refresh twice */
++
++DCDGEN(18, 4, 0xB8001000, 0xB2210000)	/* Load Mode Register command */
++DCDGEN(19, 1, 0x80000233, 0xda)		/* Load MR; CL=3, BL=8, end DLL reset */
++DCDGEN(20, 1, 0x81000780, 0xda)		/* Load EMR1; OCD default */
++DCDGEN(21, 1, 0x81000400, 0xda)		/* Load EMR1; OCD exit */
++DCDGEN(22, 4, 0xB8001000, 0x82216080)	/* normal mode */
++DCDGEN(23, 4, 0x43FAC454, 0x00001000)	/* IOMUXC_SW_PAD_CTL_GRP_DDRTYPE(1-5) */
++#endif
++
++DCDGEN(99, 4, 0x53F80008, 0x20034000) /* CLKCTL ARM=400 AHB=133 */
++card_cfg:	.long UBOOT_IMAGE_SIZE
+diff --git a/board/freescale/mx25_3stack/lowlevel_init.S b/board/freescale/mx25_3stack/lowlevel_init.S
+new file mode 100644
+index 0000000..61bb589
+--- /dev/null
++++ b/board/freescale/mx25_3stack/lowlevel_init.S
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (c) 2009  Freescale Semiconductor
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <asm/arch/mx25-regs.h>
++
++.macro REG reg, val
++	ldr r2, =\reg
++	ldr r3, =\val
++	str r3, [r2]
++.endm
++
++.macro REG8 reg, val
++	ldr r2, =\reg
++	ldr r3, =\val
++	strb r3, [r2]
++.endm
++
++.globl lowlevel_init
++lowlevel_init:
++
++	REG 0x53F80008, 0x20034000 // ARM clk = 399, AHB clk = 133
++
++	/* Init Debug Board CS5 */
++	REG 0xB8002050, 0x0000D843
++	REG 0xB8002054, 0x22252521
++	REG 0xB8002058, 0x22220A00
++
++	/* M3IF setup */
++	ldr r0, =0x00000001
++	str r0, [r1]  /* M3IF control reg */
++
++	/* default CLKO to 1/32 of the ARM core */
++	ldr r0, =CCM_MCR
++	ldr r1, =CCM_MCR
++	bic r1, r1, #0x00F00000
++	bic r1, r1, #0x7F000000
++	mov r2,     #0x5F000000
++	add r2, r2, #0x00200000
++	orr r1, r1, r2
++	str r1, [r0]
++
++	/* enable all the clocks */
++	ldr r2, =0x1FFFFFFF
++	ldr r0, =CCM_CGR0
++	str r2, [r0]
++	ldr r2, =0xFFFFFFFF
++	ldr r0, =CCM_CGR1
++	str r2, [r0]
++	ldr r2, =0x000FDFFF
++	ldr r0, =CCM_CGR2
++	str r2, [r0]
++	mov	pc, lr
++
+diff --git a/board/freescale/mx25_3stack/mx25_3stack.c b/board/freescale/mx25_3stack/mx25_3stack.c
+new file mode 100644
+index 0000000..22559b6
+--- /dev/null
++++ b/board/freescale/mx25_3stack/mx25_3stack.c
+@@ -0,0 +1,187 @@
++/*
++ * (c) Copyright 2009 Freescale Semiconductor
++ *
++ * (c) 2007 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/errno.h>
++#include <asm/arch/mx25.h>
++#include <asm/arch/mx25-regs.h>
++#include <asm/arch/mx25_pins.h>
++#include <asm/arch/iomux.h>
++#include <asm/arch/gpio.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++static u32 system_rev;
++
++u32 get_board_rev(void)
++{
++	return system_rev;
++}
++
++static inline void setup_soc_rev(void)
++{
++	int reg;
++	reg = __REG(IIM_BASE + IIM_SREV);
++	if (!reg) {
++		reg = __REG(ROMPATCH_REV);
++		reg <<= 4;
++	} else
++		reg += CHIP_REV_1_0;
++	system_rev = 0x25000 + (reg & 0xFF);
++}
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++
++	return 0;
++}
++
++int board_init(void)
++{
++	int pad;
++	u8 reg[4];
++
++	setup_soc_rev();
++
++	/* setup pins for UART1 */
++	/* UART 1 IOMUX Configs */
++	mxc_request_iomux(MX25_PIN_UART1_RXD, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_UART1_TXD, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_UART1_RTS, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_UART1_CTS, MUX_CONFIG_FUNC);
++	mxc_iomux_set_pad(MX25_PIN_UART1_RXD,
++			PAD_CTL_HYS_SCHMITZ | PAD_CTL_PKE_ENABLE |
++			PAD_CTL_PUE_PUD | PAD_CTL_100K_PU);
++	mxc_iomux_set_pad(MX25_PIN_UART1_TXD,
++			PAD_CTL_PUE_PUD | PAD_CTL_100K_PD);
++	mxc_iomux_set_pad(MX25_PIN_UART1_RTS,
++			PAD_CTL_HYS_SCHMITZ | PAD_CTL_PKE_ENABLE |
++			PAD_CTL_PUE_PUD | PAD_CTL_100K_PU);
++	mxc_iomux_set_pad(MX25_PIN_UART1_CTS,
++			PAD_CTL_PUE_PUD | PAD_CTL_100K_PD);
++
++	/* setup pins for FEC */
++	mxc_request_iomux(MX25_PIN_FEC_TX_CLK, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_RX_DV, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_RDATA0, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_TDATA0, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_TX_EN, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_MDC, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_MDIO, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_RDATA1, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_FEC_TDATA1, MUX_CONFIG_FUNC);
++	mxc_request_iomux(MX25_PIN_POWER_FAIL, MUX_CONFIG_FUNC); /* PHY INT */
++
++#define FEC_PAD_CTL1 (PAD_CTL_HYS_SCHMITZ | PAD_CTL_PUE_PUD | \
++			PAD_CTL_PKE_ENABLE)
++#define FEC_PAD_CTL2 (PAD_CTL_PUE_PUD)
++
++	mxc_iomux_set_pad(MX25_PIN_FEC_TX_CLK, FEC_PAD_CTL1);
++	mxc_iomux_set_pad(MX25_PIN_FEC_RX_DV, FEC_PAD_CTL1);
++	mxc_iomux_set_pad(MX25_PIN_FEC_RDATA0, FEC_PAD_CTL1);
++	mxc_iomux_set_pad(MX25_PIN_FEC_TDATA0, FEC_PAD_CTL2);
++	mxc_iomux_set_pad(MX25_PIN_FEC_TX_EN, FEC_PAD_CTL2);
++	mxc_iomux_set_pad(MX25_PIN_FEC_MDC, FEC_PAD_CTL2);
++	mxc_iomux_set_pad(MX25_PIN_FEC_MDIO, FEC_PAD_CTL1 | PAD_CTL_22K_PU);
++	mxc_iomux_set_pad(MX25_PIN_FEC_RDATA1, FEC_PAD_CTL1);
++	mxc_iomux_set_pad(MX25_PIN_FEC_TDATA1, FEC_PAD_CTL2);
++	mxc_iomux_set_pad(MX25_PIN_POWER_FAIL, FEC_PAD_CTL1);
++
++	/*
++	 * Set up the FEC_RESET_B and FEC_ENABLE GPIO pins.
++	 * Assert FEC_RESET_B, then power up the PHY by asserting
++	 * FEC_ENABLE, at the same time lifting FEC_RESET_B.
++	 *
++	 * FEC_RESET_B: gpio2[3] is ALT 5 mode of pin D12
++	 * FEC_ENABLE_B: gpio4[8] is ALT 5 mode of pin A17
++	 */
++	mxc_request_iomux(MX25_PIN_A17, MUX_CONFIG_ALT5); /* FEC_EN */
++	mxc_request_iomux(MX25_PIN_D12, MUX_CONFIG_ALT5); /* FEC_RESET_B */
++
++	mxc_iomux_set_pad(MX25_PIN_A17, PAD_CTL_ODE_OpenDrain);
++	mxc_iomux_set_pad(MX25_PIN_D12, 0);
++
++	mxc_set_gpio_direction(MX25_PIN_A17, 0); /* FEC_EN */
++	mxc_set_gpio_direction(MX25_PIN_D12, 0); /* FEC_RESET_B */
++
++	/* drop PHY power */
++	mxc_set_gpio_dataout(MX25_PIN_A17, 0);	/* FEC_EN */
++
++	/* assert reset */
++	mxc_set_gpio_dataout(MX25_PIN_D12, 0);	/* FEC_RESET_B */
++	udelay(2);		/* spec says 1us min */
++
++	/* turn on PHY power and lift reset */
++	mxc_set_gpio_dataout(MX25_PIN_A17, 1);	/* FEC_EN */
++	mxc_set_gpio_dataout(MX25_PIN_D12, 1);	/* FEC_RESET_B */
++
++#define I2C_PAD_CTL (PAD_CTL_HYS_SCHMITZ | PAD_CTL_PKE_ENABLE | \
++		PAD_CTL_PUE_PUD | PAD_CTL_100K_PU | PAD_CTL_ODE_OpenDrain)
++
++	mxc_request_iomux(MX25_PIN_I2C1_CLK, MUX_CONFIG_SION);
++	mxc_request_iomux(MX25_PIN_I2C1_DAT, MUX_CONFIG_SION);
++	mxc_iomux_set_pad(MX25_PIN_I2C1_CLK, 0x1E8);
++	mxc_iomux_set_pad(MX25_PIN_I2C1_DAT, 0x1E8);
++
++	gd->bd->bi_arch_number = MACH_TYPE_MX25_3DS;    /* board id for linux */
++	gd->bd->bi_boot_params = 0x80000100;    /* address of boot parameters */
++
++	return 0;
++
++#undef FEC_PAD_CTL1
++#undef FEC_PAD_CTL2
++#undef I2C_PAD_CTL
++}
++
++#ifdef BOARD_LATE_INIT
++int board_late_init(void)
++{
++	u8 reg[4];
++
++	/* Turn PMIC On*/
++	reg[0] = 0x09;
++	i2c_write(0x54, 0x02, 1, reg, 1);
++}
++#endif
++
++
++int checkboard(void)
++{
++	printf("Board: i.MX25 MAX PDK (3DS)\n");
++	return 0;
++}
++
++int board_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_DRIVER_SMC911X)
++	rc = smc911x_initialize(bis);
++#endif
++	return rc;
++}
++
+diff --git a/board/freescale/mx25_3stack/u-boot.lds b/board/freescale/mx25_3stack/u-boot.lds
+new file mode 100644
+index 0000000..8d61156
+--- /dev/null
++++ b/board/freescale/mx25_3stack/u-boot.lds
+@@ -0,0 +1,62 @@
++/*
++ * (c) Copyright 2009 Freescale Semiconductor
++ *
++ * January 2004 - Changed to support H4 device
++ * Copyright (c) 2004 Texas Instruments
++ *
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text	   :
++	{
++	  board/freescale/mx25_3stack/dcdheader.o (.text)
++	  cpu/arm926ejs/start.o	(.text)
++	  *(.text)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(.rodata) }
++
++	. = ALIGN(4);
++	.data : { *(.data) }
++
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+new file mode 100644
+index 0000000..01a4c03
+--- /dev/null
++++ b/include/configs/mx25_3stack.h
+@@ -0,0 +1,200 @@
++/*
++ * (C) Copyright 2009 Freescale Semiconductor
++ *
++ * (C) Copyright 2004
++ * Texas Instruments.
++ * Richard Woodruff <r-woodruff2@ti.com>
++ * Kshitij Gupta <kshitij@ti.com>
++ *
++ * Configuration settings for the Freescale i.MX31 PDK board.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx25.h>
++#include <asm/arch/mx25-regs.h>
++
++/* High Level Configuration Options */
++#define CONFIG_ARM926EJS	1	/* This is an arm1136 CPU core */
++#define CONFIG_MX25		1	/* in a mx31 */
++#define CONFIG_MX25_HCLK_FREQ	24000000
++#define CONFIG_MX25_CLK32	32768
++
++/* IF iMX25 3DS V-1.0 define it */
++/* #define CONFIG_MX25_3DS_V10 */
++
++#ifdef CONFIG_MX25_3DS_V10
++#define MXC_MEMORY_MDDR
++#endif
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/* No support for NAND boot for i.MX31 PDK yet, so we rely on some other
++ * program to initialize the SDRAM.
++ */
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 512 * 1024)
++#define CONFIG_SYS_GBL_DATA_SIZE	128 /* bytes reserved initial data */
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_HARD_I2C		1
++#define CONFIG_I2C_MXC		1
++#define CONFIG_SYS_I2C_PORT		I2C1_BASE
++#define CONFIG_SYS_I2C_SPEED		40000
++#define CONFIG_SYS_I2C_SLAVE		0xfe
++
++#define CONFIG_MX25_UART	1
++#define CONFIG_MX25_UART1		1
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX	1
++#define CONFIG_BAUDRATE		115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_I2C
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_PING
++/* #define CONFIG_CMD_SPI */
++/* #define CONFIG_CMD_DATE */
++#define CONFIG_CMD_NAND
++
++/* Disabled due to compilation errors in cmd_bootm.c (IMLS seems to require
++ * that CONFIG_NO_FLASH is undefined).
++ */
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_LOADADDR		0x80800000	/* loadaddr env var */
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++	"netdev=eth0\0"							\
++	"ethprime=fec\0"						\
++	"bootargs_base=setenv bootargs console=ttymxc0,115200\0"	\
++	"bootargs_nfs=setenv bootargs $(bootargs) root=/dev/nfs "	\
++		"ip=dhcp nfsroot=$(serverip):$(nfsrootfs),v3,tcp\0"	\
++	"bootcmd=run bootcmd_net\0"					\
++	"bootcmd_net=run bootargs_base bootargs_mtd bootargs_nfs; "	\
++		"tftpboot 0x81000000 uImage; bootm\0"
++
++/*Support LAN9217*/
++/*#define CONFIG_DRIVER_SMC911X   1
++#define CONFIG_DRIVER_SMC911X_16_BIT 1
++#define CONFIG_DRIVER_SMC911X_BASE CS5_BASE*/
++
++/*#define CONFIG_HAS_ETH1*/
++#define CONFIG_NET_MULTI	1
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_DISCOVER_PHY
++
++#define CONFIG_FEC0_IOBASE FEC_BASE
++#define CONFIG_FEC0_PINMUX -1
++#define CONFIG_FEC0_PHY_ADDR 0x1F
++#define CONFIG_FEC0_MIIBASE -1
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP	/* undef to save memory */
++#define CONFIG_SYS_PROMPT	"uboot> "
++#define CONFIG_SYS_CBSIZE	256  /* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE	CONFIG_SYS_CBSIZE /* Boot Argument Buf Size */
++
++#define CONFIG_SYS_MEMTEST_START	PHYS_SDRAM_1	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END	0x10000
++
++#define CONFIG_SYS_LOAD_ADDR	CONFIG_LOADADDR /* default load address */
++
++#define CONFIG_SYS_HZ		CONFIG_MX25_CLK32
++
++#define UBOOT_IMAGE_SIZE	0x40000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024) /* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE
++
++/* iMX25 V-1.0 has 128MB but V-1.1 has only 64MB */
++#ifdef CONFIG_MX25_3DS_V10
++#define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#else
++#define PHYS_SDRAM_1_SIZE       (64 * 1024 * 1024)
++#endif
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++
++#define	CONFIG_ENV_IS_IN_NAND	1
++#define CONFIG_ENV_OFFSET		0x80000 /* 2nd block */
++#define CONFIG_ENV_SECT_SIZE	(256 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH driver setup
++ */
++#define CONFIG_SYS_NO_FLASH
++#define NAND_MAX_CHIPS		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1
++#define CONFIG_SYS_NAND_BASE		0x40000000
++
++/*
++ * JFFS2 partitions TODO:
++ */
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++
++#endif /* __CONFIG_H */
++
+-- 
+1.5.4.4
+

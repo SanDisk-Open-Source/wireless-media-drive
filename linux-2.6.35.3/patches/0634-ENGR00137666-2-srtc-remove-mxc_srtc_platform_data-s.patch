@@ -1,0 +1,54 @@
+From 7b3d0e9056175ea3c2ad5e09f45abbe0a1aecfd6 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 6 Jan 2011 17:27:22 +0800
+Subject: [PATCH] ENGR00137666-2 srtc: remove mxc_srtc_platform_data struct
+
+remove mxc_srtc_platform_data struct from srtc driver
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ drivers/rtc/rtc-mxc_v2.c    |    4 ----
+ include/linux/fsl_devices.h |    4 ----
+ 2 files changed, 0 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/rtc/rtc-mxc_v2.c b/drivers/rtc/rtc-mxc_v2.c
+index 4e019d0..4d2317b 100644
+--- a/drivers/rtc/rtc-mxc_v2.c
++++ b/drivers/rtc/rtc-mxc_v2.c
+@@ -554,9 +554,7 @@ static int mxc_rtc_probe(struct platform_device *pdev)
+ 	struct resource *res;
+ 	struct rtc_device *rtc;
+ 	struct rtc_drv_data *pdata = NULL;
+-	struct mxc_srtc_platform_data *plat_data = NULL;
+ 	void __iomem *ioaddr;
+-	void __iomem *srtc_secmode_addr;
+ 	int ret = 0;
+ 
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+@@ -603,8 +601,6 @@ static int mxc_rtc_probe(struct platform_device *pdev)
+ 	__raw_writel(0xFFFFFFFF, ioaddr + SRTC_LPSR);
+ 	udelay(100);
+ 
+-	plat_data = (struct mxc_srtc_platform_data *)pdev->dev.platform_data;
+-
+ 	/* move out of init state */
+ 	__raw_writel((SRTC_LPCR_IE | SRTC_LPCR_NSA),
+ 		     ioaddr + SRTC_LPCR);
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 050735e..34304fd 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -480,10 +480,6 @@ struct flexcan_platform_data {
+ 	unsigned int std_msg:1;
+ };
+ 
+-struct mxc_srtc_platform_data {
+-	u32 srtc_sec_mode_addr;
+-};
+-
+ struct tve_platform_data {
+ 	char *dac_reg;
+ 	char *dig_reg;
+-- 
+1.5.4.4
+

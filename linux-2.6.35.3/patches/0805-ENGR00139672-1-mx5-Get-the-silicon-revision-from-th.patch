@@ -1,0 +1,225 @@
+From 3da74e8e86327bb9a7cce9bdf67af7773a05eca6 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Wed, 1 Dec 2010 16:44:53 -0600
+Subject: [PATCH] ENGR00139672-1 mx5: Get the silicon revision from the IIM
+
+For MX51 and MX53,the SI_REV fuse will have the correct silicon
+revision that can be read from the IIM module.
+
+For MX50, the HW_ADADIG_DIGPROG register in the ANATOP module will
+have the correct silicon revision:
+Major       Minor   Description
+0x50        0x0     TO1.0
+0x50        0x1     TO1.1
+
+Dropped all support for MX51 TO1.0 and TO1.1, only MX51 REV 2.0 and 3.0
+are valid.
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/mach-mx5/cpu.c                 |  108 +++++++++++++++++++++++--------
+ arch/arm/plat-mxc/include/mach/common.h |   11 +++-
+ arch/arm/plat-mxc/include/mach/mxc.h    |   16 ++++-
+ 3 files changed, 106 insertions(+), 29 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/cpu.c b/arch/arm/mach-mx5/cpu.c
+index 70df35f..b8996a5 100644
+--- a/arch/arm/mach-mx5/cpu.c
++++ b/arch/arm/mach-mx5/cpu.c
+@@ -41,55 +41,109 @@ extern void init_ddr_settings(void);
+ 
+ static int cpu_silicon_rev = -1;
+ 
+-#define SI_REV 0x48
++#define IIM_SREV 0x24
++#define MX50_HW_ADADIG_DIGPROG	0xB0
+ 
+-static void query_silicon_parameter(void)
++static int get_mx51_srev(void)
+ {
+-	void __iomem *rom = ioremap(IROM_BASE_ADDR, IROM_SIZE);
+-	u32 rev;
++	void __iomem *iim_base = IO_ADDRESS(IIM_BASE_ADDR);
++	u32 rev = readl(iim_base + IIM_SREV) & 0xff;
+ 
+-	if (!rom) {
+-		cpu_silicon_rev = -EINVAL;
+-		return;
+-	}
++	if (rev == 0x0)
++		return IMX_CHIP_REVISION_2_0;
++	else if (rev == 0x10)
++		return IMX_CHIP_REVISION_3_0;
++	return 0;
++}
++
++/*
++ * Returns:
++ *	the silicon revision of the cpu
++ *	-EINVAL - not a mx51
++ */
++int mx51_revision(void)
++{
++	if (!cpu_is_mx51())
++		return -EINVAL;
++
++	if (cpu_silicon_rev == -1)
++		cpu_silicon_rev = get_mx51_srev();
++
++	return cpu_silicon_rev;
++}
++EXPORT_SYMBOL(mx51_revision);
++
++static int get_mx53_srev(void)
++{
++	void __iomem *iim_base = IO_ADDRESS(IIM_BASE_ADDR);
++	u32 rev = readl(iim_base + IIM_SREV) & 0xff;
+ 
+-	rev = readl(rom + SI_REV);
+ 	switch (rev) {
+-	case 0x1:
+-		cpu_silicon_rev = CHIP_REV_1_0;
+-		break;
++	case 0x0:
++		return IMX_CHIP_REVISION_1_0;
+ 	case 0x2:
+-		cpu_silicon_rev = CHIP_REV_1_1;
+-		break;
+-	case 0x10:
+-		cpu_silicon_rev = CHIP_REV_2_0;
+-		break;
+-	case 0x20:
+-		cpu_silicon_rev = CHIP_REV_3_0;
+-		break;
++		return IMX_CHIP_REVISION_2_0;
++	case 0x3:
++		return IMX_CHIP_REVISION_2_1;
+ 	default:
+-		cpu_silicon_rev = 0;
++		return IMX_CHIP_REVISION_UNKNOWN;
+ 	}
++}
+ 
+-	iounmap(rom);
++/*
++ * Returns:
++ *	the silicon revision of the cpu
++ *	-EINVAL - not a mx53
++ */
++int mx53_revision(void)
++{
++	if (!cpu_is_mx53())
++		return -EINVAL;
++
++	if (cpu_silicon_rev == -1)
++		cpu_silicon_rev = get_mx53_srev();
++
++	return cpu_silicon_rev;
++}
++EXPORT_SYMBOL(mx53_revision);
++
++static int get_mx50_srev(void)
++{
++	void __iomem *anatop = ioremap(ANATOP_BASE_ADDR, SZ_8K);
++	u32 rev;
++
++	if (!anatop) {
++		cpu_silicon_rev = -EINVAL;
++		return 0;
++	}
++
++	rev = readl(anatop + MX50_HW_ADADIG_DIGPROG);
++	rev &= 0xff;
++
++	iounmap(anatop);
++	if (rev == 0x0)
++		return IMX_CHIP_REVISION_1_0;
++	else if (rev == 0x1)
++		return IMX_CHIP_REVISION_1_1;
++	return 0;
+ }
+ 
+ /*
+  * Returns:
+  *	the silicon revision of the cpu
+- *	-EINVAL - not a mx51
++ *	-EINVAL - not a mx50
+  */
+-int mx51_revision(void)
++int mx50_revision(void)
+ {
+-	if (!cpu_is_mx51())
++	if (!cpu_is_mx50())
+ 		return -EINVAL;
+ 
+ 	if (cpu_silicon_rev == -1)
+-		query_silicon_parameter();
++		cpu_silicon_rev = get_mx50_srev();
+ 
+ 	return cpu_silicon_rev;
+ }
+-EXPORT_SYMBOL(mx51_revision);
++EXPORT_SYMBOL(mx50_revision);
+ 
+ struct cpu_wp *(*get_cpu_wp)(int *wp);
+ void (*set_num_cpu_wp)(int num);
+diff --git a/arch/arm/plat-mxc/include/mach/common.h b/arch/arm/plat-mxc/include/mach/common.h
+index 75b739d..a89e874 100644
+--- a/arch/arm/plat-mxc/include/mach/common.h
++++ b/arch/arm/plat-mxc/include/mach/common.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -59,4 +59,13 @@ extern void mxc91231_power_off(void);
+ extern void mxc91231_arch_reset(int, const char *);
+ extern void mxc91231_prepare_idle(void);
+ 
++#ifdef CONFIG_ARCH_MX5
++extern int mx50_revision(void);
++extern int mx51_revision(void);
++extern int mx53_revision(void);
++#else
++static inline int mx50_revision(void) {return 0; }
++static inline int mx51_revision(void) {return 0; }
++static inline int mx53_revision(void) {return 0; }
++#endif
+ #endif
+diff --git a/arch/arm/plat-mxc/include/mach/mxc.h b/arch/arm/plat-mxc/include/mach/mxc.h
+index 39cc8a4..5acf759 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc.h
++++ b/arch/arm/plat-mxc/include/mach/mxc.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc.
+  * Copyright (C) 2008 Juergen Beisert (kernel@pengutronix.de)
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -37,6 +37,20 @@
+ #define MXC_CPU_MX53		53
+ #define MXC_CPU_MXC91231	91231
+ 
++#define IMX_CHIP_REVISION_1_0		0x10
++#define IMX_CHIP_REVISION_1_1		0x11
++#define IMX_CHIP_REVISION_1_2		0x12
++#define IMX_CHIP_REVISION_1_3		0x13
++#define IMX_CHIP_REVISION_2_0		0x20
++#define IMX_CHIP_REVISION_2_1		0x21
++#define IMX_CHIP_REVISION_2_2		0x22
++#define IMX_CHIP_REVISION_2_3		0x23
++#define IMX_CHIP_REVISION_3_0		0x30
++#define IMX_CHIP_REVISION_3_1		0x31
++#define IMX_CHIP_REVISION_3_2		0x32
++#define IMX_CHIP_REVISION_3_3		0x33
++#define IMX_CHIP_REVISION_UNKNOWN	0xff
++
+ #ifndef __ASSEMBLY__
+ extern unsigned int __mxc_cpu_type;
+ #endif
+-- 
+1.5.4.4
+

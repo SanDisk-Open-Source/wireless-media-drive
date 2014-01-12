@@ -1,0 +1,69 @@
+From 9a00c93ddc13af5af2ab8b6c7ba559231d758ab7 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 16 Aug 2010 11:17:43 +0800
+Subject: [PATCH] ENGR00126330 iMX23: Fix os timer slower 3%
+
+MX23\MX28 use 24M/750 = 32000 as os timer clock source.
+Not 32768.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ arch/arm/plat-mxs/include/mach/timex.h |    2 +-
+ arch/arm/plat-mxs/timer-nomatch.c      |    9 +++++----
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/include/mach/timex.h b/arch/arm/plat-mxs/include/mach/timex.h
+index 9db3d68..d622dda 100644
+--- a/arch/arm/plat-mxs/include/mach/timex.h
++++ b/arch/arm/plat-mxs/include/mach/timex.h
+@@ -20,4 +20,4 @@
+ /*
+  * System time clock is sourced from the 32k clock
+  */
+-#define CLOCK_TICK_RATE		32768
++#define CLOCK_TICK_RATE		32000
+diff --git a/arch/arm/plat-mxs/timer-nomatch.c b/arch/arm/plat-mxs/timer-nomatch.c
+index 66c488c..db89061 100644
+--- a/arch/arm/plat-mxs/timer-nomatch.c
++++ b/arch/arm/plat-mxs/timer-nomatch.c
+@@ -21,6 +21,7 @@
+ #include <linux/clocksource.h>
+ #include <linux/clockchips.h>
+ #include <linux/io.h>
++#include <linux/clk.h>
+ #include <linux/irq.h>
+ #include <linux/interrupt.h>
+ 
+@@ -119,9 +120,9 @@ void mxs_nomatch_timer_init(struct mxs_sys_timer *timer)
+ 
+ 	online_timer = timer;
+ 
+-	cksrc_mxs_nomatch.mult = clocksource_hz2mult(CLOCK_TICK_RATE,
++	cksrc_mxs_nomatch.mult = clocksource_hz2mult(clk_get_rate(timer->clk),
+ 				cksrc_mxs_nomatch.shift);
+-	ckevt_timrot.mult = div_sc(CLOCK_TICK_RATE, NSEC_PER_SEC,
++	ckevt_timrot.mult = div_sc(clk_get_rate(timer->clk), NSEC_PER_SEC,
+ 				ckevt_timrot.shift);
+ 	ckevt_timrot.min_delta_ns = clockevent_delta2ns(2, &ckevt_timrot);
+ 	ckevt_timrot.max_delta_ns = clockevent_delta2ns(0xFFF, &ckevt_timrot);
+@@ -145,7 +146,7 @@ void mxs_nomatch_timer_init(struct mxs_sys_timer *timer)
+ 		BM_TIMROT_TIMCTRLn_IRQ_EN,
+ 			online_timer->base + HW_TIMROT_TIMCTRLn(1));
+ 
+-	__raw_writel(CLOCK_TICK_RATE / HZ - 1,
++	__raw_writel(clk_get_rate(timer->clk) / HZ - 1,
+ 			online_timer->base + HW_TIMROT_TIMCOUNTn(0));
+ 	__raw_writel(0xFFFF, online_timer->base + HW_TIMROT_TIMCOUNTn(1));
+ 
+@@ -181,7 +182,7 @@ void mxs_nomatch_resume_timer(void)
+ 		BM_TIMROT_TIMCTRLn_UPDATE |
+ 		BM_TIMROT_TIMCTRLn_IRQ_EN,
+ 			online_timer->base  + HW_TIMROT_TIMCTRLn(1));
+-	__raw_writel(CLOCK_TICK_RATE / HZ - 1,
++	__raw_writel(clk_get_rate(online_timer->clk) / HZ - 1,
+ 			online_timer->base  + HW_TIMROT_TIMCOUNTn(0));
+ 	__raw_writel(0xFFFF, online_timer->base  + HW_TIMROT_TIMCOUNTn(1));
+ }
+-- 
+1.5.4.4
+

@@ -1,0 +1,286 @@
+From 244456b53ac60ad4ced182c1e2e81150ce1c6d0c Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Mon, 6 Dec 2010 20:03:35 +0800
+Subject: [PATCH] ENGR00137669-2 rfkill: mx53: ath3k rfkill interface.
+
+MX53 SMD board use ath3k Bluetooth Chip.
+Add rfkill interface to control AR3K BT's power and reset.
+when power on bt, it require to reset BT chip.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/mach-mx5/Kconfig                   |    5 +
+ arch/arm/mach-mx5/Makefile                  |    2 +-
+ arch/arm/mach-mx5/mx53_smd.c                |   40 ++++++++
+ arch/arm/mach-mx5/mx53_smd_rfkill.c         |  136 +++++++++++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/mxc_rfkill.h |   28 ++++++
+ 5 files changed, 210 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/Kconfig b/arch/arm/mach-mx5/Kconfig
+index 59c7b23..2dc41de 100644
+--- a/arch/arm/mach-mx5/Kconfig
++++ b/arch/arm/mach-mx5/Kconfig
+@@ -115,4 +115,9 @@ config SDMA_IRAM
+ 	help
+ 	  Support Internal RAM as SDMA buffer or control structures
+ 
++config MXC_BLUETOOTH_RFKILL
++       tristate "MXC Bluetooth rfkill interface support"
++       depends on RFKILL
++       ---help---
++	Say Y to get the standard rfkill interface of Bluetooth
+ endif
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index f5ce5ef..063f609 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -18,4 +18,4 @@ obj-$(CONFIG_MACH_MX53_SMD) += mx53_smd.o mx53_smd_pmic_da9053.o
+ obj-$(CONFIG_MACH_MX53_LOCO) += mx53_loco.o mx53_loco_pmic_da9053.o
+ obj-$(CONFIG_MACH_MX50_ARM2) += mx50_arm2.o mx50_arm2_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX50_RDP) += mx50_rdp.o mx50_rdp_pmic_mc13892.o
+-
++obj-$(CONFIG_MXC_BLUETOOTH_RFKILL) += mx53_smd_rfkill.o
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index e3112b6..f1ed62f 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -61,6 +61,7 @@
+ #include <mach/iomux-mx53.h>
+ #include <mach/i2c.h>
+ #include <mach/mxc_iim.h>
++#include <mach/mxc_rfkill.h>
+ 
+ #include "crm_regs.h"
+ #include "devices.h"
+@@ -952,6 +953,44 @@ static struct mxc_spdif_platform_data mxc_spdif_data = {
+ 	.spdif_clk = NULL,	/* spdif bus clk */
+ };
+ 
++static void mx53_smd_bt_reset(void)
++{
++	gpio_request(MX53_SMD_BT_RESET, "bt-reset");
++	gpio_direction_output(MX53_SMD_BT_RESET, 0);
++	/* pull down reset pin at least >5ms */
++	mdelay(6);
++	/* pull up after power supply BT */
++	gpio_set_value(MX53_SMD_BT_RESET, 1);
++	gpio_free(MX53_SMD_BT_RESET);
++}
++
++static int mx53_smd_bt_power_change(int status)
++{
++	struct regulator *wifi_bt_pwren;
++
++	wifi_bt_pwren = regulator_get(NULL, "wifi_bt");
++	if (IS_ERR(wifi_bt_pwren)) {
++		printk(KERN_ERR "%s: regulator_get error\n", __func__);
++		return -1;
++	}
++
++	if (status) {
++		regulator_enable(wifi_bt_pwren);
++		mx53_smd_bt_reset();
++	} else
++		regulator_disable(wifi_bt_pwren);
++
++	return 0;
++}
++
++static struct platform_device mxc_bt_rfkill = {
++	.name = "mxc_bt_rfkill",
++};
++
++static struct mxc_bt_rfkill_platform_data mxc_bt_rfkill_data = {
++	.power_change = mx53_smd_bt_power_change,
++};
++
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -1156,6 +1195,7 @@ static void __init mxc_board_init(void)
+ 	mx5_usbh1_init();
+ 	mxc_register_device(&mxc_v4l2_device, NULL);
+ 	mxc_register_device(&mxc_v4l2out_device, NULL);
++	mxc_register_device(&mxc_bt_rfkill, &mxc_bt_rfkill_data);
+ 	smd_add_device_buttons();
+ }
+ 
+diff --git a/arch/arm/mach-mx5/mx53_smd_rfkill.c b/arch/arm/mach-mx5/mx53_smd_rfkill.c
+new file mode 100644
+index 0000000..f0f95a8
+--- /dev/null
++++ b/arch/arm/mach-mx5/mx53_smd_rfkill.c
+@@ -0,0 +1,136 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++/*!
++ * @file mxc_bt_rfkill.c
++ *
++ * @brief This driver is implement a rfkill control interface of bluetooth
++ * chip on i.MX serial boards. Register the power regulator function and
++ * reset function in platform data.
++ */
++
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/device.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/rfkill.h>
++#include <mach/hardware.h>
++#include <mach/mxc_rfkill.h>
++
++static int mxc_bt_set_block(void *rfkdata, bool blocked)
++{
++	struct mxc_bt_rfkill_platform_data *data = rfkdata;
++	int ret;
++
++	pr_info("rfkill: BT RF going to : %s\n", blocked ? "off" : "on");
++	if (!blocked)
++		ret = data->power_change(1);
++	else
++		ret = data->power_change(0);
++
++	return ret;
++}
++
++static const struct rfkill_ops mxc_bt_rfkill_ops = {
++	.set_block = mxc_bt_set_block,
++};
++
++static int mxc_bt_rfkill_probe(struct platform_device *dev)
++{
++	int rc;
++	struct rfkill *rfk;
++
++	struct mxc_bt_rfkill_platform_data *data = dev->dev.platform_data;
++
++	if (data->power_change == NULL) {
++		rc = -EINVAL;
++		dev_err(&dev->dev, "no power_change function\n");
++		goto error_check_func;
++	}
++
++	rfk = rfkill_alloc("mxc-bt", &dev->dev, RFKILL_TYPE_BLUETOOTH,
++			   &mxc_bt_rfkill_ops, data);
++
++	if (!rfk) {
++		rc = -ENOMEM;
++		goto error_rfk_alloc;
++	}
++
++	rfkill_set_led_trigger_name(rfk, "mxc_bt");
++
++	rc = rfkill_register(rfk);
++	if (rc)
++		goto error_rfkill;
++
++	platform_set_drvdata(dev, rfk);
++	printk(KERN_INFO "mxc_bt_rfkill driver success loaded\n");
++	return 0;
++
++error_rfkill:
++	rfkill_destroy(rfk);
++error_rfk_alloc:
++error_check_func:
++	return rc;
++}
++
++static int __devexit mxc_bt_rfkill_remove(struct platform_device *dev)
++{
++	struct mxc_bt_rfkill_platform_data *data = dev->dev.platform_data;
++	struct rfkill *rfk = platform_get_drvdata(dev);
++
++	platform_set_drvdata(dev, NULL);
++
++	if (rfk) {
++		rfkill_unregister(rfk);
++		rfkill_destroy(rfk);
++	}
++
++	data->power_change(0);
++
++	return 0;
++}
++
++static struct platform_driver mxc_bt_rfkill_drv = {
++	.driver = {
++		.name = "mxc_bt_rfkill",
++	},
++
++	.probe	= mxc_bt_rfkill_probe,
++	.remove = __devexit_p(mxc_bt_rfkill_remove),
++};
++
++static int __init mxc_bt_rfkill_init(void)
++{
++	return platform_driver_register(&mxc_bt_rfkill_drv);
++}
++
++module_init(mxc_bt_rfkill_init);
++
++static void __exit mxc_bt_rfkill_exit(void)
++{
++	platform_driver_unregister(&mxc_bt_rfkill_drv);
++}
++
++module_exit(mxc_bt_rfkill_exit);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Freescale Semiconductor, Inc.");
++MODULE_DESCRIPTION("RFKill control interface of BT on MX53 SMD");
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_rfkill.h b/arch/arm/plat-mxc/include/mach/mxc_rfkill.h
+new file mode 100644
+index 0000000..3a3d414
+--- /dev/null
++++ b/arch/arm/plat-mxc/include/mach/mxc_rfkill.h
+@@ -0,0 +1,28 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#ifndef MXC_RFKILL_H
++#define MXC_RFKILL_H
++
++struct mxc_bt_rfkill_platform_data {
++	int (*power_change) (int status);
++};
++
++#endif
+-- 
+1.5.4.4
+

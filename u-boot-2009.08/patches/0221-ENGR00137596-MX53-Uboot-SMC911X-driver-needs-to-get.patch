@@ -1,0 +1,73 @@
+From 57c938c25c39fce91192ad9703457367e11f7809 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Tue, 4 Jan 2011 17:41:00 -0600
+Subject: [PATCH] ENGR00137596 MX53 Uboot SMC911X driver needs to get mac addr from IIM
+
+If the MAC addr read from the controller's ADDRH and ADDRL registers is
+invalid, then try to read MAC address programmed in MX53's IIM.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/net/smc911x.c |   25 +++++++++++++++++++++++++
+ 1 files changed, 25 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/smc911x.c b/drivers/net/smc911x.c
+index adcb9c9..a36b040 100644
+--- a/drivers/net/smc911x.c
++++ b/drivers/net/smc911x.c
+@@ -2,6 +2,7 @@
+  * SMSC LAN9[12]1[567] Network driver
+  *
+  * (c) 2007 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
++ * Copyright (C) 2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -27,6 +28,10 @@
+ #include <malloc.h>
+ #include <net.h>
+ #include <miiphy.h>
++#ifdef CONFIG_MX53
++#include <asm/io.h>
++#include <asm/imx_iim.h>
++#endif
+ 
+ #include "smc911x.h"
+ 
+@@ -235,6 +240,20 @@ static int smc911x_rx(struct eth_device *dev)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_MX53
++void smc911x_get_mac_from_iim(unsigned char *mac)
++{
++	unsigned int mac_ptr;
++	int i;
++
++	for (i = 0; i < 6; i++) {
++		mac_ptr = IMX_IIM_BASE + IIM_BANK_AREA_1_OFFSET + 0x24 +
++			(i << 2);
++		mac[5-i] = readl(mac_ptr);
++	}
++}
++#endif
++
+ int smc911x_initialize(u8 dev_num, int base_addr)
+ {
+ 	unsigned long addrl, addrh;
+@@ -264,6 +283,12 @@ int smc911x_initialize(u8 dev_num, int base_addr)
+ 	dev->enetaddr[4] = addrh;
+ 	dev->enetaddr[5] = addrh >> 8;
+ 
++#ifdef CONFIG_MX53
++	/* Get MAC addr from IIM if the one on the controller is not valid */
++	if (!is_valid_ether_addr(dev->enetaddr))
++		smc911x_get_mac_from_iim(dev->enetaddr);
++#endif
++
+ 	dev->init = smc911x_init;
+ 	dev->halt = smc911x_halt;
+ 	dev->send = smc911x_send;
+-- 
+1.5.4.4
+

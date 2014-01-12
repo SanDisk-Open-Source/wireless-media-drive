@@ -1,0 +1,1764 @@
+From c5f6bfc5b71f455171b22e7291c75da3a7704974 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 8 Jul 2010 21:26:36 +0800
+Subject: [PATCH] ENGR00123924: Reconstructure fuse files and add fuse to mx53.
+
+1. Reconstructure fuse. Move fuse files to common directory.
+2. Read mac from fuse in fec.
+3. Remove scc and srk command from fuse command.
+4. Change fuse to iim.
+5. Add fuse for mx53.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx25_3stack/mx25_3stack.c |   20 ++
+ board/freescale/mx50_arm2/mx50_arm2.c     |   18 ++
+ board/freescale/mx51_bbg/flash_header.S   |    4 +-
+ board/freescale/mx51_bbg/mx51_bbg.c       |   21 ++
+ board/freescale/mx53_evk/mx53_evk.c       |   22 ++
+ common/Makefile                           |    1 +
+ common/cmd_iim.c                          |   95 ++++++++
+ cpu/arm1136/mx35/generic.c                |    6 -
+ cpu/arm926ejs/mx25/generic.c              |    6 -
+ cpu/arm_cortexa8/mx50/generic.c           |    6 -
+ cpu/arm_cortexa8/mx51/cmd_fuse.c          |   92 --------
+ cpu/arm_cortexa8/mx51/generic.c           |    6 -
+ cpu/arm_cortexa8/mx51/imx_fuse.c          |  333 ----------------------------
+ cpu/arm_cortexa8/mx53/generic.c           |    6 -
+ drivers/misc/Makefile                     |    1 +
+ drivers/misc/imx_iim.c                    |  343 +++++++++++++++++++++++++++++
+ drivers/net/mxc_fec.c                     |   59 ++++--
+ include/asm-arm/arch-mx50/mx50.h          |    1 +
+ include/asm-arm/arch-mx51/imx_fuse.h      |   33 ---
+ include/asm-arm/imx_iim.h                 |   71 ++++++
+ include/configs/mx25_3stack.h             |    3 +
+ include/configs/mx50_arm2.h               |    2 +
+ include/configs/mx50_arm2_lpddr2.h        |    2 +
+ include/configs/mx51_3stack.h             |   10 +-
+ include/configs/mx51_bbg.h                |   12 +-
+ include/configs/mx53_arm2.h               |   15 ++
+ include/configs/mx53_arm2_ddr3.h          |   15 ++
+ include/configs/mx53_evk.h                |   15 ++-
+ include/net.h                             |    1 +
+ net/eth.c                                 |   30 ++-
+ 30 files changed, 723 insertions(+), 526 deletions(-)
+
+diff --git a/board/freescale/mx25_3stack/mx25_3stack.c b/board/freescale/mx25_3stack/mx25_3stack.c
+index b8bb256..2dc7130 100644
+--- a/board/freescale/mx25_3stack/mx25_3stack.c
++++ b/board/freescale/mx25_3stack/mx25_3stack.c
+@@ -38,6 +38,10 @@
+ #include <lcd.h>
+ #endif
+ 
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#include <asm/imx_iim.h>
++#endif
++
+ #ifdef CONFIG_CMD_MMC
+ #include <mmc.h>
+ #include <fsl_esdhc.h>
+@@ -319,6 +323,22 @@ int setup_splash_img()
+ #endif
+ #endif
+ 
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++int fec_get_mac_addr(unsigned char *mac)
++{
++	u32 *iim0_mac_base =
++		(u32 *)(IIM_BASE + IIM_BANK_AREA_0_OFFSET +
++			CONFIG_IIM_MAC_ADDR_OFFSET);
++	int i;
++
++	for (i = 0; i < 6; ++i, ++iim0_mac_base)
++		mac[i] = readl(iim0_mac_base);
++
++	return 0;
++}
++#endif
++
+ int board_init(void)
+ {
+ 
+diff --git a/board/freescale/mx50_arm2/mx50_arm2.c b/board/freescale/mx50_arm2/mx50_arm2.c
+index bb0ea3a..df5d33a 100644
+--- a/board/freescale/mx50_arm2/mx50_arm2.c
++++ b/board/freescale/mx50_arm2/mx50_arm2.c
+@@ -348,6 +348,24 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ #endif
+ 
+ #ifdef CONFIG_MXC_FEC
++
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++#define HW_OCOTP_MACn(n)	(0x00000250 + (n) * 0x10)
++
++int fec_get_mac_addr(unsigned char *mac)
++{
++	u32 *ocotp_mac_base =
++		(u32 *)(OCOTP_CTRL_BASE_ADDR + HW_OCOTP_MACn(0));
++	int i;
++
++	for (i = 0; i < 6; ++i, ++ocotp_mac_base)
++		mac[6 - 1 - i] = readl(++ocotp_mac_base);
++
++	return 0;
++}
++#endif
++
+ static void setup_fec(void)
+ {
+ 	volatile unsigned int reg;
+diff --git a/board/freescale/mx51_bbg/flash_header.S b/board/freescale/mx51_bbg/flash_header.S
+index 2f860b8..72d0e81 100644
+--- a/board/freescale/mx51_bbg/flash_header.S
++++ b/board/freescale/mx51_bbg/flash_header.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -108,5 +108,5 @@ MXC_DCD_ITEM(54, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDMISC, 0x000ad6d0)
+ MXC_DCD_ITEM(55, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCDLYGD, 0x90000000)
+ MXC_DCD_ITEM(56, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00000000)
+ dcd_data_end:
+-image_len:		.word	__u_boot_cmd_end - TEXT_BASE
++image_len:		.word	_end - TEXT_BASE
+ #endif
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 66bb43d..1f49c0e 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -48,6 +48,10 @@
+ #include <asm/arch/mmu.h>
+ #endif
+ 
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#include <asm/imx_iim.h>
++#endif
++
+ #ifdef CONFIG_FSL_ANDROID
+ #include <mxc_keyb.h>
+ #include <part.h>
+@@ -382,6 +386,23 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ #endif
+ 
+ #ifdef CONFIG_MXC_FEC
++
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++int fec_get_mac_addr(unsigned char *mac)
++{
++	u32 *iim1_mac_base =
++		(u32 *)(IIM_BASE_ADDR + IIM_BANK_AREA_1_OFFSET +
++			CONFIG_IIM_MAC_ADDR_OFFSET);
++	int i;
++
++	for (i = 0; i < 6; ++i, ++iim1_mac_base)
++		mac[i] = (u8)readl(iim1_mac_base);
++
++	return 0;
++}
++#endif
++
+ static void setup_fec(void)
+ {
+ 	/*FEC_MDIO*/
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index a9e7f61..2f5c4b1 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -44,6 +44,10 @@
+ #include <asm/arch/mmu.h>
+ #endif
+ 
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#include <asm/imx_iim.h>
++#endif
++
+ #ifdef CONFIG_CMD_CLOCK
+ #include <asm/clock.h>
+ #endif
+@@ -558,7 +562,24 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ 		break;
+ 	}
+ }
++#endif
+ 
++#ifdef CONFIG_MXC_FEC
++
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++int fec_get_mac_addr(unsigned char *mac)
++{
++	u32 *iim1_mac_base =
++		(u32 *)(IIM_BASE_ADDR + IIM_BANK_AREA_1_OFFSET +
++			CONFIG_IIM_MAC_ADDR_OFFSET);
++	int i;
++
++	for (i = 0; i < 6; ++i, ++iim1_mac_base)
++		mac[i] = (u8)readl(iim1_mac_base);
++
++	return 0;
++}
+ #endif
+ 
+ static void setup_fec(void)
+@@ -624,6 +645,7 @@ static void setup_fec(void)
+ 	writel(reg, GPIO7_BASE_ADDR + 0x0);
+ 
+ }
++#endif
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
+diff --git a/common/Makefile b/common/Makefile
+index 3b8ef59..ad7cb4f 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -101,6 +101,7 @@ COBJS-$(CONFIG_CMD_FLASH) += cmd_flash.o
+ ifdef CONFIG_FPGA
+ COBJS-$(CONFIG_CMD_FPGA) += cmd_fpga.o
+ endif
++COBJS-$(CONFIG_CMD_IIM) += cmd_iim.o
+ COBJS-$(CONFIG_CMD_I2C) += cmd_i2c.o
+ COBJS-$(CONFIG_CMD_IDE) += cmd_ide.o
+ COBJS-$(CONFIG_CMD_IMMAP) += cmd_immap.o
+diff --git a/common/cmd_iim.c b/common/cmd_iim.c
+new file mode 100644
+index 0000000..56e3804
+--- /dev/null
++++ b/common/cmd_iim.c
+@@ -0,0 +1,95 @@
++/*
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ *
++ * Copyright 2007, Freescale Semiconductor, Inc
++ * Andy Fleming
++ *
++ * Based vaguely on the pxa mmc code:
++ * (C) Copyright 2003
++ * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <linux/types.h>
++#include <asm/io.h>
++#include <command.h>
++#include <common.h>
++#include <asm/imx_iim.h>
++
++int do_iimops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	int bank = 0,
++		row = 0,
++		val = 0;
++
++	if (argc < 3 || argc > 5)
++		goto err_rtn;
++
++	if (strcmp(argv[1], "read") == 0) {
++		if (strcmp(argv[2], "fecmac") == 0) {
++			if (3 == argc)
++				iim_blow_func(argv[2], NULL);
++			else
++				goto err_rtn;
++		} else {
++			if (4 == argc) {
++				bank = simple_strtoul(argv[2], NULL, 16);
++				row = simple_strtoul(argv[3], NULL, 16);
++
++				iim_read(bank, row);
++			} else
++				goto err_rtn;
++		}
++	} else if (strcmp(argv[1], "blow") == 0) {
++		if (strcmp(argv[2], "fecmac") == 0) {
++			if (4 == argc)
++				iim_blow_func(argv[2], argv[3]);
++			else
++				goto err_rtn;
++		} else {
++			if (5 == argc) {
++				bank = simple_strtoul(argv[2], NULL, 16);
++				row = simple_strtoul(argv[3], NULL, 16);
++				val = simple_strtoul(argv[4], NULL, 16);
++
++				iim_blow(bank, row, val);
++			} else
++				goto err_rtn;
++		}
++	} else
++		goto err_rtn;
++
++	return 0;
++err_rtn:
++	printf("Invalid parameters!\n");
++	printf("It is too dangeous for you to use iim command.\n");
++	return 1;
++}
++
++U_BOOT_CMD(
++	iim, 5, 1, do_iimops,
++	"IIM sub system",
++	"Warning: all numbers in parameter are in hex format!\n"
++	"iim read <bank> <row>	- Read some fuses\n"
++	"iim read fecmac	- Read FEC Mac address\n"
++	"iim blow <bank> <row> <value>	- Blow some fuses\n"
++	"iim blow fecmac <0x##:0x##:0x##:0x##:0x##:0x##>"
++	"- Blow FEC Mac address");
++
+diff --git a/cpu/arm1136/mx35/generic.c b/cpu/arm1136/mx35/generic.c
+index 05feda4..1b4825a 100644
+--- a/cpu/arm1136/mx35/generic.c
++++ b/cpu/arm1136/mx35/generic.c
+@@ -372,13 +372,7 @@ int cpu_eth_init(bd_t *bis)
+ 	int rc = -ENODEV;
+ 
+ #if defined(CONFIG_MXC_FEC)
+-	char *env = NULL;
+-
+ 	rc = mxc_fec_initialize(bis);
+-
+-	env = getenv("fec_addr");
+-	if (env)
+-		mxc_fec_set_mac_from_env(env);
+ #endif
+ 
+ 	return rc;
+diff --git a/cpu/arm926ejs/mx25/generic.c b/cpu/arm926ejs/mx25/generic.c
+index 5155f9a..4b8775d 100644
+--- a/cpu/arm926ejs/mx25/generic.c
++++ b/cpu/arm926ejs/mx25/generic.c
+@@ -128,13 +128,7 @@ int cpu_eth_init(bd_t *bis)
+ 	int rc = -ENODEV;
+ 
+ #if defined(CONFIG_MXC_FEC)
+-	char *env = NULL;
+-
+ 	rc = mxc_fec_initialize(bis);
+-
+-	env = getenv("fec_addr");
+-	if (env)
+-		mxc_fec_set_mac_from_env(env);
+ #endif
+ 
+ 	return rc;
+diff --git a/cpu/arm_cortexa8/mx50/generic.c b/cpu/arm_cortexa8/mx50/generic.c
+index 79a803c..d1562d1 100644
+--- a/cpu/arm_cortexa8/mx50/generic.c
++++ b/cpu/arm_cortexa8/mx50/generic.c
+@@ -991,13 +991,7 @@ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
+ #if defined(CONFIG_MXC_FEC)
+-	char *env = NULL;
+-
+ 	rc = mxc_fec_initialize(bis);
+-
+-	env = getenv("fec_addr");
+-	if (env)
+-		mxc_fec_set_mac_from_env(env);
+ #endif
+ 	return rc;
+ }
+diff --git a/cpu/arm_cortexa8/mx51/cmd_fuse.c b/cpu/arm_cortexa8/mx51/cmd_fuse.c
+deleted file mode 100644
+index 24eb193..0000000
+--- a/cpu/arm_cortexa8/mx51/cmd_fuse.c
++++ /dev/null
+@@ -1,92 +0,0 @@
+-/*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv
+- *
+- * Copyright 2007, Freescale Semiconductor, Inc
+- * Andy Fleming
+- *
+- * Based vaguely on the pxa mmc code:
+- * (C) Copyright 2003
+- * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#include <linux/types.h>
+-#include <asm/io.h>
+-#include <asm/arch/mx51.h>
+-#include <command.h>
+-#include <common.h>
+-#include <asm/arch/imx_fuse.h>
+-
+-int do_fuseops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+-{
+-	int rc = 0;
+-	int bank = 0,
+-		row = 0,
+-		val = 0;
+-
+-	switch (argc) {
+-	case 4:
+-		if (strcmp(argv[1], "read") == 0) {
+-			bank = simple_strtoul(argv[2], NULL, 16);
+-			row = simple_strtoul(argv[3], NULL, 16);
+-
+-			fuse_read(bank, row);
+-		} else if (strcmp(argv[1], "blow") == 0) {
+-			fuse_blow_func(argv[2], argv[3]);
+-		} else {
+-			printf("It is too dangeous for you to use fuse command.\n");
+-			printf("Usage:\n%s\n", cmdtp->usage);
+-			rc = 1;
+-		}
+-		break;
+-	case 5:
+-		if (strcmp(argv[1], "blow") == 0) {
+-			bank = simple_strtoul(argv[2], NULL, 16);
+-			row = simple_strtoul(argv[3], NULL, 16);
+-			val = simple_strtoul(argv[4], NULL, 16);
+-
+-			fuse_blow(bank, row, val);
+-		} else {
+-			printf("It is too dangeous for you to use fuse command.\n");
+-			printf("Usage:\n%s\n", cmdtp->usage);
+-			rc = 1;
+-		}
+-		break;
+-	default:
+-		rc = 1;
+-		printf("It is too dangeous for you to use fuse command.\n");
+-		printf("Usage:\n%s\n", cmdtp->usage);
+-		break;
+-	}
+-
+-	return rc;
+-}
+-
+-U_BOOT_CMD(
+-	fuse, 5, 1, do_fuseops,
+-	"Fuse sub system",
+-	"read <bank> <row>	- Read some fuses\n"
+-	"blow <bank> <row> <value>	- Blow some fuses\n"
+-	"blow scc <value>	- Blow scc value\n"
+-	"blow srk <value>	- Blow srk value\n"
+-	"blow fecmac <0x##:0x##:0x##:0x##:0x##:0x##>"
+-	"- Blow FEC Mac address");
+-
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index eb1a023..4706a00 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -258,13 +258,7 @@ int cpu_eth_init(bd_t *bis)
+ 	int rc = -ENODEV;
+ 
+ #if defined(CONFIG_MXC_FEC)
+-	char *env = NULL;
+-
+ 	rc = mxc_fec_initialize(bis);
+-
+-	env = getenv("fec_addr");
+-	if (env)
+-		mxc_fec_set_mac_from_env(env);
+ #endif
+ 
+ 	return rc;
+diff --git a/cpu/arm_cortexa8/mx51/imx_fuse.c b/cpu/arm_cortexa8/mx51/imx_fuse.c
+deleted file mode 100644
+index 3901a25..0000000
+--- a/cpu/arm_cortexa8/mx51/imx_fuse.c
++++ /dev/null
+@@ -1,333 +0,0 @@
+-/*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv
+- *
+- * Copyright 2007, Freescale Semiconductor, Inc
+- * Andy Fleming
+- *
+- * Based vaguely on the pxa mmc code:
+- * (C) Copyright 2003
+- * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#include <linux/types.h>
+-#include <asm/io.h>
+-#include <asm/arch/mx51.h>
+-#include <asm/arch/imx_fuse.h>
+-#include <common.h>
+-#include <net.h>
+-
+-static void quick_itoa(u32 num, char *a)
+-{
+-	int i, j, k;
+-	for (i = 0; i <= 7; i++) {
+-		j = (num >> (4 * i)) & 0xF;
+-		k = (j < 10) ? '0' : ('a' - 0xa);
+-		a[i] = j + k;
+-	}
+-}
+-
+-/* slen - streng length, e.g.: 23 -> slen=2; abcd -> slen=4 */
+-/* only convert hex value as string input. so "12" is 0x12. */
+-static u32 quick_atoi(char *a, u32 slen)
+-{
+-	u32 i, num = 0, digit;
+-
+-	for (i = 0; i < slen; i++) {
+-		if (a[i] >= '0' && a[i] <= '9') {
+-			digit = a[i] - '0';
+-		} else if (a[i] >= 'a' && a[i] <= 'f') {
+-			digit = a[i] - 'a' + 10;
+-		} else if (a[i] >= 'A' && a[i] <= 'F') {
+-			digit = a[i] - 'A' + 10;
+-		} else {
+-			printf("ERROR: %c\n", a[i]);
+-			return -1;
+-		}
+-		num = (num * 16) + digit;
+-	}
+-
+-    return num;
+-}
+-
+-static void fuse_op_start(void)
+-{
+-    /* Do not generate interrupt */
+-    writel(0, IIM_BASE_ADDR + IIM_STATM_OFF);
+-    /* clear the status bits and error bits */
+-    writel(0x3, IIM_BASE_ADDR + IIM_STAT_OFF);
+-    writel(0xFE, IIM_BASE_ADDR + IIM_ERR_OFF);
+-}
+-
+-/*
+- * The action should be either:
+- *          POLL_FUSE_PRGD
+- * or:
+- *          POLL_FUSE_SNSD
+- */
+-static s32 poll_fuse_op_done(s32 action)
+-{
+-	u32 status, error;
+-
+-	if (action != POLL_FUSE_PRGD && action != POLL_FUSE_SNSD) {
+-		printf("%s(%d) invalid operation\n", __func__, action);
+-		return -1;
+-    }
+-
+-    /* Poll busy bit till it is NOT set */
+-	while ((readl(IIM_BASE_ADDR + IIM_STAT_OFF) & IIM_STAT_BUSY) != 0)
+-		;
+-
+-    /* Test for successful write */
+-	status = readl(IIM_BASE_ADDR + IIM_STAT_OFF);
+-	error = readl(IIM_BASE_ADDR + IIM_ERR_OFF);
+-
+-	if ((status & action) != 0 && \
+-			(error & (action >> IIM_ERR_SHIFT)) == 0) {
+-		if (error) {
+-			printf("Even though the operation seems successful...\n");
+-			printf("There are some error(s) at addr=0x%x: 0x%x\n",
+-					(IIM_BASE_ADDR + IIM_ERR_OFF), error);
+-		}
+-		return 0;
+-	}
+-	printf("%s(%d) failed\n", __func__, action);
+-	printf("status address=0x%x, value=0x%x\n",
+-			(IIM_BASE_ADDR + IIM_STAT_OFF), status);
+-	printf("There are some error(s) at addr=0x%x: 0x%x\n",
+-			(IIM_BASE_ADDR + IIM_ERR_OFF), error);
+-	return -1;
+-}
+-
+-static u32 sense_fuse(s32 bank, s32 row, s32 bit)
+-{
+-	s32 addr, addr_l, addr_h, reg_addr;
+-
+-	fuse_op_start();
+-
+-	addr = ((bank << 11) | (row << 3) | (bit & 0x7));
+-	/* Set IIM Program Upper Address */
+-	addr_h = (addr >> 8) & 0x000000FF;
+-	/* Set IIM Program Lower Address */
+-	addr_l = (addr & 0x000000FF);
+-
+-#ifdef IIM_FUSE_DEBUG
+-	printf("%s: addr_h=0x%x, addr_l=0x%x\n",
+-			__func__, addr_h, addr_l);
+-#endif
+-	writel(addr_h, IIM_BASE_ADDR + IIM_UA_OFF);
+-	writel(addr_l, IIM_BASE_ADDR + IIM_LA_OFF);
+-
+-    /* Start sensing */
+-	writel(0x8, IIM_BASE_ADDR + IIM_FCTL_OFF);
+-	if (poll_fuse_op_done(POLL_FUSE_SNSD) != 0) {
+-		printf("%s(bank: %d, row: %d, bit: %d failed\n",
+-				__func__, bank, row, bit);
+-	}
+-	reg_addr = IIM_BASE_ADDR + IIM_SDAT_OFF;
+-
+-	return readl(reg_addr);
+-}
+-
+-int fuse_read(int bank, char row)
+-{
+-    u32 fuse_val;
+-	s32 err = 0;
+-
+-	printf("Read fuse at bank:%d row:%d\n", bank, row);
+-	fuse_val = sense_fuse(bank, row, 0);
+-	printf("fuses at (bank:%d, row:%d) = 0x%x\n", bank, row, fuse_val);
+-
+-	return err;
+-}
+-
+-/* Blow fuses based on the bank, row and bit positions (all 0-based)
+-*/
+-static s32 fuse_blow_bit(s32 bank, s32 row, s32 bit)
+-{
+-	int addr, addr_l, addr_h, ret = -1;
+-
+-	fuse_op_start();
+-
+-	/* Disable IIM Program Protect */
+-	writel(0xAA, IIM_BASE_ADDR + IIM_PREG_P_OFF);
+-
+-	addr = ((bank << 11) | (row << 3) | (bit & 0x7));
+-	/* Set IIM Program Upper Address */
+-	addr_h = (addr >> 8) & 0x000000FF;
+-	/* Set IIM Program Lower Address */
+-	addr_l = (addr & 0x000000FF);
+-
+-#ifdef IIM_FUSE_DEBUG
+-	printf("blowing addr_h=0x%x, addr_l=0x%x\n", addr_h, addr_l);
+-#endif
+-
+-	writel(addr_h, IIM_BASE_ADDR + IIM_UA_OFF);
+-	writel(addr_l, IIM_BASE_ADDR + IIM_LA_OFF);
+-
+-	/* Start Programming */
+-	writel(0x31, IIM_BASE_ADDR + IIM_FCTL_OFF);
+-	if (poll_fuse_op_done(POLL_FUSE_PRGD) == 0)
+-		ret = 0;
+-
+-	/* Enable IIM Program Protect */
+-	writel(0x0, IIM_BASE_ADDR + IIM_PREG_P_OFF);
+-
+-	return ret;
+-}
+-
+-static void fuse_blow_row(s32 bank, s32 row, s32 value)
+-{
+-	u32 reg, i;
+-
+-	/* enable fuse blown */
+-	reg = readl(CCM_BASE_ADDR + 0x64);
+-	reg |= 0x10;
+-	writel(reg, CCM_BASE_ADDR + 0x64);
+-
+-	for (i = 0; i < 8; i++) {
+-		if (((value >> i) & 0x1) == 0)
+-			continue;
+-	if (fuse_blow_bit(bank, row, i) != 0) {
+-			printf("fuse_blow_bit(bank: %d, row: %d, bit: %d failed\n",
+-					bank, row, i);
+-		}
+-    }
+-    reg &= ~0x10;
+-    writel(reg, CCM_BASE_ADDR + 0x64);
+-}
+-
+-int fuse_blow(int bank, int row, int val)
+-{
+-    u32 fuse_val, err = 0;
+-
+-	printf("Blowing fuse at bank:%d row:%d value:%d\n",
+-			bank, row, val);
+-	fuse_blow_row(bank, row, val);
+-	fuse_val = sense_fuse(bank, row, 0);
+-	printf("fuses at (bank:%d, row:%d) = 0x%x\n", bank, row, fuse_val);
+-
+-	return err;
+-}
+-
+-static int fuse_read_mac_addr(u8 *data)
+-{
+-    data[0] = sense_fuse(1, 9, 0) ;
+-    data[1] = sense_fuse(1, 10, 0) ;
+-    data[2] = sense_fuse(1, 11, 0) ;
+-    data[3] = sense_fuse(1, 12, 0) ;
+-    data[4] = sense_fuse(1, 13, 0) ;
+-    data[5] = sense_fuse(1, 14, 0) ;
+-
+-    if ((data[0] == 0) && (data[1] == 0) && (data[2] == 0) &&
+-		(data[3] == 0) && (data[4] == 0) && (data[5] == 0)) {
+-		return 0;
+-    }
+-
+-    return 1;
+-}
+-
+-int fuse_blow_func(char *func_name, char *func_val)
+-{
+-	u32 value, i;
+-	char *s;
+-	char val[3];
+-	s32 err = 0;
+-
+-	if (0 == strcmp(func_name, "scc")) {
+-		/* fuse_blow scc C3D153EDFD2EA9982226EF5047D3B9A0B9C7138EA87C028401D28C2C2C0B9AA2 */
+-		printf("Ready to burn SCC fuses\n");
+-		s = func_val;
+-		for (i = 0; ; ++i) {
+-			memcpy(val, s, 2);
+-			val[2] = '\0';
+-			value = quick_atoi(val, 2);
+-			/* printf("fuse_blow_row(2, %d, value=0x%x)\n", i, value); */
+-			fuse_blow_row(2, i, value);
+-
+-			if ((++s)[0] == '\0') {
+-				printf("ERROR: Odd string input\n");
+-				err = -1;
+-				break;
+-			}
+-			if ((++s)[0] == '\0') {
+-				printf("Successful\n");
+-				break;
+-			}
+-		}
+-	} else if (0 == strcmp(func_name, "srk")) {
+-		/* fuse_blow srk 418bccd09b53bee1ab59e2662b3c7877bc0094caee201052add49be8780dff95 */
+-		printf("Ready to burn SRK key fuses\n");
+-		s = func_val;
+-		for (i = 0; ; ++i) {
+-			memcpy(val, s, 2);
+-			val[2] = '\0';
+-			value = quick_atoi(val, 2);
+-			if (i == 0) {
+-				/* 0x41 goes to SRK_HASH[255:248], bank 1, row 1 */
+-				fuse_blow_row(1, 1, value);
+-			} else {
+-				/* 0x8b in SRK_HASH[247:240] bank 3, row 1 */
+-				/* 0xcc in SRK_HASH[239:232] bank 3, row 2 */
+-				/* ... */
+-				fuse_blow_row(3, i, value);
+-
+-				if ((++s)[0] == '\0') {
+-					printf("ERROR: Odd string input\n");
+-					err = -1;
+-					break;
+-				}
+-				if ((++s)[0] == '\0') {
+-					printf("Successful\n");
+-					break;
+-				}
+-			}
+-		}
+-	} else if (0 == strcmp(func_name, "fecmac")) {
+-		u8 ea[6] = { 0 };
+-
+-		if (NULL == func_val) {
+-			/* Read the Mac address and print it */
+-			fuse_read_mac_addr(ea);
+-
+-			printf("FEC MAC address: ");
+-			printf("0x%02x:0x%02x:0x%02x:0x%02x:0x%02x:0x%02x\n\n",
+-					ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
+-
+-			return 0;
+-		}
+-
+-		eth_parse_enetaddr(func_val, ea);
+-		if (!is_valid_ether_addr(ea)) {
+-			printf("Error: invalid mac address parameter!\n");
+-			err = -1;
+-		} else {
+-			for (i = 0; i < 6; ++i)
+-				fuse_blow_row(1, i + 9, ea[i]);
+-		}
+-	} else {
+-		printf("This command is not supported\n");
+-	}
+-
+-	return err;
+-}
+-
+-
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 53bc09f..664412c 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -971,13 +971,7 @@ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
+ #if defined(CONFIG_MXC_FEC)
+-	char *env = NULL;
+-
+ 	rc = mxc_fec_initialize(bis);
+-
+-	env = getenv("fec_addr");
+-	if (env)
+-		mxc_fec_set_mac_from_env(env);
+ #endif
+ 	return rc;
+ }
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index f6df60f..448b9cb 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -28,6 +28,7 @@ LIB	:= $(obj)libmisc.a
+ COBJS-$(CONFIG_ALI152X) += ali512x.o
+ COBJS-$(CONFIG_DS4510)  += ds4510.o
+ COBJS-$(CONFIG_FSL_LAW) += fsl_law.o
++COBJS-$(CONFIG_IMX_IIM) += imx_iim.o
+ COBJS-$(CONFIG_NS87308) += ns87308.o
+ COBJS-$(CONFIG_STATUS_LED) += status_led.o
+ COBJS-$(CONFIG_TWL4030_LED) += twl4030_led.o
+diff --git a/drivers/misc/imx_iim.c b/drivers/misc/imx_iim.c
+new file mode 100644
+index 0000000..4bbd4ca
+--- /dev/null
++++ b/drivers/misc/imx_iim.c
+@@ -0,0 +1,343 @@
++/*
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ * Terry Lv
++ *
++ * Copyright 2007, Freescale Semiconductor, Inc
++ * Andy Fleming
++ *
++ * Based vaguely on the pxa mmc code:
++ * (C) Copyright 2003
++ * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <linux/types.h>
++#include <asm/io.h>
++#include <asm/imx_iim.h>
++#include <common.h>
++#include <net.h>
++
++static const struct iim_regs *imx_iim =
++		(struct iim_regs *)IMX_IIM_BASE;
++
++static void quick_itoa(u32 num, char *a)
++{
++	int i, j, k;
++	for (i = 0; i <= 7; i++) {
++		j = (num >> (4 * i)) & 0xf;
++		k = (j < 10) ? '0' : ('a' - 0xa);
++		a[i] = j + k;
++	}
++}
++
++/* slen - streng length, e.g.: 23 -> slen=2; abcd -> slen=4 */
++/* only convert hex value as string input. so "12" is 0x12. */
++static u32 quick_atoi(char *a, u32 slen)
++{
++	u32 i, num = 0, digit;
++
++	for (i = 0; i < slen; i++) {
++		if (a[i] >= '0' && a[i] <= '9') {
++			digit = a[i] - '0';
++		} else if (a[i] >= 'a' && a[i] <= 'f') {
++			digit = a[i] - 'a' + 10;
++		} else if (a[i] >= 'A' && a[i] <= 'F') {
++			digit = a[i] - 'A' + 10;
++		} else {
++			printf("ERROR: %c\n", a[i]);
++			return -1;
++		}
++		num = (num * 16) + digit;
++	}
++
++    return num;
++}
++
++static void fuse_op_start(void)
++{
++	/* Do not generate interrupt */
++	writel(0, &(imx_iim->statm));
++	/* clear the status bits and error bits */
++	writel(0x3, &(imx_iim->stat));
++	writel(0xfe, &(imx_iim->err));
++}
++
++/*
++ * The action should be either:
++ *          POLL_FUSE_PRGD
++ * or:
++ *          POLL_FUSE_SNSD
++ */
++static s32 poll_fuse_op_done(s32 action)
++{
++	u32 status, error;
++
++	if (action != POLL_FUSE_PRGD && action != POLL_FUSE_SNSD) {
++		printf("%s(%d) invalid operation\n", __func__, action);
++		return -1;
++	}
++
++	/* Poll busy bit till it is NOT set */
++	while ((readl(&(imx_iim->stat)) & IIM_STAT_BUSY) != 0)
++		;
++
++	/* Test for successful write */
++	status = readl(&(imx_iim->stat));
++	error = readl(&(imx_iim->err));
++
++	if ((status & action) != 0 && \
++			(error & (action >> IIM_ERR_SHIFT)) == 0) {
++		if (error) {
++			printf("Even though the operation"
++				"seems successful...\n");
++			printf("There are some error(s) "
++				"at addr=0x%x: 0x%x\n",
++				(u32)&(imx_iim->err), error);
++		}
++		return 0;
++	}
++	printf("%s(%d) failed\n", __func__, action);
++	printf("status address=0x%x, value=0x%x\n",
++		(u32)&(imx_iim->stat), status);
++	printf("There are some error(s) at addr=0x%x: 0x%x\n",
++		(u32)&(imx_iim->err), error);
++	return -1;
++}
++
++static u32 sense_fuse(s32 bank, s32 row, s32 bit)
++{
++	s32 addr, addr_l, addr_h, reg_addr;
++
++	fuse_op_start();
++
++	addr = ((bank << 11) | (row << 3) | (bit & 0x7));
++	/* Set IIM Program Upper Address */
++	addr_h = (addr >> 8) & 0x000000FF;
++	/* Set IIM Program Lower Address */
++	addr_l = (addr & 0x000000FF);
++
++#ifdef IIM_FUSE_DEBUG
++	printf("%s: addr_h=0x%x, addr_l=0x%x\n",
++			__func__, addr_h, addr_l);
++#endif
++	writel(addr_h, &(imx_iim->ua));
++	writel(addr_l, &(imx_iim->la));
++
++	/* Start sensing */
++	writel(0x8, &(imx_iim->fctl));
++	if (poll_fuse_op_done(POLL_FUSE_SNSD) != 0) {
++		printf("%s(bank: %d, row: %d, bit: %d failed\n",
++			__func__, bank, row, bit);
++	}
++	reg_addr = &(imx_iim->sdat);
++
++	return readl(reg_addr);
++}
++
++int iim_read(int bank, char row)
++{
++	u32 fuse_val;
++	s32 err = 0;
++
++	printf("Read fuse at bank:%d row:%d\n", bank, row);
++	fuse_val = sense_fuse(bank, row, 0);
++	printf("fuses at (bank:%d, row:%d) = 0x%x\n", bank, row, fuse_val);
++
++	return err;
++}
++
++/* Blow fuses based on the bank, row and bit positions (all 0-based)
++*/
++static s32 fuse_blow_bit(s32 bank, s32 row, s32 bit)
++{
++	int addr, addr_l, addr_h, ret = -1;
++
++	fuse_op_start();
++
++	/* Disable IIM Program Protect */
++	writel(0xaa, &(imx_iim->preg_p));
++
++	addr = ((bank << 11) | (row << 3) | (bit & 0x7));
++	/* Set IIM Program Upper Address */
++	addr_h = (addr >> 8) & 0x000000FF;
++	/* Set IIM Program Lower Address */
++	addr_l = (addr & 0x000000FF);
++
++#ifdef IIM_FUSE_DEBUG
++	printf("blowing addr_h=0x%x, addr_l=0x%x\n", addr_h, addr_l);
++#endif
++
++	writel(addr_h, &(imx_iim->ua));
++	writel(addr_l, &(imx_iim->la));
++
++	/* Start Programming */
++	writel(0x31, &(imx_iim->fctl));
++	if (poll_fuse_op_done(POLL_FUSE_PRGD) == 0)
++		ret = 0;
++
++	/* Enable IIM Program Protect */
++	writel(0x0, &(imx_iim->preg_p));
++
++	return ret;
++}
++
++static void fuse_blow_row(s32 bank, s32 row, s32 value)
++{
++	u32 reg, i;
++
++	/* enable fuse blown */
++	reg = readl(CCM_BASE_ADDR + 0x64);
++	reg |= 0x10;
++	writel(reg, CCM_BASE_ADDR + 0x64);
++
++	for (i = 0; i < 8; i++) {
++		if (((value >> i) & 0x1) == 0)
++			continue;
++	if (fuse_blow_bit(bank, row, i) != 0) {
++			printf("fuse_blow_bit(bank: %d, row: %d, "
++				"bit: %d failed\n",
++				bank, row, i);
++		}
++    }
++    reg &= ~0x10;
++    writel(reg, CCM_BASE_ADDR + 0x64);
++}
++
++int iim_blow(int bank, int row, int val)
++{
++	u32 fuse_val, err = 0;
++
++	printf("Blowing fuse at bank:%d row:%d value:%d\n",
++			bank, row, val);
++	fuse_blow_row(bank, row, val);
++	fuse_val = sense_fuse(bank, row, 0);
++	printf("fuses at (bank:%d, row:%d) = 0x%x\n", bank, row, fuse_val);
++
++	return err;
++}
++
++static int iim_read_mac_addr(u8 *data)
++{
++	s32 bank = CONFIG_IIM_MAC_BANK;
++	s32 row  = CONFIG_IIM_MAC_ROW;
++
++	data[0] = sense_fuse(bank, row, 0) ;
++	data[1] = sense_fuse(bank, row + 1, 0) ;
++	data[2] = sense_fuse(bank, row + 2, 0) ;
++	data[3] = sense_fuse(bank, row + 3, 0) ;
++	data[4] = sense_fuse(bank, row + 4, 0) ;
++	data[5] = sense_fuse(bank, row + 5, 0) ;
++
++	if (!memcmp(data, "\0\0\0\0\0\0", 6))
++		return 0;
++	else
++		return 1;
++}
++
++int iim_blow_func(char *func_name, char *func_val)
++{
++	u32 value, i;
++	char *s;
++	char val[3];
++	s32 err = 0;
++
++	if (0 == strcmp(func_name, "scc")) {
++		/* fuse_blow scc
++	C3D153EDFD2EA9982226EF5047D3B9A0B9C7138EA87C028401D28C2C2C0B9AA2 */
++		printf("Ready to burn SCC fuses\n");
++		s = func_val;
++		for (i = 0; ; ++i) {
++			memcpy(val, s, 2);
++			val[2] = '\0';
++			value = quick_atoi(val, 2);
++			/* printf("fuse_blow_row(2, %d, value=0x%x)\n",
++					i, value); */
++			fuse_blow_row(2, i, value);
++
++			if ((++s)[0] == '\0') {
++				printf("ERROR: Odd string input\n");
++				err = -1;
++				break;
++			}
++			if ((++s)[0] == '\0') {
++				printf("Successful\n");
++				break;
++			}
++		}
++	} else if (0 == strcmp(func_name, "srk")) {
++		/* fuse_blow srk
++	418bccd09b53bee1ab59e2662b3c7877bc0094caee201052add49be8780dff95 */
++		printf("Ready to burn SRK key fuses\n");
++		s = func_val;
++		for (i = 0; ; ++i) {
++			memcpy(val, s, 2);
++			val[2] = '\0';
++			value = quick_atoi(val, 2);
++			if (i == 0) {
++				/* 0x41 goes to SRK_HASH[255:248],
++				 * bank 1, row 1 */
++				fuse_blow_row(1, 1, value);
++			} else {
++				/* 0x8b in SRK_HASH[247:240] bank 3, row 1 */
++				/* 0xcc in SRK_HASH[239:232] bank 3, row 2 */
++				/* ... */
++				fuse_blow_row(3, i, value);
++
++				if ((++s)[0] == '\0') {
++					printf("ERROR: Odd string input\n");
++					err = -1;
++					break;
++				}
++				if ((++s)[0] == '\0') {
++					printf("Successful\n");
++					break;
++				}
++			}
++		}
++	} else if (0 == strcmp(func_name, "fecmac")) {
++		u8 ea[6] = { 0 };
++
++		if (NULL == func_val) {
++			/* Read the Mac address and print it */
++			iim_read_mac_addr(ea);
++
++			printf("FEC MAC address: ");
++			printf("0x%02x:0x%02x:0x%02x:0x%02x:0x%02x:0x%02x\n\n",
++				ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]);
++
++			return 0;
++		}
++
++		eth_parse_enetaddr(func_val, ea);
++		if (!is_valid_ether_addr(ea)) {
++			printf("Error: invalid mac address parameter!\n");
++			err = -1;
++		} else {
++			for (i = 0; i < 6; ++i)
++				fuse_blow_row(1, i + 9, ea[i]);
++		}
++	} else {
++		printf("This command is not supported\n");
++	}
++
++	return err;
++}
++
++
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index e5baf43..a204a7e 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -378,6 +378,38 @@ static void swap_packet(void *packet, int length)
+ }
+ #endif
+ 
++static int fec_get_hwaddr(struct eth_device *dev, unsigned char *mac)
++{
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++	fec_get_mac_addr(mac);
++
++	return 0;
++#else
++	return -1;
++#endif
++}
++
++static int fec_set_hwaddr(struct eth_device *dev)
++{
++	uchar *mac = dev->enetaddr;
++	struct fec_info_s *info = dev->priv;
++	volatile fec_t *fecp = (fec_t *)(info->iobase);
++
++	writel(0, &fecp->iaur);
++	writel(0, &fecp->ialr);
++	writel(0, &fecp->gaur);
++	writel(0, &fecp->galr);
++
++	/*
++	 * Set physical address
++	 */
++	writel((mac[0] << 24) + (mac[1] << 16) + (mac[2] << 8) + mac[3],
++			&fecp->palr);
++	writel((mac[4] << 24) + (mac[5] << 16) + 0x8808, &fecp->paur);
++
++	return 0;
++}
++
+ int fec_send(struct eth_device *dev, volatile void *packet, int length)
+ {
+ 	struct fec_info_s *info = dev->priv;
+@@ -832,29 +864,11 @@ void fec_halt(struct eth_device *dev)
+ 	memset(info->txbuf, 0, DBUF_LENGTH);
+ }
+ 
+-void mxc_fec_set_mac_from_env(char *mac_addr)
+-{
+-	unsigned char ea[6];
+-	volatile fec_t *fecp = NULL;
+-	int i;
+-
+-	eth_parse_enetaddr(mac_addr, ea);
+-	if (!is_valid_ether_addr(ea)) {
+-		printf("Error: invalid FEC MAC address!\n");
+-		return;
+-	}
+-
+-	for (i = 0; i < sizeof(fec_info) / sizeof(fec_info[0]); i++) {
+-		fecp = (fec_t *)(fec_info[i].iobase);
+-		fecp->palr = (ea[0] << 24) | (ea[1] << 16) | (ea[2] << 8) | (ea[3]);
+-		fecp->paur = (ea[4] << 24) | (ea[5] << 16);
+-	}
+-}
+-
+ int mxc_fec_initialize(bd_t *bis)
+ {
+ 	struct eth_device *dev;
+ 	int i, j;
++	unsigned char ethaddr[6];
+ 
+ 	for (i = 0; i < sizeof(fec_info) / sizeof(fec_info[0]); i++) {
+ 
+@@ -872,6 +886,7 @@ int mxc_fec_initialize(bd_t *bis)
+ 		dev->halt = fec_halt;
+ 		dev->send = fec_send;
+ 		dev->recv = fec_recv;
++		dev->write_hwaddr = fec_set_hwaddr;
+ 
+ 		/* setup Receive and Transmit buffer descriptor */
+ #ifdef CONFIG_ARCH_MMU
+@@ -919,6 +934,12 @@ int mxc_fec_initialize(bd_t *bis)
+ 		miiphy_register(dev->name, mxc_fec_mii_read,
+ 						mxc_fec_mii_write);
+ #endif
++
++		if (fec_get_hwaddr(dev, ethaddr) == 0) {
++			printf("got MAC address from IIM: %pM\n", ethaddr);
++			memcpy(dev->enetaddr, ethaddr, 6);
++			fec_set_hwaddr(dev);
++		}
+ 	}
+ 
+ 	return 1;
+diff --git a/include/asm-arm/arch-mx50/mx50.h b/include/asm-arm/arch-mx50/mx50.h
+index da51cc3..d5e0d2c 100644
+--- a/include/asm-arm/arch-mx50/mx50.h
++++ b/include/asm-arm/arch-mx50/mx50.h
+@@ -42,6 +42,7 @@
+ #define CTI2_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00006000)
+ #define CTI3_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00007000)
+ #define CORTEX_DBG_BASE_ADDR	(DEBUG_BASE_ADDR + 0x00008000)
++#define OCOTP_CTRL_BASE_ADDR	(DEBUG_BASE_ADDR + 0x01002000)
+ 
+ /*
+  * SPBA global module enabled #0
+diff --git a/include/asm-arm/arch-mx51/imx_fuse.h b/include/asm-arm/arch-mx51/imx_fuse.h
+deleted file mode 100644
+index 8a65613..0000000
+--- a/include/asm-arm/arch-mx51/imx_fuse.h
++++ /dev/null
+@@ -1,33 +0,0 @@
+-/*
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+- *
+- * Configuration settings for the MX51-3Stack Freescale board.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#ifndef _IMX_FUSE_H_
+-#define _IMX_FUSE_H_
+-
+-#define IIM_ERR_SHIFT       8
+-#define POLL_FUSE_PRGD      (IIM_STAT_PRGD | (IIM_ERR_PRGE << IIM_ERR_SHIFT))
+-#define POLL_FUSE_SNSD      (IIM_STAT_SNSD | (IIM_ERR_SNSE << IIM_ERR_SHIFT))
+-
+-int fuse_read(int bank, char row);
+-int fuse_blow(int bank, int row, int val);
+-int fuse_blow_func(char *func_name, char *func_val);
+-
+-#endif
+diff --git a/include/asm-arm/imx_iim.h b/include/asm-arm/imx_iim.h
+new file mode 100644
+index 0000000..d2ccd34
+--- /dev/null
++++ b/include/asm-arm/imx_iim.h
+@@ -0,0 +1,71 @@
++/*
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __IMX_IIM_H__
++#define __IMX_IIM_H__
++
++/* IIM Control Registers */
++struct iim_regs {
++#define IIM_STAT_BUSY	(1 << 7)
++#define IIM_STAT_PRGD	(1 << 1)
++#define IIM_STAT_SNSD	(1 << 0)
++	u32 stat;
++	u32 statm;
++#define IIM_ERR_PRGE	(1 << 7)
++#define IIM_ERR_WPE	(1 << 6)
++#define IIM_ERR_OPE	(1 << 5)
++#define IIM_ERR_RPE	(1 << 4)
++#define IIM_ERR_WLRE	(1 << 3)
++#define IIM_ERR_SNSE	(1 << 2)
++#define IIM_ERR_PARITYE	(1 << 1)
++	u32 err;
++	u32 emask;
++	u32 fctl;
++	u32 ua;
++	u32 la;
++	u32 sdat;
++	u32 prev;
++	u32 srev;
++	u32 preg_p;
++	u32 scs0;
++	u32 scs1;
++	u32 scs2;
++	u32 scs3;
++};
++
++#define IIM_PROD_REV_SH         3
++#define IIM_PROD_REV_LEN        5
++#define IIM_SREV_REV_SH         4
++#define IIM_SREV_REV_LEN        4
++#define PROD_SIGNATURE_MX51     0x1
++
++#define IIM_ERR_SHIFT       8
++#define POLL_FUSE_PRGD      (IIM_STAT_PRGD | (IIM_ERR_PRGE << IIM_ERR_SHIFT))
++#define POLL_FUSE_SNSD      (IIM_STAT_SNSD | (IIM_ERR_SNSE << IIM_ERR_SHIFT))
++
++#define IIM_BANK_AREA_0_OFFSET	0x800
++#define IIM_BANK_AREA_1_OFFSET	0xc00
++#define IIM_BANK_AREA_2_OFFSET	0x1000
++#define IIM_BANK_AREA_3_OFFSET	0x1400
++
++int iim_read(int bank, char row);
++int iim_blow(int bank, int row, int val);
++int iim_blow_func(char *func_name, char *func_val);
++
++#endif
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index 9a6391c..e8383c2 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -165,6 +165,9 @@
+ #define CONFIG_MII_GASKET
+ #define CONFIG_DISCOVER_PHY
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET	0x68
++
+ #define CONFIG_FEC0_IOBASE FEC_BASE
+ #define CONFIG_FEC0_PINMUX -1
+ #define CONFIG_FEC0_PHY_ADDR 0x1F
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+index 4f3a6ff..5a5b0f8 100644
+--- a/include/configs/mx50_arm2.h
++++ b/include/configs/mx50_arm2.h
+@@ -155,6 +155,8 @@
+ #define CONFIG_FEC0_PHY_ADDR	-1
+ #define CONFIG_FEC0_MIIBASE 	-1
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_MII_GASKET
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index 548629e..47801f6 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -156,6 +156,8 @@
+ #define CONFIG_FEC0_PHY_ADDR	-1
+ #define CONFIG_FEC0_MIIBASE 	-1
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_MII_GASKET
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 354523c..e628ede 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -98,12 +98,17 @@
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+ #define CONFIG_CMD_MMC
+-#define CONFIG_CMD_FUSE
++#define CONFIG_CMD_IIM
+ 
+ /*
+  * FUSE Configs
+  * */
+-#define CONFIG_IMX_FUSE
++#ifdef CONFIG_CMD_IIM
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
+ 
+ /*
+  * MMC Configs
+@@ -112,7 +117,6 @@
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+-	#define CONFIG_SYS_FSL_ESDHC_NUM	2
+ 	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
+ 	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 76d718e..c240ada 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -94,13 +94,18 @@
+ #define CONFIG_CMD_SPI
+ #define CONFIG_CMD_SF
+ #define CONFIG_CMD_MMC
+-#define CONFIG_CMD_FUSE
++#define CONFIG_CMD_IIM
+ #define CONFIG_CMD_I2C
+ 
+ /*
+  * FUSE Configs
+  * */
+-#define CONFIG_IMX_FUSE
++#ifdef CONFIG_CMD_IIM
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK	1
++	#define CONFIG_IIM_MAC_ROW	9
++#endif
+ 
+ /*
+  * SPI Configs
+@@ -152,6 +157,9 @@
+ #define CONFIG_MII
+ #define CONFIG_DISCOVER_PHY
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
+ #define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
+ #define CONFIG_FEC0_PINMUX	-1
+ #define CONFIG_FEC0_PHY_ADDR	0x1F
+diff --git a/include/configs/mx53_arm2.h b/include/configs/mx53_arm2.h
+index 0af93c9..f94191d 100644
+--- a/include/configs/mx53_arm2.h
++++ b/include/configs/mx53_arm2.h
+@@ -97,6 +97,8 @@
+ #define CONFIG_CMD_MMC
+ #define CONFIG_CMD_ENV
+ 
++#define CONFIG_CMD_IIM
++
+ #define CONFIG_CMD_CLOCK
+ #define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
+ 
+@@ -158,12 +160,25 @@
+ #define CONFIG_FEC0_PHY_ADDR	-1
+ #define CONFIG_FEC0_MIIBASE 	-1
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_MII_GASKET
+ #define CONFIG_DISCOVER_PHY
+ 
+ /*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
+  * I2C Configs
+  */
+ #define CONFIG_CMD_I2C          1
+diff --git a/include/configs/mx53_arm2_ddr3.h b/include/configs/mx53_arm2_ddr3.h
+index 3b11e81..f4cd6ba 100644
+--- a/include/configs/mx53_arm2_ddr3.h
++++ b/include/configs/mx53_arm2_ddr3.h
+@@ -97,6 +97,8 @@
+ #define CONFIG_CMD_MMC
+ #define CONFIG_CMD_ENV
+ 
++#define CONFIG_CMD_IIM
++
+ #define CONFIG_CMD_CLOCK
+ #define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
+ 
+@@ -156,12 +158,25 @@
+ #define CONFIG_FEC0_PHY_ADDR	-1
+ #define CONFIG_FEC0_MIIBASE 	-1
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_MII_GASKET
+ #define CONFIG_DISCOVER_PHY
+ 
+ /*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
+  * I2C Configs
+  */
+ #define CONFIG_CMD_I2C          1
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index 730f104..0b1e75e 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -93,7 +93,7 @@
+ #define CONFIG_BOOTP_SUBNETMASK
+ #define CONFIG_BOOTP_GATEWAY
+ #define CONFIG_BOOTP_DNS
+-
++#define CONFIG_CMD_IIM
+ #define CONFIG_CMD_MMC
+ #define CONFIG_CMD_ENV
+ 
+@@ -157,12 +157,25 @@
+ #define CONFIG_FEC0_PHY_ADDR	-1
+ #define CONFIG_FEC0_MIIBASE 	-1
+ 
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_MII_GASKET
+ #define CONFIG_DISCOVER_PHY
+ 
+ /*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
+  * I2C Configs
+  */
+ #define CONFIG_CMD_I2C          1
+diff --git a/include/net.h b/include/net.h
+index 4873000..17279f7 100644
+--- a/include/net.h
++++ b/include/net.h
+@@ -105,6 +105,7 @@ struct eth_device {
+ #ifdef CONFIG_MCAST_TFTP
+ 	int (*mcast) (struct eth_device*, u32 ip, u8 set);
+ #endif
++	int  (*write_hwaddr) (struct eth_device *);
+ 	struct eth_device *next;
+ 	void *priv;
+ };
+diff --git a/net/eth.c b/net/eth.c
+index 2200767..7adc9e6 100644
+--- a/net/eth.c
++++ b/net/eth.c
+@@ -1,9 +1,7 @@
+ /*
+- * (C) Copyright 2001-2004
++ * (C) Copyright 2001-2010
+  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+  *
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+@@ -28,7 +26,6 @@
+ #include <net.h>
+ #include <miiphy.h>
+ 
+-#ifdef CONFIG_CMD_NET
+ void eth_parse_enetaddr(const char *addr, uchar *enetaddr)
+ {
+ 	char *end;
+@@ -62,9 +59,16 @@ int eth_getenv_enetaddr_by_index(int index, uchar *enetaddr)
+ 	sprintf(enetvar, index ? "eth%daddr" : "ethaddr", index);
+ 	return eth_getenv_enetaddr(enetvar, enetaddr);
+ }
+-#endif
+ 
+-#if defined(CONFIG_CMD_NET) && defined(CONFIG_NET_MULTI)
++#ifdef CONFIG_NET_MULTI
++
++static int eth_mac_skip(int index)
++{
++	char enetvar[15];
++	char *skip_state;
++	sprintf(enetvar, index ? "eth%dmacskip" : "ethmacskip", index);
++	return ((skip_state = getenv(enetvar)) != NULL);
++}
+ 
+ /*
+  * CPU and board-specific Ethernet initializations.  Aliased function
+@@ -177,7 +181,8 @@ int eth_register(struct eth_device* dev)
+ 		}
+ #endif
+ 	} else {
+-		for (d=eth_devices; d->next!=eth_devices; d=d->next);
++		for (d = eth_devices; d->next != eth_devices; d = d->next)
++			;
+ 		d->next = dev;
+ 	}
+ 
+@@ -245,6 +250,11 @@ int eth_initialize(bd_t *bis)
+ 
+ 				memcpy(dev->enetaddr, env_enetaddr, 6);
+ 			}
++			if (dev->write_hwaddr &&
++				!eth_mac_skip(eth_number) &&
++				is_valid_ether_addr(dev->enetaddr)) {
++				dev->write_hwaddr(dev);
++			}
+ 
+ 			eth_number++;
+ 			dev = dev->next;
+@@ -494,7 +504,8 @@ char *eth_get_name (void)
+ {
+ 	return (eth_current ? eth_current->name : "unknown");
+ }
+-#elif defined(CONFIG_CMD_NET) && !defined(CONFIG_NET_MULTI)
++
++#else /* !CONFIG_NET_MULTI */
+ 
+ #warning Ethernet driver is deprecated.  Please update to use CONFIG_NET_MULTI
+ 
+@@ -518,9 +529,6 @@ int eth_initialize(bd_t *bis)
+ #if defined(CONFIG_DRIVER_NS7520_ETHERNET)
+ 	ns7520_miiphy_initialize(bis);
+ #endif
+-#if defined(CONFIG_SMC911X)
+-	smc911x_initialize(0, CONFIG_SMC911X_BASE);
+-#endif
+ 	return 0;
+ }
+ #endif
+-- 
+1.5.4.4
+

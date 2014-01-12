@@ -1,0 +1,27 @@
+From 4e9f9f94bdf737eab93082058ebaf5a942ba0b68 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 8 Sep 2010 13:22:44 +0800
+Subject: [PATCH] ENGR00127265-4 hmp4e: fix build error
+
+fix build error after 35 kernel upgrade
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mxc/hmp4e/Makefile |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mxc/hmp4e/Makefile b/drivers/mxc/hmp4e/Makefile
+index 0efe11f..3f69ec8 100644
+--- a/drivers/mxc/hmp4e/Makefile
++++ b/drivers/mxc/hmp4e/Makefile
+@@ -2,6 +2,7 @@
+ # Makefile for the MPEG4 Encoder kernel module.
+ 
+ obj-$(CONFIG_MXC_HMP4E) 		+= mxc_hmp4e.o
++CFLAGS_mxc_hmp4e.o = -DIMX_NEEDS_DEPRECATED_SYMBOLS
+ 
+ ifeq ($(CONFIG_MXC_HMP4E_DEBUG),y)
+ EXTRA_CFLAGS += -DDEBUG
+-- 
+1.5.4.4
+

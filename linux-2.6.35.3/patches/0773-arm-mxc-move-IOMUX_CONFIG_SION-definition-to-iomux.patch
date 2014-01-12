@@ -1,0 +1,27 @@
+From 4f1a6d4571abce13a0300a8f17b528b6fc306b01 Mon Sep 17 00:00:00 2001
+From: Richard Zhao <richard.zhao@freescale.com>
+Date: Thu, 6 Jan 2011 19:05:39 +0800
+Subject: [PATCH] arm: mxc: move IOMUX_CONFIG_SION definition to iomux-v3.h
+
+Signed-off-by: Richard Zhao <richard.zhao@freescale.com>
+Signed-off-by: Sascha Hauer <s.hauer@pengutronix.de>
+---
+ arch/arm/plat-mxc/include/mach/iomux-v3.h |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-v3.h b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+index 7fe38a5..e33ef21 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-v3.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+@@ -108,6 +108,8 @@ typedef u64 iomux_v3_cfg_t;
+ #define PAD_CTL_SRE_FAST		(1 << 0)
+ #define PAD_CTL_SRE_SLOW		(0 << 0)
+ 
++#define IOMUX_CONFIG_SION		(0x1 << 4)
++
+ /*
+  * read/write a single pad in the iomuxer
+  */
+-- 
+1.5.4.4
+

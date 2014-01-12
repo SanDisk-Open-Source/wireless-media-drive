@@ -1,0 +1,53 @@
+From 9e8c94c3ad2e12c5eb48bf4763189750c0506862 Mon Sep 17 00:00:00 2001
+From: Lionel Xu <Lionel.Xu@freescale.com>
+Date: Sat, 25 Sep 2010 17:13:59 +0800
+Subject: [PATCH] ENGR00131984 MXS ALSA: No audio output after repeatedly pause/playing with gplay
+
+Sometimes there is no sound heard after repeatedly pause/playing a mp3 file with
+gplay, appropriate delay time should be added after each playing to avoid the
+impact to next play.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ sound/soc/mxs/mxs-adc.c |    1 +
+ sound/soc/mxs/mxs-pcm.c |   12 +++++++-----
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/mxs/mxs-adc.c b/sound/soc/mxs/mxs-adc.c
+index cf6eb36..6733652 100644
+--- a/sound/soc/mxs/mxs-adc.c
++++ b/sound/soc/mxs/mxs-adc.c
+@@ -321,6 +321,7 @@ static int mxs_adc_trigger(struct snd_pcm_substream *substream,
+ 			/* disable the fifo error interrupt */
+ 			__raw_writel(BM_AUDIOOUT_CTRL_FIFO_ERROR_IRQ_EN,
+ 				REGS_AUDIOOUT_BASE + HW_AUDIOOUT_CTRL_CLR);
++			mdelay(50);
+ 		} else {
+ 			if (adc_ramp_done == 0) {
+ 				cancel_delayed_work(&adc_ramp_work);
+diff --git a/sound/soc/mxs/mxs-pcm.c b/sound/soc/mxs/mxs-pcm.c
+index 198f1e5..b4d7ca0 100644
+--- a/sound/soc/mxs/mxs-pcm.c
++++ b/sound/soc/mxs/mxs-pcm.c
+@@ -183,11 +183,13 @@ static void mxs_pcm_stop(struct snd_pcm_substream *substream)
+ 		desc = 0;
+ 
+ 	/* Set up the next descriptor to decrement DMA channel sempahore */
+-	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.bytes = 0;
+-	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.pio_words = 0;
+-	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.dec_sem = 1;
+-	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.irq = 0;
+-	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.command = NO_DMA_XFER;
++	prtd->dma_desc_array[(desc + 1)%periods_num]->cmd.cmd.bits.bytes = 0;
++	prtd->dma_desc_array[(desc + 1)%periods_num]->cmd.cmd.bits.pio_words = \
++		0;
++	prtd->dma_desc_array[(desc + 1)%periods_num]->cmd.cmd.bits.dec_sem = 1;
++	prtd->dma_desc_array[(desc + 1)%periods_num]->cmd.cmd.bits.irq = 0;
++	prtd->dma_desc_array[(desc + 1)%periods_num]->cmd.cmd.bits.command = \
++		NO_DMA_XFER;
+ 
+ 	mxs_dma_unfreeze(prtd->dma_ch);
+ 
+-- 
+1.5.4.4
+

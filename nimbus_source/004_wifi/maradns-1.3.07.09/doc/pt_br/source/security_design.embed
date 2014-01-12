@@ -1,0 +1,255 @@
+<h1>Segurança do MaraDNS</h1>
+
+<i>Para pessoas que apenas querem rapidamente se atualizar sobre
+o histórico de segurança do MaraDNS podem pular 
+para <A href=#history>seção histórica</A>.</i><p>
+
+MaraDNS deverá ser um servidor de DNS seguro.
+
+<p>
+A razão por que eu digo <em>deverá ser </em> em vez de "é", é porque eu  
+acho reivindicações de segurança muito pretensiosos.  Não há nenhum modo que 
+eu posso garantia que um pedaço de código tão complexo quanto um servidor 
+recursivo de DNS esteja completamente livre de bugs de segurança.    
+  
+<p>
+Porém, o que eu posso garantir é aqueles bugs são muito improváveis no  
+MaraDNS, já que o projeto tem conferências de segurança e equilíbrio, o que    
+minimiza a chance de haver perigo de segurança no código.  
+
+
+<H2>Porque o código é inseguro?</H2>
+
+A razão principal por que um código é inseguro é porque o código em questão tem   
+resultados indefinidos quando alimentado com dados que estão em uma forma 
+diferente do que autor do código esperou.  O caso mais simples disto 
+é o <em>buffer overflow</em>, onde um programa é alimentado 
+por uma string mais longa que o programa foi projetado para controlar.  
+
+
+
+<p>
+Outro exemplo é o bug "cache poison" que versões antigas de  
+outros DNS tiveram implementados.  Com este bug, era uma questão trivial   
+por exemplo, para dizer ao servidor DNS que www.yahoo.com tinha um endereço de 
+ip de  digamos, 10.69.69.69, o qual realmente apontava para algum desprezível  
+sitel que instalava spyware.  Por que este bug existiu?  Porque os  
+autores originais deste servidor não esperaram que servidores remotos   
+deliberadamente distribuisem endereços IP incorretos.  
+
+<h2>Como MaraDNS evita esses problemas?</h2>
+
+Em primeiro lugar, MaraDNS usa uma biblioteca de string especial para a qual 
+é resistente  buffer overflows.  Faz-se isto tendo um tamanho máximo permitido 
+para uma string --qualquer tentativa em fazer uma string maior que o tamanho 
+máximo permitido, causa a biblioteca de string retornar um erro em vez de sobregaregar
+um buffer.  Além disso, a biblioteca de string aloca uns três bytes extras para
+cada objeto de string, como uma almofada contra possíveis condições de limite,  
+(havia um caso com outro programa que strived para estar seguro onde  
+um byte buffer overflow resultou em um exploit de root remoto).
+
+
+<p>
+Segundo, MaraDNS se protege do cache poisoning sem  
+descartar registros de cola e é controlando out-of-bailiwick registros  
+diferentemente, dependendo em onde os registros ofendendo são.  As atuais  
+regras são bastante complexas, e detalhadas em um documento   
+chamado "<A href= http://www.maradns.org/cache_poison_protection.html>cache.poison.protection</A>".
+
+<p>
+Terceiro, eu tenho extensivamente lido as <A href=http://cr.yp.to/djbdns.html>notas </A>
+de Dan Bernstein sobre implementação de DNS antes de realizar o MaraDNS.  Duas idéias para 
+implementar segurança no DNS discutida nas páginas de Dan's foram implementadas em  
+MaraDNS:
+
+<UL>
+
+<LI>
+Quando um servidor recursivo estiver executando consultas, MaraDNS usa um  
+gerador seguro de números pseudo aleatórios para gerar o ID da consulta,  
+e os mais baixos 12 bits da fonte da porta da consulta. Isto significa que uma determinada  
+tentativa de spoof a uma resposta para MaraDNS tem menos que um 1 entre 250 milhões  
+chance de ter sucesso.
+
+<LI>
+MaraDNS usa uma fila FIFO para apagar registros não usados quando o cache 
+começa a encher.  O algoritmo é simples:  Toda vez que um registro é 
+acessado, é colocado ao topo da lista.  Quando memória enche, 
+MaraDNS apaga registros do começo da lista.  Isto permite MaraDNS 
+agir de uma maneira muito graciosa quando o cache começa a encher.
+
+</UL>
+
+Alguns problemas de segurança conhecidos são evitados: MaraDNS não usa printf() 
+em uma maneira que tornaria a formatação da string possívilmente vulneravel; MaraDNS
+não usa qualquer função global potencialmente perigosa; e MaraDNS não terá os manipuladores
+notáveis até que eu posso entender um modo para fazer seguramente que o servidor 
+de DNS não seja vulnerável às armadilhas de segurança conhecidas de construção de 
+manipulador notável pobre.
+
+<p>
+
+Eu analiso o código, e quando eu acho qualquer coisa que tenha a 
+possibilidade de permitir os dados de estarem num estado indefinido, 
+eu reviso o código em questão.  Por exemplo, quando eu estava 
+analisando o código no release 0.8.35 do MaraDNS; eu achei um caso onde
+os dados puderiam potencialmente ficar indefinido. Em detalhe, se certas string
+não pudessem ser alocadas ou copiadas uma sobre as outras --casos que nunca 
+podem acontecer-- o código que remove elementos do cache tentaria free () liberar
+memória mais tarde.  Embora este fosse um caso onde era impossível explorar 
+o código em questão, eu senti era prudente para atualizar o código para não 
+ter este problema --conseqüentemente a atualização de segurança" vagamente 
+formulada" para o release 0.8.99 do MaraDNS.
+
+<p>
+
+MaraDNS também obriga que o servidor seja executado como um usuário sem 
+privilégios, e fortemente encoraja que MaraDNS seja executado em um ambiente
+chroot (). Em adição, o cache de DNS usa uma estrutura de dados separada que 
+os registros de DNS local, fazendo isto difícil, se não impossível, para o cache afete
+os registros locais. Este design significa que, até mesmo se uma falha de segurança
+existir em MaraDNS, a possibilidade de tal falha permite ao atacante que tem 
+privilégios elevados é próxima de zero.
+
+<A name=history> </A>
+<h2>A história de segurança do MaraDNS</h2>
+
+Houve alguns problemas de segurança encontrados no MaraDNS: dois razoavelmente 
+principais e um bug de segurança secundário.  Também havia um problema de 
+segurança principal causado pelo comportamento errôneo do kernel do Linux, 
+um problema de segurança  secundário em <tt>fetchzone </tt> ferramenta do 
+MaraDNS 1.1/1.2, e alguns  problemas teóricos de segurança causados por algumas 
+pesquise dentro da implementação de AES em processadores de cache modernos.
+
+<p>
+Aqui estão todos os problemas de segurança já descobertos do MaraDNS:
+
+<ol>
+<li>
+O primeiro problema de segurança principal foi descoberto por Roy Arends, um dos 
+desenvolvedores do BIND, e foi causado pelo fato que as primeiras versões do
+MaraDNS não conferia se um determinado pacote de DNS era uma pergunta 
+ou uma resposta.  Isto consertado antes do lançamento da versaõ 1.0 do MaraDNS.
+
+<p>
+ 
+Desde que uma resposta DNS parece com uma pergunta de DNS, com a 
+exceção de um um bit de diferença, este bug permitia para um atacante 
+enviar para um pacote spoofed DNS que resultaria no MaraDNS enviar 
+uma resposta para si mesmo (ou para outro servidor MaraDNS) que 
+resultaria em uma outra resposta enviada, e assim por diante.
+
+<p>
+
+A razão pela qual este pequeno problema de segurança passou era por causa
+de um esforço de overzealous para honrar o espírito de RFC para ser "liberal nisso 
+que um aceita e conservador em que a pessoa envia." Desde então, eu revisei
+a especificação de DNS para ver existe qualquer outro caso onde um pacote 
+malformado poderia causar este tipo de problema de segurança, e fiz um 
+esforço para qualquer caso desse tipo já não existe mais no MaraDNS.
+
+<p>
+
+Impacto: Negação remota de serviço
+
+<p>
+
+<li>
+Outro problema de segurança principal foi achado por min ao executar uma
+auditoria do código durante o ciclo de testes beta.  Envolveu o 
+código de descompressão, e foi causado porque a compressão de DNS é difícil de 
+implemente, e fácil para criar buracos de segurança.  Eu solucionei este assunto 
+reescrevendo o código completamente em questão com segurança em mente.
+Este problema de segurança apareceu no MaraDNS 0.9.01 (reescrevendo depois).
+
+<p>
+
+Impacto: Negação remota de serviço
+
+<p>
+
+<li>
+Outro problema principal que permitiu uma negação remota de serviço foi causado
+por algum comportamento errône do kernel Linux.  As pessoas que usam BSD 
+ou outro kernel não foram afetados por este problema de segurança.  Este problema 
+apareceu no MaraDNS 1.0.28 e no MaraDNS 1.1.35.
+
+<p>
+
+Impacto: Negação remota de serviço.
+
+<p>
+
+<li>
+Um velho problema de segurança secundário o núcleo do gerador de pseudo-random
+number. Em casos onde haviam um nulo ASCII na chave para o gerador de número 
+pseudo-fortuito, MaraDNS teria menos que 128 bits completos de entropia para o nucleo.
+Também havia um assunto relacionado, até com menos importancia, onde em certas 
+circunstâncias raras, exemplos múltiplos de MaraDNS poderiam gerar os mesmos números 
+pseudo-fortuitos potencialmente, se duas cópias do MaraDNS usasem o mesmo arquivo de
+nucleo de acaso estático, e foi começado ao mesmo tempo.  Estes assuntos foram consertados
+antes da liberação do MaraDNS 0.8.24.
+<p>
+
+Impacto: Teórico spoofing dos registros de DNS.
+
+<p>
+
+<li>
+Outro problema secundário, mais recentemente descoberto, que só estava presente 
+dentro da fase de desenvolvimento (1.1) do MaraDNS.  A ferramenta <tt>fetchzone </tt> 
+não  executava validações de entrada o suficiente e era especialmente vulnerável para 
+pacotes que poderiam enviar dados fora-de-bailiwick.  Eu consertei este problema
+em ambos os modos; primeiro dando para a ferramenta de fetchzone mais validação 
+de contribuição. Mais tarde, eu modifiquei o parser do csv2 para não aceitar o tipo de 
+dados que teria ativado o bug de segurança do  <tt>fetchzone </tt>.  Este problema foi
+consertado no MaraDNS 1.1.38 (os aprimoramentos do csv2 apareceram no MaraDNS 
+1.1.47).
+
+<p>
+Impacto: Spoofing dos registros de DNS.
+
+<p>
+<li>
+A theoretical security problem with the underlying random number generator
+that MaraDNS uses to generate secure random numbers was discovered by
+D. J. Bernstein.  Since the underlying random number generator uses a fairly
+simple key schedule (well, a simple key schedule for a cryptographic routine),
+and since the random number generator uses table lookups, modern CPUs will
+very slighly vary (on the order of billionths of a second) in the amount
+of time used to generate a secure random number, depending on the underlying
+key.  Bernstein needed to examine over 200 million packets, obtaining very
+precise timing information on each packet, to extract a key.
+
+<p>
+
+I worked around this security problem by having the random number generator
+rekey every million packets.  These changes were done in MaraDNS 1.0.27 and
+1.1.35.
+
+<p>
+
+<A href=http://marc.10east.com/?l=maradns-list&m=111494679116870>Lista de email
+postada que descreve este assunto</A>
+
+<p>
+
+Impact: Theoretical remote spoofing of DNS records.
+
+<li>
+More recently, Dag Arne Osvik, Adi Shamir (the "S" in RSA), and Eran Tromer
+discovered some sophisticated cache data leakage attacks against AES,
+the algorithm from which MaraDNS' secure random number generator is 
+derived.  I have responded to this issue by tweaking MaraDNS' secure
+random number generator to essentially not leak sensitive key data
+via cache lookups.  
+
+<p>
+
+<A href=http://www.maradns.org/download/patches/maradns-1.0.34-rng.patch>Patch
+que descreve os problemas e como eu trabalhei para resolver.</A>
+
+<p>
+Impacto: Teórico spoofing local dos registros de DNS.
+
+

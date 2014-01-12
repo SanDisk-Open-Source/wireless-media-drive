@@ -1,0 +1,29 @@
+From e49a90fa084b545f8056fde73eb3b0f9f507bfc7 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Wed, 1 Dec 2010 10:07:37 +0800
+Subject: [PATCH] ENGR00134193-1 TIMER: Fix i.MX28 set wrong match value of timer
+
+It should be match = current - delta.
+Original code is match = last_match -delta.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ arch/arm/plat-mxs/timer-match.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/timer-match.c b/arch/arm/plat-mxs/timer-match.c
+index a24c44e..d6429e6 100644
+--- a/arch/arm/plat-mxs/timer-match.c
++++ b/arch/arm/plat-mxs/timer-match.c
+@@ -50,7 +50,7 @@ static int mxs_set_next_event(unsigned long delta,
+ {
+ 	unsigned int match;
+ 	match = __raw_readl(online_timer->base +
+-			    HW_TIMROT_MATCH_COUNTn(online_timer->id)) - delta;
++			    HW_TIMROT_RUNNING_COUNTn(online_timer->id)) - delta;
+ 	__raw_writel(match, online_timer->base +
+ 		     HW_TIMROT_MATCH_COUNTn(online_timer->id));
+ 	return (int)(match -
+-- 
+1.5.4.4
+

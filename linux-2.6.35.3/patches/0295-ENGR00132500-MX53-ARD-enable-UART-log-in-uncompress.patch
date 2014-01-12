@@ -1,0 +1,27 @@
+From 71cbf7c3ec5b54b542ceffbbff5303c5970ce173 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 12 Oct 2010 16:14:07 +0800
+Subject: [PATCH] ENGR00132500 MX53 ARD: enable UART log in uncompress phase
+
+Enable UART log in kernel uncompress phase for MX53 ARD
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/uncompress.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/uncompress.h b/arch/arm/plat-mxc/include/mach/uncompress.h
+index 1de9b8b..d3c46b1 100644
+--- a/arch/arm/plat-mxc/include/mach/uncompress.h
++++ b/arch/arm/plat-mxc/include/mach/uncompress.h
+@@ -109,6 +109,7 @@ static __inline__ void __arch_decomp_setup(unsigned long arch_id)
+ 		uart_base = MX51_UART1_BASE_ADDR;
+ 		break;
+ 	case MACH_TYPE_MX53_EVK:
++	case MACH_TYPE_MX53_ARD:
+ 		uart_base = MX53_UART1_BASE_ADDR;
+ 		break;
+ 	case MACH_TYPE_MX50_ARM2:
+-- 
+1.5.4.4
+

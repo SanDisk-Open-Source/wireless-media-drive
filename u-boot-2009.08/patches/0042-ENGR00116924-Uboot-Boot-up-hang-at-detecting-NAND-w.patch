@@ -1,0 +1,193 @@
+From 6532550c9f7e96cbe32488f24ca53b2e3648fef1 Mon Sep 17 00:00:00 2001
+From: Jason <r64343@freescale.com>
+Date: Mon, 12 Oct 2009 10:48:31 +0800
+Subject: [PATCH] ENGR00116924 Uboot: Boot up hang at detecting NAND when cold boot
+
+Boot from MMC card failed at detecting NAND. The fix will
+1. Set RBB_MODE to 1 and using atomic status command
+2. Set FW correctly by adding CONFIG_NAND_FW_8 config
+3. Correct the BLS register value
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+(cherry picked from commit 7142651386271c340a6ae061a6e2893695675724)
+---
+ drivers/mtd/nand/mxc_nand.c          |   59 ++++++++++++++++++++++++++--------
+ include/asm-arm/arch-mx51/mxc_nand.h |   16 +++++----
+ include/configs/mx51_3stack.h        |    1 +
+ 3 files changed, 55 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index cf27c66..71d2d9e 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -415,7 +415,9 @@ static void send_cmd_auto(struct mtd_info *mtd, u16 cmd)
+ 		break;
+ 	case NAND_CMD_RESET:
+ 		send_cmd_interleave(mtd, cmd);
++		break;
+ 	case NAND_CMD_STATUS:
++		send_cmd_atomic(mtd, cmd);
+ 		break;
+ 	default:
+ 		break;
+@@ -540,20 +542,15 @@ static u16 mxc_do_status_auto(struct mtd_info *mtd)
+ 		/* clear status */
+ 		ACK_OPS;
+ 
+-		/* FIXME, NFC Auto erase may have
+-		 * problem, have to pollingit until
+-		 * the nand get idle, otherwise
+-		 * it may get error
+-		 */
+-		do {
+-			raw_write(NFC_AUTO_STATE, REG_NFC_OPS);
+-		#if defined(CONFIG_MX51_3DS) || defined(CONFIG_MX51_BBG)
+-			/* mx51to2 NFC need wait the op done */
+-			if (is_soc_rev(CHIP_REV_2_0) == 0)
+-				wait_op_done(TROP_US_DELAY);
+-		#endif
+-			status = (raw_read(NFC_CONFIG1) & mask) >> 16;
+-		} while ((status & NAND_STATUS_READY) == 0);
++		/* use atomic mode to read status instead
++		 * of using auto mode,auto-mode has issues
++		 * and the status is not correct.
++		*/
++		raw_write(NFC_STATUS, REG_NFC_OPS);
++
++		wait_op_done(TROP_US_DELAY);
++
++		status = (raw_read(NFC_CONFIG1) & mask) >> 16;
+ 
+ 		if (status & NAND_STATUS_FAIL)
+ 			break;
+@@ -731,6 +728,26 @@ static u16 mxc_nand_read_word(struct mtd_info *mtd)
+ }
+ 
+ /*!
++ * This function reads byte from the NAND Flash
++ *
++ * @param     mtd     MTD structure for the NAND Flash
++ *
++ * @return    data read from the NAND Flash
++ */
++static u_char mxc_nand_read_byte16(struct mtd_info *mtd)
++{
++	struct nand_chip *this = mtd->priv;
++	struct nand_info *info = this->priv;
++
++	/* Check for status request */
++	if (info->status_req)
++		return mxc_nand_get_status(mtd) & 0xFF;
++
++	return mxc_nand_read_word(mtd) & 0xFF;
++}
++
++
++/*!
+  * This function writes data of length \b len from buffer \b buf to the NAND
+  * internal RAM buffer's MAIN area 0.
+  *
+@@ -1197,6 +1214,7 @@ int board_nand_init(struct nand_chip *nand)
+ {
+ 	struct nand_info *info;
+ 	struct nand_chip *this = nand;
++	struct mtd_info *mtd; /* dummy for compile */
+ 	int err;
+ 
+ 	info = kmalloc(sizeof(struct nand_info), GFP_KERNEL);
+@@ -1218,6 +1236,7 @@ int board_nand_init(struct nand_chip *nand)
+ #ifdef CONFIG_MXC_NFC_SP_AUTO
+ 	info->auto_mode = 1;
+ #endif
++
+ 	/* init the nfc */
+ 	mxc_nfc_init();
+ 
+@@ -1242,5 +1261,17 @@ int board_nand_init(struct nand_chip *nand)
+ 	this->ecc.bytes = 9;
+ 	this->ecc.size = 512;
+ 
++#ifdef CONFIG_NAND_FW_16BIT
++	if (CONFIG_NAND_FW_16BIT == 1) {
++		this->read_byte = mxc_nand_read_byte16;
++		this->options |= NAND_BUSWIDTH_16;
++		NFC_SET_NFMS(1 << NFMS_NF_DWIDTH);
++	} else {
++		NFC_SET_NFMS(0);
++	}
++#else
++	NFC_SET_NFMS(0);
++#endif
++
+ 	return 0;
+ }
+diff --git a/include/asm-arm/arch-mx51/mxc_nand.h b/include/asm-arm/arch-mx51/mxc_nand.h
+index 539d0fd..ee5bf91 100644
+--- a/include/asm-arm/arch-mx51/mxc_nand.h
++++ b/include/asm-arm/arch-mx51/mxc_nand.h
+@@ -72,7 +72,7 @@
+ 
+ #define IS_4BIT_ECC \
+ ( \
+-	is_soc_rev(CHIP_REV_2_0) == 0 ? \
++	is_soc_rev(CHIP_REV_2_0) >= 0 ? \
+ 		!((raw_read(NFC_CONFIG2) & NFC_ECC_MODE_4) >> 6) : \
+ 		((raw_read(NFC_CONFIG2) & NFC_ECC_MODE_4) >> 6) \
+ )
+@@ -84,7 +84,7 @@
+ 
+ #define NFC_SET_ECC_MODE(v)		\
+ do { \
+-	if (is_soc_rev(CHIP_REV_2_0) == 0) { \
++	if (is_soc_rev(CHIP_REV_2_0) >= 0) { \
+ 		if ((v) == NFC_SPAS_218 || (v) == NFC_SPAS_112) \
+ 			raw_write(((raw_read(NFC_CONFIG2) & \
+ 					NFC_ECC_MODE_MASK) | \
+@@ -201,9 +201,9 @@ do { \
+ #define NFC_PPB_256			(3 << 7)
+ #define NFC_PPB_RESET			(~(3 << 7))
+ 
+-#define NFC_BLS_LOCKED			(0 << 16)
+-#define NFC_BLS_LOCKED_DEFAULT		(1 << 16)
+-#define NFC_BLS_UNLCOKED		(2 << 16)
++#define NFC_BLS_LOCKED			(0 << 6)
++#define NFC_BLS_LOCKED_DEFAULT		(1 << 6)
++#define NFC_BLS_UNLCOKED		(2 << 6)
+ #define NFC_BLS_RESET			(~(3 << 16))
+ #define NFC_WPC_LOCK_TIGHT		1
+ #define NFC_WPC_LOCK			(1 << 1)
+@@ -335,7 +335,8 @@ do { \
+ /*should set the fw,ps,spas,ppb*/
+ #define NFC_SET_NFMS(v)	\
+ do {	\
+-	NFC_SET_FW(NFC_FW_8);	\
++	if (!(v)) \
++		NFC_SET_FW(NFC_FW_8);   \
+ 	if (((v) & (1 << NFMS_NF_DWIDTH)))	\
+ 		NFC_SET_FW(NFC_FW_16);	\
+ 	if (((v) & (1 << NFMS_NF_PG_SZ))) {	\
+@@ -356,7 +357,8 @@ do {	\
+ 		NFC_SET_SPAS(GET_NAND_OOB_SIZE >> 1);	\
+ 		NFC_SET_ECC_MODE(GET_NAND_OOB_SIZE >> 1); \
+ 		NFC_SET_ST_CMD(0x70); \
+-		raw_write(raw_read(NFC_CONFIG3) | 1 << 20, NFC_CONFIG3); \
++		raw_write(raw_read(NFC_CONFIG3) | NFC_NO_SDMA, NFC_CONFIG3); \
++		raw_write(raw_read(NFC_CONFIG3) | NFC_RBB_MODE, NFC_CONFIG3); \
+ 	} \
+ } while (0)
+ 
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index e0fa523..bd2d27b 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -205,6 +205,7 @@
+ #define NAND_MAX_CHIPS         8
+ #define CONFIG_SYS_MAX_NAND_DEVICE    1
+ #define CONFIG_SYS_NAND_BASE          0x40000000
++#define CONFIG_NAND_FW_16BIT	0 /* 1: 16bit 0: 8bit */
+ 
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_NAND
+-- 
+1.5.4.4
+

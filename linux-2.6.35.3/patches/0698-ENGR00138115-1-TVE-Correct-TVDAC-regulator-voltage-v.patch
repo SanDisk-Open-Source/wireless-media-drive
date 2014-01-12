@@ -1,0 +1,29 @@
+From 4d503f423a6d876c2003fcfe858485ace43ffc35 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Tue, 18 Jan 2011 10:45:34 +0800
+Subject: [PATCH] ENGR00138115-1 TVE:Correct TVDAC regulator voltage value
+
+This patch correct TVDAC regulator voltage value to
+be 2.75V.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ drivers/video/mxc/tve.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/mxc/tve.c b/drivers/video/mxc/tve.c
+index f82dafd..1fcb2c0 100644
+--- a/drivers/video/mxc/tve.c
++++ b/drivers/video/mxc/tve.c
+@@ -1240,7 +1240,7 @@ static int tve_probe(struct platform_device *pdev)
+ 
+ 	tve.dac_reg = regulator_get(&pdev->dev, plat_data->dac_reg);
+ 	if (!IS_ERR(tve.dac_reg)) {
+-		regulator_set_voltage(tve.dac_reg, 2500000, 2500000);
++		regulator_set_voltage(tve.dac_reg, 2750000, 2750000);
+ 		regulator_enable(tve.dac_reg);
+ 	}
+ 
+-- 
+1.5.4.4
+

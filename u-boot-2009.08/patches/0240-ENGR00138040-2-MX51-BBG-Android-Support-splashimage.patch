@@ -1,0 +1,43 @@
+From 4f9c691a594708717d52bb72b8026528e674deec Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Mon, 17 Jan 2011 13:56:49 +0800
+Subject: [PATCH] ENGR00138040-2 MX51 BBG Android:Support splashimage
+
+This patch supports splashimage for MX51 BBG Android.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ include/configs/mx51_bbg_android.h |   19 +++++++++++++++++++
+ 1 files changed, 19 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 2363c9f..7b054e3 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -349,4 +349,23 @@
+ #undef CONFIG_JFFS2_CMDLINE
+ #define CONFIG_JFFS2_DEV	"nand0"
+ 
++#define CONFIG_SPLASH_SCREEN
++#ifdef CONFIG_SPLASH_SCREEN
++	/*
++	 * Framebuffer and LCD
++	 */
++	#define CONFIG_LCD
++	#define CONFIG_VIDEO_MX5
++	#define CONFIG_MXC_HSC
++	#define CONFIG_IPU_CLKRATE	133000000
++	#define CONFIG_SYS_CONSOLE_ENV_OVERWRITE
++	#define CONFIG_SYS_CONSOLE_OVERWRITE_ROUTINE
++	#define CONFIG_SYS_CONSOLE_IS_IN_ENV
++	#define LCD_BPP		LCD_COLOR16
++	#define CONFIG_CMD_BMP
++	#define CONFIG_BMP_8BPP
++	#define CONFIG_FB_BASE	(TEXT_BASE + 0x300000)
++	#define CONFIG_SPLASH_SCREEN_ALIGN
++	#define CONFIG_SYS_WHITE_ON_BLACK
++#endif
+ #endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

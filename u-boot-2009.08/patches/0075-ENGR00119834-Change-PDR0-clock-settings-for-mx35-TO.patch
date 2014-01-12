@@ -1,0 +1,33 @@
+From c3b0a8706e5b3eb84875830e9acaa80cac088c14 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 6 Jan 2010 15:57:26 +0800
+Subject: [PATCH] ENGR00119834: Change PDR0 clock settings for mx35 TO2
+
+The IPU_HND_BYP bit is different in mx35 to1 and to2.
+Change the value of this bit for mx35 to2.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx35_3stack/lowlevel_init.S |    5 +----
+ 1 files changed, 1 insertions(+), 4 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/lowlevel_init.S b/board/freescale/mx35_3stack/lowlevel_init.S
+index 9608aa5..e984306 100644
+--- a/board/freescale/mx35_3stack/lowlevel_init.S
++++ b/board/freescale/mx35_3stack/lowlevel_init.S
+@@ -216,11 +216,8 @@
+         ldr r1, =CCM_PPLL_300_HZ
+         str r1, [r0, #CLKCTL_PPCTL]
+ 
+-        ldr r1, [r0, #CLKCTL_PDR0]
+-        orr r1, r1, #0x800000
+-        str r1, [r0, #CLKCTL_PDR0]
+-
+         ldr r1, =CCM_PDR0_CONFIG
++        bic r1, r1, #0x800000
+         str r1, [r0, #CLKCTL_PDR0]
+ 
+         ldr r1, [r0, #CLKCTL_CGR0]
+-- 
+1.5.4.4
+

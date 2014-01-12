@@ -1,0 +1,87 @@
+From aafc68dcd1d81aa9b1721dbc5e38370f74aeb849 Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Thu, 6 Jan 2011 13:35:49 +0800
+Subject: [PATCH] ENGR00137651 USB: Change usb wakeup task wait for completion interruptible
+
+  1. Change wait for competion interruptible avoid hung task information.
+  2. Achieve sched_clock by clocksource_cyc2ns.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ arch/arm/plat-mxc/time.c       |    7 ++-----
+ arch/arm/plat-mxc/usb_wakeup.c |    5 +++--
+ arch/arm/plat-mxs/usb_wakeup.c |    4 ++--
+ 3 files changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/time.c b/arch/arm/plat-mxc/time.c
+index b5cb23d..a3f1c7d 100644
+--- a/arch/arm/plat-mxc/time.c
++++ b/arch/arm/plat-mxc/time.c
+@@ -127,14 +127,11 @@ static struct clocksource clocksource_mxc = {
+ 
+ unsigned long long sched_clock(void)
+ {
+-	unsigned long long ret;
+-
+ 	if (!timer_base)
+ 		return 0;
+ 
+-	ret = (unsigned long long)clocksource_mxc.read(&clocksource_mxc);
+-	ret = (ret * clocksource_mxc.mult) >> clocksource_mxc.shift;
+-	return ret;
++	return clocksource_cyc2ns(clocksource_mxc.read(&clocksource_mxc),
++			clocksource_mxc.mult, clocksource_mxc.shift);
+ }
+ 
+ static int __init mxc_clocksource_init(struct clk *timer_clk)
+diff --git a/arch/arm/plat-mxc/usb_wakeup.c b/arch/arm/plat-mxc/usb_wakeup.c
+index 8fed330..69354eb 100644
+--- a/arch/arm/plat-mxc/usb_wakeup.c
++++ b/arch/arm/plat-mxc/usb_wakeup.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -75,6 +75,7 @@ static irqreturn_t usb_wakeup_handler(int irq, void *_dev)
+ {
+ 	struct wakeup_ctrl *ctrl = (struct wakeup_ctrl *)_dev;
+ 	irqreturn_t ret = IRQ_NONE;
++
+ 	if (usb2_is_in_lowpower(ctrl)) {
+ 		printk(KERN_INFO "usb wakeup is here\n");
+ 		delay_process_wakeup(ctrl);
+@@ -131,7 +132,7 @@ static int wakeup_event_thread(void *param)
+ 
+ 	sched_setscheduler(current, SCHED_RR, &sch_param);
+ 	while (1) {
+-		wait_for_completion(&ctrl->event);
++		wait_for_completion_interruptible(&ctrl->event);
+ 		if (kthread_should_stop())
+ 			break;
+ 		wakeup_event_handler(ctrl);
+diff --git a/arch/arm/plat-mxs/usb_wakeup.c b/arch/arm/plat-mxs/usb_wakeup.c
+index c5b37ed..74223a8 100644
+--- a/arch/arm/plat-mxs/usb_wakeup.c
++++ b/arch/arm/plat-mxs/usb_wakeup.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -124,7 +124,7 @@ static int wakeup_event_thread(void *param)
+ 
+ 	sched_setscheduler(current, SCHED_RR, &sch_param);
+ 	while (1) {
+-		wait_for_completion(&ctrl->event);
++		wait_for_completion_interruptible(&ctrl->event);
+ 		if (kthread_should_stop())
+ 			break;
+ 		wakeup_event_handler(ctrl);
+-- 
+1.5.4.4
+

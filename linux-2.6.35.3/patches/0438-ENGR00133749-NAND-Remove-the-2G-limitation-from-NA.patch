@@ -1,0 +1,40 @@
+From 85e7455338ed85c86242fdfa9cdf641986fbf211 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Tue, 16 Nov 2010 16:50:55 +0800
+Subject: [PATCH] ENGR00133749: NAND: Remove the 2G limitation from NAND driver
+
+Remove the 2G limitation from NAND driver since currently kernel
+can support more than 2GB NAND flash now. This commit will make
+NAND driver rescan the whole NAND to create one BBT and store to
+the last 4 blocks of the larger than 2GB NAND flash. This commit
+will have no effect on the NAND which size is not larger than 2GB.
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nd2.c |   10 ----------
+ 1 files changed, 0 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nd2.c b/drivers/mtd/nand/mxc_nd2.c
+index 8d5c286..5e45cc4 100644
+--- a/drivers/mtd/nand/mxc_nd2.c
++++ b/drivers/mtd/nand/mxc_nd2.c
+@@ -1326,16 +1326,6 @@ int nand_scan_mid(struct mtd_info *mtd)
+ 	mtd->oobsize = dev_info->page_total_size_in_bytes & 0x3ff;
+ 	mtd->erasesize = dev_info->block_size_in_pages * mtd->writesize;
+ 
+-	/* limit to 2G size due to Kernel
+-	 * larger 4G space support,need fix
+-	 * it later
+-	 */
+-	if ((u32)mtd->size == 0) {
+-		mtd->size = (u32)(1 << 31);
+-		this->numchips = 1;
+-		this->chipsize = mtd->size;
+-	}
+-
+ 	/* Calculate the address shift from the page size */
+ 	this->page_shift = ffs(mtd->writesize) - 1;
+ 	/* Convert chipsize to number of pages per chip -1. */
+-- 
+1.5.4.4
+

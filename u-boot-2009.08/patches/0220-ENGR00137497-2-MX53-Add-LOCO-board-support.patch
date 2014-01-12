@@ -1,0 +1,1578 @@
+From 7c1313ce24e98332119882646762f4af53695abd Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 30 Dec 2010 20:19:40 +0800
+Subject: [PATCH] ENGR00137497-2 MX53: Add LOCO board support
+
+Add MX53 LOCO board support
+The following functions are tested in the board:
+- Micro SD boot
+- MMC/SD read/write.
+- clk command
+- fuse command
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ Makefile                                  |    2 +
+ board/freescale/mx53_loco/Makefile        |   47 ++
+ board/freescale/mx53_loco/config.mk       |    3 +
+ board/freescale/mx53_loco/flash_header.S  |  111 +++++
+ board/freescale/mx53_loco/lowlevel_init.S |  229 +++++++++
+ board/freescale/mx53_loco/mx53_loco.c     |  745 +++++++++++++++++++++++++++++
+ board/freescale/mx53_loco/u-boot.lds      |   67 +++
+ include/asm-arm/arch-mx53/mmu.h           |    4 +-
+ include/configs/mx53_loco.h               |  271 +++++++++++
+ 9 files changed, 1477 insertions(+), 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index a76fac6..14c252a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3278,6 +3278,8 @@ mx51_3stack_config	: unconfig
+ 
+ mx53_smd_config		:unconfig
+ 	$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx53_smd freescale mx53
++mx53_loco_config	:unconfig
++	$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx53_loco freescale mx53
+ 
+ mx53_ard_mfg_config		\
+ mx53_ard_config		: unconfig
+diff --git a/board/freescale/mx53_loco/Makefile b/board/freescale/mx53_loco/Makefile
+new file mode 100644
+index 0000000..c838e08
+--- /dev/null
++++ b/board/freescale/mx53_loco/Makefile
+@@ -0,0 +1,47 @@
++#
++# (C) Copyright 2010 Freescale Semiconductor, Inc.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= mx53_loco.o
++SOBJS	:= lowlevel_init.o flash_header.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/freescale/mx53_loco/config.mk b/board/freescale/mx53_loco/config.mk
+new file mode 100644
+index 0000000..34f830a
+--- /dev/null
++++ b/board/freescale/mx53_loco/config.mk
+@@ -0,0 +1,3 @@
++LDSCRIPT := $(SRCTREE)/board/$(VENDOR)/$(BOARD)/u-boot.lds
++
++TEXT_BASE = 0x77800000
+diff --git a/board/freescale/mx53_loco/flash_header.S b/board/freescale/mx53_loco/flash_header.S
+new file mode 100644
+index 0000000..db056db
+--- /dev/null
++++ b/board/freescale/mx53_loco/flash_header.S
+@@ -0,0 +1,111 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx53.h>
++
++#ifdef	CONFIG_FLASH_HEADER
++#ifndef CONFIG_FLASH_HEADER_OFFSET
++# error "Must define the offset of flash header"
++#endif
++
++#define CPU_2_BE_32(l) \
++       ((((l) & 0x000000FF) << 24) | \
++	(((l) & 0x0000FF00) << 8)  | \
++	(((l) & 0x00FF0000) >> 8)  | \
++	(((l) & 0xFF000000) >> 24))
++
++#define MXC_DCD_ITEM(i, addr, val)   \
++dcd_node_##i:                        \
++        .word CPU_2_BE_32(addr) ;     \
++        .word CPU_2_BE_32(val)  ;     \
++
++.section ".text.flasheader", "x"
++	b	_start
++	.org	CONFIG_FLASH_HEADER_OFFSET
++ivt_header:       .word 0x402000D1 /* Tag=0xD1, Len=0x0020, Ver=0x40 */
++app_code_jump_v:  .word _start
++reserv1:          .word 0x0
++dcd_ptr:          .word dcd_hdr
++boot_data_ptr:	  .word boot_data
++self_ptr:         .word ivt_header
++app_code_csf:     .word 0x0
++reserv2:          .word 0x0
++
++boot_data:        .word 0x77800000
++image_len:        .word _end - TEXT_BASE
++plugin:           .word 0x0
++
++dcd_hdr:          .word 0x40A001D2 /* Tag=0xD2, Len=51*8 + 4 + 4, Ver=0x40 */
++write_dcd_cmd:    .word 0x049C01CC /* Tag=0xCC, Len=51*8 + 4, Param=4 */
++
++/* DCD */
++MXC_DCD_ITEM(1, IOMUXC_BASE_ADDR + 0x554, 0x00300000)
++MXC_DCD_ITEM(2, IOMUXC_BASE_ADDR + 0x558, 0x00300040)
++MXC_DCD_ITEM(3, IOMUXC_BASE_ADDR + 0x560, 0x00300000)
++MXC_DCD_ITEM(4, IOMUXC_BASE_ADDR + 0x564, 0x00300040)
++MXC_DCD_ITEM(5, IOMUXC_BASE_ADDR + 0x568, 0x00300040)
++MXC_DCD_ITEM(6, IOMUXC_BASE_ADDR + 0x570, 0x00300000)
++MXC_DCD_ITEM(7, IOMUXC_BASE_ADDR + 0x574, 0x00300000)
++MXC_DCD_ITEM(8, IOMUXC_BASE_ADDR + 0x578, 0x00300000)
++MXC_DCD_ITEM(9, IOMUXC_BASE_ADDR + 0x57c, 0x00300040)
++MXC_DCD_ITEM(10, IOMUXC_BASE_ADDR + 0x580, 0x00300040)
++MXC_DCD_ITEM(11, IOMUXC_BASE_ADDR + 0x584, 0x00300000)
++MXC_DCD_ITEM(12, IOMUXC_BASE_ADDR + 0x588, 0x00300000)
++MXC_DCD_ITEM(13, IOMUXC_BASE_ADDR + 0x590, 0x00300040)
++MXC_DCD_ITEM(14, IOMUXC_BASE_ADDR + 0x594, 0x00300000)
++MXC_DCD_ITEM(15, IOMUXC_BASE_ADDR + 0x6f0, 0x00300000)
++MXC_DCD_ITEM(16, IOMUXC_BASE_ADDR + 0x6f4, 0x00000000)
++MXC_DCD_ITEM(17, IOMUXC_BASE_ADDR + 0x6fc, 0x00000000)
++MXC_DCD_ITEM(18, IOMUXC_BASE_ADDR + 0x714, 0x00000000)
++MXC_DCD_ITEM(19, IOMUXC_BASE_ADDR + 0x718, 0x00300000)
++MXC_DCD_ITEM(20, IOMUXC_BASE_ADDR + 0x71c, 0x00300000)
++MXC_DCD_ITEM(21, IOMUXC_BASE_ADDR + 0x720, 0x00300000)
++MXC_DCD_ITEM(22, IOMUXC_BASE_ADDR + 0x724, 0x04000000)
++MXC_DCD_ITEM(23, IOMUXC_BASE_ADDR + 0x728, 0x00300000)
++MXC_DCD_ITEM(24, IOMUXC_BASE_ADDR + 0x72c, 0x00300000)
++MXC_DCD_ITEM(25, ESDCTL_BASE_ADDR + 0x088, 0x32383535)
++MXC_DCD_ITEM(26, ESDCTL_BASE_ADDR + 0x090, 0x4d444c44)
++MXC_DCD_ITEM(27, ESDCTL_BASE_ADDR + 0x07c, 0x01370138)
++MXC_DCD_ITEM(28, ESDCTL_BASE_ADDR + 0x080, 0x013b013c)
++MXC_DCD_ITEM(29, ESDCTL_BASE_ADDR + 0x018, 0x00011740)
++MXC_DCD_ITEM(30, ESDCTL_BASE_ADDR + 0x000, 0xc3190000)
++MXC_DCD_ITEM(31, ESDCTL_BASE_ADDR + 0x00c, 0x9f5152e3)
++MXC_DCD_ITEM(32, ESDCTL_BASE_ADDR + 0x010, 0xb68e8a63)
++MXC_DCD_ITEM(33, ESDCTL_BASE_ADDR + 0x014, 0x01ff00db)
++MXC_DCD_ITEM(34, ESDCTL_BASE_ADDR + 0x02c, 0x000026d2)
++MXC_DCD_ITEM(35, ESDCTL_BASE_ADDR + 0x030, 0x009f0e21)
++MXC_DCD_ITEM(36, ESDCTL_BASE_ADDR + 0x008, 0x12273030)
++MXC_DCD_ITEM(37, ESDCTL_BASE_ADDR + 0x004, 0x0002002d)
++MXC_DCD_ITEM(38, ESDCTL_BASE_ADDR + 0x01c, 0x00008032)
++MXC_DCD_ITEM(39, ESDCTL_BASE_ADDR + 0x01c, 0x00008033)
++MXC_DCD_ITEM(40, ESDCTL_BASE_ADDR + 0x01c, 0x00028031)
++MXC_DCD_ITEM(41, ESDCTL_BASE_ADDR + 0x01c, 0x092080b0)
++MXC_DCD_ITEM(42, ESDCTL_BASE_ADDR + 0x01c, 0x04008040)
++MXC_DCD_ITEM(43, ESDCTL_BASE_ADDR + 0x01c, 0x0000803a)
++MXC_DCD_ITEM(44, ESDCTL_BASE_ADDR + 0x01c, 0x0000803b)
++MXC_DCD_ITEM(45, ESDCTL_BASE_ADDR + 0x01c, 0x00028039)
++MXC_DCD_ITEM(46, ESDCTL_BASE_ADDR + 0x01c, 0x09208138)
++MXC_DCD_ITEM(47, ESDCTL_BASE_ADDR + 0x01c, 0x04008048)
++MXC_DCD_ITEM(48, ESDCTL_BASE_ADDR + 0x020, 0x00001800)
++MXC_DCD_ITEM(49, ESDCTL_BASE_ADDR + 0x040, 0x04b80003)
++MXC_DCD_ITEM(50, ESDCTL_BASE_ADDR + 0x058, 0x00022227)
++MXC_DCD_ITEM(51, ESDCTL_BASE_ADDR + 0x01C, 0x00000000)
++
++#endif
+diff --git a/board/freescale/mx53_loco/lowlevel_init.S b/board/freescale/mx53_loco/lowlevel_init.S
+new file mode 100644
+index 0000000..5fadbc2
+--- /dev/null
++++ b/board/freescale/mx53_loco/lowlevel_init.S
+@@ -0,0 +1,229 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx53.h>
++
++/*
++ * L2CC Cache setup/invalidation/disable
++ */
++.macro init_l2cc
++	/* explicitly disable L2 cache */
++        mrc 15, 0, r0, c1, c0, 1
++        bic r0, r0, #0x2
++        mcr 15, 0, r0, c1, c0, 1
++
++        /* reconfigure L2 cache aux control reg */
++        mov r0, #0xC0                   /* tag RAM */
++        add r0, r0, #0x4                /* data RAM */
++        orr r0, r0, #(1 << 24)          /* disable write allocate delay */
++        orr r0, r0, #(1 << 23)          /* disable write allocate combine */
++        orr r0, r0, #(1 << 22)          /* disable write allocate */
++
++	mcr 15, 1, r0, c9, c0, 2
++.endm /* init_l2cc */
++
++/* AIPS setup - Only setup MPROTx registers.
++ * The PACR default values are good.*/
++.macro init_aips
++	/*
++	 * Set all MPROTx to be non-bufferable, trusted for R/W,
++	 * not forced to user-mode.
++	 */
++	ldr r0, =AIPS1_BASE_ADDR
++	ldr r1, =0x77777777
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++	ldr r0, =AIPS2_BASE_ADDR
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++.endm /* init_aips */
++
++.macro setup_pll pll, freq
++	ldr r0, =\pll
++	ldr r1, =0x00001232
++	str r1, [r0, #PLL_DP_CTL]
++	mov r1, #0x2
++	str r1, [r0, #PLL_DP_CONFIG]
++
++	ldr r1, W_DP_OP_\freq
++	str r1, [r0, #PLL_DP_OP]
++	str r1, [r0, #PLL_DP_HFS_OP]
++
++	ldr r1,	W_DP_MFD_\freq
++	str r1, [r0, #PLL_DP_MFD]
++	str r1, [r0, #PLL_DP_HFS_MFD]
++
++	ldr r1,  W_DP_MFN_\freq
++	str r1, [r0, #PLL_DP_MFN]
++	str r1, [r0, #PLL_DP_HFS_MFN]
++
++	ldr r1, =0x00001232
++	str r1, [r0, #PLL_DP_CTL]
++1:	ldr r1, [r0, #PLL_DP_CTL]
++	ands r1, r1, #0x1
++	beq 1b
++.endm
++
++.macro init_clock
++	ldr r0, =ROM_SI_REV
++	ldr r1, [r0]
++	cmp r1, #0x20
++
++	/* For TO2 only, set LDO to 1.3V */
++	ldr r0, =0x53fa8000
++	ldr r1, =0x00194005
++	streq r1, [r0, #0x04]
++
++	ldr r0, CCM_BASE_ADDR_W
++
++	/* Switch ARM to step clock */
++	mov r1, #0x4
++	str r1, [r0, #CLKCTL_CCSR]
++
++	setup_pll PLL1_BASE_ADDR, 1000
++
++        setup_pll PLL3_BASE_ADDR, 400
++
++        /* Switch peripheral to PLL3 */
++        ldr r0, CCM_BASE_ADDR_W
++        ldr r1, CCM_VAL_0x00015154
++        str r1, [r0, #CLKCTL_CBCMR]
++        ldr r1, CCM_VAL_0x02888945
++        orr r1, r1, #(1 << 16)
++        str r1, [r0, #CLKCTL_CBCDR]
++        /* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++        cmp r1, #0x0
++        bne 1b
++
++        setup_pll PLL2_BASE_ADDR, CONFIG_SYS_PLL2_FREQ
++
++	/* Switch peripheral to PLL2 */
++	ldr r0, CCM_BASE_ADDR_W
++	ldr r1, CCM_VAL_0x00808145
++	orr r1, r1, #(CONFIG_SYS_AHB_PODF << 10)
++	orr r1, r1, #(CONFIG_SYS_AXIA_PODF << 16)
++	orr r1, r1, #(CONFIG_SYS_AXIB_PODF << 19)
++	str r1, [r0, #CLKCTL_CBCDR]
++
++	ldr r1, CCM_VAL_0x00016154
++	str r1, [r0, #CLKCTL_CBCMR]
++
++	/* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++	cmp r1, #0x0
++	bne 1b
++
++        setup_pll PLL3_BASE_ADDR, 216
++
++	/* Set the platform clock dividers */
++	ldr r0, PLATFORM_BASE_ADDR_W
++	ldr r1, PLATFORM_CLOCK_DIV_W
++	str r1, [r0, #PLATFORM_ICGC]
++
++	ldr r0, CCM_BASE_ADDR_W
++	mov r1, #0
++	str r1, [r0, #CLKCTL_CACRR]
++
++	/* Switch ARM back to PLL 1. */
++	mov r1, #0x0
++	str r1, [r0, #CLKCTL_CCSR]
++
++	ldr r1, [r0, #CLKCTL_CSCDR1]
++	orr r1, r1, #0x3f
++	eor r1, r1, #0x3f
++	orr r1, r1, #0x21
++	str r1, [r0, #CLKCTL_CSCDR1]
++
++	/* Restore the default values in the Gate registers */
++	ldr r1, =0xFFFFFFFF
++	str r1, [r0, #CLKCTL_CCGR0]
++	str r1, [r0, #CLKCTL_CCGR1]
++	str r1, [r0, #CLKCTL_CCGR2]
++	str r1, [r0, #CLKCTL_CCGR3]
++	str r1, [r0, #CLKCTL_CCGR4]
++	str r1, [r0, #CLKCTL_CCGR5]
++	str r1, [r0, #CLKCTL_CCGR6]
++	str r1, [r0, #CLKCTL_CCGR7]
++
++        mov r1, #0x00000
++        str r1, [r0, #CLKCTL_CCDR]
++
++        /* for cko - for ARM div by 8 */
++        mov r1, #0x000A0000
++        add r1, r1, #0x00000F0
++        str r1, [r0, #CLKCTL_CCOSR]
++.endm
++
++.section ".text.init", "x"
++
++.globl lowlevel_init
++lowlevel_init:
++
++#ifdef ENABLE_IMPRECISE_ABORT
++        mrs r1, spsr            /* save old spsr */
++        mrs r0, cpsr            /* read out the cpsr */
++	bic r0, r0, #0x100      /* clear the A bit */
++	msr spsr, r0            /* update spsr */
++	add lr, pc, #0x8        /* update lr */
++        movs pc, lr             /* update cpsr */
++        nop
++        nop
++        nop
++	nop
++	msr spsr, r1            /* restore old spsr */
++#endif
++
++	/* ARM errata ID #468414 */
++	mrc 15, 0, r1, c1, c0, 1
++	orr r1, r1, #(1 << 5)    /* enable L1NEON bit */
++	mcr 15, 0, r1, c1, c0, 1
++
++	init_l2cc
++
++	init_aips
++
++	init_clock
++
++	mov pc, lr
++
++/* Board level setting value */
++CCM_BASE_ADDR_W:        .word CCM_BASE_ADDR
++CCM_VAL_0x00016154:     .word 0x00016154
++CCM_VAL_0x00808145:     .word 0x00808145
++CCM_VAL_0x00015154:     .word 0x00015154
++CCM_VAL_0x02888945:     .word 0x02888945
++W_DP_OP_1000:           .word DP_OP_1000
++W_DP_MFD_1000:          .word DP_MFD_1000
++W_DP_MFN_1000:          .word DP_MFN_1000
++W_DP_OP_800:           	.word DP_OP_800
++W_DP_MFD_800:           .word DP_MFD_800
++W_DP_MFN_800:           .word DP_MFN_800
++W_DP_OP_600:            .word DP_OP_600
++W_DP_MFD_600:           .word DP_MFD_600
++W_DP_MFN_600:           .word DP_MFN_600
++W_DP_OP_400:            .word DP_OP_400
++W_DP_MFD_400:           .word DP_MFD_400
++W_DP_MFN_400:           .word DP_MFN_400
++W_DP_OP_216:            .word DP_OP_216
++W_DP_MFD_216:           .word DP_MFD_216
++W_DP_MFN_216:           .word DP_MFN_216
++PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
++PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/board/freescale/mx53_loco/mx53_loco.c b/board/freescale/mx53_loco/mx53_loco.c
+new file mode 100644
+index 0000000..4f588ea
+--- /dev/null
++++ b/board/freescale/mx53_loco/mx53_loco.c
+@@ -0,0 +1,745 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/mx53.h>
++#include <asm/arch/mx53_pins.h>
++#include <asm/arch/iomux.h>
++#include <asm/errno.h>
++#include <netdev.h>
++
++#if CONFIG_I2C_MXC
++#include <i2c.h>
++#endif
++
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#endif
++
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
++
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#include <asm/imx_iim.h>
++#endif
++
++#ifdef CONFIG_CMD_CLOCK
++#include <asm/clock.h>
++#endif
++
++#ifdef CONFIG_ANDROID_RECOVERY
++#include "../common/recovery.h"
++#include <part.h>
++#include <ext2fs.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <ubi_uboot.h>
++#include <jffs2/load_kernel.h>
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++static u32 system_rev;
++static enum boot_device boot_dev;
++
++static inline void setup_boot_device(void)
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	uint bt_mem_ctl = (soc_sbmr & 0x000000FF) >> 4 ;
++	uint bt_mem_type = (soc_sbmr & 0x00000008) >> 3;
++
++	switch (bt_mem_ctl) {
++	case 0x0:
++		if (bt_mem_type)
++			boot_dev = ONE_NAND_BOOT;
++		else
++			boot_dev = WEIM_NOR_BOOT;
++		break;
++	case 0x2:
++		if (bt_mem_type)
++			boot_dev = SATA_BOOT;
++		else
++			boot_dev = PATA_BOOT;
++		break;
++	case 0x3:
++		if (bt_mem_type)
++			boot_dev = SPI_NOR_BOOT;
++		else
++			boot_dev = I2C_BOOT;
++		break;
++	case 0x4:
++	case 0x5:
++		boot_dev = SD_BOOT;
++		break;
++	case 0x6:
++	case 0x7:
++		boot_dev = MMC_BOOT;
++		break;
++	case 0x8 ... 0xf:
++		boot_dev = NAND_BOOT;
++		break;
++	default:
++		boot_dev = UNKNOWN_BOOT;
++		break;
++	}
++}
++
++enum boot_device get_boot_device(void)
++{
++	return boot_dev;
++}
++
++u32 get_board_rev(void)
++{
++	return system_rev;
++}
++
++static inline void setup_soc_rev(void)
++{
++	int reg;
++
++	/* Si rev is obtained from ROM */
++	reg = __REG(ROM_SI_REV);
++
++	switch (reg) {
++	case 0x10:
++		system_rev = 0x53000 | CHIP_REV_1_0;
++		break;
++	case 0x20:
++		system_rev = 0x53000 | CHIP_REV_2_0;
++		break;
++	default:
++		system_rev = 0x53000 | CHIP_REV_2_0;
++	}
++}
++
++static inline void setup_board_rev(int rev)
++{
++	system_rev |= (rev & 0xF) << 8;
++}
++
++inline int is_soc_rev(int rev)
++{
++	return (system_rev & 0xFF) - rev;
++}
++
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
++	unsigned long i;
++
++	/*
++	* Set the TTB register
++	*/
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	* Set the Domain Access Control Register
++	*/
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	* First clear all TT entries - ie Set them to Faulting
++	*/
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes          Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0x000, 0x10,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* ROM, 16M */
++	X_ARM_MMU_SECTION(0x070, 0x070, 0x010,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IRAM */
++	X_ARM_MMU_SECTION(0x100, 0x100, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SATA */
++	X_ARM_MMU_SECTION(0x180, 0x180, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IPUv3M */
++	X_ARM_MMU_SECTION(0x200, 0x200, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* GPU */
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x300,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* periperals */
++	X_ARM_MMU_SECTION(0x700, 0x700, 0x200,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 512M */
++	X_ARM_MMU_SECTION(0x700, 0x900, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 512M */
++	X_ARM_MMU_SECTION(0xB00, 0xB00, 0x200,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 512M */
++	X_ARM_MMU_SECTION(0xB00, 0xD00, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 512M */
++	X_ARM_MMU_SECTION(0xF00, 0xF00, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS1 EIM control*/
++	X_ARM_MMU_SECTION(0xF7F, 0xF7F, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* NAND Flash buffer */
++	X_ARM_MMU_SECTION(0xF80, 0xF80, 0x001,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* iRam */
++
++	/* Workaround for arm errata #709718 */
++	/* Setup PRRR so device is always mapped to non-shared */
++	asm volatile ("mrc p15, 0, %0, c10, c2, 0" : "=r"(i) : /*:*/);
++	i &= (~(3 << 0x10));
++	asm volatile ("mcr p15, 0, %0, c10, c2, 0" : : "r"(i) /*:*/);
++
++	/* Enable MMU */
++	MMU_ON();
++}
++#endif
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++	gd->bd->bi_dram[1].start = PHYS_SDRAM_2;
++	gd->bd->bi_dram[1].size = PHYS_SDRAM_2_SIZE;
++	return 0;
++}
++
++static void setup_uart(void)
++{
++	/* UART1 RXD */
++	mxc_request_iomux(MX53_PIN_CSI0_D11, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX53_PIN_CSI0_D11, 0x1E4);
++	mxc_iomux_set_input(MUX_IN_UART1_IPP_UART_RXD_MUX_SELECT_INPUT, 0x1);
++
++	/* UART1 TXD */
++	mxc_request_iomux(MX53_PIN_CSI0_D10, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX53_PIN_CSI0_D10, 0x1E4);
++}
++
++#ifdef CONFIG_I2C_MXC
++static void setup_i2c(unsigned int module_base)
++{
++	switch (module_base) {
++	case I2C1_BASE_ADDR:
++		/* i2c1 SDA */
++		mxc_request_iomux(MX53_PIN_CSI0_D8,
++				IOMUX_CONFIG_ALT5 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C1_IPP_SDA_IN_SELECT_INPUT,
++				INPUT_CTL_PATH0);
++		mxc_iomux_set_pad(MX53_PIN_CSI0_D8, PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PULL |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		/* i2c1 SCL */
++		mxc_request_iomux(MX53_PIN_CSI0_D9,
++				IOMUX_CONFIG_ALT5 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C1_IPP_SCL_IN_SELECT_INPUT,
++				INPUT_CTL_PATH0);
++		mxc_iomux_set_pad(MX53_PIN_CSI0_D9, PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PULL |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		break;
++	case I2C2_BASE_ADDR:
++		/* i2c2 SDA */
++		mxc_request_iomux(MX53_PIN_KEY_ROW3,
++				IOMUX_CONFIG_ALT4 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C2_IPP_SDA_IN_SELECT_INPUT,
++				INPUT_CTL_PATH0);
++		mxc_iomux_set_pad(MX53_PIN_KEY_ROW3,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++
++		/* i2c2 SCL */
++		mxc_request_iomux(MX53_PIN_KEY_COL3,
++				IOMUX_CONFIG_ALT4 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C2_IPP_SCL_IN_SELECT_INPUT,
++				INPUT_CTL_PATH0);
++		mxc_iomux_set_pad(MX53_PIN_KEY_COL3,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++
++		break;
++	case I2C3_BASE_ADDR:
++		break;
++	default:
++		printf("Invalid I2C base: 0x%x\n", module_base);
++		break;
++	}
++}
++#endif
++
++#if defined(CONFIG_DWC_AHSATA)
++static void setup_sata_device(void)
++{
++	u32 *tmp_base =
++		(u32 *)(IIM_BASE_ADDR + 0x180c);
++	u32 reg;
++	mxc_request_iomux(MX53_PIN_EIM_DA3, IOMUX_CONFIG_ALT1);
++
++	/* GPIO_3_3 */
++	reg = readl(GPIO3_BASE_ADDR);
++	reg |= (0x1 << 3);
++	writel(reg, GPIO3_BASE_ADDR);
++
++	reg = readl(GPIO3_BASE_ADDR + 0x4);
++	reg |= (0x1 << 3);
++	writel(reg, GPIO3_BASE_ADDR + 0x4);
++
++	udelay(1000);
++
++	/* Set USB_PHY1 clk, fuse bank4 row3 bit2 */
++	set_usb_phy1_clk();
++	writel((readl(tmp_base) & (~0x7)) | 0x4, tmp_base);
++}
++#endif
++
++#ifdef CONFIG_MXC_FEC
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++int fec_get_mac_addr(unsigned char *mac)
++{
++	u32 *iim1_mac_base =
++		(u32 *)(IIM_BASE_ADDR + IIM_BANK_AREA_1_OFFSET +
++			CONFIG_IIM_MAC_ADDR_OFFSET);
++	int i;
++
++	for (i = 0; i < 6; ++i, ++iim1_mac_base)
++		mac[i] = (u8)readl(iim1_mac_base);
++
++	return 0;
++}
++#endif
++
++static void setup_fec(void)
++{
++	volatile unsigned int reg;
++
++	/*FEC_MDIO*/
++	mxc_request_iomux(MX53_PIN_FEC_MDIO, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_MDIO, 0x1FC);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_MDI_SELECT_INPUT, 0x1);
++
++	/*FEC_MDC*/
++	mxc_request_iomux(MX53_PIN_FEC_MDC, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_MDC, 0x004);
++
++	/* FEC RXD1 */
++	mxc_request_iomux(MX53_PIN_FEC_RXD1, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_RXD1, 0x180);
++
++	/* FEC RXD0 */
++	mxc_request_iomux(MX53_PIN_FEC_RXD0, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_RXD0, 0x180);
++
++	 /* FEC TXD1 */
++	mxc_request_iomux(MX53_PIN_FEC_TXD1, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_TXD1, 0x004);
++
++	/* FEC TXD0 */
++	mxc_request_iomux(MX53_PIN_FEC_TXD0, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_TXD0, 0x004);
++
++	/* FEC TX_EN */
++	mxc_request_iomux(MX53_PIN_FEC_TX_EN, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_TX_EN, 0x004);
++
++	/* FEC TX_CLK */
++	mxc_request_iomux(MX53_PIN_FEC_REF_CLK, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_REF_CLK, 0x180);
++
++	/* FEC RX_ER */
++	mxc_request_iomux(MX53_PIN_FEC_RX_ER, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_RX_ER, 0x180);
++
++	/* FEC CRS */
++	mxc_request_iomux(MX53_PIN_FEC_CRS_DV, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_FEC_CRS_DV, 0x180);
++
++	/* phy reset: gpio7-6 */
++	mxc_request_iomux(MX53_PIN_ATA_DA_0, IOMUX_CONFIG_ALT1);
++
++	reg = readl(GPIO7_BASE_ADDR + 0x0);
++	reg &= ~0x40;
++	writel(reg, GPIO7_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO7_BASE_ADDR + 0x4);
++	reg |= 0x40;
++	writel(reg, GPIO7_BASE_ADDR + 0x4);
++
++	udelay(1000);
++
++	reg = readl(GPIO7_BASE_ADDR + 0x0);
++	reg |= 0x40;
++	writel(reg, GPIO7_BASE_ADDR + 0x0);
++
++}
++#endif
++
++
++#ifdef CONFIG_NET_MULTI
++int board_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++
++	return rc;
++}
++#endif
++
++#ifdef CONFIG_CMD_MMC
++
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC3_BASE_ADDR, 1, 1},
++};
++
++#ifdef CONFIG_DYNAMIC_MMC_DEVNO
++int get_mmc_env_devno()
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	return (soc_sbmr & 0x00300000) ? 1 : 0;
++}
++#endif
++
++#ifdef CONFIG_EMMC_DDR_PORT_DETECT
++int detect_mmc_emmc_ddr_port(struct fsl_esdhc_cfg *cfg)
++{
++	return (MMC_SDHC3_BASE_ADDR == cfg->esdhc_base) ? 1 : 0;
++}
++#endif
++
++int esdhc_gpio_init(bd_t *bis)
++{
++	s32 status = 0;
++	u32 index = 0;
++
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			mxc_request_iomux(MX53_PIN_SD1_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA0,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA1,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA2,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD1_DATA3,
++						IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX53_PIN_SD1_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_CLK, 0xD4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA0, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA1, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA2, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD1_DATA3, 0x1D4);
++			break;
++		case 1:
++			mxc_request_iomux(MX53_PIN_ATA_RESET_B,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_IORDY,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_DATA8,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA9,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA10,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA11,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA0,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA1,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA2,
++						IOMUX_CONFIG_ALT4);
++			mxc_request_iomux(MX53_PIN_ATA_DATA3,
++						IOMUX_CONFIG_ALT4);
++
++			mxc_iomux_set_pad(MX53_PIN_ATA_RESET_B, 0x1E4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_IORDY, 0xD4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA8, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA9, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA10, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA11, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA0, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA1, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA2, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA3, 0x1D4);
++
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
++	}
++
++	return status;
++}
++
++int board_mmc_init(bd_t *bis)
++{
++	if (!esdhc_gpio_init(bis))
++		return 0;
++	else
++		return -1;
++}
++
++#endif
++
++
++int board_init(void)
++{
++#ifdef CONFIG_MFG
++/* MFG firmware need reset usb to avoid host crash firstly */
++#define USBCMD 0x140
++	int val = readl(OTG_BASE_ADDR + USBCMD);
++	val &= ~0x1; /*RS bit*/
++	writel(val, OTG_BASE_ADDR + USBCMD);
++#endif
++	setup_boot_device();
++	setup_soc_rev();
++
++	gd->bd->bi_arch_number = MACH_TYPE_MX53_LOCO;	/* board id for linux */
++
++	/* address of boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
++
++	setup_uart();
++
++#ifdef CONFIG_MXC_FEC
++	setup_fec();
++#endif
++
++#ifdef CONFIG_I2C_MXC
++	setup_i2c(CONFIG_SYS_I2C_PORT);
++#endif
++
++#if defined(CONFIG_DWC_AHSATA)
++	setup_sata_device();
++#endif
++
++	return 0;
++}
++
++
++#ifdef CONFIG_ANDROID_RECOVERY
++struct reco_envs supported_reco_envs[BOOT_DEV_NUM] = {
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC,
++	 },
++	{
++	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++};
++
++int check_recovery_cmd_file(void)
++{
++	disk_partition_t info;
++	ulong part_length;
++	int filelen;
++	char *env;
++
++	/* For test only */
++	/* When detecting android_recovery_switch,
++	 * enter recovery mode directly */
++	env = getenv("android_recovery_switch");
++	if (!strcmp(env, "1")) {
++		printf("Env recovery detected!\nEnter recovery mode!\n");
++		return 1;
++	}
++
++	printf("Checking for recovery command file...\n");
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++	case SD_BOOT:
++		{
++			block_dev_desc_t *dev_desc = NULL;
++			struct mmc *mmc = find_mmc_device(0);
++
++			dev_desc = get_dev("mmc", 0);
++
++			if (NULL == dev_desc) {
++				puts("** Block device MMC 0 not supported\n");
++				return 0;
++			}
++
++			mmc_init(mmc);
++
++			if (get_partition_info(dev_desc,
++					CONFIG_ANDROID_CACHE_PARTITION_MMC,
++					&info)) {
++				printf("** Bad partition %d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				return 0;
++			}
++
++			part_length = ext2fs_set_blk_dev(dev_desc,
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++			if (part_length == 0) {
++				printf("** Bad partition - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			if (!ext2fs_mount(part_length)) {
++				printf("** Bad ext2 partition or "
++					"disk - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
++
++			ext2fs_close();
++		}
++		break;
++	case NAND_BOOT:
++		return 0;
++		break;
++	case SPI_NOR_BOOT:
++		return 0;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		return 0;
++		break;
++	}
++
++	return (filelen > 0) ? 1 : 0;
++
++}
++#endif
++
++int board_late_init(void)
++{
++	return 0;
++}
++
++int checkboard(void)
++{
++	printf("Board: ");
++	printf("MX53-LOCO 1.0\n");
++	printf("Boot Reason: [");
++
++
++	switch (__REG(SRC_BASE_ADDR + 0x8)) {
++	case 0x0001:
++		printf("POR");
++		break;
++	case 0x0009:
++		printf("RST");
++		break;
++	case 0x0010:
++	case 0x0011:
++		printf("WDOG");
++		break;
++	default:
++		printf("unknown");
++	}
++	printf("]\n");
++
++	printf("Boot Device: ");
++	switch (get_boot_device()) {
++	case WEIM_NOR_BOOT:
++		printf("NOR\n");
++		break;
++	case ONE_NAND_BOOT:
++		printf("ONE NAND\n");
++		break;
++	case PATA_BOOT:
++		printf("PATA\n");
++		break;
++	case SATA_BOOT:
++		printf("SATA\n");
++		break;
++	case I2C_BOOT:
++		printf("I2C\n");
++		break;
++	case SPI_NOR_BOOT:
++		printf("SPI NOR\n");
++		break;
++	case SD_BOOT:
++		printf("SD\n");
++		break;
++	case MMC_BOOT:
++		printf("MMC\n");
++		break;
++	case NAND_BOOT:
++		printf("NAND\n");
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("UNKNOWN\n");
++		break;
++	}
++	return 0;
++}
+diff --git a/board/freescale/mx53_loco/u-boot.lds b/board/freescale/mx53_loco/u-boot.lds
+new file mode 100644
+index 0000000..4db8ab1
+--- /dev/null
++++ b/board/freescale/mx53_loco/u-boot.lds
+@@ -0,0 +1,67 @@
++/*
++ * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text	   :
++	{
++	  /* WARNING - the following is hand-optimized to fit within	*/
++	  /* the sector layout of our flash chips!	XXX FIXME XXX	*/
++	  board/freescale/mx53_loco/flash_header.o	(.text.flasheader)
++	  cpu/arm_cortexa8/start.o
++	  board/freescale/mx53_loco/libmx53_loco.a	(.text)
++	  lib_arm/libarm.a		(.text)
++	  net/libnet.a			(.text)
++	  drivers/mtd/libmtd.a		(.text)
++	  drivers/mmc/libmmc.a		(.text)
++
++	  . = DEFINED(env_offset) ? env_offset : .;
++	  common/env_embedded.o(.text)
++
++	  *(.text)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(.rodata) }
++
++	. = ALIGN(4);
++	.data : { *(.data) }
++
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/include/asm-arm/arch-mx53/mmu.h b/include/asm-arm/arch-mx53/mmu.h
+index 88712c1..32ef86c 100644
+--- a/include/asm-arm/arch-mx53/mmu.h
++++ b/include/asm-arm/arch-mx53/mmu.h
+@@ -140,7 +140,7 @@ union ARM_MMU_FIRST_LEVEL_DESCRIPTOR {
+  */
+ inline unsigned long iomem_to_phys(unsigned long virt)
+ {
+-#if defined(CONFIG_MX53_SMD)
++#if defined(CONFIG_MX53_SMD) || defined(CONFIG_MX53_LOCO)
+ 	if (virt >= 0x90000000 && virt <= 0xafffffff)
+ 		return (unsigned long)((virt - 0x90000000) + PHYS_SDRAM_1);
+ 	if (virt >= 0xD0000000 && virt <= 0xEfffffff)
+@@ -160,7 +160,7 @@ inline unsigned long iomem_to_phys(unsigned long virt)
+ void *__ioremap(unsigned long offset, size_t size, unsigned long flags)
+ {
+ 	if (1 == flags) {
+-#if defined(CONFIG_MX53_SMD)
++#if defined(CONFIG_MX53_SMD) || defined(CONFIG_MX53_LOCO)
+ 		if (offset >= PHYS_SDRAM_1 &&
+ 		offset < (unsigned long)(PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 			return (void *)((offset - PHYS_SDRAM_1) + 0x90000000);
+diff --git a/include/configs/mx53_loco.h b/include/configs/mx53_loco.h
+new file mode 100644
+index 0000000..9d7cf2e
+--- /dev/null
++++ b/include/configs/mx53_loco.h
+@@ -0,0 +1,271 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX53-LOCO Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx53.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_MXC
++#define CONFIG_MX53
++#define CONFIG_MX53_LOCO
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++#define CONFIG_MX53_CLK32	32768
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX53_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++#define CONFIG_CMD_IIM
++
++#define CONFIG_CMD_CLOCK
++#define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
++
++#define CONFIG_CMD_SATA
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootargs_mmc=setenv bootargs ${bootargs} ip=dhcp "	\
++			"root=/dev/mmcblk0p2 rootwait\0"	\
++		"bootcmd_mmc=run bootargs_base bootargs_mmc; bootm\0"	\
++		"bootcmd=run bootcmd_net\0"	\
++	\
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"MX53-LOCO U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE	-1
++
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	/* detect whether ESDHC1 or ESDHC3 is boot device */
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_MODE
++	/* port 1 (ESDHC3) is 8 bit */
++	#define CONFIG_MMC_8BIT_PORTS	0x2
++
++#endif
++
++/*
++ * SATA Configs
++ */
++#ifdef CONFIG_CMD_SATA
++  #define CONFIG_DWC_AHSATA
++  #define CONFIG_SYS_SATA_MAX_DEVICE      1
++  #define CONFIG_DWC_AHSATA_PORT_ID       0
++  #define CONFIG_DWC_AHSATA_BASE_ADDR     SATA_BASE_ADDR
++  #define CONFIG_LBA48
++  #define CONFIG_LIBATA
++#endif
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	2
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define PHYS_SDRAM_2		CSD1_BASE_ADDR
++#define PHYS_SDRAM_2_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	((addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE)) \
++	|| (addr >= PHYS_SDRAM_2 && addr <= (PHYS_SDRAM_2 + PHYS_SDRAM_2_SIZE)))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

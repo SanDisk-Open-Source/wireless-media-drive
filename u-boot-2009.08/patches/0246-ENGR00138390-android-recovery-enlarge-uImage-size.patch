@@ -1,0 +1,37 @@
+From 1990bcda9885bc84ccfb1041e50578c8e2d0e980 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Mon, 24 Jan 2011 13:50:29 +0800
+Subject: [PATCH] ENGR00138390 android recovery, enlarge uImage size
+
+Kernel image is bigger than 3M, the 0x1800 will not enough.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ include/configs/mx53_smd_android.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index 7fa73fc..9c92f01 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -104,7 +104,7 @@
+ 	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4 rootfs=ext4"
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+ 	"run bootargs_base bootargs_android_recovery;"  \
+-	"mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
++	"mmc read 0 ${loadaddr} 0x800 0x2000;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ 
+ #define CONFIG_ANDROID_SYSTEM_PARTITION_MMC 2
+@@ -174,7 +174,7 @@
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"       \
+ 		"bootcmd_android_recovery=run bootargs_base"            \
+ 		     " bootargs_android_recovery;"                      \
+-		     "mmc read 0 ${loadaddr} 0x800 0x1800;bootm\0"      \
++		     "mmc read 0 ${loadaddr} 0x800 0x2000;bootm\0"      \
+ 		"bootargs_android_recovery=setenv bootargs ${bootargs}" \
+ 		     " init=/init root=/dev/mmcblk0p4 rootfs=ext4\0"    \
+ 
+-- 
+1.5.4.4
+

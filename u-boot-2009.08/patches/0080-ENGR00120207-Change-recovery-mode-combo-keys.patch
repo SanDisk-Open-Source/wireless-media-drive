@@ -1,0 +1,35 @@
+From 500602a8e6915780ffe3ecb71807b19c9148806b Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 18 Jan 2010 16:25:21 +0800
+Subject: [PATCH] ENGR00120207: Change recovery mode combo keys
+
+Change recovery mode combo keys.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/asm-arm/arch-mx51/keypad.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/asm-arm/arch-mx51/keypad.h b/include/asm-arm/arch-mx51/keypad.h
+index 40bd908..5846364 100644
+--- a/include/asm-arm/arch-mx51/keypad.h
++++ b/include/asm-arm/arch-mx51/keypad.h
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX51-3Stack Freescale board.
+  *
+@@ -54,7 +54,7 @@
+ 
+ #if defined(CONFIG_MX51_BBG)
+ #define TEST_HOME_KEY_DEPRESS(k, e)  (((k) == (KEY_F1)) && (((e) == (KDepress))))
+-#define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_ENTER)) && (((e) == (KDepress))))
++#define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_F3)) && (((e) == (KDepress))))
+ #elif defined(CONFIG_MX51_3DS)
+ #define TEST_HOME_KEY_DEPRESS(k, e)  (((k) == (KEY_MENU)) && (((e) == (KDepress))))
+ #define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_F2)) && (((e) == (KDepress))))
+-- 
+1.5.4.4
+

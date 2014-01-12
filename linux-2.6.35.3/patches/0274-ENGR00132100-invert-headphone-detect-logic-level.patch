@@ -1,0 +1,28 @@
+From 7bb6acfa4d2e4fe70a4854ad9ce6d828db0b1d33 Mon Sep 17 00:00:00 2001
+From: Alan Tull <r80115@freescale.com>
+Date: Tue, 5 Oct 2010 12:26:55 -0500
+Subject: [PATCH] ENGR00132100 invert headphone detect logic level
+
+Fixes issue where headpone detect is inverted.
+
+Signed-off-by: Alan Tull <r80115@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index ee82d92..8a3ae40 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -855,7 +855,7 @@ static int mxc_sgtl5000_amp_enable(int enable)
+ 
+ static int headphone_det_status(void)
+ {
+-	return (gpio_get_value(HP_DETECT) != 0);
++	return (gpio_get_value(HP_DETECT) == 0);
+ }
+ 
+ static struct mxc_audio_platform_data sgtl5000_data = {
+-- 
+1.5.4.4
+

@@ -1,0 +1,29 @@
+From 6a49f94ff660275c7a9ed312eb635d3085a5ecb4 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 18 Oct 2010 20:27:10 +0800
+Subject: [PATCH] ENGR00132727 NAND: remove REG_NFC_ONE_CYCLE calling
+
+Remove REG_NFC_ONE_CYCLE calling  from mxc_nand
+driver.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ drivers/mtd/nand/mxc_nand.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index 89d4556..4c5bbdb 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -1244,8 +1244,6 @@ static void mxc_nfc_init(void)
+ #endif
+ 	/* Enable hw ecc */
+ 	raw_write((raw_read(REG_NFC_ECC_EN) | NFC_ECC_EN), REG_NFC_ECC_EN);
+-	raw_write(raw_read(REG_NFC_ONE_CYCLE) |
+-		NFC_ONE_CYCLE, REG_NFC_ONE_CYCLE);
+ }
+ 
+ static int mxc_alloc_buf(struct nand_info *info)
+-- 
+1.5.4.4
+

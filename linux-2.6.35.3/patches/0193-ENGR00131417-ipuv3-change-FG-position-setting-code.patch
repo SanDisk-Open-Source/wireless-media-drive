@@ -1,0 +1,57 @@
+From 7dcab63f86f59e7c3257c7bc4eb562bebdb30085 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Tue, 14 Sep 2010 13:50:18 +0800
+Subject: [PATCH] ENGR00131417 ipuv3: change FG position setting code
+
+There is one bug related with FG position setting.
+Detailed reproduce steps:
+1. bootup system on WVGA lcd.
+2. play video on FG on WVGA based on ipu lib.
+3. DP-DC switch by below cmd (enable both WVGA and DVI 720P):
+echo 4 > /sys/class/graphics/fb2/blank
+echo 4 > /sys/class/graphics/fb0/blank
+echo 4 > /sys/class/graphics/fb1/blank
+echo 1-layer-fb > /sys/class/graphics/fb0/fsl_disp_property
+echo U:1280x720p-60 > /sys/class/graphics/fb1/mode
+echo 0 > /sys/class/graphics/fb1/blank
+echo 0 > /sys/class/graphics/fb0/blank
+4. stop video play by ctrl-C
+5. play video again on DVI
+6. system will hang.
+
+Move set position to 0,0 into driver and remove it in ipu lib.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_common.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index 668e4da..e65faa8 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -1857,6 +1857,9 @@ int32_t ipu_disable_channel(ipu_channel_t channel, bool wait_for_stop)
+ 
+ 	if ((channel == MEM_BG_SYNC) || (channel == MEM_FG_SYNC) ||
+ 	    (channel == MEM_DC_SYNC)) {
++		if (channel == MEM_FG_SYNC)
++			ipu_disp_set_window_pos(channel, 0, 0);
++
+ 		_ipu_dp_dc_disable(channel, false);
+ 
+ 		/*
+@@ -1872,8 +1875,10 @@ int32_t ipu_disable_channel(ipu_channel_t channel, bool wait_for_stop)
+ 					IPUIRQ_2_MASK(IPU_IRQ_BG_SYNC_EOF)) == 0) {
+ 				msleep(10);
+ 				timeout -= 10;
+-				if (timeout <= 0)
++				if (timeout <= 0) {
++					dev_err(g_ipu_dev, "warning: wait for bg sync eof timeout\n");
+ 					break;
++				}
+ 			}
+ 		}
+ 	} else if (wait_for_stop) {
+-- 
+1.5.4.4
+

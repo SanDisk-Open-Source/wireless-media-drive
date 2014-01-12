@@ -1,0 +1,48 @@
+From a8b061caba3febe15217e2197851a43cc45f8214 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Fri, 15 Oct 2010 17:10:32 -0500
+Subject: [PATCH] ENGR00132649 SAHARA test causes ext3 file system crash
+
+During kernel upgrade, replaced deprecated functions:
+dmac_clean_range() with clean_dcache_area() and,
+dmac_inv_range() with invalidate_kernel_vmap_range(),
+but that results in some test case failures when file system
+is on the SD card instead of NFS. Quite possibly the cache
+coherency problems were not showing up during NFS testing.
+
+Corrected this by using the proper replacements:
+dmac_clean_range() replaced by dmac_map_area() and,
+dmac_inv_range() replaced by dmac_unmap_area(). This fixes
+the cache coherency issues and all tests pass with file system
+on SD card as well mounted over NFS.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/mxc/security/sahara2/include/linux_port.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mxc/security/sahara2/include/linux_port.h b/drivers/mxc/security/sahara2/include/linux_port.h
+index 68f0a03..bd65c55 100644
+--- a/drivers/mxc/security/sahara2/include/linux_port.h
++++ b/drivers/mxc/security/sahara2/include/linux_port.h
+@@ -1753,7 +1753,7 @@ extern void v6_flush_kern_cache_all_L2(void);
+ {                                                                         \
+     void *s = (void*)start;                                               \
+     void *e = s + len;                                                    \
+-    clean_dcache_area(s, len);                                               \
++    dmac_map_area(s, len, DMA_TO_DEVICE);                   \
+     outer_clean_range(__pa(s), __pa(e));                                  \
+ }
+ #endif
+@@ -1774,7 +1774,7 @@ extern void v6_flush_kern_cache_all_L2(void);
+ {                                                                         \
+     void *s = (void*)start;                                               \
+     void *e = s + len;                                                    \
+-    invalidate_kernel_vmap_range(s, len);                                                 \
++    dmac_unmap_area(s, len, DMA_FROM_DEVICE);            \
+     outer_inv_range(__pa(s), __pa(e));                                    \
+ }
+ #endif
+-- 
+1.5.4.4
+

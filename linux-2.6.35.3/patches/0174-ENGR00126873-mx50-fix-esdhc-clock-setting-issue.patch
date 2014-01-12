@@ -1,0 +1,87 @@
+From 5fce66b2483ebb9c8faa2bd031835887249a518e Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Wed, 8 Sep 2010 21:17:39 +0800
+Subject: [PATCH] ENGR00126873 mx50: fix esdhc clock setting issue
+
+There's a little issue in the original esdhc clock setting
+that we used the wrong predefined microes for clock setting.
+
+That will cause such an issue that if we want to select PPL2
+as the clock source of esdhc1, but actually we get a PLL1 as
+the clock source of esdhc2.
+That will cause the final clock frequency of esdhc1 to be
+a double of the expected frequency,(PLL1 800Mhz, PLL2 400Mhz)
+and then some cards may be unable to work on sd1.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |   16 ++++++++--------
+ arch/arm/mach-mx5/crm_regs.h   |    2 ++
+ 2 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index bc62047..5e64ae2 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2044,8 +2044,8 @@ static int _clk_esdhc1_set_parent(struct clk *clk, struct clk *parent)
+ 	reg = __raw_readl(MXC_CCM_CSCMR1);
+ 	mux = _get_mux(parent, &pll1_sw_clk, &pll2_sw_clk, &pll3_sw_clk,
+ 		       &lp_apm_clk);
+-	reg = reg & ~MXC_CCM_CSCMR1_ESDHC1_MSHC2_CLK_SEL_MASK;
+-	reg |= mux << MXC_CCM_CSCMR1_ESDHC1_MSHC2_CLK_SEL_OFFSET;
++	reg = reg & ~MX50_CCM_CSCMR1_ESDHC1_CLK_SEL_MASK;
++	reg |= mux << MX50_CCM_CSCMR1_ESDHC1_CLK_SEL_OFFSET;
+ 	__raw_writel(reg, MXC_CCM_CSCMR1);
+ 
+ 	return 0;
+@@ -2114,9 +2114,9 @@ static int _clk_esdhc2_set_parent(struct clk *clk, struct clk *parent)
+ 
+ 	reg = __raw_readl(MXC_CCM_CSCMR1);
+ 	if (parent == &esdhc1_clk[0])
+-		reg &= ~MXC_CCM_CSCMR1_ESDHC2_CLK_SEL;
++		reg &= ~MX50_CCM_CSCMR1_ESDHC2_CLK_SEL;
+ 	else if (parent == &esdhc3_clk[0])
+-		reg |= MXC_CCM_CSCMR1_ESDHC2_CLK_SEL;
++		reg |= MX50_CCM_CSCMR1_ESDHC2_CLK_SEL;
+ 	else
+ 		BUG();
+ 	__raw_writel(reg, MXC_CCM_CSCMR1);
+@@ -2159,8 +2159,8 @@ static int _clk_esdhc3_set_parent(struct clk *clk, struct clk *parent)
+ 	mux = _get_mux8(parent, &pll1_sw_clk, &pll2_sw_clk,
+ 			&pll3_sw_clk, &lp_apm_clk, &pfd0_clk,
+ 			&pfd1_clk, &pfd4_clk, &osc_clk);
+-	reg = reg & ~MXC_CCM_CSCMR1_ESDHC3_MSHC2_CLK_SEL_MASK;
+-	reg |= mux << MXC_CCM_CSCMR1_ESDHC3_MSHC2_CLK_SEL_OFFSET;
++	reg = reg & ~MX50_CCM_CSCMR1_ESDHC3_CLK_SEL_MASK;
++	reg |= mux << MX50_CCM_CSCMR1_ESDHC3_CLK_SEL_OFFSET;
+ 	__raw_writel(reg, MXC_CCM_CSCMR1);
+ 
+ 	return 0;
+@@ -2241,9 +2241,9 @@ static int _clk_esdhc4_set_parent(struct clk *clk, struct clk *parent)
+ 
+ 	reg = __raw_readl(MXC_CCM_CSCMR1);
+ 	if (parent == &esdhc1_clk[0])
+-		reg &= ~MXC_CCM_CSCMR1_ESDHC4_CLK_SEL;
++		reg &= ~MX50_CCM_CSCMR1_ESDHC4_CLK_SEL;
+ 	else if (parent == &esdhc3_clk[0])
+-		reg |= MXC_CCM_CSCMR1_ESDHC4_CLK_SEL;
++		reg |= MX50_CCM_CSCMR1_ESDHC4_CLK_SEL;
+ 	else
+ 		BUG();
+ 	__raw_writel(reg, MXC_CCM_CSCMR1);
+diff --git a/arch/arm/mach-mx5/crm_regs.h b/arch/arm/mach-mx5/crm_regs.h
+index 11e6c2c..16adf5f 100644
+--- a/arch/arm/mach-mx5/crm_regs.h
++++ b/arch/arm/mach-mx5/crm_regs.h
+@@ -299,6 +299,8 @@
+ #define MX50_CCM_CSCMR1_ESDHC1_CLK_SEL_MASK	(0x3 << 21)
+ #define MX50_CCM_CSCMR1_ESDHC2_CLK_SEL			(0x1 << 20)
+ #define MX50_CCM_CSCMR1_ESDHC4_CLK_SEL			(0x1 << 19)
++#define MX50_CCM_CSCMR1_ESDHC3_CLK_SEL_OFFSET	(16)
++#define MX50_CCM_CSCMR1_ESDHC3_CLK_SEL_MASK		(0x7 << 16)
+ #define MXC_CCM_CSCMR1_ESDHC3_MSHC2_CLK_SEL_OFFSET	(16)
+ #define MXC_CCM_CSCMR1_ESDHC3_MSHC2_CLK_SEL_MASK		(0x3 << 16)
+ #define MXC_CCM_CSCMR1_SSI1_CLK_SEL_OFFSET			(14)
+-- 
+1.5.4.4
+

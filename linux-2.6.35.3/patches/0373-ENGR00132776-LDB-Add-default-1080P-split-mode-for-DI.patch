@@ -1,0 +1,65 @@
+From 2c6f21732a3e1940d9014406547e2f880b465ef9 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 19 Oct 2010 16:39:00 +0800
+Subject: [PATCH] ENGR00132776 LDB:Add default 1080P split mode for DI1
+
+Though users can specify 'ldb=xxx' to enable 1080P LVDS
+panel when using DI1, it is not easy for them to set it
+correctly. This patch will add the default LDB setting
+for this case and correct the comment of ldb_setup()
+function.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/video/mxc/ldb.c |   20 ++++++++++++++------
+ 1 files changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/video/mxc/ldb.c b/drivers/video/mxc/ldb.c
+index 7d8cba4..9e590e8 100644
+--- a/drivers/video/mxc/ldb.c
++++ b/drivers/video/mxc/ldb.c
+@@ -828,17 +828,25 @@ static int ldb_probe(struct platform_device *pdev)
+ 			}
+ 			/*
+ 			 * Default ldb mode:
+-			 * 1080p: DI0 split, SPWG
++			 * 1080p: DI0 split, SPWG or DI1 split, SPWG
+ 			 * others: single, SPWG
+ 			 */
+ 			if (g_boot_cmd == false) {
+-				ldb.chan_bit_map[0] = LDB_BIT_MAP_SPWG;
+ 				if (fb_mode_is_equal(mode, &mxcfb_ldb_modedb[0])) {
+-					ldb.chan_mode_opt = LDB_SPL_DI0;
++					if (strcmp(ldb.fbi[i]->fix.id,
++					    "DISP3 BG") == 0) {
++						ldb.chan_mode_opt = LDB_SPL_DI0;
++						dev_warn(g_ldb_dev,
++							"default di0 split mode\n");
++					} else if (strcmp(ldb.fbi[i]->fix.id,
++						   "DISP3 BG - DI1") == 0) {
++						ldb.chan_mode_opt = LDB_SPL_DI1;
++						dev_warn(g_ldb_dev,
++							"default di1 split mode\n");
++					}
+ 					ldb.chan_bit_map[0] = LDB_BIT_MAP_SPWG;
+ 					ldb.chan_bit_map[1] = LDB_BIT_MAP_SPWG;
+ 					find_1080p = true;
+-					dev_warn(g_ldb_dev, "default split mode\n");
+ 				} else if (!find_1080p) {
+ 					if (strcmp(ldb.fbi[i]->fix.id,
+ 					    "DISP3 BG") == 0) {
+@@ -1362,9 +1370,9 @@ static struct platform_driver mxcldb_driver = {
+ };
+ 
+ /*
+- * Parse user specified options (`lvds=')
++ * Parse user specified options (`ldb=')
+  * example:
+- * lvds=single(separate, dual or split),(di=0 or di=1),
++ * ldb=single(separate, dual or split),(di=0 or di=1),
+  *	ch0_map=SPWG or JEIDA,ch1_map=SPWG or JEIDA
+  *
+  */
+-- 
+1.5.4.4
+

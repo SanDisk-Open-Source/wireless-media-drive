@@ -1,0 +1,68 @@
+From 8b0d7773a17eaa25f6a2b5eedb9abd3e03780712 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Mon, 28 Mar 2011 13:25:25 +0800
+Subject: [PATCH] ENGR00141152-3 ldb: make default display option
+
+ldb driver change.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/video/mxc/ldb.c |   28 ++++++++++++++++++++++++----
+ 1 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/video/mxc/ldb.c b/drivers/video/mxc/ldb.c
+index ecc48b2..af886ff 100644
+--- a/drivers/video/mxc/ldb.c
++++ b/drivers/video/mxc/ldb.c
+@@ -106,7 +106,9 @@ static struct device *g_ldb_dev;
+ static u32 *ldb_reg;
+ static int g_chan_mode_opt = LDB_NO_MODE;
+ static int g_chan_bit_map[2];
+-static bool g_enable_ldb;
++#define MXC_ENABLE	1
++#define MXC_DISABLE	2
++static int g_enable_ldb;
+ static bool g_di0_used;
+ static bool g_di1_used;
+ 
+@@ -1244,8 +1246,22 @@ static int ldb_probe(struct platform_device *pdev)
+ 	int mxc_ldb_major;
+ 	struct class *mxc_ldb_class;
+ 
+-	if (g_enable_ldb == false)
+-		return -ENODEV;
++	if ((plat_data->boot_enable & (MXC_LDBDI0 | MXC_LDBDI1))
++		&& !g_enable_ldb) {
++		g_enable_ldb = MXC_ENABLE;
++		if (plat_data->boot_enable & MXC_LDBDI0)
++			g_di0_used = true;
++		if (plat_data->boot_enable & MXC_LDBDI1)
++			g_di1_used = true;
++	}
++
++	if (!g_enable_ldb)
++		g_enable_ldb = MXC_DISABLE;
++
++	if (g_enable_ldb == MXC_DISABLE) {
++		printk(KERN_WARNING "By setting, LDB driver will not be enabled\n");
++		return 0;
++	}
+ 
+ 	spin_lock_init(&ldb_lock);
+ 
+@@ -1425,7 +1441,11 @@ static struct platform_driver mxcldb_driver = {
+  */
+ static int __init ldb_setup(char *options)
+ {
+-	g_enable_ldb = true;
++	if (!strcmp(options, "=off")) {
++		g_enable_ldb = MXC_DISABLE;
++		return 1;
++	} else
++		g_enable_ldb = MXC_ENABLE;
+ 
+ 	if (!strlen(options))
+ 		return 1;
+-- 
+1.5.4.4
+

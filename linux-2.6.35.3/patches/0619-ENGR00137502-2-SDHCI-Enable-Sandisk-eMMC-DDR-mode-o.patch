@@ -1,0 +1,41 @@
+From b4711f2599cf5cc246af91a4b8d88f345ab8428c Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Wed, 5 Jan 2011 14:16:21 +0800
+Subject: [PATCH] ENGR00137502-2 SDHCI: Enable Sandisk eMMC DDR mode on SMD
+
+A while delay is mandatory required by Sandisk eMMC44 card when
+enable the DDR mode, since this eMMC44 chip soldered on the SMD board
+is not abide to the eMMC spec.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    8 +++++++-
+ 1 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index b7f08d8..54910b7 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -802,6 +802,12 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
+ 	/* Configure the cmd type for cmd12 */
+ 	if (cmd->opcode == 12)
+ 		mode |= SDHCI_TRNS_ABORTCMD;
++	/*
++	 * Some delay is mandatory required between CMD6 and CMD13 after
++	 * switch to DDR mode when Sandisk eMMC44 soldered on SMD board
++	 */
++	if (cmd->opcode == 0xd)
++		mdelay(5);
+ 	DBG("Complete sending cmd, transfer mode would be 0x%x.\n", mode);
+ 	writel(mode, host->ioaddr + SDHCI_TRANSFER_MODE);
+ }
+-- 
+1.5.4.4
+

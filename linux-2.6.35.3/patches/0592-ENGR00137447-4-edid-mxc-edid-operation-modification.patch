@@ -1,0 +1,100 @@
+From d41b02510439e73440707b6fb5a5b8e8411fe794 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Fri, 31 Dec 2010 10:16:10 +0800
+Subject: [PATCH] ENGR00137447-4 edid: mxc edid operation modification
+
+mxc edid operation modification.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/video/mxc/Makefile   |    2 +-
+ drivers/video/mxc/mxc_edid.c |   37 ++++++++++++++++---------------------
+ 2 files changed, 17 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/video/mxc/Makefile b/drivers/video/mxc/Makefile
+index e235492..db74e00 100644
+--- a/drivers/video/mxc/Makefile
++++ b/drivers/video/mxc/Makefile
+@@ -21,6 +21,6 @@ obj-$(CONFIG_FB_MXC_TVOUT_TVE)              += tve.o
+ obj-$(CONFIG_FB_MXC_LDB)                    += ldb.o
+ obj-$(CONFIG_FB_MXC_SII9022)                            += mxcfb_sii9022.o
+ obj-$(CONFIG_FB_MXC_CH7026)		    		+= mxcfb_ch7026.o
+-#obj-$(CONFIG_FB_MODE_HELPERS)				+= mxc_edid.o
++obj-$(CONFIG_FB_MODE_HELPERS)				+= mxc_edid.o
+ obj-$(CONFIG_FB_MXC_EINK_PANEL)             += mxc_epdc_fb.o
+ obj-$(CONFIG_FB_MXC_ELCDIF_FB)		    += mxc_elcdif_fb.o
+diff --git a/drivers/video/mxc/mxc_edid.c b/drivers/video/mxc/mxc_edid.c
+index 9641b37..234a5d3 100644
+--- a/drivers/video/mxc/mxc_edid.c
++++ b/drivers/video/mxc/mxc_edid.c
+@@ -26,15 +26,12 @@
+ /*!
+  * Include files
+  */
+-#include <linux/fb.h>
++#include <linux/i2c.h>
+ 
+ #define EDID_LENGTH 128
+ 
+-static u8 edid[EDID_LENGTH];
+-
+-int read_edid(struct i2c_adapter *adp,
+-	      struct fb_var_screeninfo *einfo,
+-	      int *dvi)
++/* make sure edid has 256 bytes*/
++int read_edid(struct i2c_adapter *adp, unsigned char *edid)
+ {
+ 	u8 buf0[2] = {0, 0};
+ 	int dat = 0;
+@@ -53,35 +50,33 @@ int read_edid(struct i2c_adapter *adp,
+ 		},
+ 	};
+ 
+-	if (adp == NULL || einfo == NULL)
++	if (adp == NULL)
+ 		return -EINVAL;
+ 
+ 	buf0[0] = 0x00;
+-	memset(&edid, 0, sizeof(edid));
+-	memset(einfo, 0, sizeof(struct fb_var_screeninfo));
+ 	dat = i2c_transfer(adp, msg, 2);
+ 
+ 	/* If 0x50 fails, try 0x37. */
+ 	if (edid[1] == 0x00) {
+ 		msg[0].addr = msg[1].addr = 0x37;
+ 		dat = i2c_transfer(adp, msg, 2);
++		if (dat < 0)
++			return dat;
+ 	}
+ 
+ 	if (edid[1] == 0x00)
+ 		return -ENOENT;
+ 
+-	*dvi = 0;
+-	if ((edid[20] == 0x80) || (edid[20] == 0x88) || (edid[20] == 0))
+-		*dvi = 1;
+-
+-	dat = fb_parse_edid(edid, einfo);
+-	if (dat)
+-		return -dat;
+-
+-	/* This is valid for version 1.3 of the EDID */
+-	if ((edid[18] == 1) && (edid[19] == 3)) {
+-		einfo->height = edid[21] * 10;
+-		einfo->width = edid[22] * 10;
++	/* need read ext block? Only support one more blk now*/
++	if (edid[0x7E]) {
++		if (edid[0x7E] > 1)
++			printk(KERN_WARNING "Edid has %d ext block, \
++					but now only support 1 ext blk\n", edid[0x7E]);
++		buf0[0] = 0x80;
++		msg[1].buf = edid + EDID_LENGTH;
++		dat = i2c_transfer(adp, msg, 2);
++		if (dat < 0)
++			return dat;
+ 	}
+ 
+ 	return 0;
+-- 
+1.5.4.4
+

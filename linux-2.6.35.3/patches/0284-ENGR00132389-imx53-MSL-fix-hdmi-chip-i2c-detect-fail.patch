@@ -1,0 +1,29 @@
+From dd1751eeca794850a772ade91bf529735b4f4056 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Mon, 11 Oct 2010 12:52:11 +0800
+Subject: [PATCH] ENGR00132389 imx53 MSL:fix hdmi chip i2c detect fail issue
+
+Add gpio_direction_output setting for MX53_DVI_RESET.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+Signed-off-by: Estevam Fabio <r49496@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index d6bdab8..1a1c567 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1520,7 +1520,7 @@ static void __init mx53_evk_io_init(void)
+ 	gpio_direction_input(MX53_DVI_DETECT);
+ 	/* DVI Reset - Assert for i2c disabled mode */
+ 	gpio_request(MX53_DVI_RESET, "dvi-reset");
+-	gpio_set_value(MX53_DVI_RESET, 0);
++	gpio_direction_output(MX53_DVI_RESET, 0);
+ 
+ 	/* DVI Power-down */
+ 	gpio_request(MX53_DVI_PD, "dvi-pd");
+-- 
+1.5.4.4
+

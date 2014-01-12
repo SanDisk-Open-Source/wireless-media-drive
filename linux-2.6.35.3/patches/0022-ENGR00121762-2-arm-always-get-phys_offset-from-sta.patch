@@ -1,0 +1,31 @@
+From b6e92df04264c46a4c6692bbd7ff5a27403a7fd6 Mon Sep 17 00:00:00 2001
+From: Rob Herring <r.herring@freescale.com>
+Date: Thu, 18 Mar 2010 17:40:33 -0500
+Subject: [PATCH] ENGR00121762-2: arm: always get phys_offset from stack pointer for MX5
+
+Allow r3 to be unset on MX5x platforms for runtime physoffset
+
+Signed-off-by: Rob Herring <r.herring@freescale.com>
+---
+ arch/arm/boot/compressed/head.S |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/boot/compressed/head.S b/arch/arm/boot/compressed/head.S
+index ba67215..437943d 100644
+--- a/arch/arm/boot/compressed/head.S
++++ b/arch/arm/boot/compressed/head.S
+@@ -266,7 +266,11 @@ not_relocated:	mov	r0, #0
+ 		 * - sp < physoffset + 128MiB (which is definitely true if you
+ 		 *   only have 128MiB of RAM or less)
+ 		 */
++#ifdef CONFIG_ARCH_MX5
++		and	r9, sp, #0xf8000000
++#else
+ 		andne	r9, sp, #0xf8000000
++#endif
+ #ifdef DEBUG
+ 		kputc	#'P'
+ 		kphex	r9, 8
+-- 
+1.5.4.4
+

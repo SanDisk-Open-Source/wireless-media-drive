@@ -1,0 +1,38 @@
+From eedec9da572b4b18aaf718f2baf671d2674c0123 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 24 Mar 2011 19:46:46 +0800
+Subject: [PATCH] ENGR00141109: MX53-SMD: SPI-NOR: Add mxc_m25p80 to imx5_defconfig
+
+mxc_m25p80 config is not added to imx5_defconfig.
+Thus in this patch it is added.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 5949a0d..1566145 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Tue Mar 22 18:45:35 2011
++# Thu Mar 24 19:46:10 2011
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -633,7 +633,7 @@ CONFIG_MTD_CFI_I2=y
+ #
+ # CONFIG_MTD_DATAFLASH is not set
+ CONFIG_MTD_MXC_DATAFLASH=y
+-# CONFIG_MTD_MXC_M25P80 is not set
++CONFIG_MTD_MXC_M25P80=y
+ # CONFIG_MTD_M25P80 is not set
+ # CONFIG_MTD_SST25L is not set
+ # CONFIG_MTD_SLRAM is not set
+-- 
+1.5.4.4
+

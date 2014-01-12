@@ -1,0 +1,156 @@
+From af46d9f54b192076c1e3096299d594e2783fc175 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 19 May 2010 22:15:05 +0800
+Subject: [PATCH] ENGR00123630 Set ddr clk clock according to the board ID
+
+Set DDR clock to 400Mhz on MX53-EVK with DDR2 1GByte RevB
+Set DDR clock to 300Mhz on MX53-EVK with DDR2 2GByte RevA1
+
+Remove the clock dump during boot, user can use clk command to
+get the clock information. Using help clk to get the command help
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ board/freescale/mx53_evk/mx53_evk.c |   29 ++++++++++++++++++++++++++++-
+ cpu/arm_cortexa8/mx53/generic.c     |   29 +++++++----------------------
+ 2 files changed, 35 insertions(+), 23 deletions(-)
+
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 6be0b37..98d5938 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -44,6 +44,10 @@
+ #include <asm/arch/mmu.h>
+ #endif
+ 
++#ifdef CONFIG_CMD_CLOCK
++#include <asm/clock.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+@@ -415,6 +419,25 @@ static int __print_board_info(int id0, int id1)
+ 	return ret;
+ }
+ 
++static int _identify_board_fix_up(int id0, int id1)
++{
++	int ret = 0;
++
++#ifdef CONFIG_CMD_CLOCK
++	/* For EVK RevB, set DDR to 400MHz */
++	if (id0 == 21 && id1 == 15) {
++		ret = clk_config(CONFIG_REF_CLK_FREQ, 400, PERIPH_CLK);
++		if (ret < 0)
++			return ret;
++
++		ret = clk_config(CONFIG_REF_CLK_FREQ, 400, DDR_CLK);
++		if (ret < 0)
++			return ret;
++	}
++#endif
++	return ret;
++}
++
+ int identify_board_id(void)
+ {
+ 	int ret = 0;
+@@ -440,6 +463,10 @@ int identify_board_id(void)
+ 		return ret;
+ 
+ 	ret = __print_board_info(bd_id0, bd_id1);
++	if (ret < 0)
++		return ret;
++
++	ret = _identify_board_fix_up(bd_id0, bd_id1);
+ 
+ 	return ret;
+ 
+@@ -682,7 +709,7 @@ int board_late_init(void)
+ 
+ int checkboard(void)
+ {
+-	printf("Board:   ");
++	printf("Board: ");
+ 
+ #ifdef CONFIG_I2C_MXC
+ 	identify_board_id();
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 26a7894..791c0c3 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -641,8 +641,8 @@ int clk_info(u32 clk_type)
+ 			mxc_get_clock(MXC_DDR_CLK));
+ 		break;
+ 	case ALL_CLK:
+-		printf("cpu clock: %dHz\n",
+-			mxc_get_clock(MXC_ARM_CLK));
++		printf("cpu clock: %dMHz\n",
++			mxc_get_clock(MXC_ARM_CLK) / SZ_DEC_1M);
+ 		mxc_dump_clocks();
+ 		break;
+ 	default:
+@@ -702,6 +702,8 @@ u32 calc_per_cbcdr_val(u32 per_clk, u32 cbcmr)
+ 
+ #define CHANGE_PLL_SETTINGS(base, pd, mfi, mfn, mfd) \
+ 	{	\
++		writel(0x1232, base + PLL_DP_CTL); \
++		writel(0x2, base + PLL_DP_CONFIG);    \
+ 		writel(((pd - 1) << 0) | (mfi << 4),	\
+ 			base + PLL_DP_OP);	\
+ 		writel(mfn, base + PLL_DP_MFN);	\
+@@ -710,6 +712,9 @@ u32 calc_per_cbcdr_val(u32 per_clk, u32 cbcmr)
+ 			base + PLL_DP_HFS_OP);	\
+ 		writel(mfn, base + PLL_DP_HFS_MFN);	\
+ 		writel(mfd - 1, base + PLL_DP_HFS_MFD);	\
++		writel(0x1232, base + PLL_DP_CTL); \
++		while (!readl(base + PLL_DP_CTL) & 0x1)  \
++			; \
+ 	}
+ 
+ int config_pll_clk(enum pll_clocks pll, struct pll_param *pll_param)
+@@ -815,15 +820,6 @@ int config_periph_clk(u32 ref, u32 freq)
+ 		u32 old_cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
+ 		u32 cbcdr = 0;
+ 
+-		/* Set PLL3 to 400MHz */
+-		ret = calc_pll_params(ref, 400000000, &pll_param);
+-		if (ret != 0) {
+-			printf("Can't find pll parameters: %d\n",
+-				ret);
+-			return ret;
+-		}
+-		config_pll_clk(PLL3_CLK, &pll_param);
+-
+ 		/* Switch peripheral to PLL3 */
+ 		writel(0x00015154, CCM_BASE_ADDR + CLKCTL_CBCMR);
+ 		writel(0x02888945, CCM_BASE_ADDR + CLKCTL_CBCDR);
+@@ -850,16 +846,6 @@ int config_periph_clk(u32 ref, u32 freq)
+ 		/* Make sure change is effective */
+ 		while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
+ 			;
+-
+-		/* Switch PLL3's freq back */
+-		ret = calc_pll_params(ref, pll3_freq, &pll_param);
+-		if (ret != 0) {
+-			printf("Can't find pll parameters: %d\n",
+-				ret);
+-			return ret;
+-		}
+-		config_pll_clk(PLL3_CLK, &pll_param);
+-
+ 		puts("\n");
+ 	}
+ 
+@@ -974,7 +960,6 @@ int print_cpuinfo(void)
+ 	       (get_board_rev() & 0xFF) >> 4,
+ 	       (get_board_rev() & 0xF),
+ 		__get_mcu_main_clk() / 1000000);
+-	mxc_dump_clocks();
+ 	return 0;
+ }
+ #endif
+-- 
+1.5.4.4
+

@@ -1,0 +1,2205 @@
+From 703ba8b936a75d8d66eb8cef6fe0c17b7ac6af27 Mon Sep 17 00:00:00 2001
+From: Alan Carvalho de Assis <alan.assis@freescale.com>
+Date: Thu, 5 Mar 2009 09:23:43 -0300
+Subject: [PATCH] ENGR00108673 Add i.MX25 core to U-Boot
+
+This patch add support on U-Boot to i.MX25 processor.
+
+Signed-off-by: Alan Carvalho de Assis <alan.assis@freescale.com>
+---
+ cpu/arm926ejs/mx25/Makefile           |   45 ++++
+ cpu/arm926ejs/mx25/generic.c          |  116 ++++++++++
+ cpu/arm926ejs/mx25/gpio.c             |  113 ++++++++++
+ cpu/arm926ejs/mx25/interrupts.c       |  121 +++++++++++
+ cpu/arm926ejs/mx25/iomux.c            |  153 +++++++++++++
+ cpu/arm926ejs/mx25/serial.c           |  231 ++++++++++++++++++++
+ cpu/arm926ejs/start.S                 |    2 +-
+ drivers/i2c/mxc_i2c.c                 |    5 +-
+ drivers/mtd/nand/Makefile             |    1 +
+ drivers/net/mxc_fec.c                 |   40 ++++
+ include/asm-arm/arch-mx25/gpio.h      |   33 +++
+ include/asm-arm/arch-mx25/iomux.h     |  220 +++++++++++++++++++
+ include/asm-arm/arch-mx25/mx25-regs.h |  380 +++++++++++++++++++++++++++++++++
+ include/asm-arm/arch-mx25/mx25.h      |   44 ++++
+ include/asm-arm/arch-mx25/mx25_pins.h |  259 ++++++++++++++++++++++
+ include/asm-arm/arch-mx25/mxc_nand.h  |  198 +++++++++++++++++
+ include/asm-arm/fec.h                 |   64 +-----
+ post/board/netta/dsp.c                |    2 +
+ 18 files changed, 1965 insertions(+), 62 deletions(-)
+
+diff --git a/cpu/arm926ejs/mx25/Makefile b/cpu/arm926ejs/mx25/Makefile
+new file mode 100644
+index 0000000..74add9d
+--- /dev/null
++++ b/cpu/arm926ejs/mx25/Makefile
+@@ -0,0 +1,45 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= interrupts.o serial.o generic.o iomux.o gpio.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(SOBJS) $(COBJS))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/arm926ejs/mx25/generic.c b/cpu/arm926ejs/mx25/generic.c
+new file mode 100644
+index 0000000..23b5cce
+--- /dev/null
++++ b/cpu/arm926ejs/mx25/generic.c
+@@ -0,0 +1,116 @@
++/*
++ * (C) Copyright 2007
++ * Sascha Hauer, Pengutronix
++ *
++ * (C) Copyright 2009 Freescale Semiconductor
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/errno.h>
++#include <asm/arch/mx25-regs.h>
++
++static u32 mx25_decode_pll(u32 reg)
++{
++	u32 mfi = (reg >> 10) & 0xf;
++	u32 mfn = reg & 0x3ff;
++	u32 mfd = (reg >> 16) & 0x3ff;
++	u32 pd =  (reg >> 26) & 0xf;
++
++	u32 ref_clk = PLL_REF_CLK;
++
++	mfi = mfi <= 5 ? 5 : mfi;
++	mfd += 1;
++	pd += 1;
++
++	return ((2 * (ref_clk >> 10) * (mfi * mfd + mfn)) /
++		(mfd * pd)) << 10;
++}
++
++static u32 mx25_get_mcu_main_clk(void)
++{
++	u32 cctl = __REG(CCM_CCTL);
++	u32 ret_val = mx25_decode_pll(__REG(CCM_MPCTL));
++
++	if (cctl & CRM_CCTL_ARM_SRC) {
++		ret_val *= 3;
++		ret_val /= 4;
++	}
++
++	return ret_val;
++}
++
++static u32 mx25_get_ahb_clk(void)
++{
++	u32 cctl = __REG(CCM_CCTL);
++	u32 ahb_div = ((cctl >> CRM_CCTL_AHB_OFFSET) & 3) + 1;
++
++	return mx25_get_mcu_main_clk()/ahb_div;
++}
++
++unsigned int mx25_get_ipg_clk(void)
++{
++	return mx25_get_ahb_clk()/2;
++}
++
++void mx25_dump_clocks(void)
++{
++	u32 cpufreq = mx25_get_mcu_main_clk();
++	printf("mx25 cpu clock: %dMHz\n", cpufreq / 1000000);
++	printf("ipg clock     : %dHz\n", mx25_get_ipg_clk());
++}
++
++unsigned int mxc_get_clock(enum mxc_clock clk)
++{
++	switch (clk) {
++	case MXC_ARM_CLK:
++		return mx25_get_mcu_main_clk();
++	case MXC_AHB_CLK:
++		return mx25_get_ahb_clk();
++		break;
++	case MXC_IPG_PERCLK:
++	case MXC_IPG_CLK:
++		return mx25_get_ipg_clk();
++	case MXC_UART_CLK:
++		break;
++	}
++	return -1;
++}
++
++#if defined(CONFIG_DISPLAY_CPUINFO)
++int print_cpuinfo(void)
++{
++	printf("CPU:   Freescale i.MX25 at %d MHz\n",
++		mx25_get_mcu_main_clk() / 1000000);
++	return 0;
++}
++/*
++ * Initializes on-chip ethernet controllers.
++ * to override, implement board_eth_init()
++ */
++int cpu_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_MXC_FEC)
++	rc = mxc_fec_initialize(bis);
++#endif
++	return rc;
++}
++#endif
+diff --git a/cpu/arm926ejs/mx25/gpio.c b/cpu/arm926ejs/mx25/gpio.c
+new file mode 100644
+index 0000000..560b3a4
+--- /dev/null
++++ b/cpu/arm926ejs/mx25/gpio.c
+@@ -0,0 +1,113 @@
++/*
++ * (c) Copyright 2009 Freescale Semiconductors
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/mx25.h>
++#include <asm/arch/mx25_pins.h>
++#include <asm/arch/gpio.h>
++
++enum gpio_reg {
++	DR = 0x00,
++	GDIR = 0x04,
++	PSR = 0x08,
++	ICR1 = 0x0C,
++	ICR2 = 0x10,
++	IMR = 0x14,
++	ISR = 0x18,
++};
++
++struct gpio_port_addr {
++	int num;
++	int base;
++};
++
++struct gpio_port_addr gpio_port[4] = {
++				{0, GPIO1_BASE},
++				{1, GPIO2_BASE},
++				{2, GPIO3_BASE},
++				{3, GPIO4_BASE}
++				};
++
++/*
++ * Set a GPIO pin's direction
++ * @param port		pointer to a gpio_port
++ * @param index		gpio pin index value (0~31)
++ * @param is_input	0 for output; non-zero for input
++ */
++static void _set_gpio_direction(u32 port, u32 index, int is_input)
++{
++	u32 reg = gpio_port[port].base + GDIR;
++	u32 l;
++
++	l = __REG(reg);
++	if (is_input)
++		l &= ~(1 << index);
++	else
++		l |= 1 << index;
++	__REG(reg) = l;
++}
++
++
++/*!
++ * Exported function to set a GPIO pin's direction
++ * @param pin		a name defined by \b iomux_pin_name_t
++ * @param is_input	1 (or non-zero) for input; 0 for output
++ */
++void mxc_set_gpio_direction(iomux_pin_name_t pin, int is_input)
++{
++	u32 port;
++	u32 gpio = IOMUX_TO_GPIO(pin);
++
++	port = GPIO_TO_PORT(gpio);
++	_set_gpio_direction(port, GPIO_TO_INDEX(gpio), is_input);
++}
++
++/*
++ * Set a GPIO pin's data output
++ * @param port		number of gpio port
++ * @param index		gpio pin index value (0~31)
++ * @param data		value to be set (only 0 or 1 is valid)
++ */
++static void _set_gpio_dataout(u32 port, u32 index, u32 data)
++{
++	u32 reg = gpio_port[port].base + DR;
++	u32 l = 0;
++
++	l = (__REG(reg) & (~(1 << index))) | (data << index);
++	__REG(reg) = l;
++}
++
++/*!
++ * Exported function to set a GPIO pin's data output
++ * @param pin		a name defined by \b iomux_pin_name_t
++ * @param data		value to be set (only 0 or 1 is valid)
++ */
++
++void mxc_set_gpio_dataout(iomux_pin_name_t pin, u32 data)
++{
++	u32 port;
++	u32 gpio = IOMUX_TO_GPIO(pin);
++
++	port = GPIO_TO_PORT(gpio);
++	_set_gpio_dataout(port, GPIO_TO_INDEX(gpio), (data == 0) ? 0 : 1);
++}
++
+diff --git a/cpu/arm926ejs/mx25/interrupts.c b/cpu/arm926ejs/mx25/interrupts.c
+new file mode 100644
+index 0000000..cbd5d09
+--- /dev/null
++++ b/cpu/arm926ejs/mx25/interrupts.c
+@@ -0,0 +1,121 @@
++/*
++ * (C) Copyright 2007
++ * Sascha Hauer, Pengutronix
++ *
++ * (C) Copyright 2009 Freescale Semiconductor
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/mx25-regs.h>
++
++#define TIMER_BASE 0x53f90000 /* General purpose timer 1 */
++
++/* General purpose timers registers */
++#define GPTCR	__REG(TIMER_BASE) /* Control register */
++#define GPTPR	__REG(TIMER_BASE + 0x4) /* Prescaler register */
++#define GPTSR	__REG(TIMER_BASE + 0x8) /* Status register */
++#define GPTCNT	__REG(TIMER_BASE + 0x24) /* Counter register */
++
++/* General purpose timers bitfields */
++#define GPTCR_SWR	(1<<15) /* Software reset */
++#define GPTCR_FRR	(1<<9)  /* Freerun / restart */
++#define GPTCR_CLKSOURCE_32	(4<<6)  /* Clock source */
++#define GPTCR_TEN	(1)	/* Timer enable */
++
++static ulong timestamp;
++static ulong lastinc;
++
++/* nothing really to do with interrupts, just starts up a counter. */
++int interrupt_init(void)
++{
++	int i;
++
++	/* setup GP Timer 1 */
++	GPTCR = GPTCR_SWR;
++	for (i = 0; i < 100; i++)
++		GPTCR = 0; /* We have no udelay by now */
++	GPTPR = 0; /* 32Khz */
++	GPTCR |= GPTCR_CLKSOURCE_32 | GPTCR_TEN; /* Freerun Mode, PERCLK1 in */
++
++	return 0;
++}
++
++void reset_timer_masked(void)
++{
++	/* reset time */
++	lastinc = GPTCNT; /* capture current incrementer value time */
++	timestamp = 0; /* start "advancing" time stamp from 0 */
++}
++
++void reset_timer(void)
++{
++	reset_timer_masked();
++}
++
++ulong get_timer_masked(void)
++{
++	ulong now = GPTCNT; /* current tick value */
++
++	if (now >= lastinc)	/* normal mode (non roll) */
++		/* move stamp forward with absolut diff ticks */
++		timestamp += (now - lastinc);
++	else			/* we have rollover of incrementer */
++		timestamp += (0xFFFFFFFF - lastinc) + now;
++	lastinc = now;
++	return timestamp;
++}
++
++ulong get_timer(ulong base)
++{
++	return get_timer_masked() - base;
++}
++
++void set_timer(ulong t)
++{
++}
++
++/* delay x useconds AND perserve advance timstamp value */
++void udelay(unsigned long usec)
++{
++	ulong tmo, tmp;
++
++	if (usec >= 1000) {	/* if "big" number, spread normalize to secs */
++		tmo = usec / 1000;	/* normalize usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;	/* find number of "ticks" to wait */
++		tmo /= 1000;		/* finish normalize. */
++	} else {			/* don't kill prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++		tmo /= (1000*1000);
++	}
++
++	tmp = get_timer(0);		/* get current timestamp */
++	if ((tmo + tmp + 1) < tmp)	/* if overflow time stamp */
++		reset_timer_masked();	/* reset "advancing" timestamp to 0 */
++	else
++		tmo += tmp;		/* else, set stamp wake up time */
++	while (get_timer_masked() < tmo)/* loop till event */
++		/*NOP*/;
++}
++
++void reset_cpu(ulong addr)
++{
++	__REG16(WDOG_BASE) = 4;
++}
+diff --git a/cpu/arm926ejs/mx25/iomux.c b/cpu/arm926ejs/mx25/iomux.c
+new file mode 100644
+index 0000000..c0805d3
+--- /dev/null
++++ b/cpu/arm926ejs/mx25/iomux.c
+@@ -0,0 +1,153 @@
++/*
++ * Copyright 2008-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @defgroup GPIO_MX25 Board GPIO and Muxing Setup
++ * @ingroup MSL_MX25
++ */
++/*!
++ * @file mach-mx25/iomux.c
++ *
++ * @brief I/O Muxing control functions
++ *
++ * @ingroup GPIO_MX25
++ */
++
++#include <common.h>
++#include <asm/arch/mx25.h>
++#include <asm/arch/mx25_pins.h>
++#include <asm/arch/iomux.h>
++
++/*!
++ * IOMUX register (base) addresses
++ */
++enum iomux_reg_addr {
++	IOMUXGPR = IOMUXC_BASE,
++	/*!< General purpose */
++	IOMUXSW_MUX_CTL = IOMUXC_BASE + 0x008,
++	/*!< MUX control */
++	IOMUXSW_MUX_END = IOMUXC_BASE + 0x228,
++	/*!< last MUX control register */
++	IOMUXSW_PAD_CTL = IOMUXC_BASE + 0x22C,
++	/*!< Pad control */
++	IOMUXSW_PAD_END = IOMUXC_BASE + 0x414,
++	/*!< last Pad control register */
++	IOMUXSW_INPUT_CTL = IOMUXC_BASE + 0x460,
++	/*!< input select register */
++	IOMUXSW_INPUT_END = IOMUXC_BASE + 0x580,
++	/*!< last input select register */
++};
++
++#define MUX_PIN_NUM_MAX		\
++		(((IOMUXSW_MUX_END - IOMUXSW_MUX_CTL) >> 2) + 1)
++#define MUX_INPUT_NUM_MUX	\
++		(((IOMUXSW_INPUT_END - IOMUXSW_INPUT_CTL) >> 2) + 1)
++
++#define PIN_TO_IOMUX_INDEX(pin) (PIN_TO_IOMUX_MUX(pin) >> 2)
++
++#define MUX_USED 0x80
++
++/*!
++ * This function is used to configure a pin through the IOMUX module.
++ * FIXED ME: for backward compatible. Will be static function!
++ * @param  pin		a pin number as defined in \b #iomux_pin_name_t
++ * @param  cfg		an output function as defined in \b #iomux_pin_cfg_t
++ *
++ * @return 		0 if successful; Non-zero otherwise
++ */
++static int iomux_config_mux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg)
++{
++	u32 mux_reg = PIN_TO_IOMUX_MUX(pin);
++
++	if (mux_reg != NON_MUX_I) {
++		mux_reg += IOMUXGPR;
++		__REG(mux_reg) = cfg;
++	}
++
++	return 0;
++}
++
++/*!
++ * Request ownership for an IO pin. This function has to be the first one
++ * being called before that pin is used. The caller has to check the
++ * return value to make sure it returns 0.
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  cfg		an input function as defined in \b #iomux_pin_cfg_t
++ *
++ * @return		0 if successful; Non-zero otherwise
++ */
++int mxc_request_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg)
++{
++	int ret = iomux_config_mux(pin, cfg);
++	return ret;
++}
++
++/*!
++ * Release ownership for an IO pin
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  cfg		an input function as defined in \b #iomux_pin_cfg_t
++ */
++void mxc_free_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg)
++{
++}
++
++/*!
++ * This function configures the pad value for a IOMUX pin.
++ *
++ * @param  pin     a pin number as defined in \b #iomux_pin_name_t
++ * @param  config  the ORed value of elements defined in \b #iomux_pad_config_t
++ */
++void mxc_iomux_set_pad(iomux_pin_name_t pin, u32 config)
++{
++	u32 pad_reg = IOMUXGPR + PIN_TO_IOMUX_PAD(pin);
++
++	__REG(pad_reg) = config;
++}
++
++/*!
++ * This function enables/disables the general purpose function for a particular
++ * signal.
++ *
++ * @param  gp   one signal as defined in \b #iomux_gp_func_t
++ * @param  en   \b #true to enable; \b #false to disable
++ */
++void mxc_iomux_set_gpr(iomux_gp_func_t gp, int en)
++{
++	u32 l;
++
++	l = __REG(IOMUXGPR);
++	if (en)
++		l |= gp;
++	else
++		l &= ~gp;
++
++	__REG(IOMUXGPR) = l;
++}
++
++/*!
++ * This function configures input path.
++ *
++ * @param input index of input select register as defined in \b
++ *  			#iomux_input_select_t
++ * @param config the binary value of elements defined in \b
++ * 			#iomux_input_config_t
++ */
++void mxc_iomux_set_input(iomux_input_select_t input, u32 config)
++{
++	u32 reg = IOMUXSW_INPUT_CTL + (input << 2);
++
++	__REG(reg) = config;
++}
++
+diff --git a/cpu/arm926ejs/mx25/serial.c b/cpu/arm926ejs/mx25/serial.c
+new file mode 100644
+index 0000000..17a08c3
+--- /dev/null
++++ b/cpu/arm926ejs/mx25/serial.c
+@@ -0,0 +1,231 @@
++/*
++ * (c) 2007 Sascha Hauer <s.hauer@pengutronix.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ */
++
++#include <common.h>
++
++#if defined CONFIG_MX25_UART
++
++#include <asm/arch/mx25.h>
++
++#define __REG(x)	(*((volatile u32 *)(x)))
++
++#ifdef CONFIG_MX25_UART1
++#define UART_PHYS 0x43f90000
++#else
++#error "define CONFIG_MX25_UARTx to use the mx25 UART driver"
++#endif
++
++/* Register definitions */
++#define URXD	0x0  /* Receiver Register */
++#define UTXD	0x40 /* Transmitter Register */
++#define UCR1	0x80 /* Control Register 1 */
++#define UCR2	0x84 /* Control Register 2 */
++#define UCR3	0x88 /* Control Register 3 */
++#define UCR4	0x8c /* Control Register 4 */
++#define UFCR	0x90 /* FIFO Control Register */
++#define USR1	0x94 /* Status Register 1 */
++#define USR2	0x98 /* Status Register 2 */
++#define UESC	0x9c /* Escape Character Register */
++#define UTIM	0xa0 /* Escape Timer Register */
++#define UBIR	0xa4 /* BRM Incremental Register */
++#define UBMR	0xa8 /* BRM Modulator Register */
++#define UBRC	0xac /* Baud Rate Count Register */
++#define UTS	0xb4 /* UART Test Register (mx25) */
++
++/* UART Control Register Bit Fields.*/
++#define URXD_CHARRDY	(1<<15)
++#define URXD_ERR	(1<<14)
++#define URXD_OVRRUN	(1<<13)
++#define URXD_FRMERR	(1<<12)
++#define URXD_BRK	(1<<11)
++#define URXD_PRERR	(1<<10)
++#define URXD_RX_DATA	(0xFF)
++#define UCR1_ADEN	(1<<15)	/* Auto dectect interrupt */
++#define UCR1_ADBR	(1<<14)	/* Auto detect baud rate */
++#define UCR1_TRDYEN	(1<<13)	/* Transmitter ready interrupt enable */
++#define UCR1_IDEN	(1<<12)	/* Idle condition interrupt */
++#define UCR1_RRDYEN	(1<<9)	/* Recv ready interrupt enable */
++#define UCR1_RDMAEN	(1<<8)	/* Recv ready DMA enable */
++#define UCR1_IREN	(1<<7)	/* Infrared interface enable */
++#define UCR1_TXMPTYEN	(1<<6)	/* Transimitter empty interrupt enable */
++#define UCR1_RTSDEN	(1<<5)	/* RTS delta interrupt enable */
++#define UCR1_SNDBRK	(1<<4)	/* Send break */
++#define UCR1_TDMAEN	(1<<3)	/* Transmitter ready DMA enable */
++#define UCR1_UARTCLKEN	(1<<2)	/* UART clock enabled */
++#define UCR1_DOZE	(1<<1)	/* Doze */
++#define UCR1_UARTEN	(1<<0)	/* UART enabled */
++#define UCR2_ESCI	(1<<15)	/* Escape seq interrupt enable */
++#define UCR2_IRTS	(1<<14)	/* Ignore RTS pin */
++#define UCR2_CTSC	(1<<13)	/* CTS pin control */
++#define UCR2_CTS	(1<<12)	/* Clear to send */
++#define UCR2_ESCEN	(1<<11)	/* Escape enable */
++#define UCR2_PREN	(1<<8)	/* Parity enable */
++#define UCR2_PROE	(1<<7)	/* Parity odd/even */
++#define UCR2_STPB	(1<<6)	/* Stop */
++#define UCR2_WS		(1<<5)	/* Word size */
++#define UCR2_RTSEN	(1<<4)	/* Request to send interrupt enable */
++#define UCR2_TXEN	(1<<2)	/* Transmitter enabled */
++#define UCR2_RXEN	(1<<1)	/* Receiver enabled */
++#define UCR2_SRST	(1<<0)	/* SW reset */
++#define UCR3_DTREN	(1<<13)	/* DTR interrupt enable */
++#define UCR3_PARERREN	(1<<12)	/* Parity enable */
++#define UCR3_FRAERREN	(1<<11)	/* Frame error interrupt enable */
++#define UCR3_DSR	(1<<10)	/* Data set ready */
++#define UCR3_DCD	(1<<9)	/* Data carrier detect */
++#define UCR3_RI		(1<<8)	/* Ring indicator */
++#define UCR3_TIMEOUTEN	(1<<7)	/* Timeout interrupt enable */
++#define UCR3_RXDSEN	(1<<6)	/* Receive status interrupt enable */
++#define UCR3_AIRINTEN	(1<<5)	/* Async IR wake interrupt enable */
++#define UCR3_AWAKEN	(1<<4)	/* Async wake interrupt enable */
++#define UCR3_REF25	(1<<3)	/* Ref freq 25 MHz */
++#define UCR3_REF30	(1<<2)	/* Ref Freq 30 MHz */
++#define UCR3_INVT	(1<<1)	/* Inverted Infrared transmission */
++#define UCR3_BPEN	(1<<0)	/* Preset registers enable */
++#define UCR4_CTSTL_32   (32<<10)/* CTS trigger level (32 chars) */
++#define UCR4_INVR	(1<<9)	/* Inverted infrared reception */
++#define UCR4_ENIRI	(1<<8)	/* Serial infrared interrupt enable */
++#define UCR4_WKEN	(1<<7)	/* Wake interrupt enable */
++#define UCR4_REF16	(1<<6)	/* Ref freq 16 MHz */
++#define UCR4_IRSC	(1<<5)	/* IR special case */
++#define UCR4_TCEN	(1<<3)	/* Transmit complete interrupt enable */
++#define UCR4_BKEN	(1<<2)	/* Break condition interrupt enable */
++#define UCR4_OREN	(1<<1)	/* Receiver overrun interrupt enable */
++#define UCR4_DREN	(1<<0)	/* Recv data ready interrupt enable */
++#define UFCR_RXTL_SHF	0	/* Receiver trigger level shift */
++#define UFCR_RFDIV	(7<<7)	/* Reference freq divider mask */
++#define UFCR_TXTL_SHF	10	/* Transmitter trigger level shift */
++#define USR1_PARITYERR	(1<<15)	/* Parity error interrupt flag */
++#define USR1_RTSS	(1<<14)	/* RTS pin status */
++#define USR1_TRDY	(1<<13)	/* Transmitter ready interrupt/dma flag */
++#define USR1_RTSD	(1<<12)	/* RTS delta */
++#define USR1_ESCF	(1<<11)	/* Escape seq interrupt flag */
++#define USR1_FRAMERR	(1<<10)	/* Frame error interrupt flag */
++#define USR1_RRDY	(1<<9)	/* Receiver ready interrupt/dma flag */
++#define USR1_TIMEOUT	(1<<7)	/* Receive timeout interrupt status */
++#define USR1_RXDS	(1<<6)	/* Receiver idle interrupt flag */
++#define USR1_AIRINT	(1<<5)	/* Async IR wake interrupt flag */
++#define USR1_AWAKE	(1<<4)	/* Aysnc wake interrupt flag */
++#define USR2_ADET	(1<<15)	/* Auto baud rate detect complete */
++#define USR2_TXFE	(1<<14)	/* Transmit buffer FIFO empty */
++#define USR2_DTRF	(1<<13)	/* DTR edge interrupt flag */
++#define USR2_IDLE	(1<<12)	/* Idle condition */
++#define USR2_IRINT	(1<<8)	/* Serial infrared interrupt flag */
++#define USR2_WAKE	(1<<7)	/* Wake */
++#define USR2_RTSF	(1<<4)	/* RTS edge interrupt flag */
++#define USR2_TXDC	(1<<3)	/* Transmitter complete */
++#define USR2_BRCD	(1<<2)	/* Break condition */
++#define USR2_ORE	(1<<1)	/* Overrun error */
++#define USR2_RDR	(1<<0)	/* Recv data ready */
++#define UTS_FRCPERR	(1<<13)	/* Force parity error */
++#define UTS_LOOP	(1<<12)	/* Loop tx and rx */
++#define UTS_TXEMPTY	(1<<6)	/* TxFIFO empty */
++#define UTS_RXEMPTY	(1<<5)	/* RxFIFO empty */
++#define UTS_TXFULL	(1<<4)	/* TxFIFO full */
++#define UTS_RXFULL	(1<<3)	/* RxFIFO full */
++#define UTS_SOFTRST	(1<<0)	/* Software reset */
++
++DECLARE_GLOBAL_DATA_PTR;
++
++void serial_setbrg(void)
++{
++	u32 clk = mx25_get_ipg_clk();
++
++	if (!gd->baudrate)
++		gd->baudrate = CONFIG_BAUDRATE;
++
++	__REG(UART_PHYS + UFCR) = 4 << 7; /* divide input clock by 2 */
++	__REG(UART_PHYS + UBIR) = 0xf;
++	__REG(UART_PHYS + UBMR) = clk / (2 * gd->baudrate);
++
++}
++
++int serial_getc(void)
++{
++	while (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
++		;
++
++	/* mask out status from upper word */
++	return (__REG(UART_PHYS + URXD) & URXD_RX_DATA)
++		;
++}
++
++void serial_putc(const char c)
++{
++	__REG(UART_PHYS + UTXD) = c;
++
++	/* wait for transmitter to be ready */
++	while (!(__REG(UART_PHYS + UTS) & UTS_TXEMPTY))
++		;
++
++	/* If \n, also do \r */
++	if (c == '\n')
++		serial_putc('\r');
++}
++
++/*
++ * Test whether a character is in the RX buffer
++ */
++int serial_tstc(void)
++{
++	/* If receive fifo is empty, return false */
++	if (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
++		return 0;
++	return 1;
++}
++
++void serial_puts(const char *s)
++{
++	while (*s)
++		serial_putc(*s++);
++}
++
++/*
++ * Initialise the serial port with the given baudrate. The settings
++ * are always 8 data bits, no parity, 1 stop bit, no start bits.
++ *
++ */
++int serial_init(void)
++{
++	__REG(UART_PHYS + UCR1) = 0x0;
++	__REG(UART_PHYS + UCR2) = 0x0;
++
++	while (!(__REG(UART_PHYS + UCR2) & UCR2_SRST))
++		;
++
++	__REG(UART_PHYS + UCR3) = 0x0704;
++	__REG(UART_PHYS + UCR4) = 0x8000;
++	__REG(UART_PHYS + UESC) = 0x002b;
++	__REG(UART_PHYS + UTIM) = 0x0;
++
++	__REG(UART_PHYS + UTS) = 0x0;
++
++	serial_setbrg();
++
++	__REG(UART_PHYS + UCR2) = UCR2_WS | UCR2_IRTS | UCR2_RXEN |
++					UCR2_TXEN | UCR2_SRST;
++
++	__REG(UART_PHYS + UCR1) = UCR1_UARTEN;
++
++	return 0;
++}
++
++
++#endif /* CONFIG_MX25 */
+diff --git a/cpu/arm926ejs/start.S b/cpu/arm926ejs/start.S
+index 8043322..31bdcf0 100644
+--- a/cpu/arm926ejs/start.S
++++ b/cpu/arm926ejs/start.S
+@@ -126,7 +126,7 @@ FIQ_STACK_START:
+ /*
+  * the actual reset code
+  */
+-
++.globl reset
+ reset:
+ 	/*
+ 	 * set the cpu to SVC32 mode
+diff --git a/drivers/i2c/mxc_i2c.c b/drivers/i2c/mxc_i2c.c
+index 530b332..3c13efe 100644
+--- a/drivers/i2c/mxc_i2c.c
++++ b/drivers/i2c/mxc_i2c.c
+@@ -28,7 +28,10 @@
+ 
+ #if defined(CONFIG_HARD_I2C)
+ 
+-#ifdef CONFIG_MX31
++#ifdef CONFIG_MX25
++#include <asm/arch/mx25.h>
++#include <asm/arch/mx25-regs.h>
++#elif defined(CONFIG_MX31)
+ #include <asm/arch/mx31.h>
+ #include <asm/arch/mx31-regs.h>
+ #elif defined(CONFIG_MX35)
+diff --git a/drivers/mtd/nand/Makefile b/drivers/mtd/nand/Makefile
+index a1a7579..29f316b 100644
+--- a/drivers/mtd/nand/Makefile
++++ b/drivers/mtd/nand/Makefile
+@@ -46,6 +46,7 @@ COBJS-$(CONFIG_NAND_S3C2410) += s3c2410_nand.o
+ COBJS-$(CONFIG_NAND_S3C64XX) += s3c64xx.o
+ COBJS-$(CONFIG_NAND_OMAP_GPMC) += omap_gpmc.o
+ COBJS-$(CONFIG_NAND_PLAT) += nand_plat.o
++COBJS-$(CONFIG_MX25) += mxc_nand.o
+ COBJS-$(CONFIG_MX31_NAND) += mx31_nand.o
+ COBJS-$(CONFIG_MX35) += mxc_nand.o
+ COBJS-$(CONFIG_MX51) += mxc_nand.o
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index 676f89f..218c432 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -88,6 +88,44 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++#ifdef CONFIG_MX25
++/*
++ *  * i.MX25 allows RMII mode to be configured via a gasket
++ *   */
++#define FEC_MIIGSK_CFGR_FRCONT (1 << 6)
++#define FEC_MIIGSK_CFGR_LBMODE (1 << 4)
++#define FEC_MIIGSK_CFGR_EMODE (1 << 3)
++#define FEC_MIIGSK_CFGR_IF_MODE_MASK (3 << 0)
++#define FEC_MIIGSK_CFGR_IF_MODE_MII (0 << 0)
++#define FEC_MIIGSK_CFGR_IF_MODE_RMII (1 << 0)
++
++#define FEC_MIIGSK_ENR_READY (1 << 2)
++#define FEC_MIIGSK_ENR_EN (1 << 1)
++
++static inline void fec_localhw_setup(volatile fec_t *fecp)
++{
++	/*
++	 * Set up the MII gasket for RMII mode
++	 */
++	printf("FEC: enable RMII gasket\n");
++
++	/* disable the gasket and wait */
++	fecp->fec_miigsk_enr = 0;
++	while (fecp->fec_miigsk_enr & FEC_MIIGSK_ENR_READY)
++		udelay(1);
++
++	/* configure the gasket for RMII, 50 MHz, no loopback, no echo */
++	fecp->fec_miigsk_cfgr = FEC_MIIGSK_CFGR_IF_MODE_RMII;
++
++	/* re-enable the gasket */
++	fecp->fec_miigsk_enr = FEC_MIIGSK_ENR_EN;
++}
++#else
++static inline void fec_localhw_setup(struct fec_t *fecp)
++{
++}
++#endif
++
+ #if defined(CONFIG_CMD_NET) && defined(CONFIG_NET_MULTI)
+ 
+ struct fec_info_s fec_info[] = {
+@@ -574,6 +612,8 @@ int fec_init(struct eth_device *dev, bd_t *bd)
+ 
+ 	fec_reset(dev);
+ 
++	fec_localhw_setup(fecp);
++
+ #if defined (CONFIG_CMD_MII) || defined (CONFIG_MII) || \
+ 	defined (CONFIG_DISCOVER_PHY)
+ 
+diff --git a/include/asm-arm/arch-mx25/gpio.h b/include/asm-arm/arch-mx25/gpio.h
+new file mode 100644
+index 0000000..69eb987
+--- /dev/null
++++ b/include/asm-arm/arch-mx25/gpio.h
+@@ -0,0 +1,33 @@
++/*
++ * Copyright 2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#ifndef __MACH_MX25_GPIO_H__
++#define __MACH_MX25_GPIO_H__
++
++#include <asm/arch/mx25.h>
++
++static void _set_gpio_direction(u32 port, u32 index, int is_input);
++
++void mxc_set_gpio_direction(iomux_pin_name_t pin, int is_input);
++
++static void _set_gpio_dataout(u32 port, u32 index, u32 data);
++
++void mxc_set_gpio_dataout(iomux_pin_name_t pin, u32 data);
++
++/*!
++ * @file mach-mx25/gpio.h
++ *
++ * @brief Simple GPIO definitions and functions
++ *
++ * @ingroup GPIO_MX25
++ */
++#endif
+diff --git a/include/asm-arm/arch-mx25/iomux.h b/include/asm-arm/arch-mx25/iomux.h
+new file mode 100644
+index 0000000..0719c79
+--- /dev/null
++++ b/include/asm-arm/arch-mx25/iomux.h
+@@ -0,0 +1,220 @@
++/*
++ * Copyright 2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#ifndef __MACH_MX25_IOMUX_H__
++#define __MACH_MX25_IOMUX_H__
++
++#include <asm/arch/mx25.h>
++
++/*!
++ * @file mach-mx25/iomux.h
++ *
++ * @brief I/O Muxing control definitions and functions
++ *
++ * @ingroup GPIO_MX25
++ */
++
++/*!
++ * IOMUX functions
++ * SW_MUX_CTL
++ */
++typedef enum iomux_pin_config {
++	MUX_CONFIG_FUNC = 0,	/*!< used as function */
++	MUX_CONFIG_ALT1,	/*!< used as alternate function 1 */
++	MUX_CONFIG_ALT2,	/*!< used as alternate function 2 */
++	MUX_CONFIG_ALT3,	/*!< used as alternate function 3 */
++	MUX_CONFIG_ALT4,	/*!< used as alternate function 4 */
++	MUX_CONFIG_ALT5,	/*!< used as alternate function 5 */
++	MUX_CONFIG_ALT6,	/*!< used as alternate function 6 */
++	MUX_CONFIG_ALT7,	/*!< used as alternate function 7 */
++	MUX_CONFIG_SION = 0x1 << 4,	/*!< used as LOOPBACK:MUX SION bit */
++	MUX_CONFIG_GPIO = MUX_CONFIG_ALT5,	/*!< used as GPIO */
++} iomux_pin_cfg_t;
++
++/*!
++ * IOMUX pad functions
++ * SW_PAD_CTL
++ */
++typedef enum iomux_pad_config {
++	PAD_CTL_DRV_3_3V = 0x0 << 13,
++	PAD_CTL_DRV_1_8V = 0x1 << 13,
++	PAD_CTL_HYS_CMOS = 0x0 << 8,
++	PAD_CTL_HYS_SCHMITZ = 0x1 << 8,
++	PAD_CTL_PKE_NONE = 0x0 << 7,
++	PAD_CTL_PKE_ENABLE = 0x1 << 7,
++	PAD_CTL_PUE_KEEPER = 0x0 << 6,
++	PAD_CTL_PUE_PUD = 0x1 << 6,
++	PAD_CTL_100K_PD = 0x0 << 4,
++	PAD_CTL_47K_PU = 0x1 << 4,
++	PAD_CTL_100K_PU = 0x2 << 4,
++	PAD_CTL_22K_PU = 0x3 << 4,
++	PAD_CTL_ODE_CMOS = 0x0 << 3,
++	PAD_CTL_ODE_OpenDrain = 0x1 << 3,
++	PAD_CTL_DRV_NORMAL = 0x0 << 1,
++	PAD_CTL_DRV_HIGH = 0x1 << 1,
++	PAD_CTL_DRV_MAX = 0x2 << 1,
++	PAD_CTL_SRE_SLOW = 0x0 << 0,
++	PAD_CTL_SRE_FAST = 0x1 << 0
++} iomux_pad_config_t;
++
++/*!
++ * IOMUX general purpose functions
++ * IOMUXC_GPR1
++ */
++typedef enum iomux_gp_func {
++	MUX_SDCTL_CSD0_SEL = 0x1 << 0,
++	MUX_SDCTL_CSD1_SEL = 0x1 << 1,
++} iomux_gp_func_t;
++
++/*!
++ * IOMUX SELECT_INPUT register index
++ * Base register is IOMUXSW_INPUT_CTL in iomux.c
++ */
++typedef enum iomux_input_select {
++	MUX_IN_AUDMUX_P4_INPUT_DA_AMX = 0,
++	MUX_IN_AUDMUX_P4_INPUT_DB_AMX,
++	MUX_IN_AUDMUX_P4_INPUT_RXCLK_AMX,
++	MUX_IN_AUDMUX_P4_INPUT_RXFS_AMX,
++	MUX_IN_AUDMUX_P4_INPUT_TXCLK_AMX,
++	MUX_IN_AUDMUX_P4_INPUT_TXFS_AMX,
++	MUX_IN_AUDMUX_P7_INPUT_DA_AMX,
++	MUX_IN_AUDMUX_P7_INPUT_TXFS_AMX,
++	MUX_IN_CAN1_IPP_IND_CANRX,
++	MUX_IN_CAN2_IPP_IND_CANRX,
++	MUX_IN_CSI_IPP_CSI_D_0,
++	MUX_IN_CSI_IPP_CSI_D_1,
++	MUX_IN_CSPI1_IPP_IND_SS3_B,
++	MUX_IN_CSPI2_IPP_CSPI_CLK_IN,
++	MUX_IN_CSPI2_IPP_IND_DATAREADY_B,
++	MUX_IN_CSPI2_IPP_IND_MISO,
++	MUX_IN_CSPI2_IPP_IND_MOSI,
++	MUX_IN_CSPI2_IPP_IND_SS0_B,
++	MUX_IN_CSPI2_IPP_IND_SS1_B,
++	MUX_IN_CSPI3_IPP_CSPI_CLK_IN,
++	MUX_IN_CSPI3_IPP_IND_DATAREADY_B,
++	MUX_IN_CSPI3_IPP_IND_MISO,
++	MUX_IN_CSPI3_IPP_IND_MOSI,
++	MUX_IN_CSPI3_IPP_IND_SS0_B,
++	MUX_IN_CSPI3_IPP_IND_SS1_B,
++	MUX_IN_CSPI3_IPP_IND_SS2_B,
++	MUX_IN_CSPI3_IPP_IND_SS3_B,
++	MUX_IN_ESDHC1_IPP_DAT4_IN,
++	MUX_IN_ESDHC1_IPP_DAT5_IN,
++	MUX_IN_ESDHC1_IPP_DAT6_IN,
++	MUX_IN_ESDHC1_IPP_DAT7_IN,
++	MUX_IN_ESDHC2_IPP_CARD_CLK_IN,
++	MUX_IN_ESDHC2_IPP_CMD_IN,
++	MUX_IN_ESDHC2_IPP_DAT0_IN,
++	MUX_IN_ESDHC2_IPP_DAT1_IN,
++	MUX_IN_ESDHC2_IPP_DAT2_IN,
++	MUX_IN_ESDHC2_IPP_DAT3_IN,
++	MUX_IN_ESDHC2_IPP_DAT4_IN,
++	MUX_IN_ESDHC2_IPP_DAT5_IN,
++	MUX_IN_ESDHC2_IPP_DAT6_IN,
++	MUX_IN_ESDHC2_IPP_DAT7_IN,
++	MUX_IN_FEC_FEC_COL,
++	MUX_IN_FEC_FEC_CRS,
++	MUX_IN_FEC_FEC_RDATA_2,
++	MUX_IN_FEC_FEC_RDATA_3,
++	MUX_IN_FEC_FEC_RX_CLK,
++	MUX_IN_FEC_FEC_RX_ER,
++	MUX_IN_I2C2_IPP_SCL_IN,
++	MUX_IN_I2C2_IPP_SDA_IN,
++	MUX_IN_I2C3_IPP_SCL_IN,
++	MUX_IN_I2C3_IPP_SDA_IN,
++	MUX_IN_KPP_IPP_IND_COL_4,
++	MUX_IN_KPP_IPP_IND_COL_5,
++	MUX_IN_KPP_IPP_IND_COL_6,
++	MUX_IN_KPP_IPP_IND_COL_7,
++	MUX_IN_KPP_IPP_IND_ROW_4,
++	MUX_IN_KPP_IPP_IND_ROW_5,
++	MUX_IN_KPP_IPP_IND_ROW_6,
++	MUX_IN_KPP_IPP_IND_ROW_7,
++	MUX_IN_SIM1_PIN_SIM_RCVD1_IN,
++	MUX_IN_SIM1_PIN_SIM_SIMPD1,
++	MUX_IN_SIM1_SIM_RCVD1_IO,
++	MUX_IN_SIM2_PIN_SIM_RCVD1_IN,
++	MUX_IN_SIM2_PIN_SIM_SIMPD1,
++	MUX_IN_SIM2_SIM_RCVD1_IO,
++	MUX_IN_UART3_IPP_UART_RTS_B,
++	MUX_IN_UART3_IPP_UART_RXD_MUX,
++	MUX_IN_UART4_IPP_UART_RTS_B,
++	MUX_IN_UART4_IPP_UART_RXD_MUX,
++	MUX_IN_UART5_IPP_UART_RTS_B,
++	MUX_IN_UART5_IPP_UART_RXD_MUX,
++	MUX_IN_USB_TOP_IPP_IND_OTG_USB_OC,
++	MUX_IN_USB_TOP_IPP_IND_UH2_USB_OC,
++} iomux_input_select_t;
++
++/*!
++ * IOMUX input functions
++ * SW_SELECT_INPUT bits 2-0
++ */
++typedef enum iomux_input_config {
++	INPUT_CTL_PATH0 = 0x0,
++	INPUT_CTL_PATH1,
++	INPUT_CTL_PATH2,
++	INPUT_CTL_PATH3,
++	INPUT_CTL_PATH4,
++	INPUT_CTL_PATH5,
++	INPUT_CTL_PATH6,
++	INPUT_CTL_PATH7,
++} iomux_input_cfg_t;
++
++/*!
++ * Request ownership for an IO pin. This function has to be the first one
++ * being called before that pin is used. The caller has to check the
++ * return value to make sure it returns 0.
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  cfg		an input function as defined in \b #iomux_pin_cfg_t
++ *
++ * @return		0 if successful; Non-zero otherwise
++ */
++int mxc_request_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg);
++
++/*!
++ * Release ownership for an IO pin
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  cfg		an input function as defined in \b #iomux_pin_cfg_t
++ */
++void mxc_free_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg);
++
++/*!
++ * This function enables/disables the general purpose function for a particular
++ * signal.
++ *
++ * @param  gp   one signal as defined in \b #iomux_gp_func_t
++ * @param  en   \b #true to enable; \b #false to disable
++ */
++void mxc_iomux_set_gpr(iomux_gp_func_t gp, int en);
++
++/*!
++ * This function configures the pad value for a IOMUX pin.
++ *
++ * @param  pin          a pin number as defined in \b #iomux_pin_name_t
++ * @param  config       the ORed value of elements defined in \b
++ *				#iomux_pad_config_t
++ */
++void mxc_iomux_set_pad(iomux_pin_name_t pin, u32 config);
++
++/*!
++ * This function configures input path.
++ *
++ * @param  input        index of input select register as defined in \b
++ * 				#iomux_input_select_t
++ * @param  config       the binary value of elements defined in \b
++ *				#iomux_input_cfg_t
++ */
++void mxc_iomux_set_input(iomux_input_select_t input, u32 config);
++#endif
+diff --git a/include/asm-arm/arch-mx25/mx25-regs.h b/include/asm-arm/arch-mx25/mx25-regs.h
+new file mode 100644
+index 0000000..26f3031
+--- /dev/null
++++ b/include/asm-arm/arch-mx25/mx25-regs.h
+@@ -0,0 +1,380 @@
++/*
++ *
++ * (c) 2007 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __ASM_ARCH_MX25_REGS_H
++#define __ASM_ARCH_MX25_REGS_H
++
++#define __REG(x)	(*((volatile u32 *)(x)))
++#define __REG16(x)	(*((volatile u16 *)(x)))
++#define __REG8(x)	(*((volatile u8 *)(x)))
++
++/*
++ * AIPS 1
++ */
++#define AIPS1_BASE		0x43F00000
++#define AIPS1_CTRL_BASE		AIPS1_BASE
++#define MAX_BASE		0x43F04000
++#define CLKCTL_BASE		0x43F08000
++#define ETB_SLOT4_BASE		0x43F0C000
++#define ETB_SLOT5_BASE		0x43F1000l
++#define ECT_CTIO_BASE		0x43F18000
++#define I2C1_BASE		0x43F80000
++#define I2C3_BASE		0x43F84000
++#define CAN1_BASE		0x43F88000
++#define CAN2_BASE		0x43F8C000
++#define UART1_BASE		0x43F90000
++#define UART2_BASE		0x43F94000
++#define I2C2_BASE		0x43F98000
++#define OWIRE_BASE		0x43F9C000
++#define CSPI1_BASE		0x43FA4000
++#define KPP_BASE		0x43FA8000
++#define IOMUXC_BASE		0x43FAC000
++#define AUDMUX_BASE		0x43FB0000
++#define ECT_IP1_BASE		0x43FB8000
++#define ECT_IP2_BASE		0x43FBC000
++
++/*
++ * SPBA
++ */
++#define SPBA_BASE		0x50000000
++#define CSPI3_BASE		0x50040000
++#define UART4_BASE		0x50008000
++#define UART3_BASE		0x5000C000
++#define CSPI2_BASE		0x50010000
++#define SSI2_BASE		0x50014000
++#define ESAI_BASE		0x50018000
++#define ATA_DMA_BASE		0x50020000
++#define SIM1_BASE		0x50024000
++#define SIM2_BASE		0x50028000
++#define UART5_BASE		0x5002C000
++#define TSC_BASE		0x50030000
++#define SSI1_BASE		0x50034000
++#define FEC_BASE		0x50038000
++#define SOC_FEC			FEC_BASE
++#define SPBA_CTRL_BASE		0x5003C000
++
++/*
++ * AIPS 2
++ */
++#define AIPS2_BASE		0x53F00000
++#define AIPS2_CTRL_BASE		AIPS2_BASE
++#define CCM_BASE		0x53F80000
++#define GPT4_BASE		0x53F84000
++#define GPT3_BASE		0x53F88000
++#define GPT2_BASE		0x53F8C000
++#define GPT1_BASE		0x53F90000
++#define EPIT1_BASE		0x53F94000
++#define EPIT2_BASE		0x53F98000
++#define GPIO4_BASE		0x53F9C000
++#define PWM2_BASE		0x53FA0000
++#define GPIO3_BASE		0x53FA4000
++#define PWM3_BASE		0x53FA8000
++#define SCC_BASE		0x53FAC000
++#define SCM_BASE		0x53FAE000
++#define SMN_BASE		0x53FAF000
++#define RNGD_BASE		0x53FB0000
++#define MMC_SDHC1_BASE		0x53FB4000
++#define MMC_SDHC2_BASE		0x53FB8000
++#define ESDHC1_REG_BASE		MMC_SDHC1_BASE
++#define LCDC_BASE		0x53FBC000
++#define SLCDC_BASE		0x53FC0000
++#define PWM4_BASE		0x53FC8000
++#define GPIO1_BASE		0x53FCC000
++#define GPIO2_BASE		0x53FD0000
++#define SDMA_BASE		0x53FD4000
++#define WDOG_BASE		0x53FDC000
++#define PWM1_BASE		0x53FE0000
++#define RTIC_BASE		0x53FEC000
++#define IIM_BASE		0x53FF0000
++#define USB_BASE		0x53FF4000
++#define CSI_BASE		0x53FF8000
++#define DRYICE_BASE		0x53FFC000
++
++/*
++ * ROMPATCH and ASIC
++ */
++#define ROMPATCH_BASE		0x60000000
++#define ROMPATCH_REV		0x40
++#define ASIC_BASE		0x68000000
++
++#define RAM_BASE		0x78000000
++
++/*
++ * NAND, SDRAM, WEIM, M3IF, EMI controllers
++ */
++#define EXT_MEM_CTRL_BASE	0xB8000000
++#define ESDCTL_BASE		0xB8001000
++#define WEIM_BASE		0xB8002000
++#define WEIM_CTRL_CS0		WEIM_BASE
++#define WEIM_CTRL_CS1		(WEIM_BASE + 0x10)
++#define WEIM_CTRL_CS2		(WEIM_BASE + 0x20)
++#define WEIM_CTRL_CS3		(WEIM_BASE + 0x30)
++#define WEIM_CTRL_CS4		(WEIM_BASE + 0x40)
++#define WEIM_CTRL_CS5		(WEIM_BASE + 0x50)
++#define M3IF_BASE		0xB8003000
++#define EMI_BASE		0xB8004000
++
++#define NFC_BASE_ADDR		0xBB000000
++/*
++ * Memory regions and CS
++ */
++#define CSD0_BASE		0x80000000
++#define CSD1_BASE		0x90000000
++#define CS0_BASE		0xA0000000
++#define CS1_BASE		0xA8000000
++#define CS2_BASE		0xB0000000
++#define CS3_BASE		0xB2000000
++#define CS4_BASE		0xB4000000
++#define CS5_BASE		0xB6000000
++
++/* CCM */
++#define CCM_MPCTL			(CCM_BASE + 0x00)
++#define CCM_UPCTL			(CCM_BASE + 0x04)
++#define CCM_CCTL			(CCM_BASE + 0x08)
++#define CCM_CGR0			(CCM_BASE + 0x0C)
++#define CCM_CGR1			(CCM_BASE + 0x10)
++#define CCM_CGR2			(CCM_BASE + 0x14)
++#define CCM_PCDR0			(CCM_BASE + 0x18)
++#define CCM_PCDR1			(CCM_BASE + 0x1C)
++#define CCM_PCDR2			(CCM_BASE + 0x20)
++#define CCM_PCDR3			(CCM_BASE + 0x24)
++#define CCM_RCSR			(CCM_BASE + 0x28)
++#define CCM_CRDR			(CCM_BASE + 0x2C)
++#define CCM_DCVR0			(CCM_BASE + 0x30)
++#define CCM_DCVR1			(CCM_BASE + 0x34)
++#define CCM_DCVR2			(CCM_BASE + 0x38)
++#define CCM_DCVR3			(CCM_BASE + 0x3C)
++#define CCM_LTR0			(CCM_BASE + 0x40)
++#define CCM_LTR1			(CCM_BASE + 0x44)
++#define CCM_LTR2			(CCM_BASE + 0x48)
++#define CCM_LTR3			(CCM_BASE + 0x4C)
++#define CCM_LTBR0			(CCM_BASE + 0x50)
++#define CCM_LTBR1			(CCM_BASE + 0x54)
++#define CCM_PCMR0			(CCM_BASE + 0x58)
++#define CCM_PCMR1			(CCM_BASE + 0x5C)
++#define CCM_PCMR2			(CCM_BASE + 0x60)
++#define CCM_MCR				(CCM_BASE + 0x64)
++#define CCM_LPIMR0			(CCM_BASE + 0x68)
++#define CCM_LPIMR1			(CCM_BASE + 0x6C)
++
++#define CRM_CCTL_ARM_SRC		(1 << 14)
++#define CRM_CCTL_AHB_OFFSET		28
++
++
++#define FREQ_24MHZ			24000000
++#define PLL_REF_CLK			FREQ_24MHZ
++
++/*
++ * FIXME - Constants verified up to this point.
++ * Offsets and derived constants below should be confirmed.
++ */
++
++#define CLKMODE_AUTO		0
++#define CLKMODE_CONSUMER	1
++
++/* WEIM - CS0 */
++#define CSCRU				0x00
++#define CSCRL				0x04
++#define CSCRA				0x08
++
++#define CHIP_REV_1_0		0x0	/* PASS 1.0 */
++#define CHIP_REV_1_1		0x1	/* PASS 1.1 */
++#define CHIP_REV_2_0		0x2	/* PASS 2.0 */
++#define CHIP_LATEST		CHIP_REV_1_1
++
++#define IIM_STAT		0x00
++#define IIM_STAT_BUSY		(1 << 7)
++#define IIM_STAT_PRGD		(1 << 1)
++#define IIM_STAT_SNSD		(1 << 0)
++#define IIM_STATM		0x04
++#define IIM_ERR			0x08
++#define IIM_ERR_PRGE		(1 << 7)
++#define IIM_ERR_WPE		(1 << 6)
++#define IIM_ERR_OPE		(1 << 5)
++#define IIM_ERR_RPE		(1 << 4)
++#define IIM_ERR_WLRE		(1 << 3)
++#define IIM_ERR_SNSE		(1 << 2)
++#define IIM_ERR_PARITYE		(1 << 1)
++#define IIM_EMASK		0x0C
++#define IIM_FCTL		0x10
++#define IIM_UAF			0x14
++#define IIM_LA			0x18
++#define IIM_SDAT		0x1C
++#define IIM_PREV		0x20
++#define IIM_SREV		0x24
++#define IIM_PREG_P		0x28
++#define IIM_SCS0		0x2C
++#define IIM_SCS1		0x30
++#define IIM_SCS2		0x34
++#define IIM_SCS3		0x38
++
++#define EPIT_BASE		EPIT1_BASE
++#define EPITCR			0x00
++#define EPITSR			0x04
++#define EPITLR			0x08
++#define EPITCMPR		0x0C
++#define EPITCNR			0x10
++
++#define GPT_BASE		GPT1_BASE
++/*#define GPTCR			0x00
++#define GPTPR			0x04
++#define GPTSR			0x08
++#define GPTIR			0x0C
++#define GPTOCR1			0x10
++#define GPTOCR2			0x14
++#define GPTOCR3			0x18
++#define GPTICR1			0x1C
++#define GPTICR2			0x20
++#define GPTCNT			0x24*/
++
++/* ESDCTL */
++#define ESDCTL_ESDCTL0		0x00
++#define ESDCTL_ESDCFG0		0x04
++#define ESDCTL_ESDCTL1		0x08
++#define ESDCTL_ESDCFG1		0x0C
++#define ESDCTL_ESDMISC		0x10
++
++/* DRYICE */
++#define DRYICE_DTCMR		0x00
++#define DRYICE_DTCLR		0x04
++#define DRYICE_DCAMR		0x08
++#define DRYICE_DCALR		0x0C
++#define DRYICE_DCR		0x10
++#define DRYICE_DSR		0x14
++#define DRYICE_DIER		0x18
++#define DRYICE_DMCR		0x1C
++#define DRYICE_DKSR		0x20
++#define DRYICE_DKCR		0x24
++#define DRYICE_DTCR		0x28
++#define DRYICE_DACR		0x2C
++#define DRYICE_DGPR		0x3C
++#define DRYICE_DPKR0		0x40
++#define DRYICE_DPKR1		0x44
++#define DRYICE_DPKR2		0x48
++#define DRYICE_DPKR3		0x4C
++#define DRYICE_DPKR4		0x50
++#define DRYICE_DPKR5		0x54
++#define DRYICE_DPKR6		0x58
++#define DRYICE_DPKR7		0x5C
++#define DRYICE_DRKR0		0x60
++#define DRYICE_DRKR1		0x64
++#define DRYICE_DRKR2		0x68
++#define DRYICE_DRKR3		0x6C
++#define DRYICE_DRKR4		0x70
++#define DRYICE_DRKR5		0x74
++#define DRYICE_DRKR6		0x78
++#define DRYICE_DRKR7		0x7C
++
++/* GPIO */
++#define GPIO_DR			0x00
++#define GPIO_GDIR		0x04
++#define GPIO_PSR0		0x08
++#define GPIO_ICR1		0x0C
++#define GPIO_ICR2		0x10
++#define GPIO_IMR		0x14
++#define GPIO_ISR		0x18
++#define GPIO_EDGE_SEL		0x1C
++
++
++#if (PLL_REF_CLK != 24000000)
++#error Wrong PLL reference clock! The following macros will not work.
++#endif
++
++/* Assuming 24MHz input clock */
++/*                           PD             MFD              MFI          MFN */
++#define MPCTL_PARAM_399    (((1-1) << 26) + ((16-1) << 16) + \
++				(8  << 10) + (5 << 0))
++#define MPCTL_PARAM_532     ((1 << 31) + ((1-1) << 26) + \
++				((12-1) << 16) + (11  << 10) + (1 << 0))
++#define MPCTL_PARAM_665     (((1-1) << 26) + ((48-1) << 16) + \
++				(13  << 10) + (41 << 0))
++
++/* UPCTL                     PD             MFD              MFI          MFN */
++#define UPCTL_PARAM_300     (((1-1) << 26) + ((4-1) << 16) + \
++				(6  << 10) + (1  << 0))
++
++#define NFC_V1_1
++
++#define NAND_REG_BASE			(NFC_BASE + 0x1E00)
++#define NFC_BUFSIZE_REG_OFF		(0 + 0x00)
++#define RAM_BUFFER_ADDRESS_REG_OFF	(0 + 0x04)
++#define NAND_FLASH_ADD_REG_OFF		(0 + 0x06)
++#define NAND_FLASH_CMD_REG_OFF		(0 + 0x08)
++#define NFC_CONFIGURATION_REG_OFF	(0 + 0x0A)
++#define ECC_STATUS_RESULT_REG_OFF	(0 + 0x0C)
++#define ECC_RSLT_MAIN_AREA_REG_OFF	(0 + 0x0E)
++#define ECC_RSLT_SPARE_AREA_REG_OFF	(0 + 0x10)
++#define NF_WR_PROT_REG_OFF		(0 + 0x12)
++#define NAND_FLASH_WR_PR_ST_REG_OFF	(0 + 0x18)
++#define NAND_FLASH_CONFIG1_REG_OFF	(0 + 0x1A)
++#define NAND_FLASH_CONFIG2_REG_OFF	(0 + 0x1C)
++#define UNLOCK_START_BLK_ADD_REG_OFF	(0 + 0x20)
++#define UNLOCK_END_BLK_ADD_REG_OFF	(0 + 0x22)
++#define RAM_BUFFER_ADDRESS_RBA_3	0x3
++#define NFC_BUFSIZE_1KB			0x0
++#define NFC_BUFSIZE_2KB			0x1
++#define NFC_CONFIGURATION_UNLOCKED	0x2
++#define ECC_STATUS_RESULT_NO_ERR	0x0
++#define ECC_STATUS_RESULT_1BIT_ERR	0x1
++#define ECC_STATUS_RESULT_2BIT_ERR	0x2
++#define NF_WR_PROT_UNLOCK		0x4
++#define NAND_FLASH_CONFIG1_FORCE_CE	(1 << 7)
++#define NAND_FLASH_CONFIG1_RST		(1 << 6)
++#define NAND_FLASH_CONFIG1_BIG		(1 << 5)
++#define NAND_FLASH_CONFIG1_INT_MSK	(1 << 4)
++#define NAND_FLASH_CONFIG1_ECC_EN	(1 << 3)
++#define NAND_FLASH_CONFIG1_SP_EN	(1 << 2)
++#define NAND_FLASH_CONFIG2_INT_DONE	(1 << 15)
++#define NAND_FLASH_CONFIG2_FDO_PAGE	(0 << 3)
++#define NAND_FLASH_CONFIG2_FDO_ID	(2 << 3)
++#define NAND_FLASH_CONFIG2_FDO_STATUS	(4 << 3)
++#define NAND_FLASH_CONFIG2_FDI_EN	(1 << 2)
++#define NAND_FLASH_CONFIG2_FADD_EN	(1 << 1)
++#define NAND_FLASH_CONFIG2_FCMD_EN	(1 << 0)
++#define FDO_PAGE_SPARE_VAL		0x8
++#define NAND_BUF_NUM			8
++
++#define MXC_NAND_BASE_DUMMY		0x00000000
++#define MXC_MMC_BASE_DUMMY		0x00000000
++#define NOR_FLASH_BOOT			0
++#define NAND_FLASH_BOOT			0x10000000
++#define SDRAM_NON_FLASH_BOOT		0x20000000
++#define MMC_FLASH_BOOT			0x40000000
++#define MXCBOOT_FLAG_REG		(CSI_BASE_ADDR + 0x28)
++#define MXCFIS_NOTHING			0x00000000
++#define MXCFIS_NAND			0x10000000
++#define MXCFIS_NOR			0x20000000
++#define MXCFIS_MMC			0x40000000
++#define MXCFIS_FLAG_REG			(CSI_BASE_ADDR + 0x2C)
++
++/*!
++ *  * NFMS bit in RCSR register for pagesize of nandflash
++ *   */
++#define NFMS		(*((volatile u32 *)(CCM_BASE+0x18)))
++#define NFMS_BIT	8
++#define NFMS_NF_DWIDTH	14
++#define NFMS_NF_PG_SZ	8
++
++#endif
+diff --git a/include/asm-arm/arch-mx25/mx25.h b/include/asm-arm/arch-mx25/mx25.h
+new file mode 100644
+index 0000000..60e0de0
+--- /dev/null
++++ b/include/asm-arm/arch-mx25/mx25.h
+@@ -0,0 +1,44 @@
++/*
++ *
++ * (c) 2007 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __ASM_ARCH_MX25_H
++#define __ASM_ARCH_MX25_H
++#ifndef __ASSEMBLER__
++
++#define GPIO_PORT_NUM	3
++#define GPIO_NUM_PIN	32
++
++enum mxc_clock {
++	MXC_ARM_CLK = 0,
++	MXC_AHB_CLK,
++	MXC_IPG_CLK,
++	MXC_IPG_PERCLK,
++	MXC_UART_CLK,
++};
++
++extern unsigned int mx25_get_ipg_clk(void);
++extern unsigned int mxc_get_clock(enum mxc_clock clk);
++#endif
++#endif /* __ASM_ARCH_MX25_H */
+diff --git a/include/asm-arm/arch-mx25/mx25_pins.h b/include/asm-arm/arch-mx25/mx25_pins.h
+new file mode 100644
+index 0000000..984f55d
+--- /dev/null
++++ b/include/asm-arm/arch-mx25/mx25_pins.h
+@@ -0,0 +1,259 @@
++/*
++ * Copyright 2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#ifndef __ASM_ARCH_MXC_MX25_PINS_H__
++#define __ASM_ARCH_MXC_MX25_PINS_H__
++
++/*!
++ * @file arch-mxc/mx25_pins.h
++ *
++ * @brief MX25 I/O Pin List
++ *
++ * @ingroup GPIO_MX25
++ */
++
++#ifndef __ASSEMBLY__
++
++/*!
++ * @name IOMUX/PAD Bit field definitions
++ */
++
++/*! @{ */
++
++/*!
++ * In order to identify pins more effectively, each mux-controlled pin's
++ * enumerated value is constructed in the following way:
++ *
++ * -------------------------------------------------------------------
++ * 31-29 | 28 - 24 |23 - 21| 20 - 10| 9 - 0
++ * -------------------------------------------------------------------
++ * IO_P  |  IO_I   | RSVD  | PAD_I | MUX_I
++ * -------------------------------------------------------------------
++ *
++ * Bit 0 to 7 contains MUX_I used to identify the register
++ * offset (base is IOMUX_module_base ) defined in the Section
++ * "sw_pad_ctl & sw_mux_ctl details" of the IC Spec. Similar field
++ * definitions are used for the pad control register.  For example,
++ * MX25_PIN_A14 is defined in the enumeration:
++ * ( 0x10 << MUX_I) | ( 0x230 << PAD_I)
++ * So the absolute address is: IOMUX_module_base + 0x10.
++ * The pad control register offset is: 0x230.
++ */
++
++/*!
++ * Starting bit position within each entry of \b iomux_pins to represent the
++ * MUX control register offset
++ */
++#define MUX_I		0
++/*!
++ * Starting bit position within each entry of \b iomux_pins to represent the
++ * PAD control register offset
++ */
++#define PAD_I		10
++
++/*!
++ * Starting bit position within each entry of \b iomux_pins to represent the
++ * reserved filed
++ */
++#define RSVD_I		21
++
++#define MUX_IO_P		29
++#define MUX_IO_I		24
++#define IOMUX_TO_GPIO(pin)	((((unsigned int)pin >> MUX_IO_P) * \
++					GPIO_NUM_PIN) + ((pin >> MUX_IO_I) &\
++					((1 << (MUX_IO_P - MUX_IO_I)) - 1)))
++#define IOMUX_TO_IRQ(pin)	(MXC_GPIO_INT_BASE + IOMUX_TO_GPIO(pin))
++#define GPIO_TO_PORT(n)		(n / GPIO_NUM_PIN)
++#define GPIO_TO_INDEX(n)	(n % GPIO_NUM_PIN)
++
++#define NON_GPIO_I	0x7
++#define PIN_TO_MUX_MASK	((1<<(PAD_I - MUX_I)) - 1)
++#define PIN_TO_PAD_MASK	((1<<(RSVD_I - PAD_I)) - 1)
++#define NON_MUX_I	PIN_TO_MUX_MASK
++
++#define _MXC_BUILD_PIN(gp, gi, mi, pi) \
++		(((gp) << MUX_IO_P) | ((gi) << MUX_IO_I) | \
++		((mi) << MUX_I) | ((pi) << PAD_I))
++
++#define _MXC_BUILD_GPIO_PIN(gp, gi, mi, pi) \
++		_MXC_BUILD_PIN(gp, gi, mi, pi)
++
++#define _MXC_BUILD_NON_GPIO_PIN(mi, pi) \
++		_MXC_BUILD_PIN(NON_GPIO_I, 0, mi, pi)
++
++#define PIN_TO_IOMUX_MUX(pin) ((pin >> MUX_I) & PIN_TO_MUX_MASK)
++#define PIN_TO_IOMUX_PAD(pin) ((pin >> PAD_I) & PIN_TO_PAD_MASK)
++
++/*! @} End IOMUX/PAD Bit field definitions */
++
++typedef enum iomux_pins {
++	MX25_PIN_A10 = _MXC_BUILD_GPIO_PIN(3, 0, 0x8, 0x0),
++	MX25_PIN_A13 = _MXC_BUILD_GPIO_PIN(3, 1, 0x0c, 0x22C),
++	MX25_PIN_A14 = _MXC_BUILD_GPIO_PIN(1, 0, 0x10, 0x230),
++	MX25_PIN_A15 = _MXC_BUILD_GPIO_PIN(1, 1, 0x14, 0x234),
++	MX25_PIN_A16 = _MXC_BUILD_GPIO_PIN(1, 2, 0x18, 0x0),
++	MX25_PIN_A17 = _MXC_BUILD_GPIO_PIN(1, 3, 0x1c, 0x238),
++	MX25_PIN_A18 = _MXC_BUILD_GPIO_PIN(1, 4, 0x20, 0x23c),
++	MX25_PIN_A19 = _MXC_BUILD_GPIO_PIN(1, 5, 0x24, 0x240),
++	MX25_PIN_A20 = _MXC_BUILD_GPIO_PIN(1, 6, 0x28, 0x244),
++	MX25_PIN_A21 = _MXC_BUILD_GPIO_PIN(1, 7, 0x2c, 0x248),
++	MX25_PIN_A22 = _MXC_BUILD_GPIO_PIN(1, 8, 0x30, 0x0),
++	MX25_PIN_A23 = _MXC_BUILD_GPIO_PIN(1, 9, 0x34, 0x24c),
++	MX25_PIN_A24 = _MXC_BUILD_GPIO_PIN(1, 10, 0x38, 0x250),
++	MX25_PIN_A25 = _MXC_BUILD_GPIO_PIN(1, 11, 0x3c, 0x254),
++	MX25_PIN_EB0 = _MXC_BUILD_GPIO_PIN(1, 12, 0x40, 0x258),
++	MX25_PIN_EB1 = _MXC_BUILD_GPIO_PIN(1, 13, 0x44, 0x25c),
++	MX25_PIN_OE =  _MXC_BUILD_GPIO_PIN(1, 14, 0x48, 0x260),
++	MX25_PIN_CS0 = _MXC_BUILD_GPIO_PIN(3, 2, 0x4c, 0x0),
++	MX25_PIN_CS1 = _MXC_BUILD_GPIO_PIN(3, 3, 0x50, 0x0),
++	MX25_PIN_CS4 = _MXC_BUILD_GPIO_PIN(2, 20, 0x54, 0x264),
++	MX25_PIN_CS5 = _MXC_BUILD_GPIO_PIN(2, 21, 0x58, 0x268),
++	MX25_PIN_NF_CE0 = _MXC_BUILD_GPIO_PIN(2, 22, 0x5c, 0x26c),
++	MX25_PIN_ECB = _MXC_BUILD_GPIO_PIN(2, 23, 0x60, 0x270),
++	MX25_PIN_LBA = _MXC_BUILD_GPIO_PIN(2, 24, 0x64, 0x274),
++	MX25_PIN_BCLK = _MXC_BUILD_GPIO_PIN(3, 4, 0x68, 0x0),
++	MX25_PIN_RW = _MXC_BUILD_GPIO_PIN(2, 25, 0x6c, 0x278),
++	MX25_PIN_NFWE_B = _MXC_BUILD_GPIO_PIN(2, 26, 0x70, 0x0),
++	MX25_PIN_NFRE_B = _MXC_BUILD_GPIO_PIN(2, 27, 0x74, 0x0),
++	MX25_PIN_NFALE = _MXC_BUILD_GPIO_PIN(2, 28, 0x78, 0x0),
++	MX25_PIN_NFCLE = _MXC_BUILD_GPIO_PIN(2, 29, 0x7c, 0x0),
++	MX25_PIN_NFWP_B = _MXC_BUILD_GPIO_PIN(2, 30, 0x80, 0x0),
++	MX25_PIN_NFRB = _MXC_BUILD_GPIO_PIN(2, 31, 0x84, 0x27c),
++	MX25_PIN_D15 = _MXC_BUILD_GPIO_PIN(3, 5, 0x88, 0x280),
++	MX25_PIN_D14 = _MXC_BUILD_GPIO_PIN(3, 6, 0x8c, 0x284),
++	MX25_PIN_D13 = _MXC_BUILD_GPIO_PIN(3, 7, 0x90, 0x288),
++	MX25_PIN_D12 = _MXC_BUILD_GPIO_PIN(3, 8, 0x94, 0x28c),
++	MX25_PIN_D11 = _MXC_BUILD_GPIO_PIN(3, 9, 0x98, 0x290),
++	MX25_PIN_D10 = _MXC_BUILD_GPIO_PIN(3, 10, 0x9c, 0x294),
++	MX25_PIN_D9 = _MXC_BUILD_GPIO_PIN(3, 11, 0xa0, 0x298),
++	MX25_PIN_D8 = _MXC_BUILD_GPIO_PIN(3, 12, 0xa4, 0x29c),
++	MX25_PIN_D7 = _MXC_BUILD_GPIO_PIN(3, 13, 0xa8, 0x2a0),
++	MX25_PIN_D6 = _MXC_BUILD_GPIO_PIN(3, 14, 0xac, 0x2a4),
++	MX25_PIN_D5 = _MXC_BUILD_GPIO_PIN(3, 15, 0xb0, 0x2a8),
++	MX25_PIN_D4 = _MXC_BUILD_GPIO_PIN(3, 16, 0xb4, 0x2ac),
++	MX25_PIN_D3 = _MXC_BUILD_GPIO_PIN(3, 17, 0xb8, 0x2b0),
++	MX25_PIN_D2 = _MXC_BUILD_GPIO_PIN(3, 18, 0xbc, 0x2b4),
++	MX25_PIN_D1 = _MXC_BUILD_GPIO_PIN(3, 19, 0xc0, 0x2b8),
++	MX25_PIN_D0 = _MXC_BUILD_GPIO_PIN(3, 20, 0xc4, 0x2bc),
++	MX25_PIN_LD0 = _MXC_BUILD_GPIO_PIN(1, 15, 0xc8, 0x2c0),
++	MX25_PIN_LD1 = _MXC_BUILD_GPIO_PIN(1, 16, 0xcc, 0x2c4),
++	MX25_PIN_LD2 = _MXC_BUILD_GPIO_PIN(1, 17, 0xd0, 0x2c8),
++	MX25_PIN_LD3 = _MXC_BUILD_GPIO_PIN(1, 18, 0xd4, 0x2cc),
++	MX25_PIN_LD4 = _MXC_BUILD_GPIO_PIN(1, 19, 0xd8, 0x2d0),
++	MX25_PIN_LD5 = _MXC_BUILD_GPIO_PIN(0, 19, 0xdc, 0x2d4),
++	MX25_PIN_LD6 = _MXC_BUILD_GPIO_PIN(0, 20, 0xe0, 0x2d8),
++	MX25_PIN_LD7 = _MXC_BUILD_GPIO_PIN(0, 21, 0xe4, 0x2dc),
++	MX25_PIN_LD8 = _MXC_BUILD_NON_GPIO_PIN(0xe8, 0x2e0),
++	MX25_PIN_LD9 = _MXC_BUILD_NON_GPIO_PIN(0xec, 0x2e4),
++	MX25_PIN_LD10 = _MXC_BUILD_NON_GPIO_PIN(0xf0, 0x2e8),
++	MX25_PIN_LD11 = _MXC_BUILD_NON_GPIO_PIN(0xf4, 0x2ec),
++	MX25_PIN_LD12 = _MXC_BUILD_NON_GPIO_PIN(0xf8, 0x2f0),
++	MX25_PIN_LD13 = _MXC_BUILD_NON_GPIO_PIN(0xfc, 0x2f4),
++	MX25_PIN_LD14 = _MXC_BUILD_NON_GPIO_PIN(0x100, 0x2f8),
++	MX25_PIN_LD15 = _MXC_BUILD_NON_GPIO_PIN(0x104, 0x2fc),
++	MX25_PIN_HSYNC = _MXC_BUILD_GPIO_PIN(0, 22, 0x108, 0x300),
++	MX25_PIN_VSYNC = _MXC_BUILD_GPIO_PIN(0, 23, 0x10c, 0x304),
++	MX25_PIN_LSCLK = _MXC_BUILD_GPIO_PIN(0, 24, 0x110, 0x308),
++	MX25_PIN_OE_ACD = _MXC_BUILD_GPIO_PIN(0, 25, 0x114, 0x30c),
++	MX25_PIN_CONTRAST = _MXC_BUILD_NON_GPIO_PIN(0x118, 0x310),
++	MX25_PIN_PWM = _MXC_BUILD_GPIO_PIN(0, 26, 0x11c, 0x314),
++	MX25_PIN_CSI_D2 = _MXC_BUILD_GPIO_PIN(0, 27, 0x120, 0x318),
++	MX25_PIN_CSI_D3 = _MXC_BUILD_GPIO_PIN(0, 28, 0x124, 0x31c),
++	MX25_PIN_CSI_D4 = _MXC_BUILD_GPIO_PIN(0, 29, 0x128, 0x320),
++	MX25_PIN_CSI_D5 = _MXC_BUILD_GPIO_PIN(0, 30, 0x12c, 0x324),
++	MX25_PIN_CSI_D6 = _MXC_BUILD_GPIO_PIN(0, 31, 0x130, 0x328),
++	MX25_PIN_CSI_D7 = _MXC_BUILD_GPIO_PIN(0, 6, 0x134, 0x32c),
++	MX25_PIN_CSI_D8 = _MXC_BUILD_GPIO_PIN(0, 7, 0x138, 0x330),
++	MX25_PIN_CSI_D9 = _MXC_BUILD_GPIO_PIN(3, 21, 0x13c, 0x334),
++	MX25_PIN_CSI_MCLK = _MXC_BUILD_GPIO_PIN(0, 8, 0x140, 0x338),
++	MX25_PIN_CSI_VSYNC = _MXC_BUILD_GPIO_PIN(0, 9, 0x144, 0x33c),
++	MX25_PIN_CSI_HSYNC = _MXC_BUILD_GPIO_PIN(0, 10, 0x148, 0x340),
++	MX25_PIN_CSI_PIXCLK = _MXC_BUILD_GPIO_PIN(0, 11, 0x14c, 0x344),
++	MX25_PIN_I2C1_CLK = _MXC_BUILD_GPIO_PIN(0, 12, 0x150, 0x348),
++	MX25_PIN_I2C1_DAT = _MXC_BUILD_GPIO_PIN(0, 13, 0x154, 0x34c),
++	MX25_PIN_CSPI1_MOSI = _MXC_BUILD_GPIO_PIN(0, 14, 0x158, 0x350),
++	MX25_PIN_CSPI1_MISO = _MXC_BUILD_GPIO_PIN(0, 15, 0x15c, 0x354),
++	MX25_PIN_CSPI1_SS0 = _MXC_BUILD_GPIO_PIN(0, 16, 0x160, 0x358),
++	MX25_PIN_CSPI1_SS1 = _MXC_BUILD_GPIO_PIN(0, 17, 0x164, 0x35c),
++	MX25_PIN_CSPI1_SCLK = _MXC_BUILD_GPIO_PIN(0, 18, 0x168, 0x360),
++	MX25_PIN_CSPI1_RDY = _MXC_BUILD_GPIO_PIN(1, 22, 0x16c, 0x364),
++	MX25_PIN_UART1_RXD = _MXC_BUILD_GPIO_PIN(3, 22, 0x170, 0x368),
++	MX25_PIN_UART1_TXD = _MXC_BUILD_GPIO_PIN(3, 23, 0x174, 0x36c),
++	MX25_PIN_UART1_RTS = _MXC_BUILD_GPIO_PIN(3, 24, 0x178, 0x370),
++	MX25_PIN_UART1_CTS = _MXC_BUILD_GPIO_PIN(3, 25, 0x17c, 0x374),
++	MX25_PIN_UART2_RXD = _MXC_BUILD_GPIO_PIN(3, 26, 0x180, 0x378),
++	MX25_PIN_UART2_TXD = _MXC_BUILD_GPIO_PIN(3, 27, 0x184, 0x37c),
++	MX25_PIN_UART2_RTS = _MXC_BUILD_GPIO_PIN(3, 28, 0x188, 0x380),
++	MX25_PIN_UART2_CTS = _MXC_BUILD_GPIO_PIN(3, 29, 0x18c, 0x384),
++	MX25_PIN_SD1_CMD = _MXC_BUILD_GPIO_PIN(1, 23, 0x190, 0x388),
++	MX25_PIN_SD1_CLK = _MXC_BUILD_GPIO_PIN(1, 24, 0x194, 0x38c),
++	MX25_PIN_SD1_DATA0 = _MXC_BUILD_GPIO_PIN(1, 25, 0x198, 0x390),
++	MX25_PIN_SD1_DATA1 = _MXC_BUILD_GPIO_PIN(1, 26, 0x19c, 0x394),
++	MX25_PIN_SD1_DATA2 = _MXC_BUILD_GPIO_PIN(1, 27, 0x1a0, 0x398),
++	MX25_PIN_SD1_DATA3 = _MXC_BUILD_GPIO_PIN(1, 28, 0x1a4, 0x39c),
++	MX25_PIN_KPP_ROW0 = _MXC_BUILD_GPIO_PIN(1, 29, 0x1a8, 0x3a0),
++	MX25_PIN_KPP_ROW1 = _MXC_BUILD_GPIO_PIN(1, 30, 0x1ac, 0x3a4),
++	MX25_PIN_KPP_ROW2 = _MXC_BUILD_GPIO_PIN(1, 31, 0x1b0, 0x3a8),
++	MX25_PIN_KPP_ROW3 = _MXC_BUILD_GPIO_PIN(2, 0, 0x1b4, 0x3ac),
++	MX25_PIN_KPP_COL0 = _MXC_BUILD_GPIO_PIN(2, 1, 0x1b8, 0x3b0),
++	MX25_PIN_KPP_COL1 = _MXC_BUILD_GPIO_PIN(2, 2, 0x1bc, 0x3b4),
++	MX25_PIN_KPP_COL2 = _MXC_BUILD_GPIO_PIN(2, 3, 0x1c0, 0x3b8),
++	MX25_PIN_KPP_COL3 = _MXC_BUILD_GPIO_PIN(2, 4, 0x1c4, 0x3bc),
++	MX25_PIN_FEC_MDC = _MXC_BUILD_GPIO_PIN(2, 5, 0x1c8, 0x3c0),
++	MX25_PIN_FEC_MDIO = _MXC_BUILD_GPIO_PIN(2, 6, 0x1cc, 0x3c4),
++	MX25_PIN_FEC_TDATA0 = _MXC_BUILD_GPIO_PIN(2, 7, 0x1d0, 0x3c8),
++	MX25_PIN_FEC_TDATA1 = _MXC_BUILD_GPIO_PIN(2, 8, 0x1d4, 0x3cc),
++	MX25_PIN_FEC_TX_EN = _MXC_BUILD_GPIO_PIN(2, 9, 0x1d8, 0x3d0),
++	MX25_PIN_FEC_RDATA0 = _MXC_BUILD_GPIO_PIN(2, 10, 0x1dc, 0x3d4),
++	MX25_PIN_FEC_RDATA1 = _MXC_BUILD_GPIO_PIN(2, 11, 0x1e0, 0x3d8),
++	MX25_PIN_FEC_RX_DV = _MXC_BUILD_GPIO_PIN(2, 12, 0x1e4, 0x3dc),
++	MX25_PIN_FEC_TX_CLK = _MXC_BUILD_GPIO_PIN(2, 13, 0x1e8, 0x3e0),
++	MX25_PIN_RTCK = _MXC_BUILD_GPIO_PIN(2, 14, 0x1ec, 0x3e4),
++	MX25_PIN_DE_B = _MXC_BUILD_GPIO_PIN(1, 20, 0x1f0, 0x3ec),
++	MX25_PIN_TDO = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3e8),
++	MX25_PIN_GPIO_A = _MXC_BUILD_GPIO_PIN(0, 0, 0x1f4, 0x3f0),
++	MX25_PIN_GPIO_B = _MXC_BUILD_GPIO_PIN(0, 1, 0x1f8, 0x3f4),
++	MX25_PIN_GPIO_C = _MXC_BUILD_GPIO_PIN(0, 2, 0x1fc, 0x3f8),
++	MX25_PIN_GPIO_D = _MXC_BUILD_GPIO_PIN(0, 3, 0x200, 0x3fc),
++	MX25_PIN_GPIO_E = _MXC_BUILD_GPIO_PIN(0, 4, 0x204, 0x400),
++	MX25_PIN_GPIO_F = _MXC_BUILD_GPIO_PIN(0, 5, 0x208, 0x404),
++	MX25_PIN_EXT_ARMCLK = _MXC_BUILD_GPIO_PIN(2, 15, 0x20c, 0x0),
++	MX25_PIN_UPLL_BYPCLK = _MXC_BUILD_GPIO_PIN(2, 16, 0x210, 0x0),
++	MX25_PIN_VSTBY_REQ = _MXC_BUILD_GPIO_PIN(2, 17, 0x214, 0x408),
++	MX25_PIN_VSTBY_ACK = _MXC_BUILD_GPIO_PIN(2, 18, 0x218, 0x40c),
++	MX25_PIN_POWER_FAIL = _MXC_BUILD_GPIO_PIN(2, 19, 0x21c, 0x410),
++	MX25_PIN_CLKO = _MXC_BUILD_GPIO_PIN(1, 21, 0x220, 0x414),
++	MX25_PIN_BOOT_MODE0 = _MXC_BUILD_GPIO_PIN(3, 30, 0x224, 0x0),
++	MX25_PIN_BOOT_MODE1 = _MXC_BUILD_GPIO_PIN(3, 31, 0x228, 0x0),
++
++	MX25_PIN_CTL_GRP_DVS_MISC = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x418),
++	MX25_PIN_CTL_GRP_DSE_FEC = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x41c),
++	MX25_PIN_CTL_GRP_DVS_JTAG = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x420),
++	MX25_PIN_CTL_GRP_DSE_NFC = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x424),
++	MX25_PIN_CTL_GRP_DSE_CSI = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x428),
++	MX25_PIN_CTL_GRP_DSE_WEIM = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x42c),
++	MX25_PIN_CTL_GRP_DSE_DDR = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x430),
++	MX25_PIN_CTL_GRP_DVS_CRM = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x434),
++	MX25_PIN_CTL_GRP_DSE_KPP = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x438),
++	MX25_PIN_CTL_GRP_DSE_SDHC1 = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x43c),
++	MX25_PIN_CTL_GRP_DSE_LCD = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x440),
++	MX25_PIN_CTL_GRP_DSE_UART = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x444),
++	MX25_PIN_CTL_GRP_DVS_NFC = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x448),
++	MX25_PIN_CTL_GRP_DVS_CSI = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x44c),
++	MX25_PIN_CTL_GRP_DSE_CSPI1 = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x450),
++	MX25_PIN_CTL_GRP_DDRTYPE = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x454),
++	MX25_PIN_CTL_GRP_DVS_SDHC1 = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x458),
++	MX25_PIN_CTL_GRP_DVS_LCD = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x45c)
++} iomux_pin_name_t;
++
++#endif
++#endif
+diff --git a/include/asm-arm/arch-mx25/mxc_nand.h b/include/asm-arm/arch-mx25/mxc_nand.h
+new file mode 100644
+index 0000000..20a146c
+--- /dev/null
++++ b/include/asm-arm/arch-mx25/mxc_nand.h
+@@ -0,0 +1,198 @@
++/*
++ * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @file mxc_nd2.h
++ *
++ * @brief This file contains the NAND Flash Controller register information.
++ *
++ *
++ * @ingroup NAND_MTD
++ */
++
++#ifndef __MXC_NAND_H__
++#define __MXC_NAND_H__
++
++#include <asm/arch/mx25-regs.h>
++
++#define IS_2K_PAGE_NAND		((mtd->writesize / info->num_of_intlv) \
++						== NAND_PAGESIZE_2KB)
++#define IS_4K_PAGE_NAND		((mtd->writesize / info->num_of_intlv) \
++					== NAND_PAGESIZE_4KB)
++#define IS_LARGE_PAGE_NAND	((mtd->writesize / info->num_of_intlv) > 512)
++
++#define NAND_PAGESIZE_2KB	2048
++#define NAND_PAGESIZE_4KB	4096
++#define NAND_MAX_PAGESIZE	4096
++
++/*
++ * Addresses for NFC registers
++ */
++#define NFC_REG_BASE		(NFC_BASE_ADDR + 0x1000)
++#define NFC_BUF_ADDR		(NFC_REG_BASE + 0xE04)
++#define NFC_FLASH_ADDR		(NFC_REG_BASE + 0xE06)
++#define NFC_FLASH_CMD		(NFC_REG_BASE + 0xE08)
++#define NFC_CONFIG		(NFC_REG_BASE + 0xE0A)
++#define NFC_ECC_STATUS_RESULT	(NFC_REG_BASE + 0xE0C)
++#define NFC_SPAS		(NFC_REG_BASE + 0xE10)
++#define NFC_WRPROT		(NFC_REG_BASE + 0xE12)
++#define NFC_UNLOCKSTART_BLKADDR	(NFC_REG_BASE + 0xE20)
++#define NFC_UNLOCKEND_BLKADDR	(NFC_REG_BASE + 0xE22)
++#define NFC_CONFIG1		(NFC_REG_BASE + 0xE1A)
++#define NFC_CONFIG2		(NFC_REG_BASE + 0xE1C)
++
++/*!
++ * Addresses for NFC RAM BUFFER Main area 0
++ */
++#define MAIN_AREA0	(u16 *)(NFC_BASE_ADDR + 0x000)
++#define MAIN_AREA1	(u16 *)(NFC_BASE_ADDR + 0x200)
++
++/*!
++ * Addresses for NFC SPARE BUFFER Spare area 0
++ */
++#define SPARE_AREA0	(u16 *)(NFC_BASE_ADDR + 0x1000)
++#define SPARE_LEN	64
++#define SPARE_COUNT	8
++#define SPARE_SIZE	(SPARE_LEN * SPARE_COUNT)
++
++
++#define SPAS_SHIFT	(0)
++#define SPAS_MASK	(0xFF00)
++#define IS_4BIT_ECC	\
++	((raw_read(REG_NFC_ECC_MODE) & NFC_ECC_MODE_4) >> 0)
++
++#define NFC_SET_SPAS(v)			\
++	raw_write(((raw_read(REG_NFC_SPAS) & SPAS_MASK) | \
++	((v<<SPAS_SHIFT))), \
++	REG_NFC_SPAS)
++
++#define NFC_SET_ECC_MODE(v) \
++do { \
++	if ((v) == NFC_SPAS_218)  { \
++		raw_write((raw_read(REG_NFC_ECC_MODE) & \
++		NFC_ECC_MODE_8), \
++		REG_NFC_ECC_MODE); \
++	} else { \
++		raw_write((raw_read(REG_NFC_ECC_MODE) | \
++		NFC_ECC_MODE_4), \
++		REG_NFC_ECC_MODE); \
++	} \
++} while (0)
++
++#define GET_ECC_STATUS() \
++	__raw_readl(REG_NFC_ECC_STATUS_RESULT);
++
++#define NFC_SET_NFMS(v)	\
++do { \
++	(NFMS |= (v)); \
++	if (((v) & (1 << NFMS_NF_PG_SZ))) { \
++		if (IS_2K_PAGE_NAND) { \
++			NFC_SET_SPAS(NFC_SPAS_64); \
++		} else if (IS_4K_PAGE_NAND) { \
++			NFC_SET_SPAS(NFC_SPAS_128); \
++		} else { \
++			NFC_SET_SPAS(NFC_SPAS_16); \
++		} \
++		NFC_SET_ECC_MODE(NFC_SPAS_128); \
++	} \
++} while (0)
++
++
++#define WRITE_NFC_IP_REG(val, reg) \
++	raw_write((raw_read(REG_NFC_OPS_STAT) & ~NFC_OPS_STAT), \
++	REG_NFC_OPS_STAT)
++
++#define GET_NFC_ECC_STATUS() \
++	raw_read(REG_NFC_ECC_STATUS_RESULT);
++
++/*!
++ * Set INT to 0, Set 1 to specific operation bit, rest to 0 in LAUNCH_NFC
++ * Register for Specific operation
++ */
++#define NFC_CMD			0x1
++#define NFC_ADDR		0x2
++#define NFC_INPUT		0x4
++#define NFC_OUTPUT		0x8
++#define NFC_ID			0x10
++#define NFC_STATUS		0x20
++
++/* Bit Definitions */
++#define NFC_OPS_STAT			(1 << 15)
++#define NFC_SP_EN			(1 << 2)
++#define NFC_ECC_EN			(1 << 3)
++#define NFC_INT_MSK			(1 << 4)
++#define NFC_BIG				(1 << 5)
++#define NFC_RST				(1 << 6)
++#define NFC_CE				(1 << 7)
++#define NFC_ONE_CYCLE       		(1 << 8)
++#define NFC_BLS_LOCKED			0
++#define NFC_BLS_LOCKED_DEFAULT		1
++#define NFC_BLS_UNLCOKED		2
++#define NFC_WPC_LOCK_TIGHT		1
++#define NFC_WPC_LOCK			(1 << 1)
++#define NFC_WPC_UNLOCK			(1 << 2)
++#define NFC_FLASH_ADDR_SHIFT 		0
++#define NFC_UNLOCK_END_ADDR_SHIFT	0
++
++#define NFC_ECC_MODE_4			(1<<0)
++#define NFC_ECC_MODE_8			 (~(1<<0))
++#define NFC_SPAS_16			 8
++#define NFC_SPAS_64			 32
++#define NFC_SPAS_128			 64
++#define NFC_SPAS_218			 109
++
++/* NFC Register Mapping */
++#define REG_NFC_OPS_STAT		NFC_CONFIG2
++#define REG_NFC_INTRRUPT		NFC_CONFIG1
++#define REG_NFC_FLASH_ADDR		NFC_FLASH_ADDR
++#define REG_NFC_FLASH_CMD		NFC_FLASH_CMD
++#define REG_NFC_OPS			NFC_CONFIG2
++#define REG_NFC_SET_RBA			NFC_BUF_ADDR
++#define REG_NFC_ECC_EN			NFC_CONFIG1
++#define REG_NFC_ECC_STATUS_RESULT  	NFC_ECC_STATUS_RESULT
++#define REG_NFC_CE			NFC_CONFIG1
++#define REG_NFC_SP_EN			NFC_CONFIG1
++#define REG_NFC_BLS			NFC_CONFIG
++#define REG_NFC_WPC			NFC_WRPROT
++#define REG_START_BLKADDR		NFC_UNLOCKSTART_BLKADDR
++#define REG_END_BLKADDR			NFC_UNLOCKEND_BLKADDR
++#define REG_NFC_RST			NFC_CONFIG1
++#define REG_NFC_ECC_MODE		NFC_CONFIG1
++#define REG_NFC_SPAS			NFC_SPAS
++
++
++/* NFC V1/V2 Specific MACRO functions definitions */
++
++#define raw_write(v, a)		__raw_writew(v, a)
++#define raw_read(a)		__raw_readw(a)
++
++#define NFC_SET_BLS(val)	val
++
++#define UNLOCK_ADDR(start_addr, end_addr) \
++{ \
++	raw_write(start_addr, REG_START_BLKADDR); \
++	raw_write(end_addr, REG_END_BLKADDR); \
++}
++
++#define NFC_SET_NFC_ACTIVE_CS(val)
++#define NFC_SET_WPC(val)	val
++
++/* NULL Definitions */
++#define ACK_OPS
++#define NFC_SET_RBA(val) raw_write(val, REG_NFC_SET_RBA);
++
++#define READ_PAGE()	send_read_page(0)
++#define PROG_PAGE()	send_prog_page(0)
++#define CHECK_NFC_RB	1
++
++#endif				/* __MXC_NAND_H__ */
+diff --git a/include/asm-arm/fec.h b/include/asm-arm/fec.h
+index 58b4545..fd2cc10 100644
+--- a/include/asm-arm/fec.h
++++ b/include/asm-arm/fec.h
+@@ -152,66 +152,10 @@ typedef struct fec {
+ 	u32 erdsr;
+ 	u32 etdsr;
+ 	u32 emrbr;
+-	u32 resv12[0x1D];
+-	u32 rmon_t_drop;
+-	u32 rmon_t_packets;
+-	u32 rmon_t_bc_pkt;
+-	u32 rmon_t_mc_pkt;
+-	u32 rmon_t_crc_align;
+-	u32 rmon_t_undersize;
+-	u32 rmon_t_oversize;
+-	u32 rmon_t_frag;
+-	u32 rmon_t_jab;
+-	u32 rmon_t_col;
+-	u32 rmon_t_p64;
+-	u32 rmon_t_p65to127;
+-	u32 rmon_t_p128to255;
+-	u32 rmon_t_p256to511;
+-	u32 rmon_t_p512to1023;
+-	u32 rmon_t_p1024to2047;
+-	u32 rmon_t_p_gte2048;
+-	u32 rmon_t_octets;
+-
+-	u32 ieee_t_drop;
+-	u32 ieee_t_frame_ok;
+-	u32 ieee_t_1col;
+-	u32 ieee_t_mcol;
+-	u32 ieee_t_def;
+-	u32 ieee_t_lcol;
+-	u32 ieee_t_excol;
+-	u32 ieee_t_macerr;
+-	u32 ieee_t_cserr;
+-	u32 ieee_t_sqe;
+-	u32 ieee_t_fdxfc;
+-	u32 ieee_t_octets_ok;
+-	u32 resv13[0x02];
+-
+-	u32 rmon_r_drop;
+-	u32 rmon_r_packets;
+-	u32 rmon_r_bc_pkt;
+-	u32 rmon_r_mc_pkt;
+-	u32 rmon_r_crc_align;
+-	u32 rmon_r_undersize;
+-	u32 rmon_r_oversize;
+-	u32 rmon_r_frag;
+-	u32 rmon_r_jab;
+-	u32 rmon_r_resvd_0;
+-	u32 rmon_r_p64;
+-	u32 rmon_r_p65to127;
+-	u32 rmon_r_p128to255;
+-	u32 rmon_r_p256to511;
+-	u32 rmon_r_p512to1023;
+-	u32 rmon_r_p1024to2047;
+-	u32 rmon_r_p_gte2048;
+-	u32 rmon_r_octets;
+-
+-	u32 ieee_r_drop;
+-	u32 ieee_r_frame_ok;
+-	u32 ieee_r_crc;
+-	u32 ieee_r_align;
+-	u32 ieee_r_macerr;
+-	u32 ieee_r_fdxfc;
+-	u32 ieee_r_octets_ok;
++	u32 resv12[93];
++	u32 fec_miigsk_cfgr;
++	u32 fec_reserved13;
++	u32 fec_miigsk_enr;
+ } fec_t;
+ 
+ /*********************************************************************
+diff --git a/post/board/netta/dsp.c b/post/board/netta/dsp.c
+index 438ced5..92e2a8f 100644
+--- a/post/board/netta/dsp.c
++++ b/post/board/netta/dsp.c
+@@ -22,7 +22,9 @@
+  */
+ 
+ #include <common.h>
++#include <arm926ejs.h>
+ 
++#if defined(CONFIG_INTEGRATOR) || defined(CONFIG_MX25)
+ /*
+  * DSP test
+  *
+-- 
+1.5.4.4
+

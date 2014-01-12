@@ -1,0 +1,29 @@
+From 68f5b3775e4bca54bb6cfef4d798c5e65798ab88 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 5 Jan 2011 18:56:52 +0800
+Subject: [PATCH] ENGR00137500-4 MX5 defconfig:Build OV5640/OV5642 camera as module
+
+This patch adds OV5640 and OV5642 camera driver support in
+imx5_defconfig. They will be built as modules.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index cc8c1bc..fa4ea79 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1451,6 +1451,8 @@ CONFIG_VIDEO_MXC_IPU_CAMERA=y
+ # CONFIG_MXC_CAMERA_MICRON111 is not set
+ # CONFIG_MXC_CAMERA_OV2640 is not set
+ CONFIG_MXC_CAMERA_OV3640=m
++CONFIG_MXC_CAMERA_OV5640=m
++CONFIG_MXC_CAMERA_OV5642=m
+ CONFIG_MXC_TVIN_ADV7180=m
+ CONFIG_MXC_IPU_PRP_VF_SDC=m
+ CONFIG_MXC_IPU_PRP_ENC=m
+-- 
+1.5.4.4
+

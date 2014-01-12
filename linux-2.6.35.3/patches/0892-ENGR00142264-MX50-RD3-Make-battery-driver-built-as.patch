@@ -1,0 +1,37 @@
+From b30a4b5cb95e54fb036e6835ed8cf40fb4b2298d Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Mon, 18 Apr 2011 16:03:58 +0800
+Subject: [PATCH] ENGR00142264 MX50 RD3: Make battery driver built as module
+
+build battery driver as module
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index de0478e..be7206c 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Thu Mar 24 19:46:10 2011
++# Mon Apr 18 16:01:52 2011
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -2105,7 +2105,7 @@ CONFIG_MXC_MC13892_CONNECTIVITY=y
+ CONFIG_MXC_MC13892_POWER=y
+ CONFIG_MXC_MC34708_ADC=y
+ CONFIG_MXC_MC34708_RTC=y
+-# CONFIG_MXC_MC34708_BATTERY is not set
++CONFIG_MXC_MC34708_BATTERY=m
+ # CONFIG_MXC_PMIC_MC9S08DZ60 is not set
+ 
+ #
+-- 
+1.5.4.4
+

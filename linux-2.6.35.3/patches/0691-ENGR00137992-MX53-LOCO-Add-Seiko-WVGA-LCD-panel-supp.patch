@@ -1,0 +1,46 @@
+From e0199989aaf74fbd41c6742d73ff9bc491c7c06e Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Fri, 14 Jan 2011 12:40:18 +0800
+Subject: [PATCH] ENGR00137992 MX53 LOCO:Add Seiko WVGA LCD panel support
+
+This patch adds Seiko WVGA LCD panel support.
+Note that you need to populate D4 on the LCD board.
+You need to use this fb videomode:
+video=mxcdi0fb:RGB24,SEIKO-WVGA
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_loco.c |   10 ++++++++++
+ 1 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 45e8317..87df2bc 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -292,6 +292,12 @@ static struct fb_videomode video_modes[] = {
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
++	 /* 800x480 @ 60 Hz , pixel clk @ 32MHz */
++	 "SEIKO-WVGA", 60, 800, 480, 29850, 89, 164, 23, 10, 10, 10,
++	 FB_SYNC_CLK_LAT_FALL,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
+ 	 "XGA", 60, 1024, 768, 15385,
+ 	 220, 40,
+ 	 21, 7,
+@@ -821,6 +827,10 @@ static void __init mx53_loco_io_init(void)
+ 	gpio_direction_output(DISP0_RESET, 0);
+ 	gpio_request(DISP0_DET_INT, "disp0-detect");
+ 	gpio_direction_input(DISP0_DET_INT);
++
++	/* LCD panel power enable */
++	gpio_request(DISP0_POWER_EN, "disp0-power-en");
++	gpio_direction_output(DISP0_POWER_EN, 1);
+ }
+ 
+ /*!
+-- 
+1.5.4.4
+

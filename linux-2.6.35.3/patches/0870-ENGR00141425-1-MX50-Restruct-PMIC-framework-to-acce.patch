@@ -1,0 +1,1420 @@
+From fb123eee8b22774f491c0123cf4b6fb2befdd3e6 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Fri, 1 Apr 2011 17:08:28 +0800
+Subject: [PATCH] ENGR00141425-1 MX50: Restruct PMIC framework to accept new PMIC Ripley
+
+- make MC13892 and MC34708 can co-exist, only one attached at run-time.
+- make the change as least as possible.
+- expect no functional impact (only SPI interface verified).
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/mxc/pmic/core/Makefile             |   11 +-
+ drivers/mxc/pmic/core/mc13892.c            |  256 +++-------------------------
+ drivers/mxc/pmic/core/pmic.h               |   95 ++++-------
+ drivers/mxc/pmic/core/pmic_adc_interface.c |   57 ++++++
+ drivers/mxc/pmic/core/pmic_core_spi.c      |  101 ++++++++++--
+ drivers/mxc/pmic/core/pmic_external.c      |  193 +++++++++++++++++++--
+ drivers/mxc/pmic/mc13892/pmic_adc.c        |   93 ++++++-----
+ drivers/mxc/pmic/mc13892/pmic_battery.c    |   24 ++-
+ include/linux/mfd/mc13892/core.h           |   27 ++-
+ include/linux/pmic_adc.h                   |   31 +++-
+ include/linux/pmic_external.h              |   30 +++-
+ 11 files changed, 509 insertions(+), 409 deletions(-)
+
+diff --git a/drivers/mxc/pmic/core/Makefile b/drivers/mxc/pmic/core/Makefile
+index bb42231..e631939 100644
+--- a/drivers/mxc/pmic/core/Makefile
++++ b/drivers/mxc/pmic/core/Makefile
+@@ -4,11 +4,16 @@
+ obj-$(CONFIG_MXC_PMIC_MC13783) += pmic_mc13783_mod.o
+ pmic_mc13783_mod-objs := pmic_external.o pmic_event.o pmic_common.o pmic_core_spi.o mc13783.o
+ 
+-obj-$(CONFIG_MXC_PMIC_MC13892) += pmic_mc13892_mod.o
+-pmic_mc13892_mod-objs := pmic_external.o pmic_event.o pmic_common.o mc13892.o
++
++obj-$(CONFIG_MXC_PMIC)	+= pmic_mxc_mod.o
++pmic_mxc_mod-objs	:= pmic_external.o pmic_event.o pmic_common.o pmic_adc_interface.o
++
++ifneq ($(CONFIG_MXC_PMIC_MC13892),)
++pmic_mxc_mod-objs	+= mc13892.o
++endif
+ 
+ ifneq ($(CONFIG_MXC_PMIC_SPI),)
+-pmic_mc13892_mod-objs += pmic_core_spi.o
++pmic_mxc_mod-objs += pmic_core_spi.o
+ endif
+ 
+ ifneq ($(CONFIG_MXC_PMIC_I2C),)
+diff --git a/drivers/mxc/pmic/core/mc13892.c b/drivers/mxc/pmic/core/mc13892.c
+index a2cbb16..37a0a16 100644
+--- a/drivers/mxc/pmic/core/mc13892.c
++++ b/drivers/mxc/pmic/core/mc13892.c
+@@ -1,14 +1,19 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ /*!
+@@ -39,121 +44,11 @@
+ 
+ #include "pmic.h"
+ 
+-/*
+- * Defines
+- */
+-#define MC13892_I2C_RETRY_TIMES 10
+-#define MXC_PMIC_FRAME_MASK		0x00FFFFFF
+-#define MXC_PMIC_MAX_REG_NUM		0x3F
+-#define MXC_PMIC_REG_NUM_SHIFT		0x19
+-#define MXC_PMIC_WRITE_BIT_SHIFT		31
+-
+-static unsigned int events_enabled0;
+-static unsigned int events_enabled1;
+-static struct mxc_pmic pmic_drv_data;
+ #ifndef CONFIG_MXC_PMIC_I2C
+ struct i2c_client *mc13892_client;
+ #endif
+ 
+-int pmic_i2c_24bit_read(struct i2c_client *client, unsigned int reg_num,
+-			unsigned int *value)
+-{
+-	unsigned char buf[3];
+-	int ret;
+-	int i;
+-
+-	memset(buf, 0, 3);
+-	for (i = 0; i < MC13892_I2C_RETRY_TIMES; i++) {
+-		ret = i2c_smbus_read_i2c_block_data(client, reg_num, 3, buf);
+-		if (ret == 3)
+-			break;
+-		msleep(1);
+-	}
+-
+-	if (ret == 3) {
+-		*value = buf[0] << 16 | buf[1] << 8 | buf[2];
+-		return ret;
+-	} else {
+-		pr_err("24bit read error, ret = %d\n", ret);
+-		return -1;	/* return -1 on failure */
+-	}
+-}
+-
+-int pmic_i2c_24bit_write(struct i2c_client *client,
+-			 unsigned int reg_num, unsigned int reg_val)
+-{
+-	char buf[3];
+-	int ret;
+-	int i;
+-
+-	buf[0] = (reg_val >> 16) & 0xff;
+-	buf[1] = (reg_val >> 8) & 0xff;
+-	buf[2] = (reg_val) & 0xff;
+-
+-	for (i = 0; i < MC13892_I2C_RETRY_TIMES; i++) {
+-		ret = i2c_smbus_write_i2c_block_data(client, reg_num, 3, buf);
+-		if (ret == 0)
+-			break;
+-		msleep(1);
+-	}
+-	if (i == MC13892_I2C_RETRY_TIMES)
+-		pr_err("24bit write error, ret = %d\n", ret);
+-
+-	return ret;
+-}
+-
+-int pmic_read(int reg_num, unsigned int *reg_val)
+-{
+-	unsigned int frame = 0;
+-	int ret = 0;
+-
+-	if (pmic_drv_data.spi != NULL) {
+-		if (reg_num > MXC_PMIC_MAX_REG_NUM)
+-			return PMIC_ERROR;
+-
+-		frame |= reg_num << MXC_PMIC_REG_NUM_SHIFT;
+-
+-		ret = spi_rw(pmic_drv_data.spi, (u8 *) &frame, 1);
+-
+-		*reg_val = frame & MXC_PMIC_FRAME_MASK;
+-	} else {
+-		if (mc13892_client == NULL)
+-			return PMIC_ERROR;
+-
+-		if (pmic_i2c_24bit_read(mc13892_client, reg_num, reg_val) == -1)
+-			return PMIC_ERROR;
+-	}
+-
+-	return PMIC_SUCCESS;
+-}
+-
+-int pmic_write(int reg_num, const unsigned int reg_val)
+-{
+-	unsigned int frame = 0;
+-	int ret = 0;
+-
+-	if (pmic_drv_data.spi != NULL) {
+-		if (reg_num > MXC_PMIC_MAX_REG_NUM)
+-			return PMIC_ERROR;
+-
+-		frame |= (1 << MXC_PMIC_WRITE_BIT_SHIFT);
+-
+-		frame |= reg_num << MXC_PMIC_REG_NUM_SHIFT;
+-
+-		frame |= reg_val & MXC_PMIC_FRAME_MASK;
+-
+-		ret = spi_rw(pmic_drv_data.spi, (u8 *) &frame, 1);
+-
+-		return ret;
+-	} else {
+-		if (mc13892_client == NULL)
+-			return PMIC_ERROR;
+-
+-		return pmic_i2c_24bit_write(mc13892_client, reg_num, reg_val);
+-	}
+-}
+-
+-void *pmic_alloc_data(struct device *dev)
++void *mc13892_alloc_data(struct device *dev)
+ {
+ 	struct mc13892 *mc13892;
+ 
+@@ -165,26 +60,9 @@ void *pmic_alloc_data(struct device *dev)
+ 
+ 	return (void *)mc13892;
+ }
++EXPORT_SYMBOL(mc13892_alloc_data);
+ 
+-/*!
+- * This function initializes the SPI device parameters for this PMIC.
+- *
+- * @param    spi	the SPI slave device(PMIC)
+- *
+- * @return   None
+- */
+-int pmic_spi_setup(struct spi_device *spi)
+-{
+-	/* Setup the SPI slave i.e.PMIC */
+-	pmic_drv_data.spi = spi;
+-
+-	spi->mode = SPI_MODE_0 | SPI_CS_HIGH;
+-	spi->bits_per_word = 32;
+-
+-	return spi_setup(spi);
+-}
+-
+-int pmic_init_registers(void)
++int mc13892_init_registers(void)
+ {
+ 	CHECK_ERROR(pmic_write(REG_INT_MASK0, 0xFFFFFF));
+ 	CHECK_ERROR(pmic_write(REG_INT_MASK0, 0xFFFFFF));
+@@ -198,102 +76,7 @@ int pmic_init_registers(void)
+ 
+ 	return PMIC_SUCCESS;
+ }
+-
+-unsigned int pmic_get_active_events(unsigned int *active_events)
+-{
+-	unsigned int count = 0;
+-	unsigned int status0, status1;
+-	int bit_set;
+-
+-	pmic_read(REG_INT_STATUS0, &status0);
+-	pmic_read(REG_INT_STATUS1, &status1);
+-	pmic_write(REG_INT_STATUS0, status0);
+-	pmic_write(REG_INT_STATUS1, status1);
+-	status0 &= events_enabled0;
+-	status1 &= events_enabled1;
+-
+-	while (status0) {
+-		bit_set = ffs(status0) - 1;
+-		*(active_events + count) = bit_set;
+-		count++;
+-		status0 ^= (1 << bit_set);
+-	}
+-	while (status1) {
+-		bit_set = ffs(status1) - 1;
+-		*(active_events + count) = bit_set + 24;
+-		count++;
+-		status1 ^= (1 << bit_set);
+-	}
+-
+-	return count;
+-}
+-
+-#define EVENT_MASK_0			0x387fff
+-#define EVENT_MASK_1			0x1177ef
+-
+-int pmic_event_unmask(type_event event)
+-{
+-	unsigned int event_mask = 0;
+-	unsigned int mask_reg = 0;
+-	unsigned int event_bit = 0;
+-	int ret;
+-
+-	if (event < EVENT_1HZI) {
+-		mask_reg = REG_INT_MASK0;
+-		event_mask = EVENT_MASK_0;
+-		event_bit = (1 << event);
+-		events_enabled0 |= event_bit;
+-	} else {
+-		event -= 24;
+-		mask_reg = REG_INT_MASK1;
+-		event_mask = EVENT_MASK_1;
+-		event_bit = (1 << event);
+-		events_enabled1 |= event_bit;
+-	}
+-
+-	if ((event_bit & event_mask) == 0) {
+-		pr_debug("Error: unmasking a reserved/unused event\n");
+-		return PMIC_ERROR;
+-	}
+-
+-	ret = pmic_write_reg(mask_reg, 0, event_bit);
+-
+-	pr_debug("Enable Event : %d\n", event);
+-
+-	return ret;
+-}
+-
+-int pmic_event_mask(type_event event)
+-{
+-	unsigned int event_mask = 0;
+-	unsigned int mask_reg = 0;
+-	unsigned int event_bit = 0;
+-	int ret;
+-
+-	if (event < EVENT_1HZI) {
+-		mask_reg = REG_INT_MASK0;
+-		event_mask = EVENT_MASK_0;
+-		event_bit = (1 << event);
+-		events_enabled0 &= ~event_bit;
+-	} else {
+-		event -= 24;
+-		mask_reg = REG_INT_MASK1;
+-		event_mask = EVENT_MASK_1;
+-		event_bit = (1 << event);
+-		events_enabled1 &= ~event_bit;
+-	}
+-
+-	if ((event_bit & event_mask) == 0) {
+-		pr_debug("Error: masking a reserved/unused event\n");
+-		return PMIC_ERROR;
+-	}
+-
+-	ret = pmic_write_reg(mask_reg, event_bit, event_bit);
+-
+-	pr_debug("Disable Event : %d\n", event);
+-
+-	return ret;
+-}
++EXPORT_SYMBOL(mc13892_init_registers);
+ 
+ /*!
+  * This function returns the PMIC version in system.
+@@ -302,7 +85,7 @@ int pmic_event_mask(type_event event)
+  *
+  * @return       This function returns PMIC version.
+  */
+-void pmic_get_revision(pmic_version_t *ver)
++void mc13892_get_revision(pmic_version_t *ver)
+ {
+ 	int rev_id = 0;
+ 	int rev1 = 0;
+@@ -322,6 +105,7 @@ void pmic_get_revision(pmic_version_t *ver)
+ 	printk(KERN_INFO "mc13892 Rev %d.%d FinVer %x detected\n", rev1,
+ 	       rev2, finid);
+ }
++EXPORT_SYMBOL(mc13892_get_revision);
+ 
+ void mc13892_power_off(void)
+ {
+diff --git a/drivers/mxc/pmic/core/pmic.h b/drivers/mxc/pmic/core/pmic.h
+index d4ba347..b9a0ea3 100644
+--- a/drivers/mxc/pmic/core/pmic.h
++++ b/drivers/mxc/pmic/core/pmic.h
+@@ -1,15 +1,21 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
++
+ #ifndef __PMIC_H__
+ #define __PMIC_H__
+ 
+@@ -39,6 +45,21 @@ struct mxc_pmic {
+ 	struct spi_device *spi;
+ };
+ 
++struct pmic_internal {
++	const char *name;
++	void *(*pmic_alloc_data)(struct device *dev);
++	int (*pmic_init_registers)(void);
++	void (*pmic_get_revision)(pmic_version_t *ver);
++};
++
++#define _PMIC_INTERNAL_INITIALIZER(type)				\
++{									\
++	.name			= #type,				\
++	.pmic_alloc_data	= type ## _alloc_data,			\
++	.pmic_init_registers	= type ## _init_registers,		\
++	.pmic_get_revision	= type ## _get_revision,		\
++}
++
+ /*!
+  * This function is called to transfer data to PMIC on SPI.
+  *
+@@ -66,60 +87,6 @@ static inline int spi_rw(struct spi_device *spi, u8 * buf, size_t len)
+ 	return len - m.actual_length;
+ }
+ 
+-/*!
+- * This function returns the PMIC version in system.
+- *
+- * @param 	ver	pointer to the pmic_version_t structure
+- *
+- * @return       This function returns PMIC version.
+- */
+-void pmic_get_revision(pmic_version_t *ver);
+-
+-/*!
+- * This function initializes the SPI device parameters for this PMIC.
+- *
+- * @param    spi	the SPI slave device(PMIC)
+- *
+- * @return   None
+- */
+-int pmic_spi_setup(struct spi_device *spi);
+-
+-/*!
+- * This function initializes the PMIC registers.
+- *
+- * @return   None
+- */
+-int pmic_init_registers(void);
+-
+-/*!
+- * This function reads the interrupt status registers of PMIC
+- * and determine the current active events.
+- *
+- * @param 	active_events array pointer to be used to return active
+- *		event numbers.
+- *
+- * @return       This function returns PMIC version.
+- */
+-unsigned int pmic_get_active_events(unsigned int *active_events);
+-
+-/*!
+- * This function sets a bit in mask register of pmic to disable an event IT.
+- *
+- * @param	event 	the event to be masked
+- *
+- * @return     This function returns PMIC_SUCCESS on SUCCESS, error on FAILURE.
+- */
+-int pmic_event_mask(type_event event);
+-
+-/*!
+- * This function unsets a bit in mask register of pmic to unmask an event IT.
+- *
+- * @param	event 	the event to be unmasked
+- *
+- * @return    This function returns PMIC_SUCCESS on SUCCESS, error on FAILURE.
+- */
+-int pmic_event_unmask(type_event event);
+-
+ #ifdef CONFIG_MXC_PMIC_FIXARB
+ extern PMIC_STATUS pmic_fix_arbitration(struct spi_device *spi);
+ #else
+@@ -129,8 +96,6 @@ static inline PMIC_STATUS pmic_fix_arbitration(struct spi_device *spi)
+ }
+ #endif
+ 
+-void *pmic_alloc_data(struct device *dev);
+-
+ int pmic_start_event_thread(int irq_num);
+ 
+ void pmic_stop_event_thread(void);
+diff --git a/drivers/mxc/pmic/core/pmic_adc_interface.c b/drivers/mxc/pmic/core/pmic_adc_interface.c
+new file mode 100644
+index 0000000..ea6f0a0
+--- /dev/null
++++ b/drivers/mxc/pmic/core/pmic_adc_interface.c
+@@ -0,0 +1,57 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#include <linux/pmic_external.h>
++#include <linux/pmic_status.h>
++#include <linux/pmic_adc.h>
++
++#include "pmic.h"
++
++static struct pmic_adc_api *pmic_adc_apis;
++
++PMIC_STATUS pmic_adc_convert(t_channel channel, unsigned short *result)
++{
++	if (pmic_adc_apis && pmic_adc_apis->pmic_adc_convert)
++		return pmic_adc_apis->pmic_adc_convert(channel, result);
++
++	return PMIC_ERROR;
++}
++EXPORT_SYMBOL(pmic_adc_convert);
++
++PMIC_STATUS pmic_adc_get_touch_sample(t_touch_screen *ts_value, int wait)
++{
++	if (pmic_adc_apis && pmic_adc_apis->pmic_adc_get_touch_sample)
++		return pmic_adc_apis->pmic_adc_get_touch_sample(ts_value, wait);
++
++	return PMIC_ERROR;
++}
++EXPORT_SYMBOL(pmic_adc_get_touch_sample);
++
++int is_pmic_adc_ready(void)
++{
++	if (pmic_adc_apis && pmic_adc_apis->is_pmic_adc_ready)
++		return pmic_adc_apis->is_pmic_adc_ready();
++
++	return 0;
++}
++EXPORT_SYMBOL(is_pmic_adc_ready);
++
++void register_adc_apis(struct pmic_adc_api *papi)
++{
++	pmic_adc_apis = papi;
++}
+diff --git a/drivers/mxc/pmic/core/pmic_core_spi.c b/drivers/mxc/pmic/core/pmic_core_spi.c
+index 5461dbe..7357945 100644
+--- a/drivers/mxc/pmic/core/pmic_core_spi.c
++++ b/drivers/mxc/pmic/core/pmic_core_spi.c
+@@ -1,14 +1,19 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ /*!
+@@ -36,6 +41,8 @@
+ 
+ #include <asm/uaccess.h>
+ 
++#include <linux/mfd/mc13892/core.h>
++
+ #include "pmic.h"
+ 
+ /*
+@@ -80,6 +87,15 @@ static struct platform_device bleds_ldm = {
+ 	.id = 'b',
+ };
+ 
++enum pmic_id {
++	PMIC_ID_MC13892,
++	PMIC_ID_INVALID,
++};
++
++struct pmic_internal pmic_internal[] = {
++	[PMIC_ID_MC13892] = _PMIC_INTERNAL_INITIALIZER(mc13892),
++};
++
+ /*
+  * External functions
+  */
+@@ -89,6 +105,43 @@ extern void gpio_pmic_active(void);
+ extern irqreturn_t pmic_irq_handler(int irq, void *dev_id);
+ extern pmic_version_t mxc_pmic_version;
+ 
++static int get_index_pmic_internal(const char *name)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(pmic_internal); i++)
++		if (!strcmp(name, pmic_internal[i].name))
++			return i;
++
++	return PMIC_ID_INVALID;
++}
++
++static const char *get_client_device_name(const char *name, const char *format)
++{
++	char buf[30];
++	const char *client_devname;
++
++	if (snprintf(buf, sizeof(buf), format, name) > sizeof(buf))
++		return NULL;
++
++	client_devname = kmemdup(buf, strlen(buf) + 1, GFP_KERNEL);
++	if (!client_devname)
++		return NULL;
++
++	return client_devname;
++}
++
++static const char *get_chipname(struct spi_device *spidev)
++{
++	const struct spi_device_id *devid =
++		spi_get_device_id(spidev);
++
++	if (!devid)
++		return NULL;
++
++	return devid->name;
++}
++
+ /*!
+  * This function registers platform device structures for
+  * PMIC client drivers.
+@@ -156,6 +209,8 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ {
+ 	int ret = 0;
+ 	struct pmic_platform_data *plat_data = spi->dev.platform_data;
++	const char *name;
++	int pmic_index;
+ 
+ 	/* Initialize the PMIC parameters */
+ 	ret = pmic_spi_setup(spi);
+@@ -163,6 +218,16 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ 		return PMIC_ERROR;
+ 	}
+ 
++	name = get_chipname(spi);
++	if (!name)
++		return PMIC_ERROR;
++	pmic_index = get_index_pmic_internal(name);
++	if (pmic_index == PMIC_ID_INVALID)
++		return PMIC_ERROR;
++
++	adc_ldm.name = get_client_device_name(name, "%s_adc");
++	battery_ldm.name = get_client_device_name(name, "%s_battery");
++
+ 	/* Initialize the PMIC event handling */
+ 	pmic_event_list_init();
+ 
+@@ -170,7 +235,7 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ 	gpio_pmic_active();
+ 
+ 	/* Get the PMIC Version */
+-	pmic_get_revision(&mxc_pmic_version);
++	pmic_internal[pmic_index].pmic_get_revision(&mxc_pmic_version);
+ 	if (mxc_pmic_version.revision < 0) {
+ 		dev_err((struct device *)spi,
+ 			"PMIC not detected!!! Access Failed\n");
+@@ -181,10 +246,11 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ 			mxc_pmic_version.revision);
+ 	}
+ 
+-	spi_set_drvdata(spi, pmic_alloc_data(&(spi->dev)));
++	spi_set_drvdata(spi,
++			pmic_internal[pmic_index].pmic_alloc_data(&(spi->dev)));
+ 
+ 	/* Initialize the PMIC parameters */
+-	ret = pmic_init_registers();
++	ret = pmic_internal[pmic_index].pmic_init_registers();
+ 	if (ret != PMIC_SUCCESS) {
+ 		kfree(spi_get_drvdata(spi));
+ 		spi_set_drvdata(spi, NULL);
+@@ -193,7 +259,7 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ 
+ 	ret = pmic_start_event_thread(spi->irq);
+ 	if (ret) {
+-		pr_err("mc13892 pmic driver init: \
++		pr_err("pmic driver init: \
+ 			fail to start event thread\n");
+ 		kfree(spi_get_drvdata(spi));
+ 		spi_set_drvdata(spi, NULL);
+@@ -249,10 +315,19 @@ static int __devexit pmic_remove(struct spi_device *spi)
+ 	return PMIC_SUCCESS;
+ }
+ 
++static const struct spi_device_id pmic_device_id[] = {
++	{
++		.name = "mc13892",
++	}, {
++		/* sentinel */
++	}
++};
++
+ /*!
+  * This structure contains pointers to the power management callback functions.
+  */
+ static struct spi_driver pmic_driver = {
++	.id_table = pmic_device_id,
+ 	.driver = {
+ 		   .name = "pmic_spi",
+ 		   .bus = &spi_bus_type,
+diff --git a/drivers/mxc/pmic/core/pmic_external.c b/drivers/mxc/pmic/core/pmic_external.c
+index 02318ed..6ff35db 100644
+--- a/drivers/mxc/pmic/core/pmic_external.c
++++ b/drivers/mxc/pmic/core/pmic_external.c
+@@ -1,14 +1,19 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ /*!
+@@ -30,11 +35,72 @@
+ #include <linux/pmic_external.h>
+ #include <linux/pmic_status.h>
+ 
+-/*
+- * External Functions
+- */
+-extern int pmic_read(int reg_num, unsigned int *reg_val);
+-extern int pmic_write(int reg_num, const unsigned int reg_val);
++#include "pmic.h"
++
++#define MXC_PMIC_FRAME_MASK		0x00FFFFFF
++#define MXC_PMIC_MAX_REG_NUM		0x3F
++#define MXC_PMIC_REG_NUM_SHIFT		0x19
++#define MXC_PMIC_WRITE_BIT_SHIFT	31
++
++struct mxc_pmic pmic_drv_data;
++static unsigned int events_enabled0;
++static unsigned int events_enabled1;
++
++int pmic_spi_setup(struct spi_device *spi)
++{
++	/* Setup the SPI slave i.e.PMIC */
++	pmic_drv_data.spi = spi;
++
++	spi->mode = SPI_MODE_0 | SPI_CS_HIGH;
++	spi->bits_per_word = 32;
++	return spi_setup(spi);
++}
++
++int pmic_read(int reg_num, unsigned int *reg_val)
++{
++	unsigned int frame = 0;
++	int ret = 0;
++
++	if (pmic_drv_data.spi != NULL) {
++		if (reg_num > MXC_PMIC_MAX_REG_NUM)
++			return PMIC_ERROR;
++
++		frame |= reg_num << MXC_PMIC_REG_NUM_SHIFT;
++
++		ret = spi_rw(pmic_drv_data.spi, (u8 *) &frame, 1);
++
++		*reg_val = frame & MXC_PMIC_FRAME_MASK;
++	} else {
++		pr_err("SPI dev Not set\n");
++		return PMIC_ERROR;
++	}
++
++	return PMIC_SUCCESS;
++}
++
++int pmic_write(int reg_num, const unsigned int reg_val)
++{
++	unsigned int frame = 0;
++	int ret = 0;
++
++	if (pmic_drv_data.spi != NULL) {
++		if (reg_num > MXC_PMIC_MAX_REG_NUM)
++			return PMIC_ERROR;
++
++		frame |= (1 << MXC_PMIC_WRITE_BIT_SHIFT);
++
++		frame |= reg_num << MXC_PMIC_REG_NUM_SHIFT;
++
++		frame |= reg_val & MXC_PMIC_FRAME_MASK;
++
++		ret = spi_rw(pmic_drv_data.spi, (u8 *) &frame, 1);
++
++		return ret;
++	} else {
++		pr_err("SPI dev Not set\n");
++		return PMIC_ERROR;
++	}
++}
+ 
+ /*!
+  * This function is called by PMIC clients to read a register on PMIC.
+@@ -96,5 +162,104 @@ PMIC_STATUS pmic_write_reg(int reg, unsigned int reg_value,
+ 	return ret;
+ }
+ 
++unsigned int pmic_get_active_events(unsigned int *active_events)
++{
++	unsigned int count = 0;
++	unsigned int status0, status1;
++	int bit_set;
++
++	pmic_read(REG_INT_STATUS0, &status0);
++	pmic_read(REG_INT_STATUS1, &status1);
++	pmic_write(REG_INT_STATUS0, status0);
++	pmic_write(REG_INT_STATUS1, status1);
++	status0 &= events_enabled0;
++	status1 &= events_enabled1;
++
++	while (status0) {
++		bit_set = ffs(status0) - 1;
++		*(active_events + count) = bit_set;
++		count++;
++		status0 ^= (1 << bit_set);
++	}
++	while (status1) {
++		bit_set = ffs(status1) - 1;
++		*(active_events + count) = bit_set + 24;
++		count++;
++		status1 ^= (1 << bit_set);
++	}
++
++	return count;
++}
++EXPORT_SYMBOL(pmic_get_active_events);
++
++#define EVENT_MASK_0			0x387fff
++#define EVENT_MASK_1			0x1177ef
++
++int pmic_event_unmask(type_event event)
++{
++	unsigned int event_mask = 0;
++	unsigned int mask_reg = 0;
++	unsigned int event_bit = 0;
++	int ret;
++
++	if (event < EVENT_1HZI) {
++		mask_reg = REG_INT_MASK0;
++		event_mask = EVENT_MASK_0;
++		event_bit = (1 << event);
++		events_enabled0 |= event_bit;
++	} else {
++		event -= 24;
++		mask_reg = REG_INT_MASK1;
++		event_mask = EVENT_MASK_1;
++		event_bit = (1 << event);
++		events_enabled1 |= event_bit;
++	}
++
++	if ((event_bit & event_mask) == 0) {
++		pr_debug("Error: unmasking a reserved/unused event\n");
++		return PMIC_ERROR;
++	}
++
++	ret = pmic_write_reg(mask_reg, 0, event_bit);
++
++	pr_debug("Enable Event : %d\n", event);
++
++	return ret;
++}
++EXPORT_SYMBOL(pmic_event_unmask);
++
++int pmic_event_mask(type_event event)
++{
++	unsigned int event_mask = 0;
++	unsigned int mask_reg = 0;
++	unsigned int event_bit = 0;
++	int ret;
++
++	if (event < EVENT_1HZI) {
++		mask_reg = REG_INT_MASK0;
++		event_mask = EVENT_MASK_0;
++		event_bit = (1 << event);
++		events_enabled0 &= ~event_bit;
++	} else {
++		event -= 24;
++		mask_reg = REG_INT_MASK1;
++		event_mask = EVENT_MASK_1;
++		event_bit = (1 << event);
++		events_enabled1 &= ~event_bit;
++	}
++
++	if ((event_bit & event_mask) == 0) {
++		pr_debug("Error: masking a reserved/unused event\n");
++		return PMIC_ERROR;
++	}
++
++	ret = pmic_write_reg(mask_reg, event_bit, event_bit);
++
++	pr_debug("Disable Event : %d\n", event);
++
++	return ret;
++}
++EXPORT_SYMBOL(pmic_event_mask);
++
+ EXPORT_SYMBOL(pmic_read_reg);
+ EXPORT_SYMBOL(pmic_write_reg);
+diff --git a/drivers/mxc/pmic/mc13892/pmic_adc.c b/drivers/mxc/pmic/mc13892/pmic_adc.c
+index c0f0f06..074ff5f 100644
+--- a/drivers/mxc/pmic/mc13892/pmic_adc.c
++++ b/drivers/mxc/pmic/mc13892/pmic_adc.c
+@@ -1,15 +1,21 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
++
+ #include <linux/platform_device.h>
+ #include <linux/poll.h>
+ #include <linux/sched.h>
+@@ -174,14 +180,6 @@ static int suspend_flag;
+ 
+ static wait_queue_head_t suspendq;
+ 
+-/* EXPORTED FUNCTIONS */
+-EXPORT_SYMBOL(pmic_adc_init);
+-EXPORT_SYMBOL(pmic_adc_deinit);
+-EXPORT_SYMBOL(pmic_adc_convert);
+-EXPORT_SYMBOL(pmic_adc_convert_8x);
+-EXPORT_SYMBOL(pmic_adc_set_touch_mode);
+-EXPORT_SYMBOL(pmic_adc_get_touch_mode);
+-EXPORT_SYMBOL(pmic_adc_get_touch_sample);
+ 
+ static DECLARE_COMPLETION(adcdone_it);
+ static DECLARE_COMPLETION(adcbisdone_it);
+@@ -230,12 +228,11 @@ static unsigned channel_num[] = {
+ 
+ static bool pmic_adc_ready;
+ 
+-int is_pmic_adc_ready()
++int is_mc13892_adc_ready()
+ {
+ 	return pmic_adc_ready;
+ }
+-EXPORT_SYMBOL(is_pmic_adc_ready);
+-
++EXPORT_SYMBOL(is_mc13892_adc_ready);
+ 
+ static int pmic_adc_suspend(struct platform_device *pdev, pm_message_t state)
+ {
+@@ -324,7 +321,7 @@ static int pmic_adc_filter(t_touch_screen *ts_curr)
+ 	return 0;
+ }
+ 
+-int pmic_adc_init(void)
++int mc13892_adc_init(void)
+ {
+ 	unsigned int reg_value = 0, i = 0;
+ 
+@@ -366,7 +363,7 @@ int pmic_adc_init(void)
+ 	return PMIC_SUCCESS;
+ }
+ 
+-PMIC_STATUS pmic_adc_deinit(void)
++PMIC_STATUS mc13892_adc_deinit(void)
+ {
+ 	CHECK_ERROR(pmic_event_unsubscribe(EVENT_ADCDONEI, event_adc));
+ 	CHECK_ERROR(pmic_event_unsubscribe(EVENT_ADCBISDONEI, event_adc_bis));
+@@ -400,7 +397,7 @@ int mc13892_adc_init_param(t_adc_param *adc_param)
+ 	return 0;
+ }
+ 
+-PMIC_STATUS mc13892_adc_convert(t_adc_param *adc_param)
++PMIC_STATUS __mc13892_adc_convert(t_adc_param *adc_param)
+ {
+ 	bool use_bis = false;
+ 	unsigned int adc_0_reg = 0, adc_1_reg = 0, result_reg = 0, i = 0;
+@@ -408,7 +405,7 @@ PMIC_STATUS mc13892_adc_convert(t_adc_param *adc_param)
+ 	pmic_version_t mc13892_ver;
+ 	int ret;
+ 
+-	pr_debug("mc13892 ADC - mc13892_adc_convert ....\n");
++	pr_debug("mc13892 ADC - __mc13892_adc_convert ....\n");
+ 	if (suspend_flag == 1)
+ 		return -EBUSY;
+ 
+@@ -657,7 +654,7 @@ t_reading_mode mc13892_set_read_mode(t_channel channel)
+ 	return read_mode;
+ }
+ 
+-PMIC_STATUS pmic_adc_convert(t_channel channel, unsigned short *result)
++PMIC_STATUS mc13892_adc_convert(t_channel channel, unsigned short *result)
+ {
+ 	t_adc_param adc_param;
+ 	PMIC_STATUS ret;
+@@ -672,7 +669,7 @@ PMIC_STATUS pmic_adc_convert(t_channel channel, unsigned short *result)
+ 		return PMIC_PARAMETER_ERROR;
+ 	}
+ 	mc13892_adc_init_param(&adc_param);
+-	pr_debug("pmic_adc_convert\n");
++	pr_debug("mc13892_adc_convert\n");
+ 	adc_param.read_ts = false;
+ 	adc_param.single_channel = true;
+ 	adc_param.read_mode = mc13892_set_read_mode(channel);
+@@ -683,14 +680,15 @@ PMIC_STATUS pmic_adc_convert(t_channel channel, unsigned short *result)
+ 	else
+ 		return PMIC_PARAMETER_ERROR;
+ 
+-	ret = mc13892_adc_convert(&adc_param);
++	ret = __mc13892_adc_convert(&adc_param);
+ 	for (i = 0; i <= 7; i++)
+ 		result[i] = adc_param.value[i];
+ 
+ 	return ret;
+ }
++EXPORT_SYMBOL(mc13892_adc_convert);
+ 
+-PMIC_STATUS pmic_adc_convert_8x(t_channel channel, unsigned short *result)
++PMIC_STATUS mc13892_adc_convert_8x(t_channel channel, unsigned short *result)
+ {
+ 	t_adc_param adc_param;
+ 	int i;
+@@ -705,7 +703,7 @@ PMIC_STATUS pmic_adc_convert_8x(t_channel channel, unsigned short *result)
+ 		return PMIC_PARAMETER_ERROR;
+ 	}
+ 	mc13892_adc_init_param(&adc_param);
+-	pr_debug("pmic_adc_convert_8x\n");
++	pr_debug("mc13892_adc_convert_8x\n");
+ 	adc_param.read_ts = false;
+ 	adc_param.single_channel = true;
+ 	adc_param.read_mode = mc13892_set_read_mode(channel);
+@@ -716,14 +714,15 @@ PMIC_STATUS pmic_adc_convert_8x(t_channel channel, unsigned short *result)
+ 	} else
+ 		return PMIC_PARAMETER_ERROR;
+ 
+-	ret = mc13892_adc_convert(&adc_param);
++	ret = __mc13892_adc_convert(&adc_param);
+ 	for (i = 0; i <= 7; i++)
+ 		result[i] = adc_param.value[i];
+ 
+ 	return ret;
+ }
++EXPORT_SYMBOL(mc13892_adc_convert_8x);
+ 
+-PMIC_STATUS pmic_adc_set_touch_mode(t_touch_mode touch_mode)
++PMIC_STATUS mc13892_adc_set_touch_mode(t_touch_mode touch_mode)
+ {
+ 	if (suspend_flag == 1)
+ 		return -EBUSY;
+@@ -733,8 +732,9 @@ PMIC_STATUS pmic_adc_set_touch_mode(t_touch_mode touch_mode)
+ 				   BITFMASK(MC13892_ADC0_TS_M)));
+ 	return PMIC_SUCCESS;
+ }
++EXPORT_SYMBOL(mc13892_adc_set_touch_mode);
+ 
+-PMIC_STATUS pmic_adc_get_touch_mode(t_touch_mode *touch_mode)
++PMIC_STATUS mc13892_adc_get_touch_mode(t_touch_mode *touch_mode)
+ {
+ 	unsigned int value;
+ 	if (suspend_flag == 1)
+@@ -746,8 +746,9 @@ PMIC_STATUS pmic_adc_get_touch_mode(t_touch_mode *touch_mode)
+ 
+ 	return PMIC_SUCCESS;
+ }
++EXPORT_SYMBOL(mc13892_adc_get_touch_mode);
+ 
+-PMIC_STATUS pmic_adc_get_touch_sample(t_touch_screen *touch_sample, int wait)
++PMIC_STATUS mc13892_adc_get_touch_sample(t_touch_screen *touch_sample, int wait)
+ {
+ 	if (mc13892_adc_read_ts(touch_sample, wait) != 0)
+ 		return PMIC_ERROR;
+@@ -756,6 +757,7 @@ PMIC_STATUS pmic_adc_get_touch_sample(t_touch_screen *touch_sample, int wait)
+ 	else
+ 		return PMIC_ERROR;
+ }
++EXPORT_SYMBOL(mc13892_adc_get_touch_sample);
+ 
+ PMIC_STATUS mc13892_adc_read_ts(t_touch_screen *ts_value, int wait_tsi)
+ {
+@@ -771,7 +773,7 @@ PMIC_STATUS mc13892_adc_read_ts(t_touch_screen *ts_value, int wait_tsi)
+ 	mc13892_adc_init_param(&param);
+ 	param.wait_tsi = wait_tsi;
+ 	param.read_ts = true;
+-	if (mc13892_adc_convert(&param) != 0)
++	if (__mc13892_adc_convert(&param) != 0)
+ 		return PMIC_ERROR;
+ 	/* check if x-y is ok */
+ 	if (param.ts_value.contact_resistance < 1000) {
+@@ -932,16 +934,16 @@ static int cmd(unsigned int index, int value)
+ 		mc13892_adc_init_param(&adc_param_db);
+ 		break;
+ 	case ADC_START:
+-		mc13892_adc_convert(&adc_param_db);
++		__mc13892_adc_convert(&adc_param_db);
+ 		break;
+ 	case ADC_TS:
+-		pmic_adc_get_touch_sample(&ts, 1);
++		mc13892_adc_get_touch_sample(&ts, 1);
+ 		pr_debug("x = %d\n", ts.x_position);
+ 		pr_debug("y = %d\n", ts.y_position);
+ 		pr_debug("p = %d\n", ts.contact_resistance);
+ 		break;
+ 	case ADC_TS_READ:
+-		pmic_adc_get_touch_sample(&ts, 0);
++		mc13892_adc_get_touch_sample(&ts, 0);
+ 		pr_debug("x = %d\n", ts.x_position);
+ 		pr_debug("y = %d\n", ts.y_position);
+ 		pr_debug("p = %d\n", ts.contact_resistance);
+@@ -1007,6 +1009,12 @@ static ssize_t adc_ctl(struct device *dev, struct device_attribute *attr,
+ 
+ static DEVICE_ATTR(adc, 0644, adc_info, adc_ctl);
+ 
++static struct pmic_adc_api pmic_adc_api = {
++	.is_pmic_adc_ready = is_mc13892_adc_ready,
++	.pmic_adc_convert = mc13892_adc_convert,
++	.pmic_adc_get_touch_sample = mc13892_adc_get_touch_sample,
++};
++
+ static int pmic_adc_module_probe(struct platform_device *pdev)
+ {
+ 	int ret = 0;
+@@ -1014,19 +1022,20 @@ static int pmic_adc_module_probe(struct platform_device *pdev)
+ 	pr_debug("PMIC ADC start probe\n");
+ 	ret = device_create_file(&(pdev->dev), &dev_attr_adc);
+ 	if (ret) {
+-		pr_debug("Can't create device file!\n");
++		pr_err("Can't create device file!\n");
+ 		return -ENODEV;
+ 	}
+ 
+ 	init_waitqueue_head(&suspendq);
+ 
+-	ret = pmic_adc_init();
++	ret = mc13892_adc_init();
+ 	if (ret != PMIC_SUCCESS) {
+-		pr_debug("Error in pmic_adc_init.\n");
++		pr_err("Error in mc13892_adc_init.\n");
+ 		goto rm_dev_file;
+ 	}
+ 
+ 	pmic_adc_ready = 1;
++	register_adc_apis(&pmic_adc_api);
+ 	pr_debug("PMIC ADC successfully probed\n");
+ 	return 0;
+ 
+@@ -1037,7 +1046,7 @@ rm_dev_file:
+ 
+ static int pmic_adc_module_remove(struct platform_device *pdev)
+ {
+-	pmic_adc_deinit();
++	mc13892_adc_deinit();
+ 	pmic_adc_ready = 0;
+ 	pr_debug("PMIC ADC successfully removed\n");
+ 	return 0;
+@@ -1045,7 +1054,7 @@ static int pmic_adc_module_remove(struct platform_device *pdev)
+ 
+ static struct platform_driver pmic_adc_driver_ldm = {
+ 	.driver = {
+-		   .name = "pmic_adc",
++		   .name = "mc13892_adc",
+ 		   },
+ 	.suspend = pmic_adc_suspend,
+ 	.resume = pmic_adc_resume,
+diff --git a/drivers/mxc/pmic/mc13892/pmic_battery.c b/drivers/mxc/pmic/mc13892/pmic_battery.c
+index 246bd27..3e6cf7f 100644
+--- a/drivers/mxc/pmic/mc13892/pmic_battery.c
++++ b/drivers/mxc/pmic/mc13892/pmic_battery.c
+@@ -1,14 +1,19 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ /*
+@@ -23,6 +28,7 @@
+ #include <linux/pmic_battery.h>
+ #include <linux/pmic_adc.h>
+ #include <linux/pmic_status.h>
++#include <linux/pmic_external.h>
+ 
+ #define BIT_CHG_VOL_LSH		0
+ #define BIT_CHG_VOL_WID		3
+diff --git a/include/linux/mfd/mc13892/core.h b/include/linux/mfd/mc13892/core.h
+index 3924e2e..d4a141c 100644
+--- a/include/linux/mfd/mc13892/core.h
++++ b/include/linux/mfd/mc13892/core.h
+@@ -1,14 +1,19 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ #ifndef __LINUX_MFD_MC13892_CORE_H_
+@@ -17,6 +22,7 @@
+ #include <linux/kernel.h>
+ #include <linux/mutex.h>
+ #include <linux/workqueue.h>
++#include <linux/pmic_external.h>
+ 
+ #define MC13892_SW1 0
+ #define MC13892_SW2 1
+@@ -74,4 +80,7 @@ struct mc13892 {
+ int mc13892_register_regulator(struct mc13892 *mc13892, int reg,
+ 			      struct regulator_init_data *initdata);
+ 
++void *mc13892_alloc_data(struct device *dev);
++int mc13892_init_registers(void);
++void mc13892_get_revision(pmic_version_t *ver);
+ #endif
+diff --git a/include/linux/pmic_adc.h b/include/linux/pmic_adc.h
+index a0c6599..86d272f 100644
+--- a/include/linux/pmic_adc.h
++++ b/include/linux/pmic_adc.h
+@@ -1,14 +1,19 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU Lesser General
+- * Public License.  You may obtain a copy of the GNU Lesser General
+- * Public License Version 2.1 or later at the following locations:
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
+  *
+- * http://www.opensource.org/licenses/lgpl-license.html
+- * http://www.gnu.org/copyleft/lgpl.html
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+ #ifndef __ASM_ARCH_MXC_PMIC_ADC_H__
+@@ -289,6 +294,12 @@ typedef struct {
+ 	t_comparator_cb callback;
+ } t_adc_comp_param;
+ 
++struct pmic_adc_api {
++	int (*is_pmic_adc_ready)(void);
++	PMIC_STATUS (*pmic_adc_convert)(t_channel, unsigned short *);
++	PMIC_STATUS (*pmic_adc_get_touch_sample)(t_touch_screen *, int);
++};
++
+ /* EXPORTED FUNCTIONS */
+ 
+ #ifdef __KERNEL__
+@@ -451,5 +462,7 @@ PMIC_STATUS pmic_adc_remove_ts(void);
+ 
+ int is_pmic_adc_ready(void);
+ 
++void register_adc_apis(struct pmic_adc_api *papi);
++
+ #endif				/* _KERNEL */
+ #endif				/* __ASM_ARCH_MXC_PMIC_ADC_H__ */
+diff --git a/include/linux/pmic_external.h b/include/linux/pmic_external.h
+index 23aa37e..0ea60e5 100644
+--- a/include/linux/pmic_external.h
++++ b/include/linux/pmic_external.h
+@@ -1,15 +1,21 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
++
+ #ifndef __ASM_ARCH_MXC_PMIC_EXTERNAL_H__
+ #define __ASM_ARCH_MXC_PMIC_EXTERNAL_H__
+ 
+@@ -35,6 +41,7 @@
+ 
+ #include <linux/ioctl.h>
+ #include <linux/pmic_status.h>
++#include <linux/spi/spi.h>
+ 
+ /*!
+  * This is the enumeration of versions of PMIC
+@@ -423,6 +430,11 @@ PMIC_STATUS pmic_get_sensors(t_sensor_bits *sensor_bits);
+ void pmic_event_callback(type_event event);
+ void pmic_event_list_init(void);
+ 
++unsigned int pmic_get_active_events(unsigned int *active_events);
++int pmic_event_mask(type_event event);
++int pmic_event_unmask(type_event event);
++int pmic_spi_setup(struct spi_device *spi);
++
+ #endif				/*CONFIG_MXC_PMIC*/
+ #endif				/* __KERNEL__ */
+ /* CONFIG_MXC_PMIC_MC13783 || CONFIG_MXC_PMIC_MC9SDZ60 */
+-- 
+1.5.4.4
+

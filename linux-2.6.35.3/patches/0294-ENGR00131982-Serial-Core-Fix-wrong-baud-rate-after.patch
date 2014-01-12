@@ -1,0 +1,31 @@
+From aa82039db2517372726e98326b92e296b938b642 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Tue, 12 Oct 2010 10:36:24 +0800
+Subject: [PATCH] ENGR00131982 Serial Core: Fix wrong baud rate after resume
+
+Fix MX28 uart can't work after suspend and resume.
+The reason is serial core pass down a uninitialized variable termios
+
+	uport->ops->set_termios(uport, &termios, NULL);
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/serial/serial_core.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/serial/serial_core.c b/drivers/serial/serial_core.c
+index 7f28307..4087aff 100644
+--- a/drivers/serial/serial_core.c
++++ b/drivers/serial/serial_core.c
+@@ -2092,7 +2092,7 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *uport)
+ 	 */
+ 	if (uart_console(uport)) {
+ 		uart_change_pm(state, 0);
+-		uport->ops->set_termios(uport, &termios, NULL);
++		uport->ops->set_termios(uport, port->tty->termios, NULL);
+ 		console_start(uport->cons);
+ 	}
+ 
+-- 
+1.5.4.4
+

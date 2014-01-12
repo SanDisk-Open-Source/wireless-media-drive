@@ -1,0 +1,30 @@
+From 5634bc5fe5d6caf6e5817f3664baa4445734a1cd Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Fri, 30 Jul 2010 18:00:48 +0800
+Subject: [PATCH] ENGR00125736 MX53 PMIC: Turn on the vvideo power supply by default
+
+The vvideo power supply drives the gpio bank, from gpio_12 to
+gpio14. Turn on the power in case other modules need these gpio.
+
+Signed-off-by: William Lai <b04597@freescale.com>
+(cherry picked from commit 081f7a7408f71c67f19d95fde9e25f7e611362f3)
+---
+ arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+index 445ab10..122addc 100644
+--- a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+@@ -183,6 +183,8 @@ static struct regulator_init_data vvideo_init = {
+ 		.min_uV = mV_to_uV(2500),
+ 		.max_uV = mV_to_uV(2775),
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
+ 	}
+ };
+ 
+-- 
+1.5.4.4
+

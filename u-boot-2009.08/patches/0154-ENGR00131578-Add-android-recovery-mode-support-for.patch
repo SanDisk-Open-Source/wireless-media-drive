@@ -1,0 +1,1420 @@
+From 71ba5d33991342c566b92961b5c98e99861e20c0 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 15 Sep 2010 22:29:07 +0800
+Subject: [PATCH] ENGR00131578: Add android recovery mode support for mx53
+
+Add android recovery mode support for mx53.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ Makefile                                  |    3 +
+ board/freescale/common/recovery.c         |   32 ++--
+ board/freescale/mx51_3stack/mx51_3stack.c |    5 +-
+ board/freescale/mx51_bbg/mx51_bbg.c       |    3 +-
+ board/freescale/mx53_evk/mx53_evk.c       |  151 +++++++++++++++
+ drivers/input/mxc_keyb.c                  |    2 +-
+ include/asm-arm/arch-mx51/keypad.h        |   55 ------
+ include/asm-arm/arch-mx51/mx51.h          |    2 +-
+ include/asm-arm/arch-mx53/mx53.h          |    3 +-
+ include/asm-arm/mxc_key_defs.h            |   55 ++++++
+ include/configs/mx51_3stack_android.h     |    3 +-
+ include/configs/mx51_bbg_android.h        |    2 +-
+ include/configs/mx53_arm2_android.h       |  295 +++++++++++++++++++++++++++++
+ include/configs/mx53_arm2_ddr3_android.h  |  277 +++++++++++++++++++++++++++
+ include/configs/mx53_evk_android.h        |  295 +++++++++++++++++++++++++++++
+ 15 files changed, 1104 insertions(+), 79 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 9e4ce95..42a0e97 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3270,6 +3270,9 @@ mx51_3stack_config	: unconfig
+ mx53_evk_mfg_config 		\
+ mx53_arm2_ddr3_config		\
+ mx53_arm2_config		\
++mx53_arm2_android_config	\
++mx53_arm2_ddr3_android_config	\
++mx53_evk_android_config		\
+ mx53_evk_config      : unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx53_evk freescale mx53
+ 
+diff --git a/board/freescale/common/recovery.c b/board/freescale/common/recovery.c
+index d133a9d..9f488b8 100644
+--- a/board/freescale/common/recovery.c
++++ b/board/freescale/common/recovery.c
+@@ -11,19 +11,19 @@
+ #include <common.h>
+ #include <malloc.h>
+ #include "recovery.h"
+-
+-#ifndef CONFIG_MXC_KPD
+-#error "error! keypad must be configured to support recovery"
+-#endif
++#ifdef CONFIG_MXC_KPD
+ #include <mxc_keyb.h>
++#endif
++
++extern int check_recovery_cmd_file(void);
++extern enum boot_device get_boot_device(void);
++
++#ifdef CONFIG_MXC_KPD
+ 
+ #define PRESSED_HOME	0x01
+ #define PRESSED_POWER	0x02
+ #define RECOVERY_KEY_MASK (PRESSED_HOME | PRESSED_POWER)
+ 
+-extern int check_recovery_cmd_file(void);
+-extern enum boot_device get_boot_device(void);
+-
+ inline int test_key(int value, struct kpp_key_info *ki)
+ {
+ 	return (ki->val == value) && (ki->evt == KDepress);
+@@ -57,6 +57,13 @@ int check_key_pressing(void)
+ 
+ 	return 0;
+ }
++#else
++/* If not using mxc keypad, currently we will detect power key on board */
++int check_key_pressing(void)
++{
++	return 0;
++}
++#endif
+ 
+ extern struct reco_envs supported_reco_envs[];
+ 
+@@ -78,17 +85,16 @@ void setup_recovery_env(void)
+ 	env = getenv("bootargs_android_recovery");
+ 	/* Set env to recovery mode */
+ 	if (!env)
+-		setenv("bootargs_android", boot_args);
++		setenv("bootargs_android_recovery", boot_args);
+ 	else
+-		setenv("bootargs_android", env);
++		setenv("bootargs_android_recovery", env);
+ 
+ 	env = getenv("bootcmd_android_recovery");
+ 	if (!env)
+-		setenv("bootcmd_android", boot_cmd);
++		setenv("bootcmd_android_recovery", boot_cmd);
+ 	else
+-		setenv("bootcmd_android", env);
+-	setenv("bootcmd", "run bootcmd_android");
+-
++		setenv("bootcmd_android_recovery", env);
++	setenv("bootcmd", "run bootcmd_android_recovery");
+ }
+ 
+ /* export to lib_arm/board.c */
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 77da23c..4c773ad 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -29,7 +29,6 @@
+ #include <asm/arch/mx51_pins.h>
+ #include <asm/arch/iomux.h>
+ #include <i2c.h>
+-#include <asm/arch/keypad.h>
+ #include "board-mx51_3stack.h"
+ #include <netdev.h>
+ 
+@@ -613,7 +612,7 @@ int board_init(void)
+ }
+ 
+ #ifdef CONFIG_ANDROID_RECOVERY
+-struct reco_envs supported_reco_envs[END_BOOT] = {
++struct reco_envs supported_reco_envs[BOOT_DEV_NUM] = {
+ 	{
+ 	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND,
+ 	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND,
+@@ -759,7 +758,7 @@ static int check_nand_recovery_cmd_file(char *mtd_part_name,
+ 	return filelen;
+ }
+ 
+-static int check_recovery_cmd_file(void)
++int check_recovery_cmd_file(void)
+ {
+ 	int if_exist = 0;
+ 	char *env = NULL;
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 83e8ca7..e90337b 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -29,7 +29,6 @@
+ #include <asm/arch/iomux.h>
+ #include <asm/errno.h>
+ #include <i2c.h>
+-#include <asm/arch/keypad.h>
+ #include "board-imx51.h"
+ #ifdef CONFIG_IMX_ECSPI
+ #include <imx_spi.h>
+@@ -874,7 +873,7 @@ int board_init(void)
+ }
+ 
+ #ifdef CONFIG_ANDROID_RECOVERY
+-struct reco_envs supported_reco_envs[END_BOOT] = {
++struct reco_envs supported_reco_envs[BOOT_DEV_NUM] = {
+ 	{
+ 	 .cmd = NULL,
+ 	 .args = NULL,
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 2f5c4b1..92b6ce9 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -52,6 +52,16 @@
+ #include <asm/clock.h>
+ #endif
+ 
++#ifdef CONFIG_ANDROID_RECOVERY
++#include "../common/recovery.h"
++#include <part.h>
++#include <ext2fs.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <ubi_uboot.h>
++#include <jffs2/load_kernel.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+@@ -647,6 +657,26 @@ static void setup_fec(void)
+ }
+ #endif
+ 
++#if defined(CONFIG_MXC_KPD)
++int setup_mxc_kpd(void)
++{
++	mxc_request_iomux(MX53_PIN_KEY_COL0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_COL1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_COL2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_COL3, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_COL4, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_GPIO_19,  IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_ROW0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_ROW1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_ROW2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_ROW3, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_KEY_ROW4, IOMUX_CONFIG_ALT0);
++
++	return 0;
++}
++#endif
++
++
+ #ifdef CONFIG_CMD_MMC
+ 
+ struct fsl_esdhc_cfg esdhc_cfg[2] = {
+@@ -776,6 +806,127 @@ int board_init(void)
+ 	return 0;
+ }
+ 
++
++#ifdef CONFIG_ANDROID_RECOVERY
++struct reco_envs supported_reco_envs[BOOT_DEV_NUM] = {
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 },
++	{
++	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++};
++
++int check_recovery_cmd_file(void)
++{
++	disk_partition_t info;
++	ulong part_length;
++	int filelen;
++	char *env;
++
++	/* For test only */
++	/* When detecting android_recovery_switch,
++	 * enter recovery mode directly */
++	env = getenv("android_recovery_switch");
++	if (!strcmp(env, "1")) {
++		printf("Env recovery detected!\nEnter recovery mode!\n");
++		return 1;
++	}
++
++	printf("Checking for recovery command file...\n");
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++	case SD_BOOT:
++		{
++			block_dev_desc_t *dev_desc = NULL;
++			struct mmc *mmc = find_mmc_device(0);
++
++			dev_desc = get_dev("mmc", 0);
++
++			if (NULL == dev_desc) {
++				puts("** Block device MMC 0 not supported\n");
++				return 0;
++			}
++
++			mmc_init(mmc);
++
++			if (get_partition_info(dev_desc,
++					CONFIG_ANDROID_CACHE_PARTITION_MMC,
++					&info)) {
++				printf("** Bad partition %d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				return 0;
++			}
++
++			part_length = ext2fs_set_blk_dev(dev_desc,
++						CONFIG_ANDROID_CACHE_PARTITION_MMC);
++			if (part_length == 0) {
++				printf("** Bad partition - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			if (!ext2fs_mount(part_length)) {
++				printf("** Bad ext2 partition or "
++					"disk - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
++
++			ext2fs_close();
++		}
++		break;
++	case NAND_BOOT:
++		return 0;
++		break;
++	case SPI_NOR_BOOT:
++		return 0;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		return 0;
++		break;
++	}
++
++	return (filelen > 0) ? 1 : 0;
++
++}
++#endif
++
+ int board_late_init(void)
+ {
+ 	return 0;
+diff --git a/drivers/input/mxc_keyb.c b/drivers/input/mxc_keyb.c
+index fae3b69..263f743 100644
+--- a/drivers/input/mxc_keyb.c
++++ b/drivers/input/mxc_keyb.c
+@@ -30,8 +30,8 @@
+ #include <asm/io.h>
+ #include <common.h>
+ #include <asm/errno.h>
+-#include <asm/arch/keypad.h>
+ #include <linux/types.h>
++#include <asm/mxc_key_defs.h>
+ #include <malloc.h>
+ 
+ /*
+diff --git a/include/asm-arm/arch-mx51/keypad.h b/include/asm-arm/arch-mx51/keypad.h
+deleted file mode 100644
+index 1e67547..0000000
+--- a/include/asm-arm/arch-mx51/keypad.h
++++ /dev/null
+@@ -1,55 +0,0 @@
+-/*
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+- *
+- * Configuration settings for the MX51-3Stack Freescale board.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#ifndef _MXC_KEYPAD_H_
+-#define _MXC_KEYPAD_H_
+-
+-#include <config.h>
+-
+-#define KEY_1                   2
+-#define KEY_2                   3
+-#define KEY_3                   4
+-#define KEY_F1                  59
+-#define KEY_UP                  103
+-#define KEY_F2                  60
+-
+-#define KEY_4                   5
+-#define KEY_5                   6
+-#define KEY_6                   7
+-#define KEY_LEFT                105
+-#define KEY_SELECT              0x161
+-#define KEY_RIGHT               106
+-
+-#define KEY_7                   8
+-#define KEY_8                   9
+-#define KEY_9                   10
+-#define KEY_F3                  61
+-#define KEY_DOWN                108
+-#define KEY_F4                  62
+-
+-#define KEY_0                   11
+-#define KEY_OK                  0x160
+-#define KEY_ESC                 1
+-#define KEY_ENTER               28
+-#define KEY_MENU                139     /* Menu (show menu) */
+-#define KEY_BACK                158     /* AC Back */
+-
+-#endif
+diff --git a/include/asm-arm/arch-mx51/mx51.h b/include/asm-arm/arch-mx51/mx51.h
+index 816e792..d06abac 100644
+--- a/include/asm-arm/arch-mx51/mx51.h
++++ b/include/asm-arm/arch-mx51/mx51.h
+@@ -445,7 +445,7 @@ enum boot_device {
+ 	NAND_BOOT = 0,
+ 	SPI_NOR_BOOT,
+ 	MMC_BOOT,
+-	END_BOOT,
++	BOOT_DEV_NUM,
+ };
+ 
+ enum mxc_clock {
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index ea04877..8c4f877 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -393,7 +393,8 @@ enum boot_device {
+ 	SD_BOOT,
+ 	MMC_BOOT,
+ 	NAND_BOOT,
+-	UNKNOWN_BOOT
++	UNKNOWN_BOOT,
++	BOOT_DEV_NUM = UNKNOWN_BOOT,
+ };
+ 
+ enum mxc_clock {
+diff --git a/include/asm-arm/mxc_key_defs.h b/include/asm-arm/mxc_key_defs.h
+new file mode 100644
+index 0000000..1e67547
+--- /dev/null
++++ b/include/asm-arm/mxc_key_defs.h
+@@ -0,0 +1,55 @@
++/*
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX51-3Stack Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef _MXC_KEYPAD_H_
++#define _MXC_KEYPAD_H_
++
++#include <config.h>
++
++#define KEY_1                   2
++#define KEY_2                   3
++#define KEY_3                   4
++#define KEY_F1                  59
++#define KEY_UP                  103
++#define KEY_F2                  60
++
++#define KEY_4                   5
++#define KEY_5                   6
++#define KEY_6                   7
++#define KEY_LEFT                105
++#define KEY_SELECT              0x161
++#define KEY_RIGHT               106
++
++#define KEY_7                   8
++#define KEY_8                   9
++#define KEY_9                   10
++#define KEY_F3                  61
++#define KEY_DOWN                108
++#define KEY_F4                  62
++
++#define KEY_0                   11
++#define KEY_OK                  0x160
++#define KEY_ESC                 1
++#define KEY_ENTER               28
++#define KEY_MENU                139     /* Menu (show menu) */
++#define KEY_BACK                158     /* AC Back */
++
++#endif
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 81eb819..7935c76 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -112,7 +112,7 @@
+ /*
+  * Android support Configs
+  */
+-#include <asm/arch/keypad.h>
++#include <asm/mxc_key_defs.h>
+ 
+ #define CONFIG_ANDROID_RECOVERY
+ #define CONFIG_POWER_KEY	KEY_F2
+@@ -213,7 +213,6 @@
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
+-	#define CONFIG_SYS_FSL_ESDHC_NUM 1
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 4641222..d4db1c9 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -86,7 +86,7 @@
+ /*
+  * Android support Configs
+  */
+-#include <asm/arch/keypad.h>
++#include <asm/mxc_key_defs.h>
+ 
+ #define CONFIG_ANDROID_RECOVERY
+ #define CONFIG_POWER_KEY	KEY_F3
+diff --git a/include/configs/mx53_arm2_android.h b/include/configs/mx53_arm2_android.h
+new file mode 100644
+index 0000000..3e02620
+--- /dev/null
++++ b/include/configs/mx53_arm2_android.h
+@@ -0,0 +1,295 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX53-ARM2 Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx53.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_MXC
++#define CONFIG_MX53
++#define CONFIG_MX53_ARM2
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX53_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX53_UART	1
++#define CONFIG_MX53_UART1	1
++
++/*
++ * Android support Configs
++ */
++#include <asm/mxc_key_defs.h>
++
++#define CONFIG_ANDROID_RECOVERY
++
++#define CONFIG_MTD_DEVICE
++#define CONFIG_MTD_PARTITIONS
++
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p7 rootfs=ext3"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
++	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
++#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
++#define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++#define CONFIG_CMD_IIM
++
++#define CONFIG_CMD_CLOCK
++#define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
++
++#define CONFIG_CMD_SATA
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"loadaddr=0x70800000\0"		\
++		"rd_loadaddr=0x70B00000\0"	\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
++		"bootcmd=run bootcmd_android\0"				\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootcmd_android=run bootargs_base bootargs_android; "	\
++			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
++			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"MX53 ARM2 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_ECSPI
++#define IMX_CSPI_VER_2_3        1
++#define MAX_SPI_BYTES		(64 * 4)
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  1
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++#endif
++
++/*
++ * SATA Configs
++ */
++#ifdef CONFIG_CMD_SATA
++	#define CONFIG_DWC_AHSATA
++	#define CONFIG_SYS_SATA_MAX_DEVICE	1
++	#define CONFIG_DWC_AHSATA_PORT_ID	0
++	#define CONFIG_DWC_AHSATA_BASE_ADDR 	SATA_BASE_ADDR
++	#define CONFIG_LBA48
++	#define CONFIG_LIBATA
++#endif
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(1024 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= \
++		(unsigned long)(PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx53_arm2_ddr3_android.h b/include/configs/mx53_arm2_ddr3_android.h
+new file mode 100644
+index 0000000..dc97ba2
+--- /dev/null
++++ b/include/configs/mx53_arm2_ddr3_android.h
+@@ -0,0 +1,277 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX53-ARM2-DDR3 Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx53.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_MXC
++#define CONFIG_MX53
++#define CONFIG_MX53_ARM2_DDR3
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX53_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX53_UART	1
++#define CONFIG_MX53_UART1	1
++
++/*
++ * Android support Configs
++ */
++#include <asm/mxc_key_defs.h>
++
++#define CONFIG_ANDROID_RECOVERY
++
++#define CONFIG_MTD_DEVICE
++#define CONFIG_MTD_PARTITIONS
++
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p7 rootfs=ext3"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
++	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
++#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
++#define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++#define CONFIG_CMD_IIM
++
++#define CONFIG_CMD_CLOCK
++#define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"loadaddr=0x70800000\0"		\
++		"rd_loadaddr=0x70B00000\0"	\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
++		"bootcmd=run bootcmd_android\0"				\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootcmd_android=run bootargs_base bootargs_android; "	\
++			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
++			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"MX53 ARM2-DDR3 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_ECSPI
++#define IMX_CSPI_VER_2_3        1
++#define MAX_SPI_BYTES		(64 * 4)
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  1
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++#endif
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(1024 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+new file mode 100644
+index 0000000..d892d33
+--- /dev/null
++++ b/include/configs/mx53_evk_android.h
+@@ -0,0 +1,295 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX53-EVK Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx53.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_MXC
++#define CONFIG_MX53
++#define CONFIG_MX53_EVK
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX53_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    600
++#define CONFIG_SYS_AHB_PODF     4
++#define CONFIG_SYS_AXIA_PODF    1
++#define CONFIG_SYS_AXIB_PODF    2
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX53_UART	1
++#define CONFIG_MX53_UART1	1
++
++/*
++ * Android support Configs
++ */
++
++#define CONFIG_ANDROID_RECOVERY
++
++#define CONFIG_MTD_DEVICE
++#define CONFIG_MTD_PARTITIONS
++
++
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p7 rootfs=ext3"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
++	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
++#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
++#define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++#define CONFIG_CMD_IIM
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++#define CONFIG_CMD_CLOCK
++#define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
++
++#define CONFIG_CMD_SATA
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"loadaddr=0x70800000\0"		\
++		"rd_loadaddr=0x70B00000\0"	\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
++		"bootcmd=run bootcmd_android\0"				\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootcmd_android=run bootargs_base bootargs_android; "	\
++			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
++			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"MX53 EVK U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++#define CONFIG_IIM_MAC_ADDR_OFFSET      0x24
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_ECSPI
++#define IMX_CSPI_VER_2_3        1
++#define MAX_SPI_BYTES		(64 * 4)
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	/* detect whether ESDHC1 or ESDHC3 is boot device */
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++#endif
++
++/*
++ * SATA Configs
++ */
++#ifdef CONFIG_CMD_SATA
++	#define CONFIG_DWC_AHSATA
++	#define CONFIG_SYS_SATA_MAX_DEVICE	1
++	#define CONFIG_DWC_AHSATA_PORT_ID	0
++	#define CONFIG_DWC_AHSATA_BASE_ADDR 	SATA_BASE_ADDR
++	#define CONFIG_LBA48
++	#define CONFIG_LIBATA
++#endif
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(1024 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= \
++		(unsigned long)(PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

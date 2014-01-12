@@ -1,0 +1,74 @@
+From 35d1e9fa81076f01235898d5065b6e3e5de2ffd0 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 22 Dec 2010 15:36:18 +0800
+Subject: [PATCH] ENGR00137273 uboot: update the android default env for 2.6.35 kernel
+
+Change the ramdisk load address to loadaddr + 0x400000.
+Add gpu_memory= kernel parameter.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ include/configs/mx51_bbg_android.h |    6 +++---
+ include/configs/mx53_evk_android.h |   10 +++++-----
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index ce3778b..1709906 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -159,7 +159,7 @@
+ #define CONFIG_PRIME	"FEC0"
+ 
+ #define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
+-#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x400000)
+ 
+ #define	CONFIG_EXTRA_ENV_SETTINGS					\
+ 		"netdev=eth0\0"						\
+@@ -167,9 +167,9 @@
+ 		"uboot_addr=0xa0000000\0"				\
+ 		"uboot=u-boot.bin\0"			\
+ 		"kernel=uImage\0"				\
+-		"rd_loadaddr=0x90B00000\0"	\
++		"rd_loadaddr=0x90C00000\0"	\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+-		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200 gpu_memory=16M\0"\
+ 		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
+ 			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index 95734a3..124012e 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -151,7 +151,7 @@
+ #define CONFIG_PRIME	"FEC0"
+ 
+ #define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
+-#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x400000)
+ 
+ 
+ #define	CONFIG_EXTRA_ENV_SETTINGS					\
+@@ -160,14 +160,14 @@
+ 		"uboot=u-boot.bin\0"					\
+ 		"kernel=uImage\0"					\
+ 		"loadaddr=0x70800000\0"					\
+-		"rd_loadaddr=0x70B00000\0"				\
++		"rd_loadaddr=0x70C00000\0"				\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+ 		"bootargs_base=setenv bootargs ${bootargs} "		\
+-		"console=ttymxc0,115200\0"				\
++		"console=ttymxc0,115200 gpu_memory=16M\0"		\
+ 		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
+ 		     "ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"	\
+-		"bootargs_android=setenv bootargs ${bootargs} mem=512M " \
+-		     "androidboot.console=ttymxc0 init=/init "		\
++		"bootargs_android=setenv bootargs ${bootargs} " \
++		     "androidboot.console=ttymxc0 init=/init di0_primary" \
+ 		     "video=mxcdi0fb:RGB565,800x480M@55 calibration\0"	\
+ 		"bootcmd=run bootcmd_SD \0"				\
+ 		"bootcmd_SD=run bootargs_base bootargs_android;"	\
+-- 
+1.5.4.4
+

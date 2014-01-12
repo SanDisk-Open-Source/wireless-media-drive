@@ -1,0 +1,35 @@
+From 9c8a7cdb767772817f7394e539395dba7cf2cfc9 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Fri, 27 Aug 2010 10:51:00 +0800
+Subject: [PATCH] ENGR00126711 mx28:fix wakeup warning message
+
+fix suspend/wakeup warning message
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ drivers/serial/mxs-duart.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/serial/mxs-duart.c b/drivers/serial/mxs-duart.c
+index 716994f..64e5057 100644
+--- a/drivers/serial/mxs-duart.c
++++ b/drivers/serial/mxs-duart.c
+@@ -742,7 +742,6 @@ static int duart_suspend(struct platform_device *pdev,
+ 	int ret = 0;
+ 	if (!duart_port.suspended) {
+ 		ret = uart_suspend_port(&duart_drv, &duart_port.port);
+-		duart_shutdown((struct uart_port *)&duart_port);
+ 		if (!ret)
+ 			duart_port.suspended = 1;
+ 	}
+@@ -755,7 +754,6 @@ static int duart_resume(struct platform_device *pdev,
+ 	int ret = 0;
+ 	if (duart_port.suspended) {
+ 		ret = uart_resume_port(&duart_drv, &duart_port.port);
+-		duart_startup((struct uart_port *)&duart_port);
+ 		if (!ret)
+ 			duart_port.suspended = 0;
+ 	}
+-- 
+1.5.4.4
+

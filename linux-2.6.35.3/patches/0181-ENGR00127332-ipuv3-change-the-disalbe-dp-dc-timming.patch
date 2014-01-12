@@ -1,0 +1,116 @@
+From b04ac1be838a614f7c8f3ec39337e9fc0ca058e4 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Mon, 13 Sep 2010 16:00:17 +0800
+Subject: [PATCH] ENGR00127332 ipuv3: change the disalbe dp-dc timming
+
+disable dp-dc in the display flow end irq handler, otherwise,
+ipu may get NFB4EOF error for next fb enabling under big resolution(like 1080p).
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_common.c |   33 ++++++++++++++-------------------
+ drivers/mxc/ipu3/ipu_disp.c   |   33 ++++++++++++++++++++-------------
+ 2 files changed, 34 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index 5c5e767..668e4da 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -1857,29 +1857,24 @@ int32_t ipu_disable_channel(ipu_channel_t channel, bool wait_for_stop)
+ 
+ 	if ((channel == MEM_BG_SYNC) || (channel == MEM_FG_SYNC) ||
+ 	    (channel == MEM_DC_SYNC)) {
+-		int timeout = 50;
+-		int irq;
+-
+ 		_ipu_dp_dc_disable(channel, false);
+ 
+ 		/*
+-		 * wait for display channel EOF then disable IDMAC,
+-		 * it avoid NFB4EOF error.
++		 * wait for BG channel EOF then disable FG-IDMAC,
++		 * it avoid FG NFB4EOF error.
+ 		 */
+-		if (channel == MEM_BG_SYNC)
+-			irq = IPU_IRQ_BG_SYNC_EOF;
+-		if (channel == MEM_FG_SYNC)
+-			irq = IPU_IRQ_FG_SYNC_EOF;
+-		else
+-			irq = IPU_IRQ_DC_SYNC_EOF;
+-		__raw_writel(IPUIRQ_2_MASK(irq),
+-			     IPUIRQ_2_STATREG(irq));
+-		while ((__raw_readl(IPUIRQ_2_STATREG(irq)) &
+-			IPUIRQ_2_MASK(irq)) == 0) {
+-			msleep(10);
+-			timeout -= 10;
+-			if (timeout <= 0)
+-				break;
++		if (channel == MEM_FG_SYNC) {
++			int timeout = 50;
++
++			__raw_writel(IPUIRQ_2_MASK(IPU_IRQ_BG_SYNC_EOF),
++					IPUIRQ_2_STATREG(IPU_IRQ_BG_SYNC_EOF));
++			while ((__raw_readl(IPUIRQ_2_STATREG(IPU_IRQ_BG_SYNC_EOF)) &
++					IPUIRQ_2_MASK(IPU_IRQ_BG_SYNC_EOF)) == 0) {
++				msleep(10);
++				timeout -= 10;
++				if (timeout <= 0)
++					break;
++			}
+ 		}
+ 	} else if (wait_for_stop) {
+ 		while (idma_is_set(IDMAC_CHA_BUSY, in_dma) ||
+diff --git a/drivers/mxc/ipu3/ipu_disp.c b/drivers/mxc/ipu3/ipu_disp.c
+index 96a1c0c..7e7ed78 100644
+--- a/drivers/mxc/ipu3/ipu_disp.c
++++ b/drivers/mxc/ipu3/ipu_disp.c
+@@ -692,6 +692,26 @@ static bool dc_swap;
+ static irqreturn_t dc_irq_handler(int irq, void *dev_id)
+ {
+ 	struct completion *comp = dev_id;
++	uint32_t reg;
++	uint32_t dc_chan;
++
++	if (irq == IPU_IRQ_DC_FC_1)
++		dc_chan = 1;
++	else
++		dc_chan = 5;
++
++	if (!dc_swap) {
++		reg = __raw_readl(DC_WR_CH_CONF(dc_chan));
++		reg &= ~DC_WR_CH_CONF_PROG_TYPE_MASK;
++		__raw_writel(reg, DC_WR_CH_CONF(dc_chan));
++
++		reg = __raw_readl(IPU_DISP_GEN);
++		if (g_dc_di_assignment[dc_chan])
++			reg &= ~DI1_COUNTER_RELEASE;
++		else
++			reg &= ~DI0_COUNTER_RELEASE;
++		__raw_writel(reg, IPU_DISP_GEN);
++	}
+ 
+ 	complete(comp);
+ 	return IRQ_HANDLED;
+@@ -775,19 +795,6 @@ void _ipu_dp_dc_disable(ipu_channel_t channel, bool swap)
+ 		__raw_writel(reg, DC_WR_CH_CONF(dc_chan));
+ 		spin_unlock_irqrestore(&ipu_lock, lock_flags);
+ 	} else {
+-		spin_lock_irqsave(&ipu_lock, lock_flags);
+-		reg = __raw_readl(DC_WR_CH_CONF(dc_chan));
+-		reg &= ~DC_WR_CH_CONF_PROG_TYPE_MASK;
+-		__raw_writel(reg, DC_WR_CH_CONF(dc_chan));
+-
+-		reg = __raw_readl(IPU_DISP_GEN);
+-		if (g_dc_di_assignment[dc_chan])
+-			reg &= ~DI1_COUNTER_RELEASE;
+-		else
+-			reg &= ~DI0_COUNTER_RELEASE;
+-		__raw_writel(reg, IPU_DISP_GEN);
+-
+-		spin_unlock_irqrestore(&ipu_lock, lock_flags);
+ 		/* Clock is already off because it must be done quickly, but
+ 		   we need to fix the ref count */
+ 		clk_disable(g_pixel_clk[g_dc_di_assignment[dc_chan]]);
+-- 
+1.5.4.4
+

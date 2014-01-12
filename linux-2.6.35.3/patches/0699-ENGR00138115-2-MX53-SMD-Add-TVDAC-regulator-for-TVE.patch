@@ -1,0 +1,28 @@
+From f1c56f7fda3b0eae6c3442c960bb2e31b2858f68 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Tue, 18 Jan 2011 10:45:55 +0800
+Subject: [PATCH] ENGR00138115-2 MX53 SMD:Add TVDAC regulator for TVE pdata
+
+This patch adds TVDAC regulator for TVE platform data.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index d0dfa15..9472da7 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -599,7 +599,7 @@ static struct mxc_bus_freq_platform_data bus_freq_data = {
+ };
+ 
+ static struct tve_platform_data tve_data = {
+-	.dac_reg = "",
++	.dac_reg = "DA9052_LDO7",
+ };
+ 
+ static struct ldb_platform_data ldb_data = {
+-- 
+1.5.4.4
+

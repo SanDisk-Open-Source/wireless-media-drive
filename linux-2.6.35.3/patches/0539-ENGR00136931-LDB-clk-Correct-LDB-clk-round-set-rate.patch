@@ -1,0 +1,40 @@
+From 98b4cb1bdc361781be033259c061b4c26cc2271d Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 14 Dec 2010 18:20:20 +0800
+Subject: [PATCH] ENGR00136931 LDB clk:Correct LDB clk round/set rate
+
+As LDB clock's parent clock rate is inaccurate and
+LDB clock can only be divided by 7 or 3.5 from its
+parent clock, so add some margin when rounding and
+setting LDB clock rate.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 606471e..ac73329 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -1666,7 +1666,7 @@ static unsigned long _clk_ldb_di_round_rate(struct clk *clk,
+ {
+ 	u32 parent_rate = clk_get_rate(clk->parent);
+ 
+-	if (rate * 7 <= parent_rate)
++	if (rate * 7 <= parent_rate + parent_rate/20)
+ 		return parent_rate / 7;
+ 	else
+ 		return 2 * parent_rate / 7;
+@@ -1677,7 +1677,7 @@ static int _clk_ldb_di_set_rate(struct clk *clk, unsigned long rate)
+ 	u32 reg, div = 0;
+ 	u32 parent_rate = clk_get_rate(clk->parent);
+ 
+-	if (rate * 7 <= parent_rate) {
++	if (rate * 7 <= parent_rate + parent_rate/20) {
+ 		div = 7;
+ 		rate = parent_rate / 7;
+ 	} else
+-- 
+1.5.4.4
+

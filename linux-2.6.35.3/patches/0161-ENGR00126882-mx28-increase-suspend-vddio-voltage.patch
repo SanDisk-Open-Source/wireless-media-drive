@@ -1,0 +1,28 @@
+From 1bc3ee8d27f1bcfdb5dd3004461c85ecc3ebb8ac Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Tue, 31 Aug 2010 14:30:11 +0800
+Subject: [PATCH] ENGR00126882 mx28:increase suspend vddio voltage
+
+increase suspend vddio voltage to make suspend/resume more stable
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx28/sleep.S |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/sleep.S b/arch/arm/mach-mx28/sleep.S
+index b8ed191..54e86bd 100644
+--- a/arch/arm/mach-mx28/sleep.S
++++ b/arch/arm/mach-mx28/sleep.S
+@@ -66,7 +66,7 @@
+ 
+ #define PHYS_RAM_START		0x40000000
+ 
+-#define LOWER_VDDIO 5
++#define LOWER_VDDIO 6
+ #define LOWER_VDDA 9
+ #define LOWER_VDDD 0x16
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,514 @@
+From 8e442a0804e3df1a127916b32fe2edbeed736024 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Mon, 23 Aug 2010 15:26:35 +0800
+Subject: [PATCH] ENGR00125875-1 mx28: reduce suspend mode power consumption
+
+reduce suspend mode power consumption
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx28/mx28evk.h      |    3 +
+ arch/arm/mach-mx28/mx28evk_pins.c |  225 ++++++++++++++++++++++---------------
+ arch/arm/mach-mx28/pm.c           |   15 ++-
+ arch/arm/mach-mx28/sleep.S        |   79 +++++++++++--
+ 4 files changed, 215 insertions(+), 107 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/mx28evk.h b/arch/arm/mach-mx28/mx28evk.h
+index 5891027..d973c0f 100644
+--- a/arch/arm/mach-mx28/mx28evk.h
++++ b/arch/arm/mach-mx28/mx28evk.h
+@@ -21,5 +21,8 @@
+ 
+ extern void __init mx28evk_pins_init(void);
+ extern int mx28evk_enet_gpio_init(void);
++void mx28evk_enet_io_lowerpower_enter(void);
++void mx28evk_enet_io_lowerpower_exit(void);
++
+ 
+ #endif /* __ASM_ARM_MACH_MX28EVK_H */
+diff --git a/arch/arm/mach-mx28/mx28evk_pins.c b/arch/arm/mach-mx28/mx28evk_pins.c
+index a7c81b3..0490f36 100644
+--- a/arch/arm/mach-mx28/mx28evk_pins.c
++++ b/arch/arm/mach-mx28/mx28evk_pins.c
+@@ -538,9 +538,99 @@ static struct pin_desc mx28evk_fixed_pins[] = {
+ 	 .pull 		= 0,
+ 	 },
+ #endif
++#if defined(CONFIG_LEDS_MXS) || defined(CONFIG_LEDS_MXS_MODULE)
++	{
++	 .name = "LEDS_PWM0",
++	 .id = PINID_AUART1_RX,
++	 .fun           = PIN_FUN3,
++	 .strength      = PAD_8MA,
++	 .voltage       = PAD_3_3V,
++	 .pullup        = 1,
++	 .drive         = 1,
++	 .pull          = 1,
++	 },
++	{
++	 .name = "LEDS_PWM1",
++	 .id = PINID_AUART1_TX,
++	 .fun           = PIN_FUN3,
++	 .strength      = PAD_8MA,
++	 .voltage       = PAD_3_3V,
++	 .pullup        = 1,
++	 .drive         = 1,
++	 .pull          = 1,
++	 },
++#endif
++#if defined(CONFIG_SND_MXS_SOC_DAI) || defined(CONFIG_SND_MXS_SOC_DAI_MODULE)
++	/* Configurations of SAIF0 port pins */
++	{
++	 .name	= "SAIF0_MCLK",
++	 .id	= PINID_SAIF0_MCLK,
++	 .fun	= PIN_FUN1,
++	 .strength	= PAD_12MA,
++	 .voltage	= PAD_3_3V,
++	 .pullup	= 1,
++	 .drive 	= 1,
++	 .pull 		= 1,
++	 },
++	{
++	 .name	= "SAIF0_LRCLK",
++	 .id	= PINID_SAIF0_LRCLK,
++	 .fun	= PIN_FUN1,
++	 .strength	= PAD_12MA,
++	 .voltage	= PAD_3_3V,
++	 .pullup	= 1,
++	 .drive 	= 1,
++	 .pull 		= 1,
++	 },
++	{
++	 .name	= "SAIF0_BITCLK",
++	 .id	= PINID_SAIF0_BITCLK,
++	 .fun	= PIN_FUN1,
++	 .strength	= PAD_12MA,
++	 .voltage	= PAD_3_3V,
++	 .pullup	= 1,
++	 .drive 	= 1,
++	 .pull 		= 1,
++	 },
++	{
++	 .name	= "SAIF0_SDATA0",
++	 .id	= PINID_SAIF0_SDATA0,
++	 .fun	= PIN_FUN1,
++	 .strength	= PAD_12MA,
++	 .voltage	= PAD_3_3V,
++	 .pullup	= 1,
++	 .drive 	= 1,
++	 .pull 		= 1,
++	 },
++	{
++	 .name	= "SAIF1_SDATA0",
++	 .id	= PINID_SAIF1_SDATA0,
++	 .fun	= PIN_FUN1,
++	 .strength	= PAD_12MA,
++	 .voltage	= PAD_3_3V,
++	 .pullup	= 1,
++	 .drive 	= 1,
++	 .pull 		= 1,
++	 },
++#endif
++#if defined(CONFIG_SND_SOC_MXS_SPDIF) || \
++       defined(CONFIG_SND_SOC_MXS_SPDIF_MODULE)
++	{
++	 .name	= "SPDIF",
++	 .id	= PINID_SPDIF,
++	 .fun	= PIN_FUN1,
++	 .strength	= PAD_12MA,
++	 .voltage	= PAD_3_3V,
++	 .pullup	= 1,
++	 .drive 	= 1,
++	 .pull 		= 1,
++	},
++#endif
++};
+ 
+ #if defined(CONFIG_FEC) || defined(CONFIG_FEC_MODULE)\
+ 	|| defined(CONFIG_FEC_L2SWITCH)
++static struct pin_desc mx28evk_eth_pins[] = {
+ 	{
+ 	 .name = "ENET0_MDC",
+ 	 .id = PINID_ENET0_MDC,
+@@ -691,97 +781,8 @@ static struct pin_desc mx28evk_fixed_pins[] = {
+ 	 .voltage = PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
+-#endif
+-#if defined(CONFIG_LEDS_MXS) || defined(CONFIG_LEDS_MXS_MODULE)
+-	{
+-	 .name = "LEDS_PWM0",
+-	 .id = PINID_AUART1_RX,
+-	 .fun           = PIN_FUN3,
+-	 .strength      = PAD_8MA,
+-	 .voltage       = PAD_3_3V,
+-	 .pullup        = 1,
+-	 .drive         = 1,
+-	 .pull          = 1,
+-	 },
+-	{
+-	 .name = "LEDS_PWM1",
+-	 .id = PINID_AUART1_TX,
+-	 .fun           = PIN_FUN3,
+-	 .strength      = PAD_8MA,
+-	 .voltage       = PAD_3_3V,
+-	 .pullup        = 1,
+-	 .drive         = 1,
+-	 .pull          = 1,
+-	 },
+-#endif
+-#if defined(CONFIG_SND_MXS_SOC_DAI) || defined(CONFIG_SND_MXS_SOC_DAI_MODULE)
+-	/* Configurations of SAIF0 port pins */
+-	{
+-	 .name	= "SAIF0_MCLK",
+-	 .id	= PINID_SAIF0_MCLK,
+-	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_12MA,
+-	 .voltage	= PAD_3_3V,
+-	 .pullup	= 1,
+-	 .drive 	= 1,
+-	 .pull 		= 1,
+-	 },
+-	{
+-	 .name	= "SAIF0_LRCLK",
+-	 .id	= PINID_SAIF0_LRCLK,
+-	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_12MA,
+-	 .voltage	= PAD_3_3V,
+-	 .pullup	= 1,
+-	 .drive 	= 1,
+-	 .pull 		= 1,
+-	 },
+-	{
+-	 .name	= "SAIF0_BITCLK",
+-	 .id	= PINID_SAIF0_BITCLK,
+-	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_12MA,
+-	 .voltage	= PAD_3_3V,
+-	 .pullup	= 1,
+-	 .drive 	= 1,
+-	 .pull 		= 1,
+-	 },
+-	{
+-	 .name	= "SAIF0_SDATA0",
+-	 .id	= PINID_SAIF0_SDATA0,
+-	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_12MA,
+-	 .voltage	= PAD_3_3V,
+-	 .pullup	= 1,
+-	 .drive 	= 1,
+-	 .pull 		= 1,
+-	 },
+-	{
+-	 .name	= "SAIF1_SDATA0",
+-	 .id	= PINID_SAIF1_SDATA0,
+-	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_12MA,
+-	 .voltage	= PAD_3_3V,
+-	 .pullup	= 1,
+-	 .drive 	= 1,
+-	 .pull 		= 1,
+-	 },
+-#endif
+-#if defined(CONFIG_SND_SOC_MXS_SPDIF) || \
+-       defined(CONFIG_SND_SOC_MXS_SPDIF_MODULE)
+-	{
+-	 .name	= "SPDIF",
+-	 .id	= PINID_SPDIF,
+-	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_12MA,
+-	 .voltage	= PAD_3_3V,
+-	 .pullup	= 1,
+-	 .drive 	= 1,
+-	 .pull 		= 1,
+-	},
+-#endif
+ };
+-
++#endif
+ 
+ static int __initdata enable_ssp1 = { 0 };
+ static int __init ssp1_setup(char *__unused)
+@@ -1087,11 +1088,49 @@ int mx28evk_enet_gpio_init(void)
+ 
+ 	return 0;
+ }
++
++void mx28evk_enet_io_lowerpower_enter(void)
++{
++	int i;
++	gpio_direction_output(MXS_PIN_TO_GPIO(PINID_SSP1_DATA3), 1);
++	gpio_direction_output(MXS_PIN_TO_GPIO(PINID_ENET0_RX_CLK), 0);
++	gpio_request(MXS_PIN_TO_GPIO(PINID_ENET0_TX_CLK), "ETH_INT");
++	gpio_direction_output(MXS_PIN_TO_GPIO(PINID_ENET0_TX_CLK), 0);
++
++	for (i = 0; i < ARRAY_SIZE(mx28evk_eth_pins); i++) {
++		mxs_release_pin(mx28evk_eth_pins[i].id,
++			mx28evk_eth_pins[i].name);
++		gpio_request(MXS_PIN_TO_GPIO(mx28evk_eth_pins[i].id),
++			mx28evk_eth_pins[i].name);
++		gpio_direction_output(
++			MXS_PIN_TO_GPIO(mx28evk_eth_pins[i].id), 0);
++	}
++
++}
++
++void mx28evk_enet_io_lowerpower_exit(void)
++{
++	int i;
++	gpio_direction_output(MXS_PIN_TO_GPIO(PINID_SSP1_DATA3), 0);
++	gpio_direction_output(MXS_PIN_TO_GPIO(PINID_ENET0_RX_CLK), 1);
++	gpio_free(MXS_PIN_TO_GPIO(PINID_ENET0_TX_CLK));
++	for (i = 0; i < ARRAY_SIZE(mx28evk_eth_pins); i++) {
++		gpio_free(MXS_PIN_TO_GPIO(mx28evk_eth_pins[i].id));
++		mxs_request_pin(mx28evk_eth_pins[i].id,
++			mx28evk_eth_pins[i].fun,
++			mx28evk_eth_pins[i].name);
++	}
++}
++
+ #else
+ int mx28evk_enet_gpio_init(void)
+ {
+ 	return 0;
+ }
++void mx28evk_enet_io_lowerpower_enter(void)
++{}
++void mx28evk_enet_io_lowerpower_exit(void)
++
+ #endif
+ 
+ void __init mx28evk_init_pin_group(struct pin_desc *pins, unsigned count)
+@@ -1135,5 +1174,9 @@ void __init mx28evk_pins_init(void)
+ 		mx28evk_init_pin_group(mx28evk_gpmi_pins,
+ 						ARRAY_SIZE(mx28evk_gpmi_pins));
+ 	}
+-
++#if defined(CONFIG_FEC) || defined(CONFIG_FEC_MODULE)\
++	|| defined(CONFIG_FEC_L2SWITCH)
++		mx28evk_init_pin_group(mx28evk_eth_pins,
++						ARRAY_SIZE(mx28evk_eth_pins));
++#endif
+ }
+diff --git a/arch/arm/mach-mx28/pm.c b/arch/arm/mach-mx28/pm.c
+index 12de132..2d1d0af 100644
+--- a/arch/arm/mach-mx28/pm.c
++++ b/arch/arm/mach-mx28/pm.c
+@@ -37,12 +37,13 @@
+ #include <mach/dma.h>
+ #include <mach/regs-rtc.h>
+ #include "regs-clkctrl.h"
+-#include "regs-pinctrl.h"
+ #include <mach/regs-power.h>
+ #include <mach/regs-pwm.h>
+ #include <mach/regs-rtc.h>
+ #include <mach/../../regs-icoll.h>
+ #include "regs-dram.h"
++#include "mx28_pins.h"
++#include "mx28evk.h"
+ 
+ #include "sleep.h"
+ 
+@@ -80,7 +81,8 @@ static inline void do_standby(void)
+ 	u32 reg_clkctrl_clkseq, reg_clkctrl_xtal;
+ 	unsigned long iram_phy_addr;
+ 	void *iram_virtual_addr;
+-
++	int wakeupirq;
++	mx28evk_enet_io_lowerpower_enter();
+ 	/*
+ 	 * 1) switch clock domains from PLL to 24MHz
+ 	 * 2) lower voltage (TODO)
+@@ -111,7 +113,8 @@ static inline void do_standby(void)
+ 		cpu_parent = clk_get_parent(cpu_clk);
+ 		hbus_rate = clk_get_rate(hbus_clk);
+ 		clk_set_parent(cpu_clk, osc_clk);
+-	}
++	} else
++		pr_err("fail to get cpu clk\n");
+ 
+ 	local_fiq_disable();
+ 
+@@ -123,15 +126,18 @@ static inline void do_standby(void)
+ 
+ 	reg_clkctrl_xtal = __raw_readl(REGS_CLKCTRL_BASE + HW_CLKCTRL_XTAL);
+ 
++
+ 	/* do suspend */
+ 	mx28_cpu_standby_ptr = iram_virtual_addr;
+ 
+ 	mx28_cpu_standby_ptr();
+ 
++	wakeupirq = __raw_readl(IO_ADDRESS(ICOLL_PHYS_ADDR) + HW_ICOLL_STAT);
++
++	pr_info("wakeup irq = %d\n", wakeupirq);
+ 
+ 	__raw_writel(reg_clkctrl_clkseq, REGS_CLKCTRL_BASE + HW_CLKCTRL_CLKSEQ);
+ 	__raw_writel(reg_clkctrl_xtal, REGS_CLKCTRL_BASE + HW_CLKCTRL_XTAL);
+-
+ 	saved_sleep_state = 0;  /* waking from standby */
+ 	__raw_writel(BM_POWER_CTRL_PSWITCH_IRQ,
+ 		REGS_POWER_BASE + HW_POWER_CTRL_CLR);
+@@ -150,6 +156,7 @@ static inline void do_standby(void)
+ 	clk_put(cpu_clk);
+ 
+ 	iram_free(iram_phy_addr, MAX_POWEROFF_CODE_SIZE);
++	mx28evk_enet_io_lowerpower_exit();
+ }
+ 
+ static noinline void do_mem(void)
+diff --git a/arch/arm/mach-mx28/sleep.S b/arch/arm/mach-mx28/sleep.S
+index 89cbcb2..b8ed191 100644
+--- a/arch/arm/mach-mx28/sleep.S
++++ b/arch/arm/mach-mx28/sleep.S
+@@ -56,13 +56,25 @@
+ #define HW_POWER_VDDACTRL_ADDR \
+ 	(MX28_SOC_IO_ADDRESS(POWER_PHYS_ADDR) + HW_POWER_VDDACTRL)
+ #define HW_PINCTRL_EMI_DS_CTRL_ADDR \
+-	(MX28_SOC_IO_ADDRESS(POWER_PHYS_ADDR) + HW_PINCTRL_EMI_DS_CTRL)
++	(MX28_SOC_IO_ADDRESS(PINCTRL_PHYS_ADDR) + HW_PINCTRL_EMI_DS_CTRL)
++
++#define HW_POWER_LOOPCTRL_ADDR \
++	(MX28_SOC_IO_ADDRESS(POWER_PHYS_ADDR) + HW_POWER_LOOPCTRL)
++
++#define HW_POWER_MINPWR_ADDR \
++	(MX28_SOC_IO_ADDRESS(POWER_PHYS_ADDR) + HW_POWER_MINPWR)
+ 
+ #define PHYS_RAM_START		0x40000000
+ 
+ #define LOWER_VDDIO 5
+ #define LOWER_VDDA 9
+-#define LOWER_VDDD 16
++#define LOWER_VDDD 0x16
++
++#define VDDIOCTRL_BACKUP 0
++#define VDDACTRL_BACKUP 1
++#define VDDDCTRL_BACKUP 2
++#define POWER_LOOPCTRL_BACKUP 3
++#define POWER_MINPWR_BACKUP 4
+ 
+ .macro PM_BITS_SET, addr, val
+ 	mov	r0, #(\addr & 0x000000FF)
+@@ -84,6 +96,26 @@
+ 	str r1, [r0]
+ .endm
+ 
++.macro PM_BACKUP_REG, addr, num
++	mov	r0, #(\addr & 0x000000FF)
++	orr	r0, r0, #(\addr & 0x0000FF00)
++	orr	r0, r0, #(\addr & 0x00FF0000)
++	orr	r0, r0, #(\addr & 0xFF000000)
++	ldr	r1, [r0]
++	str r1, __mx28_temp_stack + \num * 4
++.endm
++
++.macro PM_WRITE_REG_MASK, addr, bitmask, val
++	mov	r0, #(\addr & 0x000000FF)
++	orr	r0, r0, #(\addr & 0x0000FF00)
++	orr	r0, r0, #(\addr & 0x00FF0000)
++	orr	r0, r0, #(\addr & 0xFF000000)
++	ldr	r1, [r0]
++	bic r1, r1, #(\bitmask)
++	orr r1, r1, #(\val)
++	str r1, [r0]
++.endm
++
+ .macro PM_SET_AND_BACKUP_REG, addr, bitmask, val, num
+ 	mov	r0, #(\addr & 0x000000FF)
+ 	orr	r0, r0, #(\addr & 0x0000FF00)
+@@ -144,32 +176,51 @@ ENTRY(mx28_cpu_standby)
+ 	orr	r1, r1, #(BM_CLKCTRL_EMI_CLKGATE)
+ 	str	r1, [r0]
+ 
+-	PM_SET_AND_BACKUP_REG HW_PINCTRL_EMI_DS_CTRL_ADDR,\
+-	BM_PINCTRL_EMI_DS_CTRL_DDR_MODE,\
+-	BF_PINCTRL_EMI_DS_CTRL_DDR_MODE(0x1), 4
++//	PM_SET_AND_BACKUP_REG HW_PINCTRL_EMI_DS_CTRL_ADDR,\
++//	BM_PINCTRL_EMI_DS_CTRL_DDR_MODE,\
++//	BF_PINCTRL_EMI_DS_CTRL_DDR_MODE(0x1), 4
+ 
+ 	// vddio
+ 	PM_SET_AND_BACKUP_REG HW_POWER_VDDIOCTRL_ADDR,\
+-	BM_POWER_VDDIOCTRL_TRG, LOWER_VDDIO, 0
++	BM_POWER_VDDIOCTRL_TRG, LOWER_VDDIO, VDDIOCTRL_BACKUP
+ 	mov	r0, #24 << 10
+ 1:	sub	r0, r0, #1
+ 	cmp	r0, #0
+ 	bne	1b
+ 
+ 	PM_SET_AND_BACKUP_REG HW_POWER_VDDACTRL_ADDR,\
+-	BM_POWER_VDDACTRL_TRG, LOWER_VDDA, 1
++	BM_POWER_VDDACTRL_TRG, LOWER_VDDA, VDDACTRL_BACKUP
+ 	mov	r0, #24 << 10
+ 2:	sub	r0, r0, #1
+ 	cmp	r0, #0
+ 	bne	2b
+ 
+ 	PM_SET_AND_BACKUP_REG HW_POWER_VDDDCTRL_ADDR,\
+-	BM_POWER_VDDDCTRL_TRG, LOWER_VDDD, 2
++	BM_POWER_VDDDCTRL_TRG, LOWER_VDDD, VDDDCTRL_BACKUP
+ 	mov	r0, #24 << 10
+ 3:	sub	r0, r0, #1
+ 	cmp	r0, #0
+ 	bne	3b
+ 
++	PM_BACKUP_REG HW_POWER_LOOPCTRL_ADDR, POWER_LOOPCTRL_BACKUP
++	PM_BACKUP_REG HW_POWER_MINPWR_ADDR, POWER_MINPWR_BACKUP
++
++//	PM_BITS_CLR	HW_POWER_LOOPCTRL_ADDR, BM_POWER_LOOPCTRL_EN_RCSCALE
++//	PM_WRITE_REG_MASK	HW_POWER_LOOPCTRL_ADDR, BM_POWER_LOOPCTRL_DC_R,\
++//		(2<<BP_POWER_LOOPCTRL_DC_R)
++
++	// half fets
++	PM_BITS_SET HW_POWER_MINPWR_ADDR, BM_POWER_MINPWR_HALF_FETS
++
++	PM_BITS_CLR	HW_POWER_LOOPCTRL_ADDR, BM_POWER_LOOPCTRL_CM_HYST_THRESH
++	PM_BITS_CLR	HW_POWER_LOOPCTRL_ADDR, BM_POWER_LOOPCTRL_EN_CM_HYST
++	PM_BITS_CLR	HW_POWER_LOOPCTRL_ADDR, BM_POWER_LOOPCTRL_EN_DF_HYST
++
++	// enable PFM
++	PM_BITS_SET	HW_POWER_LOOPCTRL_ADDR, BM_POWER_LOOPCTRL_HYST_SIGN
++	PM_BITS_SET HW_POWER_MINPWR_ADDR, BM_POWER_MINPWR_EN_DC_PFM
++
++
+     //Gated PLL0
+ 	PM_BITS_CLR	HW_CLKCTRL_PLL0CTRL0_ADDR, BM_CLKCTRL_PLL0CTRL0_POWER
+ 
+@@ -194,18 +245,22 @@ ENTRY(mx28_cpu_standby)
+ 
+ 	PM_BITS_SET	HW_CLKCTRL_PLL0CTRL0_ADDR, BM_CLKCTRL_PLL0CTRL0_POWER
+ 
++	PM_SET_RESTORE_REG HW_POWER_MINPWR_ADDR, POWER_MINPWR_BACKUP
++
++	PM_SET_RESTORE_REG HW_POWER_LOOPCTRL_ADDR, POWER_LOOPCTRL_BACKUP
++
+ 	// vddio
+-	PM_SET_RESTORE_REG HW_POWER_VDDIOCTRL_ADDR, 0
++	PM_SET_RESTORE_REG HW_POWER_VDDIOCTRL_ADDR, VDDIOCTRL_BACKUP
+ 	mov	r0, #24 << 10
+ 10:	sub	r0, r0, #1
+ 	cmp	r0, #0
+ 	bne	10b
+-	PM_SET_RESTORE_REG HW_POWER_VDDACTRL_ADDR, 1
++	PM_SET_RESTORE_REG HW_POWER_VDDACTRL_ADDR, VDDACTRL_BACKUP
+ 	mov	r0, #24 << 10
+ 20:	sub	r0, r0, #1
+ 	cmp	r0, #0
+ 	bne	20b
+-	PM_SET_RESTORE_REG HW_POWER_VDDDCTRL_ADDR, 2
++	PM_SET_RESTORE_REG HW_POWER_VDDDCTRL_ADDR, VDDDCTRL_BACKUP
+ 	mov	r0, #24 << 10
+ 30:	sub	r0, r0, #1
+ 	cmp	r0, #0
+@@ -220,7 +275,7 @@ ENTRY(mx28_cpu_standby)
+ 	bic	r1, r1, #(BM_CLKCTRL_EMI_CLKGATE)
+ 	str	r1, [r0]
+ 
+-	PM_SET_RESTORE_REG HW_PINCTRL_EMI_DS_CTRL_ADDR, 4
++//	PM_SET_RESTORE_REG HW_PINCTRL_EMI_DS_CTRL_ADDR, 4
+ 	@ restore normal DRAM mode
+ 	mov	r0, #(HW_DRAM_CTL17_ADDR & 0x000000FF)
+ 	orr	r0, r0, #(HW_DRAM_CTL17_ADDR & 0x0000FF00)
+-- 
+1.5.4.4
+

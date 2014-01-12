@@ -1,0 +1,139 @@
+From 209829f34409af6b7352d9478d8f12075331ab81 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Wed, 26 Jan 2011 23:03:31 +0800
+Subject: [PATCH] ENGR00138422-3 Android fastboot: Pass block offset to cmd_fastboot
+
+Pass mmc/sata block offset from fastboot driver to cmd_fastboot, not byte.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ common/cmd_fastboot.c       |   22 ++++++++++------------
+ drivers/fastboot/fastboot.c |   34 ++++++++++++++++++----------------
+ 2 files changed, 28 insertions(+), 28 deletions(-)
+
+diff --git a/common/cmd_fastboot.c b/common/cmd_fastboot.c
+index e3eb590..cf51b3a 100644
+--- a/common/cmd_fastboot.c
++++ b/common/cmd_fastboot.c
+@@ -110,8 +110,7 @@ static unsigned int mmc_controller_no;
+ 
+ /* To support the Android-style naming of flash */
+ #define MAX_PTN		    16
+-#define MMC_BLOCK_SIZE	    512
+-#define SATA_BLOCK_SIZE     512
++#define MMC_SATA_BLOCK_SIZE 512
+ 
+ static fastboot_ptentry ptable[MAX_PTN];
+ static unsigned int pcount;
+@@ -1116,7 +1115,8 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 				if (ptn == 0) {
+ 					printf("Partition:'%s' does not exist\n", ptn->name);
+ 					sprintf(response, "FAILpartition does not exist");
+-				} else if ((download_bytes > ptn->length) &&
++				} else if ((download_bytes >
++					   ptn->length * MMC_SATA_BLOCK_SIZE) &&
+ 						!(ptn->flags & FASTBOOT_PTENTRY_FLAGS_WRITE_ENV)) {
+ 					printf("Image too large for the partition\n");
+ 					sprintf(response, "FAILimage too large for partition");
+@@ -1164,13 +1164,12 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 
+ 					sprintf(source, "0x%x",
+ 						 interface.transfer_buffer);
+-						/* block offset */
+-					temp = ptn->start / SATA_BLOCK_SIZE;
+-					sprintf(dest, "0x%x", temp);
++					/* block offset */
++					sprintf(dest, "0x%x", ptn->start);
+ 					/* block count */
+ 					temp = (download_bytes +
+-						SATA_BLOCK_SIZE - 1) /
+-							SATA_BLOCK_SIZE;
++						MMC_SATA_BLOCK_SIZE - 1) /
++							MMC_SATA_BLOCK_SIZE;
+ 					sprintf(length, "0x%x", temp);
+ 					if (do_sata(NULL, 0, 5, sata_write)) {
+ 						printf("Writing '%s' FAILED!\n",
+@@ -1210,12 +1209,11 @@ mmc_ops:
+ 					sprintf(source, "0x%x", interface.transfer_buffer);
+ 
+ 					/* block offset */
+-					temp = ptn->start / MMC_BLOCK_SIZE;
+-					sprintf(dest, "0x%x", temp);
++					sprintf(dest, "0x%x", ptn->start);
+ 					/* block count */
+ 					temp = (download_bytes +
+-						    MMC_BLOCK_SIZE - 1) /
+-						    MMC_BLOCK_SIZE;
++						    MMC_SATA_BLOCK_SIZE - 1) /
++						    MMC_SATA_BLOCK_SIZE;
+ 					sprintf(length, "0x%x", temp);
+ 
+ 					printf("Initializing '%s'\n", ptn->name);
+diff --git a/drivers/fastboot/fastboot.c b/drivers/fastboot/fastboot.c
+index 2eb17cc..36e7474 100644
+--- a/drivers/fastboot/fastboot.c
++++ b/drivers/fastboot/fastboot.c
+@@ -303,20 +303,26 @@ static int fastboot_init_mmc_sata_ptable(void)
+ 		    sizeof(fastboot_ptentry) * (PTN_RECOVERY_INDEX + 1));
+ 	/* MBR */
+ 	strcpy(ptable[PTN_MBR_INDEX].name, "mbr");
+-	ptable[PTN_MBR_INDEX].start = ANDROID_MBR_OFFSET;
+-	ptable[PTN_MBR_INDEX].length = ANDROID_MBR_SIZE;
++	ptable[PTN_MBR_INDEX].start = ANDROID_MBR_OFFSET / dev_desc->blksz;
++	ptable[PTN_MBR_INDEX].length = ANDROID_MBR_SIZE / dev_desc->blksz;
+ 	/* Bootloader */
+ 	strcpy(ptable[PTN_BOOTLOADER_INDEX].name, "bootloader");
+-	ptable[PTN_BOOTLOADER_INDEX].start = ANDROID_BOOTLOADER_OFFSET;
+-	ptable[PTN_BOOTLOADER_INDEX].length = ANDROID_BOOTLOADER_SIZE;
++	ptable[PTN_BOOTLOADER_INDEX].start =
++				ANDROID_BOOTLOADER_OFFSET / dev_desc->blksz;
++	ptable[PTN_BOOTLOADER_INDEX].length =
++				 ANDROID_BOOTLOADER_SIZE / dev_desc->blksz;
+ 	/* kernel */
+ 	strcpy(ptable[PTN_KERNEL_INDEX].name, "kernel");
+-	ptable[PTN_KERNEL_INDEX].start = ANDROID_KERNEL_OFFSET;
+-	ptable[PTN_KERNEL_INDEX].length = ANDROID_KERNEL_SIZE;
++	ptable[PTN_KERNEL_INDEX].start =
++				ANDROID_KERNEL_OFFSET / dev_desc->blksz;
++	ptable[PTN_KERNEL_INDEX].length =
++				ANDROID_KERNEL_SIZE / dev_desc->blksz;
+ 	/* uramdisk */
+ 	strcpy(ptable[PTN_URAMDISK_INDEX].name, "uramdisk");
+-	ptable[PTN_URAMDISK_INDEX].start = ANDROID_URAMDISK_OFFSET;
+-	ptable[PTN_URAMDISK_INDEX].length = ANDROID_URAMDISK_SIZE;
++	ptable[PTN_URAMDISK_INDEX].start =
++				ANDROID_URAMDISK_OFFSET / dev_desc->blksz;
++	ptable[PTN_URAMDISK_INDEX].length =
++				ANDROID_URAMDISK_SIZE / dev_desc->blksz;
+ 
+ 	/* system partition */
+ 	strcpy(ptable[PTN_SYSTEM_INDEX].name, "system");
+@@ -325,10 +331,8 @@ static int fastboot_init_mmc_sata_ptable(void)
+ 		printf("Bad partition index:%d\n",
+ 			CONFIG_ANDROID_SYSTEM_PARTITION_MMC);
+ 	else {
+-		ptable[PTN_SYSTEM_INDEX].start = info.start *
+-						    dev_desc->blksz;
+-		ptable[PTN_SYSTEM_INDEX].length = info.size *
+-						    dev_desc->blksz;
++		ptable[PTN_SYSTEM_INDEX].start = info.start;
++		ptable[PTN_SYSTEM_INDEX].length = info.size;
+ 	}
+ 	/* recovery partition */
+ 	strcpy(ptable[PTN_RECOVERY_INDEX].name, "recovery");
+@@ -337,10 +341,8 @@ static int fastboot_init_mmc_sata_ptable(void)
+ 		printf("Bad partition index:%d\n",
+ 			CONFIG_ANDROID_RECOVERY_PARTITION_MMC);
+ 	else {
+-		ptable[PTN_RECOVERY_INDEX].start = info.start *
+-							dev_desc->blksz;
+-		ptable[PTN_RECOVERY_INDEX].length = info.size *
+-							dev_desc->blksz;
++		ptable[PTN_RECOVERY_INDEX].start = info.start;
++		ptable[PTN_RECOVERY_INDEX].length = info.size;
+ 	}
+ 
+ 	for (i = 0; i <= PTN_RECOVERY_INDEX; i++)
+-- 
+1.5.4.4
+

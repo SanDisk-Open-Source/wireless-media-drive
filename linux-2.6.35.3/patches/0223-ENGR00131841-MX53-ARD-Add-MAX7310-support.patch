@@ -1,0 +1,115 @@
+From 77c68716bb375856027de43eb0443e729dab158c Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 22 Sep 2010 14:15:18 +0800
+Subject: [PATCH] ENGR00131841 MX53 ARD: Add MAX7310 support
+
+Add I/O expander chip MAX7310 support for MX53
+ARD board
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    5 ++-
+ arch/arm/mach-mx5/mx53_ard.c    |   42 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index d0ae25f..f3112cf 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Wed Sep 22 13:30:40 2010
++# Wed Sep 22 14:14:20 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -1064,7 +1064,8 @@ CONFIG_GPIOLIB=y
+ #
+ # CONFIG_GPIO_MAX7300 is not set
+ # CONFIG_GPIO_MAX732X is not set
+-# CONFIG_GPIO_PCA953X is not set
++CONFIG_GPIO_PCA953X=y
++# CONFIG_GPIO_PCA953X_IRQ is not set
+ # CONFIG_GPIO_PCF857X is not set
+ # CONFIG_GPIO_ADP5588 is not set
+ 
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 1407c90..daad5e4 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -33,6 +33,7 @@
+ #include <linux/smsc911x.h>
+ #include <linux/spi/spi.h>
+ #include <linux/i2c.h>
++#include <linux/i2c/pca953x.h>
+ #include <linux/ata.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/map.h>
+@@ -102,6 +103,17 @@
+ #define ARD_TS_INT			(6*32 + 12)	/* GPIO_7_12 */
+ #define ARD_SD1_LCTL		(6*32 + 13)	/* GPIO_7_13 */
+ 
++/* Start directly after the CPU's GPIO*/
++#define MAX7310_BASE_ADDR		224	/* 7x32 */
++#define ARD_BACKLIGHT_ON		MAX7310_BASE_ADDR
++#define ARD_SPARE			(MAX7310_BASE_ADDR + 1)
++#define ARD_CPU_PER_RST_B		(MAX7310_BASE_ADDR + 2)
++#define ARD_MAIN_PER_RST_B		(MAX7310_BASE_ADDR + 3)
++#define ARD_IPOD_RST_B			(MAX7310_BASE_ADDR + 4)
++#define ARD_MLB_RST_B			(MAX7310_BASE_ADDR + 5)
++#define ARD_SSI_STEERING		(MAX7310_BASE_ADDR + 6)
++#define ARD_GPS_RST_B			(MAX7310_BASE_ADDR + 7)
++
+ /*!
+  * @file mach-mx53/mx53_ard.c
+  *
+@@ -688,6 +700,35 @@ static struct mxc_audio_codec_platform_data cs42888_data = {
+ 	.analog_regulator = "VSD",
+ };
+ 
++static int mx53_ard_max7310_setup(struct i2c_client *client,
++			       unsigned gpio_base, unsigned ngpio,
++			       void *context)
++{
++	static int max7310_gpio_value[] = {
++		1, 1, 1, 1, 0, 0, 0, 0,
++	};
++	int n;
++
++	for (n = 0; n < ARRAY_SIZE(max7310_gpio_value); ++n) {
++		gpio_request(gpio_base + n, "MAX7310 GPIO Expander");
++		if (max7310_gpio_value[n] < 0)
++			gpio_direction_input(gpio_base + n);
++		else
++			gpio_direction_output(gpio_base + n,
++					      max7310_gpio_value[n]);
++		/* Export, direction locked down */
++		gpio_export(gpio_base + n, 0);
++	}
++
++	return 0;
++}
++
++static struct pca953x_platform_data mx53_i2c_max7310_platdata = {
++	.gpio_base	= MAX7310_BASE_ADDR,
++	.invert		= 0, /* Do not invert */
++	.setup		= mx53_ard_max7310_setup,
++};
++
+ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	.type = "cs42888",
+@@ -717,6 +758,7 @@ static struct i2c_board_info mxc_i2c2_board_info[] __initdata = {
+ 	{
+ 	 .type = "max7310",
+ 	 .addr = 0x18,
++	 .platform_data = &mx53_i2c_max7310_platdata,
+ 	},
+ 	{
+ 	 .type = "mlb",
+-- 
+1.5.4.4
+

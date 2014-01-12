@@ -1,0 +1,160 @@
+From b079999b6590ac18308ef47ecee2c4d66fb54e11 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Sun, 19 Sep 2010 13:21:27 +0800
+Subject: [PATCH] ENGR00131707-1 mx5: upgrade mc13892 regulator driver to 2.6.35
+
+mx5: upgrade mc13892 regulator driver to 2.6.35
+platform specific code
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c    |    9 ++++++---
+ arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c |   15 ++++++++++-----
+ arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c     |   15 ++++++++++-----
+ 3 files changed, 26 insertions(+), 13 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
+index 05b8462..fd9b4d3 100644
+--- a/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
+@@ -234,7 +234,8 @@ static struct regulator_init_data vvideo_init = {
+ 		.name = "VVIDEO",
+ 		.min_uV = mV_to_uV(2775),
+ 		.max_uV = mV_to_uV(2775),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 		.apply_uV = 1,
+ 	},
+ };
+@@ -244,7 +245,8 @@ static struct regulator_init_data vaudio_init = {
+ 		.name = "VAUDIO",
+ 		.min_uV = mV_to_uV(2300),
+ 		.max_uV = mV_to_uV(3000),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+@@ -264,7 +266,8 @@ static struct regulator_init_data vcam_init = {
+ 		.min_uV = mV_to_uV(2500),
+ 		.max_uV = mV_to_uV(3000),
+ 		.valid_ops_mask =
+-			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE,
++			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE |
++			REGULATOR_CHANGE_STATUS,
+ 		.valid_modes_mask = REGULATOR_MODE_FAST | REGULATOR_MODE_NORMAL,
+ 		.always_on = 1,
+ 	}
+diff --git a/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c b/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c
+index 830f4e8..86e489e 100644
+--- a/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c
+@@ -232,7 +232,8 @@ static struct regulator_init_data vvideo_init = {
+ 		.name = "VVIDEO",
+ 		.min_uV = mV_to_uV(2775),
+ 		.max_uV = mV_to_uV(2775),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 		.apply_uV = 1,
+ 	},
+ 	.num_consumer_supplies = ARRAY_SIZE(vvideo_consumers),
+@@ -244,7 +245,8 @@ static struct regulator_init_data vaudio_init = {
+ 		.name = "VAUDIO",
+ 		.min_uV = mV_to_uV(2300),
+ 		.max_uV = mV_to_uV(3000),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+@@ -253,7 +255,8 @@ static struct regulator_init_data vsd_init = {
+ 		.name = "VSD",
+ 		.min_uV = mV_to_uV(1800),
+ 		.max_uV = mV_to_uV(3150),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+@@ -263,7 +266,8 @@ static struct regulator_init_data vcam_init = {
+ 		.min_uV = mV_to_uV(2500),
+ 		.max_uV = mV_to_uV(3000),
+ 		.valid_ops_mask =
+-			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE,
++			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE |
++			REGULATOR_CHANGE_STATUS,
+ 		.valid_modes_mask = REGULATOR_MODE_FAST | REGULATOR_MODE_NORMAL,
+ 	}
+ };
+@@ -273,7 +277,8 @@ static struct regulator_init_data vgen1_init = {
+ 		.name = "VGEN1",
+ 		.min_uV = mV_to_uV(1200),
+ 		.max_uV = mV_to_uV(1200),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+index 122addc..2d4a610 100644
+--- a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+@@ -193,7 +193,8 @@ static struct regulator_init_data vaudio_init = {
+ 		.name = "VAUDIO",
+ 		.min_uV = mV_to_uV(2300),
+ 		.max_uV = mV_to_uV(3000),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+@@ -202,7 +203,8 @@ static struct regulator_init_data vsd_init = {
+ 		.name = "VSD",
+ 		.min_uV = mV_to_uV(1800),
+ 		.max_uV = mV_to_uV(3150),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+@@ -212,7 +214,8 @@ static struct regulator_init_data vcam_init = {
+ 		.min_uV = mV_to_uV(2500),
+ 		.max_uV = mV_to_uV(3000),
+ 		.valid_ops_mask =
+-			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE,
++			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE |
++			REGULATOR_CHANGE_STATUS,
+ 		.valid_modes_mask = REGULATOR_MODE_FAST | REGULATOR_MODE_NORMAL,
+ 	}
+ };
+@@ -222,7 +225,8 @@ static struct regulator_init_data vgen1_init = {
+ 		.name = "VGEN1",
+ 		.min_uV = mV_to_uV(1200),
+ 		.max_uV = mV_to_uV(3150),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+@@ -241,7 +245,8 @@ static struct regulator_init_data vgen3_init = {
+ 		.name = "VGEN3",
+ 		.min_uV = mV_to_uV(1800),
+ 		.max_uV = mV_to_uV(2900),
+-		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 	}
+ };
+ 
+-- 
+1.5.4.4
+

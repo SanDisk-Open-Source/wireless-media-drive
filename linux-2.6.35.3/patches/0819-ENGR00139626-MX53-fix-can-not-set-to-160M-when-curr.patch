@@ -1,0 +1,41 @@
+From e7101b7c3777d716fe91c20cad38f56133ab338d Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Wed, 9 Mar 2011 17:52:13 +0800
+Subject: [PATCH] ENGR00139626 MX53: fix can not set to 160M when current CPU works at 1000M
+
+Add correct pll parameters for 160M working point
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_wp.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_wp.c b/arch/arm/mach-mx5/mx53_wp.c
+index f40a979..342ba91 100644
+--- a/arch/arm/mach-mx5/mx53_wp.c
++++ b/arch/arm/mach-mx5/mx53_wp.c
+@@ -108,6 +108,10 @@ static struct cpu_wp cpu_wp_ces[] = {
+ 	{
+ 	 .pll_rate = 800000000,
+ 	 .cpu_rate = 160000000,
++	 .pdf = 0,
++	 .mfi = 8,
++	 .mfd = 2,
++	 .mfn = 1,
+ 	 .cpu_podf = 4,
+ 	 .cpu_voltage = 900000,},
+ };
+@@ -149,6 +153,10 @@ static struct cpu_wp cpu_wp_ces_1_2g[] = {
+ 	{
+ 	 .pll_rate = 800000000,
+ 	 .cpu_rate = 160000000,
++	 .pdf = 0,
++	 .mfi = 8,
++	 .mfd = 2,
++	 .mfn = 1,
+ 	 .cpu_podf = 4,
+ 	 .cpu_voltage = 900000,},
+ };
+-- 
+1.5.4.4
+

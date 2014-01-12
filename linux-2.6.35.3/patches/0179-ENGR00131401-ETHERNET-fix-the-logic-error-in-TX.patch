@@ -1,0 +1,32 @@
+From 099d710ba67a31b810844f2cd12ddc60d3f2671e Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Tue, 14 Sep 2010 09:48:16 +0800
+Subject: [PATCH] ENGR00131401 ETHERNET:fix the logic error in TX
+
+The origin code stop the TX queue when TX failed just the first time.
+This is a wrong logic to handle the TX fails.
+
+The right logic is to stop the TX queue and reset the card in the situation
+that the fail number reachs the MAX_TX_RETRYCOUNT.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/net/enc28j60.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/enc28j60.c b/drivers/net/enc28j60.c
+index 26bdc74..b08d2d3 100644
+--- a/drivers/net/enc28j60.c
++++ b/drivers/net/enc28j60.c
+@@ -1290,7 +1290,7 @@ static void enc28j60_irq_work_handler(struct work_struct *work)
+ 					printk(KERN_DEBUG DRV_NAME
+ 						": LateCollision TXErr (%d)\n",
+ 						priv->tx_retry_count);
+-				if (priv->tx_retry_count++ < MAX_TX_RETRYCOUNT)
++				if (priv->tx_retry_count++ > MAX_TX_RETRYCOUNT)
+ 					locked_reg_bfset(priv, ECON1,
+ 							   ECON1_TXRTS);
+ 				else
+-- 
+1.5.4.4
+

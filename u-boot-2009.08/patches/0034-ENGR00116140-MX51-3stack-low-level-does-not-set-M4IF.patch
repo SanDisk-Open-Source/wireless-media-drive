@@ -1,0 +1,40 @@
+From e721efc160482e2086a081de19a6968d81d8cc72 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 2 Sep 2009 15:29:22 +0800
+Subject: [PATCH] ENGR00116140 MX51 3stack low level does not set M4IF correctly
+
+Copy babbage settings to 3stack
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ board/freescale/mx51_3stack/lowlevel_init.S |   13 +++++++++++--
+ 1 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/lowlevel_init.S b/board/freescale/mx51_3stack/lowlevel_init.S
+index fa15ddf..f42cb6e 100644
+--- a/board/freescale/mx51_3stack/lowlevel_init.S
++++ b/board/freescale/mx51_3stack/lowlevel_init.S
+@@ -72,9 +72,18 @@
+ 	 * IPU accesses with ID=0x1 given highest priority (=0xA)
+ 	 */
+ 	ldr r0, =M4IF_BASE_ADDR
+-	ldr r1, =0x00000a01
++
++	ldr r1, =0x00000203
++	str r1, [r0, #0x40]
++
++	ldr r1, =0x0
++	str r1, [r0, #0x44]
++
++	ldr r1, =0x00120125
++	str r1, [r0, #0x9C]
++
++	ldr r1, =0x001901A3
+ 	str r1, [r0, #0x48]
+-	ldr r1, =0x00000404
+ 	str r1, [r0, #0x40]
+ .endm /* init_m4if */
+ 
+-- 
+1.5.4.4
+

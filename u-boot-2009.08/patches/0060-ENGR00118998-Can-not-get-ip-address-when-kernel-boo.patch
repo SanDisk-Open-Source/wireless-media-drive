@@ -1,0 +1,45 @@
+From 83a8195ca771d8b20c13295e544aeb9b400a9cc3 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 11 Dec 2009 16:47:59 +0800
+Subject: [PATCH] ENGR00118998: Can not get ip address when kernel boot up
+
+Kernel need uboot to set fec mac address.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/net/mxc_fec.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index dcfc263..356cdf4 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -722,6 +722,16 @@ void fec_halt(struct eth_device *dev)
+ 	memset(info->txbuf, 0, DBUF_LENGTH);
+ }
+ 
++static void mxc_fec_set_mac(struct fec_info_s *fec_info)
++{
++	unsigned char ea[6];
++	volatile fec_t *fecp = (fec_t *)(fec_info->iobase);
++
++	memcpy(ea, eth_get_dev()->enetaddr, 6);
++	fecp->palr = (ea[0] << 24) | (ea[1] << 16) | (ea[2] << 8) | (ea[3]);
++	fecp->paur = (ea[4] << 24) | (ea[5] << 16);
++}
++
+ int mxc_fec_initialize(bd_t *bis)
+ {
+ 	struct eth_device *dev;
+@@ -768,6 +778,8 @@ int mxc_fec_initialize(bd_t *bis)
+ #endif
+ 	}
+ 
++	mxc_fec_set_mac(&fec_info);
++
+ 	return 1;
+ }
+ 
+-- 
+1.5.4.4
+

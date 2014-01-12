@@ -1,0 +1,105 @@
+<HEAD><TITLE>Glossário DNS</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Glossário DNS</H1>
+
+<DL>
+
+<A name="authoritative">
+<DT>Servidor DNS autoritativo</DT>
+<DD>Um servidor de DNS no qual <i>servidores recursivos</i> contatam para  
+<i>resolver</i> um determinado <i>nó de DNS</i> </DD>
+
+<A name="dns_node">
+<DT>Nó de DNS</DT>
+<DD>Um nome no qual o DNS geralmente converte em um endereço IP, como
+www.yahoo.com. Nem todos os nó de DNS têm IPs, porém.</DD>
+
+<A name="dns_record">
+<DT>Registro DNS</DT>
+<DD>Um único pedaço de dados de DNS que podem ser dados de um nó de DNS   
+ou meta-dados que o DNS usa.</DD>
+
+<A name="dns_server">
+<DT>Servidor DNS</DT>
+<DD>Um programa que resolve registros DNS</DD>
+
+<A name="dns_admin">
+<DT>Administrador de DNS</DT>
+<DD>Uma pessoa que administra DNS; configura servidores de DNS, modifica 
+registros DNS, e assim por diante.</DD>
+
+<A name="registry">
+<DT>Registradora de domínios</DT>
+<DD>Uma registradora de domínio é uma organização que permite termos nossos  
+<i>servidores de DNS autoritativos</i> ser contatdos por <i>servidores de nomes
+recursivos</i>. </DD>
+
+<A name="suffix">
+<DT>Sufixo de domínio</DT>
+<DD>A parte do domínio que está (normalmente) depois do primeiro ponto em um   
+nó de DNS. O sufíxo do domínio www.yahoo.com, por exemplo, é yahoo.com. 
+</DD>
+
+<A name="zone">
+<DT>Zona de domínio</DT>
+<DD>Uma zona de domínio é um conjunto de um ou mais nós de DNS.  
+Todos nomes em determinada parte de zona de domínio dividem mesmo 
+<i>sufixo de dominio<i>. </DD>
+
+<A name="ip">
+<DT>IP</DT>
+<DD>Um número que um computador conectado a internet tem, similiar a um   
+número de telefone. </DD>
+
+<A name="isp">
+<DT>Provedor de serviço de Internet</DT>
+<DD>Provedor de serviço de internet (PSI) é uma empresa que oferece  
+acesso para a internet.</DD>
+
+<A name="mta">
+<DT>Agente de Transporte de Correio</DT>
+<DD>Um programa que aceita entradas de conexões SMTP (e-mail),
+permitindo um servidor para receber e-mail.
+
+<A name="recursive">
+<DT>Servidor DNS recursivo</DT>
+<DD>Um servidor de DNS recursivo é um servidor de DNS que contata 
+outros servidores DNS para <i>resolver</i> um determinado <i>nó de DNS</i>. 
+</DD>
+
+<A name="resolve">
+<DT>Resolver</DT>
+<DD>Para converter um <i>nó DNS</i>, como www.yahoo.com, em 
+IP, como 10.17.243.32.</DD>
+
+<A name="serve">
+<DT>Servir</DT>
+<DD>A ação de um servidor de DNS autoritativo que disponibiliza nodos de DNS 
+para servidores DNS recursivos.</DD>
+
+<A name="static">
+<DT>Endereço de IP estático (válidos)</DT>
+<DD>Um endereço de IP estático é um IP cujo valor não muda. Só provedores 
+autorizados oferecem endereços de IP estáticos.</DD>
+
+</DL>
+
+</BODY>
+

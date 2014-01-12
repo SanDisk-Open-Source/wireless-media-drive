@@ -1,0 +1,44 @@
+From 0ab09440887f58ab51b97558f0181317a42474c0 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Wed, 11 Aug 2010 09:53:49 +0800
+Subject: [PATCH] ENGR00123707 MX28: make PxP V4L buffer allocated from DMA_ZONE
+
+In pxp v4l2 driver, videobuf_mmap_mapper is called; in turn,
+__videobuf_mmap_mapper is called. Finally dma_alloc_coherent is
+called with input parameter GFP_KERNEL, not GFP_DMA.
+This fix is to let dma_alloc_coherent internally set GFP_DMA flag,
+and thus use memory from DMA_ZONE, not NORMAL_ZONE.
+This fix can avoid the issue of calling dma_alloc_coherent failure
+due to not-enough memory.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/plat-mxs/device.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/device.c b/arch/arm/plat-mxs/device.c
+index 0274089..d8e6ccb 100644
+--- a/arch/arm/plat-mxs/device.c
++++ b/arch/arm/plat-mxs/device.c
+@@ -39,6 +39,7 @@ static struct list_head mxs_device_level[] = {
+ };
+ 
+ static u64 common_dmamask = DMA_BIT_MASK(32);
++static u64 pxp_dmamask = ISA_DMA_THRESHOLD;
+ 
+ void mxs_nop_release(struct device *dev)
+ {
+@@ -262,8 +263,8 @@ static struct platform_device mxs_pxp = {
+ 	.id		= 0,
+ 	.dev		= {
+ 		.release = mxs_nop_release,
+-		.dma_mask		= &common_dmamask,
+-		.coherent_dma_mask	= DMA_BIT_MASK(32),
++		.dma_mask		= &pxp_dmamask,
++		.coherent_dma_mask	= ISA_DMA_THRESHOLD,
+ 	},
+ };
+ #endif
+-- 
+1.5.4.4
+

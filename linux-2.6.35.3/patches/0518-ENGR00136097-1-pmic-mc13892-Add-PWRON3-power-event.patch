@@ -1,0 +1,41 @@
+From c54828551641ce33e88c934869f81097d2b3b306 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 8 Dec 2010 15:55:43 +0800
+Subject: [PATCH] ENGR00136097-1 pmic mc13892: Add PWRON3 power event support
+
+Enable the PWRON3 event in mc13892.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ drivers/mxc/pmic/core/mc13892.c |    2 +-
+ include/linux/pmic_external.h   |    1 +
+ 2 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/pmic/core/mc13892.c b/drivers/mxc/pmic/core/mc13892.c
+index b21039b..a2cbb16 100644
+--- a/drivers/mxc/pmic/core/mc13892.c
++++ b/drivers/mxc/pmic/core/mc13892.c
+@@ -229,7 +229,7 @@ unsigned int pmic_get_active_events(unsigned int *active_events)
+ }
+ 
+ #define EVENT_MASK_0			0x387fff
+-#define EVENT_MASK_1			0x1177eb
++#define EVENT_MASK_1			0x1177ef
+ 
+ int pmic_event_unmask(type_event event)
+ {
+diff --git a/include/linux/pmic_external.h b/include/linux/pmic_external.h
+index b632eaf..23aa37e 100644
+--- a/include/linux/pmic_external.h
++++ b/include/linux/pmic_external.h
+@@ -215,6 +215,7 @@ typedef enum {
+ 	EVENT_CKDETI = 22,
+ 	EVENT_1HZI = 24,
+ 	EVENT_TODAI = 25,
++	EVENT_PWRON3I = 26,
+ 	EVENT_PWRONI = 27,
+ 	EVENT_WDIRESETI = 29,
+ 	EVENT_SYSRSTI = 30,
+-- 
+1.5.4.4
+

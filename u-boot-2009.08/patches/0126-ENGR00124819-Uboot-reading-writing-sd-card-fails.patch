@@ -1,0 +1,33 @@
+From c6433f273a5b05472cc412148355bdefb252808e Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Thu, 1 Jul 2010 12:53:21 -0500
+Subject: [PATCH] ENGR00124819 Uboot reading/writing sd card fails
+
+Updated MMC_PARTITION_SWITCH function to not return
+failure for partition 0
+
+Signed-off-by: Anish trivedi <anish@freescale.com>
+---
+ common/cmd_mmc.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index 29cae1b..1061dab 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -103,7 +103,11 @@ U_BOOT_CMD(
+ 				return 1;	\
+ 			}	\
+ 			if (sd_switch_partition(mmc, part) < 0) {	\
+-				return 1;	\
++				if (part > 0) { \
++					printf("\nError: Unable to switch SD "\
++					"partition\n");\
++					return 1;	\
++				}	\
+ 			}	\
+ 		} else {	\
+ 			if (mmc_switch_partition(mmc, part, enable_boot) \
+-- 
+1.5.4.4
+

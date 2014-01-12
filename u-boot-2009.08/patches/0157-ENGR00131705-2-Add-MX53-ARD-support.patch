@@ -1,0 +1,837 @@
+From 8c2a96af771ee994d3d30f8c3f3e86bb7ed91d18 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sun, 19 Sep 2010 16:21:56 +0800
+Subject: [PATCH] ENGR00131705-2 Add MX53 ARD support
+
+Add MX53 Automotive Reference Board (ARD) support
+1. Add DDR2 initialization script
+2. Add external ethernet support
+3. Update PIN settings for UART, I2C, SDHC etc
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+Signed-off-by: Terry Lv <r65388@freescale.com>
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ Makefile                               |    1 +
+ board/freescale/mx53_rd/flash_header.S |   71 +++++++++
+ board/freescale/mx53_rd/mx53_rd.c      |  271 +++++++++++++++++++++++++++++++-
+ include/asm-arm/arch-mx53/iomux.h      |    4 +-
+ include/asm-arm/arch-mx53/mx53.h       |    5 +
+ include/configs/mx53_ard.h             |  269 +++++++++++++++++++++++++++++++
+ 6 files changed, 613 insertions(+), 8 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 11ed5db..d2dda8d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3273,6 +3273,7 @@ mx53_arm2_config		\
+ mx53_arm2_android_config	\
+ mx53_arm2_ddr3_android_config	\
+ mx53_evk_android_config		\
++mx53_ard_config			\
+ mx53_evk_config      : unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx53_rd freescale mx53
+ 
+diff --git a/board/freescale/mx53_rd/flash_header.S b/board/freescale/mx53_rd/flash_header.S
+index 014333d..d6f9d81 100644
+--- a/board/freescale/mx53_rd/flash_header.S
++++ b/board/freescale/mx53_rd/flash_header.S
+@@ -246,5 +246,76 @@ MXC_DCD_ITEM(48, ESDCTL_BASE_ADDR + 0x020, 0x00001800)
+ MXC_DCD_ITEM(49, ESDCTL_BASE_ADDR + 0x040, 0x04b80003)
+ MXC_DCD_ITEM(50, ESDCTL_BASE_ADDR + 0x058, 0x00022227)
+ MXC_DCD_ITEM(51, ESDCTL_BASE_ADDR + 0x01c, 0x00000000)
++
++#elif defined(CONFIG_MX53_ARD)
++
++dcd_hdr:          .word 0x400002D2 /* Tag=0xD2, Len=63*8 + 4 + 4, Ver=0x40 */
++write_dcd_cmd:    .word 0x04FC01CC /* Tag=0xCC, Len=63*8 + 4, Param=4 */
++
++/* DCD */
++MXC_DCD_ITEM(1, IOMUXC_BASE_ADDR + 0x554, 0x00380000)
++MXC_DCD_ITEM(2, IOMUXC_BASE_ADDR + 0x558, 0x00380040)
++MXC_DCD_ITEM(3, IOMUXC_BASE_ADDR + 0x560, 0x00380000)
++MXC_DCD_ITEM(4, IOMUXC_BASE_ADDR + 0x564, 0x00380040)
++MXC_DCD_ITEM(5, IOMUXC_BASE_ADDR + 0x568, 0x00380040)
++MXC_DCD_ITEM(6, IOMUXC_BASE_ADDR + 0x570, 0x00380000)
++MXC_DCD_ITEM(7, IOMUXC_BASE_ADDR + 0x574, 0x00380000)
++MXC_DCD_ITEM(8, IOMUXC_BASE_ADDR + 0x578, 0x00380000)
++MXC_DCD_ITEM(9, IOMUXC_BASE_ADDR + 0x57c, 0x00380040)
++MXC_DCD_ITEM(10, IOMUXC_BASE_ADDR + 0x580, 0x00380040)
++MXC_DCD_ITEM(11, IOMUXC_BASE_ADDR + 0x584, 0x00380000)
++MXC_DCD_ITEM(12, IOMUXC_BASE_ADDR + 0x588, 0x00380000)
++MXC_DCD_ITEM(13, IOMUXC_BASE_ADDR + 0x590, 0x00380040)
++MXC_DCD_ITEM(14, IOMUXC_BASE_ADDR + 0x594, 0x00380000)
++MXC_DCD_ITEM(15, IOMUXC_BASE_ADDR + 0x6f0, 0x00380000)
++MXC_DCD_ITEM(16, IOMUXC_BASE_ADDR + 0x6f4, 0x00000200)
++MXC_DCD_ITEM(17, IOMUXC_BASE_ADDR + 0x6fc, 0x00000000)
++MXC_DCD_ITEM(18, IOMUXC_BASE_ADDR + 0x714, 0x00000000)
++MXC_DCD_ITEM(19, IOMUXC_BASE_ADDR + 0x718, 0x00380000)
++MXC_DCD_ITEM(20, IOMUXC_BASE_ADDR + 0x71c, 0x00380000)
++MXC_DCD_ITEM(21, IOMUXC_BASE_ADDR + 0x720, 0x00380000)
++MXC_DCD_ITEM(22, IOMUXC_BASE_ADDR + 0x724, 0x06000000)
++MXC_DCD_ITEM(23, IOMUXC_BASE_ADDR + 0x728, 0x00380000)
++MXC_DCD_ITEM(24, IOMUXC_BASE_ADDR + 0x72c, 0x00380000)
++MXC_DCD_ITEM(25, ESDCTL_BASE_ADDR + 0x088, 0x2b2f3031)
++MXC_DCD_ITEM(26, ESDCTL_BASE_ADDR + 0x090, 0x40363333)
++MXC_DCD_ITEM(27, ESDCTL_BASE_ADDR + 0x0f8, 0x00000800)
++MXC_DCD_ITEM(28, ESDCTL_BASE_ADDR + 0x07c, 0x01310132)
++MXC_DCD_ITEM(29, ESDCTL_BASE_ADDR + 0x080, 0x0133014b)
++MXC_DCD_ITEM(30, ESDCTL_BASE_ADDR + 0x018, 0x00001710)
++MXC_DCD_ITEM(31, ESDCTL_BASE_ADDR + 0x000, 0x84110000)
++MXC_DCD_ITEM(32, ESDCTL_BASE_ADDR + 0x00c, 0x4d5122d2)
++MXC_DCD_ITEM(33, ESDCTL_BASE_ADDR + 0x010, 0x92d18a22)
++MXC_DCD_ITEM(34, ESDCTL_BASE_ADDR + 0x014, 0x00c70092)
++MXC_DCD_ITEM(35, ESDCTL_BASE_ADDR + 0x02c, 0x000026d2)
++MXC_DCD_ITEM(36, ESDCTL_BASE_ADDR + 0x030, 0x009f000e)
++MXC_DCD_ITEM(37, ESDCTL_BASE_ADDR + 0x008, 0x12272000)
++MXC_DCD_ITEM(38, ESDCTL_BASE_ADDR + 0x004, 0x00030012)
++MXC_DCD_ITEM(39, ESDCTL_BASE_ADDR + 0x01c, 0x04008010)
++MXC_DCD_ITEM(40, ESDCTL_BASE_ADDR + 0x01c, 0x00008032)
++MXC_DCD_ITEM(41, ESDCTL_BASE_ADDR + 0x01c, 0x00008033)
++MXC_DCD_ITEM(42, ESDCTL_BASE_ADDR + 0x01c, 0x00008031)
++MXC_DCD_ITEM(43, ESDCTL_BASE_ADDR + 0x01c, 0x0b5280b0)
++MXC_DCD_ITEM(44, ESDCTL_BASE_ADDR + 0x01c, 0x04008010)
++MXC_DCD_ITEM(45, ESDCTL_BASE_ADDR + 0x01c, 0x00008020)
++MXC_DCD_ITEM(46, ESDCTL_BASE_ADDR + 0x01c, 0x00008020)
++MXC_DCD_ITEM(47, ESDCTL_BASE_ADDR + 0x01c, 0x0a528030)
++MXC_DCD_ITEM(48, ESDCTL_BASE_ADDR + 0x01c, 0x03c68031)
++MXC_DCD_ITEM(49, ESDCTL_BASE_ADDR + 0x01c, 0x00468031)
++MXC_DCD_ITEM(50, ESDCTL_BASE_ADDR + 0x01c, 0x04008018)
++MXC_DCD_ITEM(51, ESDCTL_BASE_ADDR + 0x01c, 0x0000803a)
++MXC_DCD_ITEM(52, ESDCTL_BASE_ADDR + 0x01c, 0x0000803b)
++MXC_DCD_ITEM(53, ESDCTL_BASE_ADDR + 0x01c, 0x00008039)
++MXC_DCD_ITEM(54, ESDCTL_BASE_ADDR + 0x01c, 0x0b528138)
++MXC_DCD_ITEM(55, ESDCTL_BASE_ADDR + 0x01c, 0x04008018)
++MXC_DCD_ITEM(56, ESDCTL_BASE_ADDR + 0x01c, 0x00008028)
++MXC_DCD_ITEM(57, ESDCTL_BASE_ADDR + 0x01c, 0x00008028)
++MXC_DCD_ITEM(58, ESDCTL_BASE_ADDR + 0x01c, 0x0a528038)
++MXC_DCD_ITEM(59, ESDCTL_BASE_ADDR + 0x01c, 0x03c68039)
++MXC_DCD_ITEM(60, ESDCTL_BASE_ADDR + 0x01c, 0x00468039)
++MXC_DCD_ITEM(61, ESDCTL_BASE_ADDR + 0x020, 0x00005800)
++MXC_DCD_ITEM(62, ESDCTL_BASE_ADDR + 0x058, 0x00033337)
++MXC_DCD_ITEM(63, ESDCTL_BASE_ADDR + 0x01c, 0x00000000)
++
+ #endif
+ #endif
+diff --git a/board/freescale/mx53_rd/mx53_rd.c b/board/freescale/mx53_rd/mx53_rd.c
+index 0f4f475..c2d549f 100644
+--- a/board/freescale/mx53_rd/mx53_rd.c
++++ b/board/freescale/mx53_rd/mx53_rd.c
+@@ -29,6 +29,7 @@
+ #include <asm/arch/iomux.h>
+ #include <asm/errno.h>
+ #include <imx_spi.h>
++#include <netdev.h>
+ 
+ #if CONFIG_I2C_MXC
+ #include <i2c.h>
+@@ -212,8 +213,18 @@ int dram_init(void)
+ 
+ static void setup_uart(void)
+ {
++#if defined(CONFIG_MX53_ARD)
++	/* UART1 TXD */
++	mxc_request_iomux(MX53_PIN_ATA_DIOW, IOMUX_CONFIG_ALT3);
++	mxc_iomux_set_pad(MX53_PIN_ATA_DIOW, 0x1E4);
+ 
+ 	/* UART1 RXD */
++	mxc_request_iomux(MX53_PIN_ATA_DMACK, IOMUX_CONFIG_ALT3);
++	mxc_iomux_set_input(MUX_IN_UART1_IPP_UART_RXD_MUX_SELECT_INPUT, 0x3);
++	mxc_iomux_set_pad(MX53_PIN_ATA_DMACK, 0x1E4);
++#else
++	/* MX53 EVK and ARM2 board */
++	/* UART1 RXD */
+ 	mxc_request_iomux(MX53_PIN_CSI0_D11, IOMUX_CONFIG_ALT2);
+ 	mxc_iomux_set_pad(MX53_PIN_CSI0_D11, 0x1E4);
+ 	mxc_iomux_set_input(MUX_IN_UART1_IPP_UART_RXD_MUX_SELECT_INPUT, 0x1);
+@@ -221,6 +232,7 @@ static void setup_uart(void)
+ 	/* UART1 TXD */
+ 	mxc_request_iomux(MX53_PIN_CSI0_D10, IOMUX_CONFIG_ALT2);
+ 	mxc_iomux_set_pad(MX53_PIN_CSI0_D10, 0x1E4);
++#endif
+ }
+ 
+ #ifdef CONFIG_I2C_MXC
+@@ -228,6 +240,10 @@ static void setup_i2c(unsigned int module_base)
+ {
+ 	switch (module_base) {
+ 	case I2C1_BASE_ADDR:
++#if defined(CONFIG_MX53_ARD)
++		/* No device is connected via I2C1 on ARD */
++		break;
++#else
+ 		/* i2c1 SDA */
+ 		mxc_request_iomux(MX53_PIN_CSI0_D8,
+ 				IOMUX_CONFIG_ALT5 | IOMUX_CONFIG_SION);
+@@ -246,6 +262,7 @@ static void setup_i2c(unsigned int module_base)
+ 				PAD_CTL_ODE_OPENDRAIN_ENABLE |
+ 				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
+ 				PAD_CTL_HYS_ENABLE);
++#endif
+ 		break;
+ 	case I2C2_BASE_ADDR:
+ 		/* i2c2 SDA */
+@@ -259,6 +276,17 @@ static void setup_i2c(unsigned int module_base)
+ 				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
+ 				PAD_CTL_HYS_ENABLE);
+ 
++#if	defined(CONFIG_MX53_ARD)
++		mxc_request_iomux(MX53_PIN_EIM_EB2,
++				IOMUX_CONFIG_ALT5 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C2_IPP_SCL_IN_SELECT_INPUT,
++				INPUT_CTL_PATH1);
++		mxc_iomux_set_pad(MX53_PIN_EIM_EB2,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++#else
+ 		/* i2c2 SCL */
+ 		mxc_request_iomux(MX53_PIN_KEY_COL3,
+ 				IOMUX_CONFIG_ALT4 | IOMUX_CONFIG_SION);
+@@ -269,6 +297,32 @@ static void setup_i2c(unsigned int module_base)
+ 				PAD_CTL_ODE_OPENDRAIN_ENABLE |
+ 				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
+ 				PAD_CTL_HYS_ENABLE);
++
++#endif
++		break;
++	case I2C3_BASE_ADDR:
++#if	defined(CONFIG_MX53_ARD)
++		/* GPIO_3 for I2C3_SCL */
++		mxc_request_iomux(MX53_PIN_GPIO_3,
++				IOMUX_CONFIG_ALT2 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C3_IPP_SCL_IN_SELECT_INPUT,
++				INPUT_CTL_PATH1);
++		mxc_iomux_set_pad(MX53_PIN_GPIO_3,
++				PAD_CTL_PUE_PULL | PAD_CTL_PKE_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_360K_PD |
++				PAD_CTL_HYS_ENABLE);
++		/* GPIO_16 for I2C3_SDA */
++		mxc_request_iomux(MX53_PIN_GPIO_16,
++				IOMUX_CONFIG_ALT6 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_input(MUX_IN_I2C3_IPP_SDA_IN_SELECT_INPUT,
++				INPUT_CTL_PATH1);
++		mxc_iomux_set_pad(MX53_PIN_GPIO_16,
++				PAD_CTL_PUE_PULL | PAD_CTL_PKE_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_360K_PD |
++				PAD_CTL_HYS_ENABLE);
++#else
++		/* No device is connected via I2C3 in EVK and ARM2 */
++#endif
+ 		break;
+ 	default:
+ 		printf("Invalid I2C base: 0x%x\n", module_base);
+@@ -278,6 +332,7 @@ static void setup_i2c(unsigned int module_base)
+ 
+ void setup_core_voltages(void)
+ {
++#if	!defined(CONFIG_MX53_ARD)
+ 	unsigned char buf[4] = { 0 };
+ 
+ 	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+@@ -295,12 +350,12 @@ void setup_core_voltages(void)
+ 	buf[2] = 0x1a;
+ 	if (i2c_write(0x8, 26, 1, buf, 3))
+ 		return;
+-
++#endif
+ 	/* Raise the core frequency to 800MHz */
+ 	writel(0x0, CCM_BASE_ADDR + CLKCTL_CACRR);
+ }
+ 
+-#ifndef CONFIG_MX53_ARM2
++#ifdef CONFIG_MX53_EVK
+ static int __read_adc_channel(unsigned int chan)
+ {
+ 	unsigned char buf[4] = { 0 };
+@@ -564,8 +619,8 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ 		mxc_iomux_set_pad(MX53_PIN_EIM_D16, 0x104);
+ 		mxc_iomux_set_input(
+ 			MUX_IN_CSPI_IPP_CSPI_CLK_IN_SELECT_INPUT, 0x3);
+-
+ 		break;
++
+ 	case CSPI2_BASE_ADDR:
+ 	default:
+ 
+@@ -676,13 +731,168 @@ int setup_mxc_kpd(void)
+ }
+ #endif
+ 
++#ifdef CONFIG_NET_MULTI
++int board_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_SMC911X)
++	rc = smc911x_initialize(0, CONFIG_SMC911X_BASE);
++#endif
++
++	return rc;
++}
++#endif
++
++#if defined(CONFIG_MX53_ARD)
++void weim_smc911x_iomux()
++{
++	unsigned int reg;
++
++	/* ETHERNET_INT_B as GPIO2_31 */
++	mxc_request_iomux(MX53_PIN_EIM_EB3,
++		IOMUX_CONFIG_ALT1);
++	reg = readl(GPIO2_BASE_ADDR + 0x4);
++	reg &= ~(0x80000000);
++	writel(reg, GPIO2_BASE_ADDR + 0x4);
++
++	/* Data bus */
++	mxc_request_iomux(MX53_PIN_EIM_D16,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D16, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D17,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D17, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D18,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D18, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D19,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D19, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D20,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D20, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D21,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D21, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D22,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D22, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D23,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D23, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D24,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D24, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D25,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D25, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D26,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D26, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D27,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D27, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D28,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D28, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D29,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D29, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D30,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D30, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_D31,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_D31, 0xA4);
++
++	/* Address lines */
++	mxc_request_iomux(MX53_PIN_EIM_DA0,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA0, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_DA1,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA1, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_DA2,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA2, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_DA3,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA3, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_DA4,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA4, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_DA5,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA5, 0xA4);
++
++	mxc_request_iomux(MX53_PIN_EIM_DA6,
++		IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA6, 0xA4);
++
++	/* other EIM signals for ethernet */
++	mxc_request_iomux(MX53_PIN_EIM_OE,
++		IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_EIM_RW,
++		IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX53_PIN_EIM_CS1,
++		IOMUX_CONFIG_ALT0);
++
++}
++
++void weim_cs1_settings()
++{
++	unsigned int reg;
++
++	writel(0x20001, (WEIM_BASE_ADDR + 0x18));
++	writel(0x0, (WEIM_BASE_ADDR + 0x1C));
++	writel(0x16000202, (WEIM_BASE_ADDR + 0x20));
++	writel(0x00000002, (WEIM_BASE_ADDR + 0x24));
++	writel(0x16002082, (WEIM_BASE_ADDR + 0x28));
++	writel(0x00000000, (WEIM_BASE_ADDR + 0x2C));
++	writel(0x00000000, (WEIM_BASE_ADDR + 0x90));
++
++	/* specify 64 MB on CS1 and CS0 */
++	reg = readl(IOMUXC_BASE_ADDR + 0x4);
++	reg &= ~0x3F;
++	reg |= 0x1B;
++	writel(reg, (IOMUXC_BASE_ADDR + 0x4));
++}
++#endif
++
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
++#if defined(CONFIG_MX53_ARD)
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC2_BASE_ADDR, 1, 1},
++};
++#else
+ struct fsl_esdhc_cfg esdhc_cfg[2] = {
+ 	{MMC_SDHC1_BASE_ADDR, 1, 1},
+ 	{MMC_SDHC3_BASE_ADDR, 1, 1},
+ };
++#endif
+ 
+ #ifdef CONFIG_DYNAMIC_MMC_DEVNO
+ int get_mmc_env_devno()
+@@ -721,6 +931,40 @@ int esdhc_gpio_init(bd_t *bis)
+ 			mxc_iomux_set_pad(MX53_PIN_SD1_DATA3, 0x1D4);
+ 			break;
+ 		case 1:
++#if defined(CONFIG_MX53_ARD)
++			mxc_request_iomux(MX53_PIN_SD2_CMD,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX53_PIN_SD2_CLK,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX53_PIN_SD2_DATA0,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD2_DATA1,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD2_DATA2,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_SD2_DATA3,
++						IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX53_PIN_ATA_DATA12,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_DATA13,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_DATA14,
++						IOMUX_CONFIG_ALT2);
++			mxc_request_iomux(MX53_PIN_ATA_DATA15,
++						IOMUX_CONFIG_ALT2);
++
++			mxc_iomux_set_pad(MX53_PIN_SD2_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX53_PIN_SD2_CLK, 0xD4);
++			mxc_iomux_set_pad(MX53_PIN_SD2_DATA0, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD2_DATA1, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD2_DATA2, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_SD2_DATA3, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA12, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA13, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA14, 0x1D4);
++			mxc_iomux_set_pad(MX53_PIN_ATA_DATA15, 0x1D4);
++
++#else
+ 			mxc_request_iomux(MX53_PIN_ATA_RESET_B,
+ 						IOMUX_CONFIG_ALT2);
+ 			mxc_request_iomux(MX53_PIN_ATA_IORDY,
+@@ -752,7 +996,7 @@ int esdhc_gpio_init(bd_t *bis)
+ 			mxc_iomux_set_pad(MX53_PIN_ATA_DATA1, 0x1D4);
+ 			mxc_iomux_set_pad(MX53_PIN_ATA_DATA2, 0x1D4);
+ 			mxc_iomux_set_pad(MX53_PIN_ATA_DATA3, 0x1D4);
+-
++#endif
+ 			break;
+ 		default:
+ 			printf("Warning: you configured more ESDHC controller"
+@@ -791,18 +1035,29 @@ int board_init(void)
+ #if defined(CONFIG_MX53_ARM2) || defined(CONFIG_MX53_ARM2_DDR3)
+ 	setup_board_rev(1);
+ #endif
++
++#if defined(CONFIG_MX53_ARD)
++	gd->bd->bi_arch_number = MACH_TYPE_MX53_ARD;
++#else
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX53_EVK;	/* board id for linux */
++#endif
+ 	/* address of boot parameters */
+ 	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
+ 
+ 	setup_uart();
++#ifdef CONFIG_MXC_FEC
+ 	setup_fec();
++#endif
+ 
+ #ifdef CONFIG_I2C_MXC
+ 	setup_i2c(CONFIG_SYS_I2C_PORT);
+ 	setup_core_voltages();
+ #endif
+ 
++#if defined(CONFIG_MX53_ARD)
++	weim_smc911x_iomux();
++	weim_cs1_settings();
++#endif
+ 	return 0;
+ }
+ 
+@@ -936,15 +1191,19 @@ int checkboard(void)
+ {
+ 	printf("Board: ");
+ 
+-#ifdef CONFIG_MX53_ARM2
++#if defined(CONFIG_MX53_ARD)
++	printf("MX53-ARD 1.0 [");
++#elif defined(CONFIG_MX53_ARM2) || defined(CONFIG_MX53_ARM2_DDR3)
+ 	printf("Board: MX53 ARMADILLO2 ");
+ 	printf("1.0 [");
+-#else
++#elif defined(CONFIG_MX53_EVK)
+ #ifdef CONFIG_I2C_MXC
+ 	identify_board_id();
+ 
+ 	printf("Boot Reason: [");
+ #endif
++#else
++	# error "Unknown board config!"
+ #endif
+ 
+ 	switch (__REG(SRC_BASE_ADDR + 0x8)) {
+diff --git a/include/asm-arm/arch-mx53/iomux.h b/include/asm-arm/arch-mx53/iomux.h
+index 2184863..f17bd7f 100644
+--- a/include/asm-arm/arch-mx53/iomux.h
++++ b/include/asm-arm/arch-mx53/iomux.h
+@@ -62,8 +62,8 @@ typedef enum iomux_pad_config {
+ 	PAD_CTL_DRV_MAX = 0x3 << 1,
+ 	PAD_CTL_ODE_OPENDRAIN_NONE = 0x0 << 3,
+ 	PAD_CTL_ODE_OPENDRAIN_ENABLE = 0x1 << 3,
+-	PAD_CTL_100K_PD = 0x0 << 4,
+-	PAD_CTL_47K_PU = 0x1 << 4,
++	PAD_CTL_360K_PD	= 0x0 << 4,
++	PAD_CTL_75K_PU = 0x1 << 4,
+ 	PAD_CTL_100K_PU = 0x2 << 4,
+ 	PAD_CTL_22K_PU = 0x3 << 4,
+ 	PAD_CTL_PUE_KEEPER = 0x0 << 6,
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index 8c4f877..ab49a2f 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -167,6 +167,11 @@
+ #define CSD0_BASE_ADDR		0x70000000
+ #define CSD1_BASE_ADDR		0xB0000000
+ 
++#define CS0_BASE_ADDR		0xF0000000
++#define CS1_BASE_ADDR		0xF4000000
++#define CS2_BASE_ADDR		0xF8000000
++#define CS3_BASE_ADDR		0xFC000000
++#define CS4_BASE_ADDR		0xFE000000
+ /*
+  * Interrupt numbers
+  */
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+new file mode 100644
+index 0000000..15fe82b
+--- /dev/null
++++ b/include/configs/mx53_ard.h
+@@ -0,0 +1,269 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX53-ARD Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx53.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_MXC
++#define CONFIG_MX53
++#define CONFIG_MX53_ARD
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX53_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX53_UART	1
++#define CONFIG_MX53_UART1	1
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++#define CONFIG_CMD_IIM
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++#define CONFIG_CMD_CLOCK
++#define CONFIG_REF_CLK_FREQ CONFIG_MX53_HCLK_FREQ
++
++#define CONFIG_CMD_SATA
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"smc911x"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=smc911x\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootargs_mmc=setenv bootargs ${bootargs} ip=dhcp "     \
++			"root=/dev/mmcblk0p2 rootwait\0"                \
++		"bootcmd_mmc=run bootargs_base bootargs_mmc; bootm\0"   \
++		"bootcmd=run bootcmd_net\0"                             \
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"MX53-ARD U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*Support LAN9217*/
++#define CONFIG_SMC911X        1
++#define CONFIG_SMC911X_16_BIT 1
++#define CONFIG_SMC911X_BASE CS1_BASE_ADDR
++
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * FUSE Configs
++ * */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_IMX_IIM
++	#define IMX_IIM_BASE    IIM_BASE_ADDR
++	#define CONFIG_IIM_MAC_BANK     1
++	#define CONFIG_IIM_MAC_ROW      9
++#endif
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_ECSPI
++#define IMX_CSPI_VER_2_3        1
++#define MAX_SPI_BYTES		(64 * 4)
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        2
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	/* detect whether ESDHC1 or ESDHC3 is boot device */
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++#endif
++
++/*
++ * SATA Configs
++ */
++#ifdef CONFIG_CMD_SATA
++	#define CONFIG_DWC_AHSATA
++	#define CONFIG_SYS_SATA_MAX_DEVICE	1
++	#define CONFIG_DWC_AHSATA_PORT_ID	0
++	#define CONFIG_DWC_AHSATA_BASE_ADDR	SATA_BASE_ADDR
++	#define CONFIG_LBA48
++	#define CONFIG_LIBATA
++#endif
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(1024 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

@@ -1,0 +1,28 @@
+From ab66a7e8df091c1725f909fd0f19fb5a1072d44f Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Mon, 27 Dec 2010 20:21:05 +0800
+Subject: [PATCH] ENGR00137388 NAND: Correct flash-based BBT version
+
+The flash-based BBT version is not set correctly
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nd2.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nd2.c b/drivers/mtd/nand/mxc_nd2.c
+index f8db044..6b362ce 100644
+--- a/drivers/mtd/nand/mxc_nd2.c
++++ b/drivers/mtd/nand/mxc_nd2.c
+@@ -1180,6 +1180,8 @@ static int mxc_nand_scan_bbt(struct mtd_info *mtd)
+ 	if (cpu_is_mx53()) {
+ 		bbt_mirror_descr.offs = BAD_BLK_MARKER_OOB_OFFS + 2;
+ 		bbt_main_descr.offs = BAD_BLK_MARKER_OOB_OFFS + 2;
++		bbt_mirror_descr.veroffs = bbt_mirror_descr.offs + 4;
++		bbt_main_descr.veroffs = bbt_main_descr.offs + 4;
+ 	}
+ 
+ 	/* use flash based bbt */
+-- 
+1.5.4.4
+

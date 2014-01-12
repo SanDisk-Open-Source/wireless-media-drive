@@ -1,0 +1,30 @@
+From 24a38cb1e4b8b2d36f54054de97cc7627086e677 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 9 Aug 2010 17:26:11 +0800
+Subject: [PATCH] ENGR000123347 CAN: Fix crash when transfer 8Byte follow 7Byte
+
+Max Data length of can frame is 8 Byte. If previous transfer size
+is 8, the length will exceed 8 if next package data size is 7 byte.
+0x8|0x7 = 0xF, length will be 0xf then kernal oops happen.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/net/can/flexcan/mbm.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/can/flexcan/mbm.c b/drivers/net/can/flexcan/mbm.c
+index 42266e7..c846d97 100644
+--- a/drivers/net/can/flexcan/mbm.c
++++ b/drivers/net/can/flexcan/mbm.c
+@@ -294,7 +294,7 @@ int flexcan_mbm_xmit(struct flexcan_device *flexcan, struct can_frame *frame)
+ 		hwmb[i].mb_id = (frame->can_id & CAN_SFF_MASK) << 18;
+ 	}
+ 
+-	hwmb[i].mb_cs &= MB_CS_LENGTH_MASK;
++	hwmb[i].mb_cs &= ~MB_CS_LENGTH_MASK;
+ 	hwmb[i].mb_cs |= frame->can_dlc << MB_CS_LENGTH_OFFSET;
+ 	flexcan_memcpy(hwmb[i].mb_data, frame->data, frame->can_dlc);
+ 	hwmb[i].mb_cs &= ~MB_CS_CODE_MASK;
+-- 
+1.5.4.4
+

@@ -1,0 +1,104 @@
+From 804a4cf530c96fe10f52f2daff30a6822cffb224 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Tue, 16 Nov 2010 22:12:14 +0800
+Subject: [PATCH] ENGR00133726 vpu: make clk_disable() be called only in process context
+
+Voltage scaling is done using the Regulator API, which talks to PMIC
+using SPI. SPI code can sleep and hence clk_[en|dis]able() cannot
+be called in an ISR/tasklet etc contexts.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ drivers/mxc/vpu/mxc_vpu.c |   37 +++++++++++++++++++++++++++----------
+ 1 files changed, 27 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/mxc/vpu/mxc_vpu.c b/drivers/mxc/vpu/mxc_vpu.c
+index e4ba1e1..67b9ebb 100644
+--- a/drivers/mxc/vpu/mxc_vpu.c
++++ b/drivers/mxc/vpu/mxc_vpu.c
+@@ -36,6 +36,7 @@
+ #include <linux/uaccess.h>
+ #include <linux/io.h>
+ #include <linux/slab.h>
++#include <linux/workqueue.h>
+ 
+ #include <asm/sizes.h>
+ #include <mach/clock.h>
+@@ -45,6 +46,8 @@
+ 
+ struct vpu_priv {
+ 	struct fasync_struct *async_queue;
++	struct work_struct work;
++	struct workqueue_struct *workqueue;
+ };
+ 
+ /* To track the allocated memory buffer */
+@@ -190,27 +193,35 @@ static int vpu_free_buffers(void)
+ 	return 0;
+ }
+ 
+-/*!
+- * @brief vpu interrupt handler
+- */
+-static irqreturn_t vpu_irq_handler(int irq, void *dev_id)
++static inline void vpu_worker_callback(struct work_struct *w)
+ {
+-	struct vpu_priv *dev = dev_id;
+-
+-	READ_REG(BIT_INT_STATUS);
+-	WRITE_REG(0x1, BIT_INT_CLEAR);
++	struct vpu_priv *dev = container_of(w, struct vpu_priv,
++				work);
+ 
+ 	if (dev->async_queue)
+ 		kill_fasync(&dev->async_queue, SIGIO, POLL_IN);
+ 
++	codec_done = 1;
++	wake_up_interruptible(&vpu_queue);
++
+ 	/*
+ 	 * Clock is gated on when dec/enc started, gate it off when
+ 	 * interrupt is received.
+ 	 */
+ 	clk_disable(vpu_clk);
++}
+ 
+-	codec_done = 1;
+-	wake_up_interruptible(&vpu_queue);
++/*!
++ * @brief vpu interrupt handler
++ */
++static irqreturn_t vpu_irq_handler(int irq, void *dev_id)
++{
++	struct vpu_priv *dev = dev_id;
++
++	READ_REG(BIT_INT_STATUS);
++	WRITE_REG(0x1, BIT_INT_CLEAR);
++
++	queue_work(dev->workqueue, &dev->work);
+ 
+ 	return IRQ_HANDLED;
+ }
+@@ -644,6 +655,8 @@ static int vpu_dev_probe(struct platform_device *pdev)
+ 	if (err)
+ 		goto err_out_class;
+ 
++	vpu_data.workqueue = create_workqueue("vpu_wq");
++	INIT_WORK(&vpu_data.work, vpu_worker_callback);
+ 	printk(KERN_INFO "VPU initialized\n");
+ 	goto out;
+ 
+@@ -664,6 +677,10 @@ static int vpu_dev_probe(struct platform_device *pdev)
+ static int vpu_dev_remove(struct platform_device *pdev)
+ {
+ 	free_irq(vpu_irq, &vpu_data);
++	cancel_work_sync(&vpu_data.work);
++	flush_workqueue(vpu_data.workqueue);
++	destroy_workqueue(vpu_data.workqueue);
++
+ 	iounmap(vpu_base);
+ 	if (VPU_IRAM_SIZE)
+ 		iram_free(iram.start, VPU_IRAM_SIZE);
+-- 
+1.5.4.4
+

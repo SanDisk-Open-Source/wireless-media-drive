@@ -1,0 +1,123 @@
+From d85f98d8dc6944aaa72b85e0b5eb2fd4e2155c3f Mon Sep 17 00:00:00 2001
+From: Jie Zhou <b30303@freescale.com>
+Date: Wed, 24 Nov 2010 09:14:27 +0800
+Subject: [PATCH] ENGR00133970 MX5x: Z160 GPU revision check
+
+MX53 TO2 and MX50 uses newer Z160 GPU core
+
+Signed-off-by: Jie Zhou <b30303@freescale.com>
+---
+ arch/arm/mach-mx5/devices.c   |    8 ++++++++
+ arch/arm/mach-mx5/devices.h   |    1 +
+ arch/arm/mach-mx5/mx50_arm2.c |    4 +---
+ arch/arm/mach-mx5/mx50_rdp.c  |    2 +-
+ arch/arm/mach-mx5/mx53_ard.c  |    2 +-
+ arch/arm/mach-mx5/mx53_evk.c  |    2 +-
+ 6 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 4ffc53d..7efb86a 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1361,6 +1361,8 @@ struct platform_device gpu_device = {
+ 	.resource = mxc_gpu_resources,
+ };
+ 
++int z160_revision;
++
+ static struct resource mxc_gpu2d_resources[] = {
+ 	{
+ 		.start = MX51_GPU2D_BASE_ADDR,
+@@ -1794,6 +1796,11 @@ int __init mxc_init_devices(void)
+ 			mxc_gpu_resources[4].start = MX53_GPU_GMEM_BASE_ADDR;
+ 			mxc_gpu_resources[4].end = MX53_GPU_GMEM_BASE_ADDR
+ 						+ SZ_256K - 1;
++			if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++				z160_revision = 1;
++			} else {
++				z160_revision = 0;
++			}
+ 		} else {
+ 			mxc_gpu_resources[1].start = 0;
+ 			mxc_gpu_resources[1].end = 0;
+@@ -1801,6 +1808,7 @@ int __init mxc_init_devices(void)
+ 			mxc_gpu_resources[3].end = 0;
+ 			mxc_gpu_resources[4].start = 0;
+ 			mxc_gpu_resources[4].end = 0;
++			z160_revision = 1;
+ 		}
+ 		ipu_resources[0].start = MX53_IPU_CTRL_BASE_ADDR;
+ 		ipu_resources[0].end = MX53_IPU_CTRL_BASE_ADDR + SZ_128M - 1;
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 1d76142..c011f09 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -92,3 +92,4 @@ extern struct platform_device dcp_device;
+ extern struct platform_device pm_device;
+ extern struct platform_device fixed_volt_reg_device;
+ extern struct platform_device mxc_zq_calib_device;
++extern int z160_revision;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 6790886..ca966d2 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -439,8 +439,6 @@ static struct mxc_srtc_platform_data srtc_data = {
+ 	.srtc_sec_mode_addr = OCOTP_CTRL_BASE_ADDR + 0x80,
+ };
+ 
+-static int z160_version = 1;
+-
+ #define mV_to_uV(mV) (mV * 1000)
+ #define uV_to_mV(uV) (uV / 1000)
+ #define V_to_uV(V) (mV_to_uV(V * 1000))
+@@ -1181,7 +1179,7 @@ static void __init mxc_board_init(void)
+ 
+ 	mxc_register_device(&mxc_rtc_device, &srtc_data);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+-	mxc_register_device(&gpu_device, &z160_version);
++	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
+ 	mxc_register_device(&mxc_pxp_v4l2, NULL);
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 32b69b3..17c8960 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1381,7 +1381,7 @@ static void __init mxc_board_init(void)
+ 
+ 	mxc_register_device(&mxc_rtc_device, &srtc_data);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+-	mxc_register_device(&gpu_device, NULL);
++	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
+ 	mxc_register_device(&mxc_pxp_v4l2, NULL);
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 87b95b4..176f699 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1395,7 +1395,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
+ 	mxc_register_device(&mxcvpu_device, &mxc_vpu_data);
+-	mxc_register_device(&gpu_device, NULL);
++	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 5ea882e..f61788d 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1722,7 +1722,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
+ 	mxc_register_device(&mxc_tve_device, &tve_data);
+ 	mxc_register_device(&mxcvpu_device, &mxc_vpu_data);
+-	mxc_register_device(&gpu_device, NULL);
++	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 	/*
+ 	mxc_register_device(&mx53_lpmode_device, NULL);
+-- 
+1.5.4.4
+

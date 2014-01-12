@@ -1,0 +1,35 @@
+From 0065a53efcf9ebdace956d8e75346720101cf9b8 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sun, 26 Sep 2010 09:56:28 +0800
+Subject: [PATCH] ENGR00131930-1 MX53: close clocks when boot
+
+Close NFC and esai clocks in MX53 clock
+initialization
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index b143946..31ff8a3 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4586,14 +4586,11 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 		     3 << MXC_CCM_CCGRx_CG7_OFFSET |
+ 		     1 << MXC_CCM_CCGRx_CG8_OFFSET |
+ 		     1 << MXC_CCM_CCGRx_CG9_OFFSET |
+-		     1 << MXC_CCM_CCGRx_CG10_OFFSET |
+ 		     3 << MXC_CCM_CCGRx_CG11_OFFSET, MXC_CCM_CCGR5);
+ 
+ 	__raw_writel(1 << MXC_CCM_CCGRx_CG0_OFFSET |
+ 				3 << MXC_CCM_CCGRx_CG1_OFFSET |
+ 				1 << MXC_CCM_CCGRx_CG4_OFFSET |
+-				1 << MXC_CCM_CCGRx_CG8_OFFSET |
+-				1 << MXC_CCM_CCGRx_CG9_OFFSET |
+ 				3 << MXC_CCM_CCGRx_CG12_OFFSET |
+ 				3 << MXC_CCM_CCGRx_CG13_OFFSET , MXC_CCM_CCGR6);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,30 @@
+From 657c28163433d1c5ca3d749abb90f6b764303172 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Tue, 8 Mar 2011 17:19:17 +0800
+Subject: [PATCH] ENGR00140400 MXC V4L2 capture:Add maximum buffer number
+
+This patch adds MXC V4L2 capture maximum buffer number
+from 3 to 10. This makes users be able to get rid of
+losing frames in streaming mode by requiring more buffers.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.h b/drivers/media/video/mxc/capture/mxc_v4l2_capture.h
+index 3f53d60..d7a8dd8 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.h
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.h
+@@ -35,7 +35,7 @@
+ 
+ #include <media/v4l2-dev.h>
+ 
+-#define FRAME_NUM 3
++#define FRAME_NUM 10
+ 
+ /*!
+  * v4l2 frame structure.
+-- 
+1.5.4.4
+

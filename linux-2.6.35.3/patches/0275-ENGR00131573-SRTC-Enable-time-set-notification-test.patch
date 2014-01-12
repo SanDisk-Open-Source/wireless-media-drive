@@ -1,0 +1,42 @@
+From e5f01f0f81914920485e586c6dd573b0ade37a5c Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Tue, 5 Oct 2010 16:01:18 -0500
+Subject: [PATCH] ENGR00131573 SRTC Enable time set notification test
+
+Added schedule() call after complete is called
+to ensure that signalled processes get a chance
+to handle the current time change value before
+any new time changes occur.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/rtc/rtc-mxc_v2.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/rtc/rtc-mxc_v2.c b/drivers/rtc/rtc-mxc_v2.c
+index 710dc8b..67faf5b 100644
+--- a/drivers/rtc/rtc-mxc_v2.c
++++ b/drivers/rtc/rtc-mxc_v2.c
+@@ -361,7 +361,7 @@ static int mxc_rtc_ioctl(struct device *dev, unsigned int cmd,
+ 
+ 		return 0;
+ 
+-	/* NOTE: This IOCTL does not work properly on kernel 2.6.35 */
++	/* This IOCTL to be used by processes to be notified of time changes */
+ 	case RTC_WAIT_TIME_SET:
+ 
+ 		/* don't block without releasing mutex first */
+@@ -436,6 +436,10 @@ static int mxc_rtc_set_time(struct device *dev, struct rtc_time *tm)
+ 
+ 	/* signal all waiting threads that time changed */
+ 	complete_all(&srtc_completion);
++
++	/* allow signalled threads to handle the time change notification */
++	schedule();
++
+ 	/* reinitialize completion variable */
+ 	INIT_COMPLETION(srtc_completion);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,29 @@
+From e07bbe87f18d9c08d0a7a0598d667de60a5186e6 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Fri, 30 Jul 2010 17:13:01 +0800
+Subject: [PATCH] ENGR00125760-3 FEC: get mac address from platform data
+
+get mac address from platform data, which read from fuse
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/net/fec.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/fec.c b/drivers/net/fec.c
+index 0571aa4..8fcc931 100644
+--- a/drivers/net/fec.c
++++ b/drivers/net/fec.c
+@@ -1351,6 +1351,9 @@ fec_probe(struct platform_device *pdev)
+ 	fep = netdev_priv(ndev);
+ 	memset(fep, 0, sizeof(*fep));
+ 
++	if (!is_valid_ether_addr(fec_mac_default))
++		memcpy(fec_mac_default, pdata->mac, sizeof(fec_mac_default));
++
+ 	ndev->base_addr = (unsigned long)ioremap(r->start, resource_size(r));
+ 	fep->pdev = pdev;
+ 
+-- 
+1.5.4.4
+

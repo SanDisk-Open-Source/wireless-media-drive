@@ -1,0 +1,55 @@
+From 30eea023a33152159c835d4d5c2d14213bca7210 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Wed, 8 Sep 2010 12:54:05 +0800
+Subject: [PATCH] ENGR00127270 ALSA: Fix 35kernel upgrade cause DMA request fail
+
+Fix DMA request fail.
+Fix warning when request irq.
+35kernel check proc pathname when request irq.
+char "/" is path split char.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ sound/soc/mxs/mxs-adc.c |    4 ++--
+ sound/soc/mxs/mxs-pcm.c |    3 ++-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/mxs/mxs-adc.c b/sound/soc/mxs/mxs-adc.c
+index cd5e93c..0ea70d5 100644
+--- a/sound/soc/mxs/mxs-adc.c
++++ b/sound/soc/mxs/mxs-adc.c
+@@ -342,7 +342,7 @@ static int mxs_adc_startup(struct snd_pcm_substream *substream,
+ 		snd_soc_dai_set_dma_data(dai, substream, &mxs_audio_in);
+ 	}
+ 
+-	ret = request_irq(irq, mxs_err_irq, 0, "MXS DAC/ADC Error",
++	ret = request_irq(irq, mxs_err_irq, 0, "MXS DAC and ADC Error",
+ 			  substream);
+ 	if (ret) {
+ 		printk(KERN_ERR "%s: Unable to request ADC/DAC error irq %d\n",
+@@ -352,7 +352,7 @@ static int mxs_adc_startup(struct snd_pcm_substream *substream,
+ 
+ 	irq_short = IRQ_HEADPHONE_SHORT;
+ 	ret = request_irq(irq_short, mxs_short_irq,
+-		IRQF_DISABLED | IRQF_SHARED, "MXS DAC/ADC HP SHORT", substream);
++		IRQF_DISABLED | IRQF_SHARED, "MXS DAC and ADC HP SHORT", substream);
+ 	if (ret) {
+ 		printk(KERN_ERR "%s: Unable to request ADC/DAC HP SHORT irq %d\n",
+ 		       __func__, IRQ_DAC_ERROR);
+diff --git a/sound/soc/mxs/mxs-pcm.c b/sound/soc/mxs/mxs-pcm.c
+index 5229058..768dd54 100644
+--- a/sound/soc/mxs/mxs-pcm.c
++++ b/sound/soc/mxs/mxs-pcm.c
+@@ -286,7 +286,8 @@ static int mxs_pcm_dma_request(struct snd_pcm_substream *substream)
+ 	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+ 	struct mxs_runtime_data *prtd = runtime->private_data;
+-	struct mxs_pcm_dma_params *dma_data = snd_soc_dai_get_dma_data(rtd->dai, substream);
++	struct mxs_pcm_dma_params *dma_data =
++		snd_soc_dai_get_dma_data(rtd->dai->cpu_dai, substream);
+ 	int desc_num = mxs_pcm_hardware.periods_max;
+ 	int desc;
+ 	int ret;
+-- 
+1.5.4.4
+

@@ -1,0 +1,47 @@
+From 45622c21a466d4799cfe40d5cc2f0286d7eda0ff Mon Sep 17 00:00:00 2001
+From: Nancy Chen <Nancy.Chen@freescale.com>
+Date: Thu, 4 Nov 2010 12:34:13 -0500
+Subject: [PATCH] ENGR00133429 MX51 DVFS_PER: Set LP voltage to 1.25 V
+
+MX51 DVFS_PER: Set high setpoint and low setpoint of LP voltage
+from 1.2 V to 1.25 V.
+
+Signed-off-by: Nancy Chen <Nancy.Chen@freescale.com>
+---
+ arch/arm/mach-mx5/mx51_3stack.c  |    4 ++--
+ arch/arm/mach-mx5/mx51_babbage.c |    4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index d79883e..afc5cce 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -314,8 +314,8 @@ static struct mxc_dvfsper_data dvfs_per_data = {
+ 	.div3_offset = 0,
+ 	.div3_mask = 0x7,
+ 	.div3_div = 2,
+-	.lp_high = 1200000,
+-	.lp_low = 1200000,
++	.lp_high = 1250000,
++	.lp_low = 1250000,
+ };
+ 
+ static struct mxc_spdif_platform_data mxc_spdif_data = {
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 3a6ec04..38aaace 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -484,8 +484,8 @@ static struct mxc_dvfsper_data dvfs_per_data = {
+ 	.div3_offset = 0,
+ 	.div3_mask = 0x7,
+ 	.div3_div = 2,
+-	.lp_high = 1200000,
+-	.lp_low = 1200000,
++	.lp_high = 1250000,
++	.lp_low = 1250000,
+ };
+ 
+ static struct mxc_spdif_platform_data mxc_spdif_data = {
+-- 
+1.5.4.4
+

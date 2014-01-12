@@ -1,0 +1,32 @@
+From 09d00f73af70b8d08aede9d913f82f07f82b5d09 Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Tue, 14 Dec 2010 11:43:21 +0800
+Subject: [PATCH] ENGR00136942 FEC: Fix resume fec trigger transmit timeout
+
+Set carrier flag to off when suspend,
+to avoid kernel warning about sending timeout.
+
+Reported-by: Peter Chen <peter.chen@freescale.com>
+Tested-by: Peter Chen <peter.chen@freescale.com>
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ drivers/net/fec.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/fec.c b/drivers/net/fec.c
+index 2f159b5..d0e2e69 100644
+--- a/drivers/net/fec.c
++++ b/drivers/net/fec.c
+@@ -1608,7 +1608,8 @@ fec_suspend(struct platform_device *dev, pm_message_t state)
+ 		if (netif_running(ndev)) {
+ 			netif_device_detach(ndev);
+ 			fec_stop(ndev);
+-		clk_disable(fep->clk);
++			netif_carrier_off(ndev);
++			clk_disable(fep->clk);
+ 		}
+ 	}
+ 	return 0;
+-- 
+1.5.4.4
+

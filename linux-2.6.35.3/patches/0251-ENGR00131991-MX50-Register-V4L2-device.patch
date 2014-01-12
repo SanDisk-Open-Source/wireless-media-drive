@@ -1,0 +1,27 @@
+From 45f482607aa1ff4ba4ffdec0ce0ce1922b99b602 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Mon, 27 Sep 2010 18:17:52 +0800
+Subject: [PATCH] ENGR00131991 MX50 Register V4L2 device
+
+MX50 Register V4L2 device on 2.6.35
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 4b2dc3d..c5059d4 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -812,6 +812,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpu_device, NULL);
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
++	mxc_register_device(&mxc_pxp_v4l2, NULL);
+ 	/*
+ 	mxc_register_device(&mx53_lpmode_device, NULL);
+ 	mxc_register_device(&busfreq_device, NULL);
+-- 
+1.5.4.4
+

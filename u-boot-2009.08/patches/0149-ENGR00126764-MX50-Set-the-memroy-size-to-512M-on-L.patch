@@ -1,0 +1,31 @@
+From 7bbe5d7a5203a07496ec372ab55563a2e230d03e Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Fri, 27 Aug 2010 16:26:43 +0800
+Subject: [PATCH] ENGR00126764  MX50: Set the memroy size to 512M on LPDDR2 board
+
+Set the memroy size to 512M on LPDDR2 board
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ include/configs/mx50_arm2_lpddr2.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index 6efe6a6..01cbc12 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -253,9 +253,9 @@
+ /*-----------------------------------------------------------------------
+  * Physical Memory Map
+  */
+-#define CONFIG_NR_DRAM_BANKS	2
++#define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+-#define PHYS_SDRAM_1_SIZE	(256 * 1024 * 1024)
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
+ #define iomem_valid_addr(addr, size) \
+ 	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+-- 
+1.5.4.4
+

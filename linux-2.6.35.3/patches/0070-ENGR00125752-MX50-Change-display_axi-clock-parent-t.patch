@@ -1,0 +1,38 @@
+From a233313c3dac230bffa1f372e5be6a340c887946 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Fri, 30 Jul 2010 15:27:25 +0800
+Subject: [PATCH] ENGR00125752 MX50: Change display_axi clock parent to PFD
+
+Changed display_axi clock parent to PFD
+Changed apbh_dma_clk parent to ahb_clk according to h/w design.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 8918514..3f54221 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2355,7 +2355,7 @@ static struct clk gpu2d_clk = {
+ };
+ 
+ static struct clk apbh_dma_clk = {
+-	.parent = &pll1_sw_clk,
++	.parent = &ahb_clk,
+ 	.enable = _clk_enable,
+ 	.disable = _clk_disable,
+ 	.enable_reg = MXC_CCM_CCGR7,
+@@ -3051,7 +3051,7 @@ int __init mx50_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	clk_set_rate(&cspi_main_clk, 12000000);
+ 
+ 	/* set DISPLAY_AXI to 200Mhz */
+-	clk_set_parent(&display_axi_clk, &pll1_sw_clk);
++	clk_set_parent(&display_axi_clk, &pfd2_clk);
+ 	clk_set_rate(&display_axi_clk, 200000000);
+ 
+ 	/* Enable and set EPDC AXI to 200MHz
+-- 
+1.5.4.4
+

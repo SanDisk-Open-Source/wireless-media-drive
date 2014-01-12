@@ -1,0 +1,431 @@
+From a30aecd7bc64d4813b842ccda2d665cc477f48cc Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Mon, 27 Sep 2010 15:52:45 -0500
+Subject: [PATCH] ENGR00132142: Add code to print system clocks information for 35 kernel.
+
+Added support such that /proc/cpu/clocks prints the clock usage and frequency
+on 35 kernel.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx25/clock.c             |   12 ++++++
+ arch/arm/mach-mx3/clock-imx31.c        |   15 +++++++
+ arch/arm/mach-mx3/clock-imx35.c        |   14 ++++++
+ arch/arm/mach-mx5/bus_freq.c           |    3 +-
+ arch/arm/mach-mx5/clock.c              |   43 ++++++++++++++++++--
+ arch/arm/mach-mx5/clock_mx50.c         |   13 +++++-
+ arch/arm/plat-mxc/clock.c              |   69 +++++++++++--------------------
+ arch/arm/plat-mxc/include/mach/clock.h |   10 ++++-
+ 8 files changed, 125 insertions(+), 54 deletions(-)
+
+diff --git a/arch/arm/mach-mx25/clock.c b/arch/arm/mach-mx25/clock.c
+index 6c287a9..d9723cc 100644
+--- a/arch/arm/mach-mx25/clock.c
++++ b/arch/arm/mach-mx25/clock.c
+@@ -1826,6 +1826,8 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "per_uart_clk", per_clk[15])
+ };
+ 
++static struct mxc_clk mxc_clks[ARRAY_SIZE(lookups)];
++
+ /*!
+  * Function to get timer clock rate early in boot process before clock tree is
+  * initialized.
+@@ -1849,6 +1851,16 @@ int __init mx25_clocks_init(void)
+ 
+ 	clkdev_add_table(lookups, ARRAY_SIZE(lookups));
+ 
++	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
++		clkdev_add(&lookups[i]);
++		mxc_clks[i].reg_clk = lookups[i].clk;
++		if (lookups[i].con_id != NULL)
++			strcpy(mxc_clks[i].name, lookups[i].con_id);
++		else
++			strcpy(mxc_clks[i].name, lookups[i].dev_id);
++		clk_register(&mxc_clks[i]);
++	}
++
+ 	/* Turn off all clocks except the ones we need to survive, namely:
+ 	 * EMI, GPIO1-3 (CCM_CGCR1[18:16]), GPT1, IOMUXC (CCM_CGCR1[27]), IIM,
+ 	 * SCC
+diff --git a/arch/arm/mach-mx3/clock-imx31.c b/arch/arm/mach-mx3/clock-imx31.c
+index 563b10c..cfe4a74 100644
+--- a/arch/arm/mach-mx3/clock-imx31.c
++++ b/arch/arm/mach-mx3/clock-imx31.c
+@@ -20,6 +20,8 @@
+ #include <linux/module.h>
+ #include <linux/spinlock.h>
+ #include <linux/delay.h>
++#include <linux/init.h>
++#include <linux/list.h>
+ #include <linux/clk.h>
+ #include <linux/err.h>
+ #include <linux/io.h>
+@@ -667,14 +669,27 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "mbx", mbx_clk)
+ };
+ 
++static struct mxc_clk mxc_clks[ARRAY_SIZE(lookups)];
++
+ int __init mx31_clocks_init(unsigned long fref)
+ {
+ 	u32 reg;
++	int i;
+ 
+ 	ckih_rate = fref;
+ 
+ 	clkdev_add_table(lookups, ARRAY_SIZE(lookups));
+ 
++	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
++		clkdev_add(&lookups[i]);
++		mxc_clks[i].reg_clk = lookups[i].clk;
++		if (lookups[i].con_id != NULL)
++			strcpy(mxc_clks[i].name, lookups[i].con_id);
++		else
++			strcpy(mxc_clks[i].name, lookups[i].dev_id);
++		clk_register(&mxc_clks[i]);
++	}
++
+ 	/* change the csi_clk parent if necessary */
+ 	reg = __raw_readl(MXC_CCM_CCMR);
+ 	if (!(reg & MXC_CCM_CCMR_CSCS))
+diff --git a/arch/arm/mach-mx3/clock-imx35.c b/arch/arm/mach-mx3/clock-imx35.c
+index 9d0dc0c..afd9fe7 100644
+--- a/arch/arm/mach-mx3/clock-imx35.c
++++ b/arch/arm/mach-mx3/clock-imx35.c
+@@ -21,6 +21,7 @@
+ #include <linux/list.h>
+ #include <linux/clk.h>
+ #include <linux/io.h>
++#include <linux/module.h>
+ 
+ #include <asm/clkdev.h>
+ 
+@@ -485,9 +486,12 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("mxc_nand.0", NULL, nfc_clk)
+ };
+ 
++static struct mxc_clk mxc_clks[ARRAY_SIZE(lookups)];
++
+ int __init mx35_clocks_init()
+ {
+ 	unsigned int ll = 0;
++	int i;
+ 
+ #if defined(CONFIG_DEBUG_LL) && !defined(CONFIG_DEBUG_ICEDCC)
+ 	ll = (3 << 16);
+@@ -495,6 +499,16 @@ int __init mx35_clocks_init()
+ 
+ 	clkdev_add_table(lookups, ARRAY_SIZE(lookups));
+ 
++	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
++		mxc_clks[i].reg_clk = lookups[i].clk;
++		if (lookups[i].con_id != NULL)
++			strcpy(mxc_clks[i].name, lookups[i].con_id);
++		else
++			strcpy(mxc_clks[i].name, lookups[i].dev_id);
++		clk_register(&mxc_clks[i]);
++	}
++
++
+ 	/* Turn off all clocks except the ones we need to survive, namely:
+ 	 * EMI, GPIO1/2/3, GPT, IOMUX, MAX and eventually uart
+ 	 */
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 444ce3f..1095da0 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -680,7 +680,7 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	if (cpu_is_mx51())
+-		emi_garb_clk = clk_get(NULL, "emi_garb_clk");
++		emi_garb_clk = clk_get(NULL, "emi_intr_clk.1");
+ 	else if (cpu_is_mx53())
+ 		emi_garb_clk = clk_get(NULL, "emi_intr_clk.1");
+ 	else
+@@ -753,6 +753,7 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 			ddr_low_rate = LP_APM_CLK;
+ 		}
+ 	}
++
+ 	if (cpu_is_mx50()) {
+ 		iram_alloc(SZ_8K, &iram_paddr);
+ 		/* Need to remap the area here since we want the memory region
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 35390ff..2a9a113 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4203,6 +4203,9 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "esai_ipg_clk", esai_clk[1]),
+ };
+ 
++static struct mxc_clk mx51_clks[ARRAY_SIZE(lookups) + ARRAY_SIZE(mx51_lookups)];
++static struct mxc_clk mx53_clks[ARRAY_SIZE(lookups) + ARRAY_SIZE(mx53_lookups)];
++
+ static void clk_tree_init(void)
+ {
+ 	u32 reg, dp_ctl;
+@@ -4326,10 +4329,26 @@ int __init mx51_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 
+ 	clk_tree_init();
+ 
+-	for (i = 0; i < ARRAY_SIZE(lookups); i++)
++	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
+ 		clkdev_add(&lookups[i]);
+-	for (i = 0; i < ARRAY_SIZE(mx51_lookups); i++)
++		mx51_clks[i].reg_clk = lookups[i].clk;
++		if (lookups[i].con_id != NULL)
++			strcpy(mx51_clks[i].name, lookups[i].con_id);
++		else
++			strcpy(mx51_clks[i].name, lookups[i].dev_id);
++		clk_register(&mx51_clks[i]);
++	}
++
++	j = ARRAY_SIZE(lookups);
++	for (i = 0; i < ARRAY_SIZE(mx51_lookups); i++) {
+ 		clkdev_add(&mx51_lookups[i]);
++		mx51_clks[i+j].reg_clk = mx51_lookups[i].clk;
++		if (mx51_lookups[i].con_id != NULL)
++			strcpy(mx51_clks[i+j].name, mx51_lookups[i].con_id);
++		else
++			strcpy(mx51_clks[i+j].name, mx51_lookups[i].dev_id);
++		clk_register(&mx51_clks[i+j]);
++	}
+ 
+ 	max_axi_a_clk = MAX_AXI_A_CLK_MX51;
+ 	max_axi_b_clk = MAX_AXI_B_CLK_MX51;
+@@ -4642,10 +4661,26 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 
+ 	clk_tree_init();
+ 
+-	for (i = 0; i < ARRAY_SIZE(lookups); i++)
++	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
+ 		clkdev_add(&lookups[i]);
+-	for (i = 0; i < ARRAY_SIZE(mx53_lookups); i++)
++		mx53_clks[i].reg_clk = lookups[i].clk;
++		if (lookups[i].con_id != NULL)
++			strcpy(mx53_clks[i].name, lookups[i].con_id);
++		else
++			strcpy(mx53_clks[i].name, lookups[i].dev_id);
++		clk_register(&mx53_clks[i]);
++	}
++
++	j = ARRAY_SIZE(lookups);
++	for (i = 0; i < ARRAY_SIZE(mx53_lookups); i++) {
+ 		clkdev_add(&mx53_lookups[i]);
++		mx53_clks[i+j].reg_clk = mx53_lookups[i].clk;
++		if (mx53_lookups[i].con_id != NULL)
++			strcpy(mx53_clks[i+j].name, mx53_lookups[i].con_id);
++		else
++			strcpy(mx53_clks[i+j].name, mx53_lookups[i].dev_id);
++		clk_register(&mx53_clks[i+j]);
++	}
+ 
+ 	clk_set_parent(&esai_clk[0], &ckih_clk);
+ 
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 9d0c901..02c0dbb 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -72,8 +72,6 @@ extern int cpu_wp_nr;
+ extern int lp_high_freq;
+ extern int lp_med_freq;
+ 
+-static int max_axi_a_clk;
+-static int max_axi_b_clk;
+ void __iomem *databahn;
+ 
+ #define DDR_SYNC_MODE		0x30000
+@@ -3121,6 +3119,8 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("mxc_epdc_fb", "epdc_pix", epdc_pix_clk),
+ };
+ 
++static struct mxc_clk mxc_clks[ARRAY_SIZE(lookups)];
++
+ static void clk_tree_init(void)
+ {
+ 	u32 reg;
+@@ -3220,8 +3220,15 @@ int __init mx50_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 
+ 	clk_tree_init();
+ 
+-	for (i = 0; i < ARRAY_SIZE(lookups); i++)
++	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
+ 		clkdev_add(&lookups[i]);
++		mxc_clks[i].reg_clk = lookups[i].clk;
++		if (lookups[i].con_id != NULL)
++			strcpy(mxc_clks[i].name, lookups[i].con_id);
++		else
++			strcpy(mxc_clks[i].name, lookups[i].dev_id);
++		clk_register(&mxc_clks[i]);
++	}
+ 
+ 	/* set DDR clock parent */
+ 	reg = __raw_readl(MXC_CCM_CLK_DDR) &
+diff --git a/arch/arm/plat-mxc/clock.c b/arch/arm/plat-mxc/clock.c
+index f29a320..3dd6b9f 100644
+--- a/arch/arm/plat-mxc/clock.c
++++ b/arch/arm/plat-mxc/clock.c
+@@ -366,11 +366,10 @@ struct clk *clk_get_parent(struct clk *clk)
+ }
+ EXPORT_SYMBOL(clk_get_parent);
+ 
+-#ifndef CONFIG_COMMON_CLKDEV
+ /*
+  * Add a new clock to the clock tree.
+  */
+-int clk_register(struct clk *clk)
++int clk_register(struct mxc_clk *clk)
+ {
+ 	if (clk == NULL || IS_ERR(clk))
+ 		return -EINVAL;
+@@ -384,7 +383,7 @@ int clk_register(struct clk *clk)
+ EXPORT_SYMBOL(clk_register);
+ 
+ /* Remove a clock from the clock tree */
+-void clk_unregister(struct clk *clk)
++void clk_unregister(struct mxc_clk *clk)
+ {
+ 	if (clk == NULL || IS_ERR(clk))
+ 		return;
+@@ -402,8 +401,8 @@ static void *mxc_proc_clocks_seq_start(struct seq_file *file, loff_t *index)
+ 	unsigned int  i;
+ 	unsigned int  name_length;
+ 	unsigned int  longest_length = 0;
+-	struct clk    *current_clock = 0;
+-	struct clk    *clock;
++	struct mxc_clk    *current_clock = 0;
++	struct mxc_clk    *clock;
+ 
+ 	/* Examine the clock list. */
+ 
+@@ -434,7 +433,7 @@ static void *mxc_proc_clocks_seq_start(struct seq_file *file, loff_t *index)
+ static void *mxc_proc_clocks_seq_next(struct seq_file *file, void *data,
+ 								loff_t *index)
+ {
+-	struct clk  *current_clock = (struct clk *) data;
++	struct mxc_clk  *current_clock = (struct clk *) data;
+ 
+ 	/* Check for nonsense. */
+ 
+@@ -466,60 +465,43 @@ static void mxc_proc_clocks_seq_stop(struct seq_file *file, void *data)
+ static int mxc_proc_clocks_seq_show(struct seq_file *file, void *data)
+ {
+ 	int            result;
+-	struct clk     *clock = (struct clk *) data;
+-	struct clk     *parent = clock->parent;
++	struct mxc_clk     *clock = (struct mxc_clk *) data;
++	struct clk     *parent = clock->reg_clk->parent;
+ 	unsigned int   longest_length = (unsigned int) file->private;
+ 	unsigned long  range_divisor;
+ 	const char     *range_units;
++	int rate = clk_get_rate(clock->reg_clk);
+ 
+-	if (clock->rate >= 1000000) {
++	if (rate >= 1000000) {
+ 		range_divisor = 1000000;
+ 		range_units   = "MHz";
+-	} else if (clock->rate >= 1000) {
++	} else if (rate >= 1000) {
+ 		range_divisor = 1000;
+ 		range_units   = "KHz";
+ 	} else {
+ 		range_divisor = 1;
+ 		range_units   = "Hz";
+ 	}
+-
+-	if (parent)
+-		result = seq_printf(file,
+-			"%s-%-d%*s  %s-%-d%*s  %c%c%c%c%c%c  %3d",
+-			clock->name,
+-			clock->id,
+-			longest_length - strlen(clock->name), "",
+-			parent->name,
+-			parent->id,
+-			longest_length - strlen(parent->name), "",
+-			(clock->flags & RATE_PROPAGATES)      ? 'P' : '_',
+-			(clock->flags & ALWAYS_ENABLED)       ? 'A' : '_',
+-			(clock->flags & RATE_FIXED)           ? 'F' : '_',
+-			(clock->flags & CPU_FREQ_TRIG_UPDATE) ? 'T' : '_',
+-			(clock->flags & AHB_HIGH_SET_POINT)   ? 'H' : '_',
+-			(clock->flags & AHB_MED_SET_POINT)    ? 'M' : '_',
+-			clock->usecount);
+-	else
+-		result = seq_printf(file,
+-			"%s-%-d%*s  %*s  %c%c%c%c%c%c  %3d",
+-			clock->name,
+-			clock->id,
+-			longest_length - strlen(clock->name), "",
+-			longest_length + 2, "",
+-			(clock->flags & RATE_PROPAGATES)      ? 'P' : '_',
+-			(clock->flags & ALWAYS_ENABLED)       ? 'A' : '_',
+-			(clock->flags & RATE_FIXED)           ? 'F' : '_',
+-			(clock->flags & CPU_FREQ_TRIG_UPDATE) ? 'T' : '_',
+-			(clock->flags & AHB_HIGH_SET_POINT)   ? 'H' : '_',
+-			(clock->flags & AHB_MED_SET_POINT)    ? 'M' : '_',
+-			clock->usecount);
++	result = seq_printf(file,
++		"%s-%-d%*s  %*s  %c%c%c%c%c%c  %3d",
++		clock->name,
++		clock->reg_clk->id,
++		longest_length - strlen(clock->name), "",
++		longest_length + 2, "",
++		(clock->reg_clk->flags & RATE_PROPAGATES)      ? 'P' : '_',
++		(clock->reg_clk->flags & ALWAYS_ENABLED)       ? 'A' : '_',
++		(clock->reg_clk->flags & RATE_FIXED)           ? 'F' : '_',
++		(clock->reg_clk->flags & CPU_FREQ_TRIG_UPDATE) ? 'T' : '_',
++		(clock->reg_clk->flags & AHB_HIGH_SET_POINT)   ? 'H' : '_',
++		(clock->reg_clk->flags & AHB_MED_SET_POINT)    ? 'M' : '_',
++		clock->reg_clk->usecount);
+ 
+ 	if (result)
+ 		return result;
+ 
+ 	result = seq_printf(file, "  %10lu (%lu%s)\n",
+-		clock->rate,
+-		clock->rate / range_divisor, range_units);
++		rate,
++		rate / range_divisor, range_units);
+ 
+ 	return result;
+ 
+@@ -559,7 +541,6 @@ static int __init mxc_setup_proc_entry(void)
+ 
+ late_initcall(mxc_setup_proc_entry);
+ #endif /* CONFIG_PROC_FS */
+-#endif
+ 
+ /*
+  * Get the resulting clock rate from a PLL register value and the input
+diff --git a/arch/arm/plat-mxc/include/mach/clock.h b/arch/arm/plat-mxc/include/mach/clock.h
+index 2638c85..b414aaf 100644
+--- a/arch/arm/plat-mxc/include/mach/clock.h
++++ b/arch/arm/plat-mxc/include/mach/clock.h
+@@ -25,6 +25,12 @@
+ 
+ struct module;
+ 
++struct mxc_clk {
++	struct list_head node;
++	char name[20];
++	struct clk *reg_clk;
++};
++
+ struct clk {
+ 	int id;
+ 	/* Source clock this clk depends on */
+@@ -57,8 +63,8 @@ struct clk {
+ 	int (*set_parent) (struct clk *, struct clk *);
+ };
+ 
+-int clk_register(struct clk *clk);
+-void clk_unregister(struct clk *clk);
++int clk_register(struct mxc_clk *clk);
++void clk_unregister(struct mxc_clk *clk);
+ int clk_get_usecount(struct clk *clk);
+ int clk_set_pll_dither(struct clk *clk, unsigned int pll_ppm);
+ 
+-- 
+1.5.4.4
+

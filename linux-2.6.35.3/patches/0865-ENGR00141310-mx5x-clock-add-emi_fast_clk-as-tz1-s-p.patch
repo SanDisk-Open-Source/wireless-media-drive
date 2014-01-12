@@ -1,0 +1,65 @@
+From f004a3bace4aea0801c1f6fbea8c170d408cc09c Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Tue, 29 Mar 2011 15:35:52 +0800
+Subject: [PATCH] ENGR00141310 mx5x clock: add emi_fast_clk as tz1's parent for uart dma
+
+UART dma mode doing data transfer between uart fifo and ddr.
+So emi_fast_clk must be enabled when dma on.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |   24 +++++++++++++++---------
+ 1 files changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 4b4750b..e15eae3 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -1340,13 +1340,19 @@ static struct clk ocram_clk = {
+ };
+ 
+ 
+-static struct clk aips_tz1_clk = {
+-	.parent = &ahb_clk,
+-	.secondary = &ahb_max_clk,
+-	.enable_reg = MXC_CCM_CCGR0,
+-	.enable_shift = MXC_CCM_CCGRx_CG12_OFFSET,
+-	.enable = _clk_enable,
+-	.disable = _clk_disable_inwait,
++static struct clk aips_tz1_clk[] = {
++	{
++	 .parent = &ahb_clk,
++	 .secondary = &aips_tz1_clk[1],
++	 .enable_reg = MXC_CCM_CCGR0,
++	 .enable_shift = MXC_CCM_CCGRx_CG12_OFFSET,
++	 .enable = _clk_enable,
++	 .disable = _clk_disable_inwait,
++	},
++	{
++	 .parent = &emi_fast_clk,
++	 .secondary = &ahb_max_clk,
++	},
+ };
+ 
+ static struct clk aips_tz2_clk = {
+@@ -2107,7 +2113,7 @@ static struct clk uart1_clk[] = {
+ 	 .id = 0,
+ 	 .parent = &ipg_clk,
+ #if UART1_DMA_ENABLE
+-	 .secondary = &aips_tz1_clk,
++	 .secondary = &aips_tz1_clk[0],
+ #endif
+ 	 .enable_reg = MXC_CCM_CCGR1,
+ 	 .enable_shift = MXC_CCM_CCGRx_CG3_OFFSET,
+@@ -2133,7 +2139,7 @@ static struct clk uart2_clk[] = {
+ 	 .id = 1,
+ 	 .parent = &ipg_clk,
+ #if UART2_DMA_ENABLE
+-	 .secondary = &aips_tz1_clk,
++	 .secondary = &aips_tz1_clk[0],
+ #endif
+ 	 .enable_reg = MXC_CCM_CCGR1,
+ 	 .enable_shift = MXC_CCM_CCGRx_CG5_OFFSET,
+-- 
+1.5.4.4
+

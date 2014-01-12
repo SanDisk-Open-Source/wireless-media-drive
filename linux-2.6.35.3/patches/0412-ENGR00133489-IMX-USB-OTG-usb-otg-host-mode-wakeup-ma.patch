@@ -1,0 +1,49 @@
+From 290c6fce75701d255429b33cf8947f01f8e6b1de Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Mon, 8 Nov 2010 17:01:36 +0800
+Subject: [PATCH] ENGR00133489 IMX USB-OTG:usb otg host mode wakeup may not work
+
+when plug A-cable, but no usb device connect to the cable's receptacle,
+then unplug the cable, and then plug the cable again, the wakeup
+function can not work.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ drivers/usb/host/ehci-arc.c |    7 +++++--
+ 1 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index 5d17929..090bcfb 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -419,7 +419,6 @@ static int ehci_fsl_bus_resume(struct usb_hcd *hcd)
+ 		return -ESHUTDOWN;
+ 	}
+ 
+-	/* if it is a remote wakeup, it will open clock and clear PHCD automatically */
+ 	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
+ 		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+ 		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
+@@ -631,7 +630,7 @@ static int ehci_fsl_drv_suspend(struct platform_device *pdev,
+ 	}
+ 	usb_unlock_device(roothub);
+ 
+-	if ((pdata->operating_mode != FSL_USB2_MPH_HOST) && (!(hcd->state & HC_STATE_SUSPENDED))) {
++	if (!(hcd->state & HC_STATE_SUSPENDED)) {
+ 		printk(KERN_DEBUG "will suspend roothub and its children\n");
+ 		usb_lock_device(roothub);
+ 		usb_suspend(&roothub->dev, PMSG_USER_SUSPEND);
+@@ -659,6 +658,10 @@ static int ehci_fsl_drv_suspend(struct platform_device *pdev,
+ 
+ 	/* clear PHCD bit */
+ 	pdata->pm_portsc &= ~PORT_PTS_PHCD;
++
++	usb_host_set_wakeup(hcd->self.controller, true);
++	fsl_usb_lowpower_mode(pdata, true);
++
+ 	if (test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
+ 		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+ 		fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
+-- 
+1.5.4.4
+

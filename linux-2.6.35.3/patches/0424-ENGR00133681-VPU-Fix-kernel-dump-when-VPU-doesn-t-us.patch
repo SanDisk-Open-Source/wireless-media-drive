@@ -1,0 +1,42 @@
+From 020fa3509623f49aa759fb47864b70eb017403f8 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Mon, 15 Nov 2010 10:55:47 +0800
+Subject: [PATCH] ENGR00133681 VPU:Fix kernel dump when VPU doesn't use IRAM
+
+If VPU doesn't use IRAM, there will be a kernel dump when
+we enter VPU driver probe function.
+This issue is caused by allocating IRAM with zero buffer
+size.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/mxc/vpu/mxc_vpu.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mxc/vpu/mxc_vpu.c b/drivers/mxc/vpu/mxc_vpu.c
+index 2be6fa6..e4ba1e1 100644
+--- a/drivers/mxc/vpu/mxc_vpu.c
++++ b/drivers/mxc/vpu/mxc_vpu.c
+@@ -582,7 +582,8 @@ static int vpu_dev_probe(struct platform_device *pdev)
+ 
+ 	vpu_plat = pdev->dev.platform_data;
+ 
+-	iram_alloc(VPU_IRAM_SIZE, &addr);
++	if (VPU_IRAM_SIZE)
++		iram_alloc(VPU_IRAM_SIZE, &addr);
+ 	if (addr == 0)
+ 		iram.start = iram.end = 0;
+ 	else {
+@@ -664,7 +665,8 @@ static int vpu_dev_remove(struct platform_device *pdev)
+ {
+ 	free_irq(vpu_irq, &vpu_data);
+ 	iounmap(vpu_base);
+-	iram_free(iram.start, VPU_IRAM_SIZE);
++	if (VPU_IRAM_SIZE)
++		iram_free(iram.start, VPU_IRAM_SIZE);
+ 
+ 	return 0;
+ }
+-- 
+1.5.4.4
+

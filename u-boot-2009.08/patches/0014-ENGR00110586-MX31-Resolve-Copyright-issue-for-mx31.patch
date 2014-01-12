@@ -1,0 +1,42 @@
+From 07f2775a77c1b2b934ac198b2ce316b6539358ab Mon Sep 17 00:00:00 2001
+From: r65388 <r65388@freescale.com>
+Date: Tue, 31 Mar 2009 16:21:41 +0800
+Subject: [PATCH] ENGR00110586 MX31: Resolve Copyright issue for mx31 files
+
+Add freescale copyright.
+
+Signed-off-by: r65388 <r65388@freescale.com>
+---
+ cpu/arm926ejs/mx27/timer.c            |    4 ++++
+ include/asm-arm/arch-mx31/mx31-regs.h |    1 +
+ 2 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/cpu/arm926ejs/mx27/timer.c b/cpu/arm926ejs/mx27/timer.c
+index 1e13627..982c2b4 100644
+--- a/cpu/arm926ejs/mx27/timer.c
++++ b/cpu/arm926ejs/mx27/timer.c
+@@ -10,6 +10,10 @@
+  * (C) Copyright 2002
+  * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
+  *
++ * (C) Copyright 2007
++ * Sascha Hauer, Pengutronix
++ *
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
+  * (C) Copyright 2009
+  * Ilya Yanok, Emcraft Systems Ltd, <yanok@emcraft.com>
+  *
+diff --git a/include/asm-arm/arch-mx31/mx31-regs.h b/include/asm-arm/arch-mx31/mx31-regs.h
+index a8b7c10..a683a2e 100644
+--- a/include/asm-arm/arch-mx31/mx31-regs.h
++++ b/include/asm-arm/arch-mx31/mx31-regs.h
+@@ -1,5 +1,6 @@
+ /*
+  *
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
+  * (c) 2007 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
+  *
+  * See file CREDITS for list of people who contributed to this
+-- 
+1.5.4.4
+

@@ -1,0 +1,27 @@
+From 6259800e38b3da575a8436d5616b3920c77f25f5 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Mon, 23 Feb 2009 13:32:44 +0800
+Subject: [PATCH] ENGR00094618 Update .gitignore configure file
+
+Update .gitignore configure file to ignore vim swap and ctags file
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ .gitignore |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index 67d2cd6..1400d84 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -13,6 +13,7 @@
+ *~
+ *.swp
+ *.patch
++*.swp
+ 
+ #
+ # Top-level generic files
+-- 
+1.5.4.4
+

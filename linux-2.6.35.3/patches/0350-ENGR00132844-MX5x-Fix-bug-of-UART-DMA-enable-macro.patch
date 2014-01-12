@@ -1,0 +1,165 @@
+From 1b081d8987ab5cd95b7ec88c73c85b96bc8c90d4 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Thu, 21 Oct 2010 13:08:49 +0800
+Subject: [PATCH] ENGR00132844 MX5x: Fix bug of UART DMA enable macro usage
+
+In the MX5x clock code, it's incorrect to
+use the existence of the macro to determin the
+uart is DMA enabled or not.
+Fix this bug by checking the macro value.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c      |   15 ++++++++-------
+ arch/arm/mach-mx5/clock_mx50.c |   15 ++++++++-------
+ 2 files changed, 16 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index aacb6af..6bcc6ad 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -30,6 +30,7 @@
+ #include <mach/sdram_autogating.h>
+ 
+ #include "crm_regs.h"
++#include "serial.h"
+ 
+ /* External clock values passed-in by the board code */
+ static unsigned long external_high_reference, external_low_reference;
+@@ -2114,14 +2115,14 @@ static struct clk uart1_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG4_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART1_DMA_ENABLE
++#if UART1_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+ 	{
+ 	 .id = 0,
+ 	 .parent = &ipg_clk,
+-#ifdef UART1_DMA_ENABLE
++#if UART1_DMA_ENABLE
+ 	 .secondary = &aips_tz1_clk,
+ #endif
+ 	 .enable_reg = MXC_CCM_CCGR1,
+@@ -2140,14 +2141,14 @@ static struct clk uart2_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG6_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART2_DMA_ENABLE
++#if UART2_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+ 	{
+ 	 .id = 1,
+ 	 .parent = &ipg_clk,
+-#ifdef UART2_DMA_ENABLE
++#if UART2_DMA_ENABLE
+ 	 .secondary = &aips_tz1_clk,
+ #endif
+ 	 .enable_reg = MXC_CCM_CCGR1,
+@@ -2166,7 +2167,7 @@ static struct clk uart3_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG8_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART3_DMA_ENABLE
++#if UART3_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+@@ -2190,7 +2191,7 @@ static struct clk uart4_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG5_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART4_DMA_ENABLE
++#if UART4_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+@@ -2214,7 +2215,7 @@ static struct clk uart5_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG7_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART5_DMA_ENABLE
++#if UART5_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 01611dc..cad12a8 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -35,6 +35,7 @@
+ #include <mach/sdram_autogating.h>
+ 
+ #include "crm_regs.h"
++#include "serial.h"
+ 
+ /* External clock values passed-in by the board code */
+ static unsigned long external_high_reference, external_low_reference;
+@@ -1414,14 +1415,14 @@ static struct clk uart1_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG4_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART1_DMA_ENABLE
++#if UART1_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+ 	{
+ 	 .id = 0,
+ 	 .parent = &ipg_clk,
+-#ifdef UART1_DMA_ENABLE
++#if UART1_DMA_ENABLE
+ 	 .secondary = &aips_tz1_clk,
+ #endif
+ 	 .enable_reg = MXC_CCM_CCGR1,
+@@ -1440,14 +1441,14 @@ static struct clk uart2_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG6_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART2_DMA_ENABLE
++#if UART2_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+ 	{
+ 	 .id = 1,
+ 	 .parent = &ipg_clk,
+-#ifdef UART2_DMA_ENABLE
++#if UART2_DMA_ENABLE
+ 	 .secondary = &aips_tz1_clk,
+ #endif
+ 	 .enable_reg = MXC_CCM_CCGR1,
+@@ -1466,7 +1467,7 @@ static struct clk uart3_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG8_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART3_DMA_ENABLE
++#if UART3_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+@@ -1490,7 +1491,7 @@ static struct clk uart4_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG5_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART4_DMA_ENABLE
++#if UART4_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+@@ -1514,7 +1515,7 @@ static struct clk uart5_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG7_OFFSET,
+ 	 .enable = _clk_enable,
+ 	 .disable = _clk_disable,
+-#ifdef UART5_DMA_ENABLE
++#if UART5_DMA_ENABLE
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ #endif
+ 	 },
+-- 
+1.5.4.4
+

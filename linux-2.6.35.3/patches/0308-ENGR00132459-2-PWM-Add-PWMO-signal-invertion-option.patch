@@ -1,0 +1,72 @@
+From 0cb66bfe09ca41821c96f220020fb79805383bb2 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Wed, 13 Oct 2010 15:46:06 +0800
+Subject: [PATCH] ENGR00132459-2 PWM: Add PWMO signal invertion option
+
+Add a member pwmo_invert to the PWM structure to record
+whether the PWMO signal needs invertion or not.
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ arch/arm/plat-mxc/pwm.c |   10 ++++++++++
+ 1 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/pwm.c b/arch/arm/plat-mxc/pwm.c
+index 1453e36..088b57e 100644
+--- a/arch/arm/plat-mxc/pwm.c
++++ b/arch/arm/plat-mxc/pwm.c
+@@ -17,6 +17,7 @@
+ #include <linux/clk.h>
+ #include <linux/io.h>
+ #include <linux/pwm.h>
++#include <linux/fsl_devices.h>
+ #include <mach/hardware.h>
+ 
+ 
+@@ -56,6 +57,7 @@ struct pwm_device {
+ 
+ 	unsigned int	use_count;
+ 	unsigned int	pwm_id;
++	int		pwmo_invert;
+ };
+ 
+ int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
+@@ -68,6 +70,9 @@ int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
+ 		unsigned long period_cycles, duty_cycles, prescale;
+ 		u32 cr;
+ 
++		if (pwm->pwmo_invert)
++			duty_ns = period_ns - duty_ns;
++
+ 		c = clk_get_rate(pwm->clk);
+ 		c = c * period_ns;
+ 		do_div(c, 1000000000);
+@@ -111,6 +116,8 @@ int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
+ 		 * (/2 .. /16).
+ 		 */
+ 		u32 max = readl(pwm->mmio_base + MX1_PWMP);
++		if (pwm->pwmo_invert)
++			duty_ns = period_ns - duty_ns;
+ 		u32 p = max * duty_ns / period_ns;
+ 		writel(max - p, pwm->mmio_base + MX1_PWMS);
+ 	} else {
+@@ -199,6 +206,7 @@ static int __devinit mxc_pwm_probe(struct platform_device *pdev)
+ {
+ 	struct pwm_device *pwm;
+ 	struct resource *r;
++	struct mxc_pwm_platform_data *plat_data = pdev->dev.platform_data;
+ 	int ret = 0;
+ 
+ 	pwm = kzalloc(sizeof(struct pwm_device), GFP_KERNEL);
+@@ -219,6 +227,8 @@ static int __devinit mxc_pwm_probe(struct platform_device *pdev)
+ 	pwm->use_count = 0;
+ 	pwm->pwm_id = pdev->id;
+ 	pwm->pdev = pdev;
++	if (plat_data != NULL)
++		pwm->pwmo_invert = plat_data->pwmo_invert;
+ 
+ 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+ 	if (r == NULL) {
+-- 
+1.5.4.4
+

@@ -1,0 +1,124 @@
+From 6ab950cae173fdb8ffd70d6414aa5d30aad9753b Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Wed, 19 Jan 2011 11:33:44 -0600
+Subject: [PATCH] ENGR00138222 MX5x SAHARA Do not call clk_disable in IRQ context
+
+Removed clk_disable call from ISR, and moved it to postprocess
+function that is queued up for exection later. Also fixed debug
+print that was referring to a non-existent struct member.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/mxc/security/sahara2/sah_queue_manager.c  |   34 ++++++++++++++++++--
+ drivers/mxc/security/sahara2/sah_status_manager.c |   26 +---------------
+ 2 files changed, 31 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/mxc/security/sahara2/sah_queue_manager.c b/drivers/mxc/security/sahara2/sah_queue_manager.c
+index 7768f77..324e4c6 100644
+--- a/drivers/mxc/security/sahara2/sah_queue_manager.c
++++ b/drivers/mxc/security/sahara2/sah_queue_manager.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -426,7 +426,7 @@ void sah_process_finished_request(sah_Head_Desc * desc_head, unsigned error)
+ 		desc_head->result =
+ 		    sah_convert_error_status(desc_head->error_status);
+ #ifdef DIAG_DRV_STATUS
+-		sah_Log_Error(desc_head->current_dar, desc_head->error_status,
++		sah_Log_Error(desc_head->desc.dma_addr, desc_head->error_status,
+ 			      desc_head->fault_address);
+ #endif
+ 	}
+@@ -459,6 +459,34 @@ void sah_process_finished_request(sah_Head_Desc * desc_head, unsigned error)
+ void sah_postprocess_queue(unsigned long reset_flag)
+ {
+ 
++	sah_Head_Desc *first_entry;
++	os_lock_context_t lock_flags;
++
++    /* Disabling Sahara Clock only if the hardware is in idle state and
++	    the DAR queue is empty.*/
++	os_lock_save_context(desc_queue_lock, lock_flags);
++	first_entry = sah_Find_With_State(SAH_STATE_ON_SAHARA);
++	os_unlock_restore_context(desc_queue_lock, lock_flags);
++
++	if ((first_entry == NULL) && (sah_HW_Read_Status() == SAH_EXEC_IDLE)) {
++
++#ifdef DIAG_DRV_IF
++		LOG_KDIAG("SAHARA : Disabling the clocks\n")
++#endif				/* DIAG_DRV_IF */
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 18))
++		mxc_clks_disable(SAHARA2_CLK);
++#else
++		{
++			struct clk *clk = clk_get(NULL, "sahara_clk");
++			if (clk != ERR_PTR(ENOENT))
++				clk_disable(clk);
++			clk_put(clk);
++		}
++#endif
++
++	}
++
++
+ 	/* if SAHARA needs to be reset, do it here. This starts a descriptor chain
+ 	 * if one is ready also */
+ 	if (reset_flag) {
+@@ -467,8 +495,6 @@ void sah_postprocess_queue(unsigned long reset_flag)
+ 
+ 	/* now handle the descriptor chain(s) that has/have completed */
+ 	do {
+-		sah_Head_Desc *first_entry;
+-		os_lock_context_t lock_flags;
+ 
+ 		os_lock_save_context(desc_queue_lock, lock_flags);
+ 
+diff --git a/drivers/mxc/security/sahara2/sah_status_manager.c b/drivers/mxc/security/sahara2/sah_status_manager.c
+index d277919..4c5011b 100644
+--- a/drivers/mxc/security/sahara2/sah_status_manager.c
++++ b/drivers/mxc/security/sahara2/sah_status_manager.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -328,30 +328,6 @@ unsigned long sah_Handle_Interrupt(sah_Execute_Status hw_status)
+ 		/* Keep going while further status is available. */
+ 	} while (state == SAH_EXEC_ERROR1);
+ 
+-    /* Disabling Sahara Clock only if the hardware is in idle state and
+-	    the DAR queue is empty.*/
+-	os_lock_save_context(desc_queue_lock, lock_flags);
+-	current_entry = sah_Find_With_State(SAH_STATE_ON_SAHARA);
+-	os_unlock_restore_context(desc_queue_lock, lock_flags);
+-
+-	if ((current_entry == NULL) && (state == SAH_EXEC_IDLE)) {
+-
+-#ifdef DIAG_DRV_IF
+-		LOG_KDIAG("SAHARA : Disabling the clocks\n")
+-#endif				/* DIAG_DRV_IF */
+-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 18))
+-		mxc_clks_disable(SAHARA2_CLK);
+-#else
+-		{
+-			struct clk *clk = clk_get(NULL, "sahara_clk");
+-			if (clk != ERR_PTR(ENOENT))
+-				clk_disable(clk);
+-			clk_put(clk);
+-		}
+-#endif
+-
+-	}
+-
+ 	return reset_flag;
+ }
+ 
+-- 
+1.5.4.4
+

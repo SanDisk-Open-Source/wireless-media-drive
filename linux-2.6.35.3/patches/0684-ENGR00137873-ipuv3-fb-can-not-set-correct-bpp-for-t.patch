@@ -1,0 +1,37 @@
+From ec2b11c9a26229edd62aa83b72881884b9ca5db1 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Fri, 14 Jan 2011 18:30:48 +0800
+Subject: [PATCH] ENGR00137873 ipuv3 fb: can not set correct bpp for tve through cmdline
+
+fb cmdline option bpp= should pass the default bpp to fb driver, for tve etc
+case, it will set_var by itself, which var->bits_per_pixel = 0,
+the mxcfb_check_var will then fix it to 16. It's not correct
+when we need set bpp to other value.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/video/mxc/mxc_ipuv3_fb.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_ipuv3_fb.c b/drivers/video/mxc/mxc_ipuv3_fb.c
+index 6d574c3..627b2a1 100644
+--- a/drivers/video/mxc/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc/mxc_ipuv3_fb.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -605,6 +605,7 @@ static int mxcfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
+ 	if (var->yres_virtual < var->yres)
+ 		var->yres_virtual = var->yres;
+ 
++	var->bits_per_pixel = mxc_fbi->default_bpp;
+ 	if ((var->bits_per_pixel != 32) && (var->bits_per_pixel != 24) &&
+ 	    (var->bits_per_pixel != 16) && (var->bits_per_pixel != 12) &&
+ 	    (var->bits_per_pixel != 8))
+-- 
+1.5.4.4
+

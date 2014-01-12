@@ -1,0 +1,84 @@
+From cbee64d544a2bd8b5e2ae17bcfdfe79480690292 Mon Sep 17 00:00:00 2001
+From: Lionel Xu <r63889@freescale.com>
+Date: Fri, 13 Nov 2009 19:54:10 +0800
+Subject: [PATCH] ENGR00118428 MX233 Uboot: reslove the build error for branch imx_v2009.08
+
+bd->bi_enetaddr was removed in one of the previous patchs, some changes must
+be done to avoid building error.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ cpu/arm926ejs/stmp378x/timer.c |    1 -
+ drivers/net/enc28j60_eth.c     |   11 +++++++----
+ lib_arm/board.c                |    4 ++--
+ 3 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/cpu/arm926ejs/stmp378x/timer.c b/cpu/arm926ejs/stmp378x/timer.c
+index 07834ac..40e7e32 100644
+--- a/cpu/arm926ejs/stmp378x/timer.c
++++ b/cpu/arm926ejs/stmp378x/timer.c
+@@ -38,7 +38,6 @@
+  */
+ 
+ #include <common.h>
+-#include <arm926ejs.h>
+ #include <asm/arch/stmp378x.h>
+ #include <asm/arch/timrot.h>
+ 
+diff --git a/drivers/net/enc28j60_eth.c b/drivers/net/enc28j60_eth.c
+index c1c88d2..279ec08 100644
+--- a/drivers/net/enc28j60_eth.c
++++ b/drivers/net/enc28j60_eth.c
+@@ -336,6 +336,7 @@ static int rxResetCounter;
+ int eth_init(bd_t *bis)
+ {
+ 	unsigned char estatVal;
++	unsigned char enetaddr[6];
+ 
+ 	/* taken from the Linux driver - dangerous stuff here! */
+ 	/* Wait for CLKRDY to become set (i.e., check that we can
+@@ -347,7 +348,8 @@ int eth_init(bd_t *bis)
+ 
+ 	/* initialize controller */
+ 	encReset();
+-	encInit(bis->bi_enetaddr);
++	eth_getenv_enetaddr("ethaddr", enetaddr);
++	encInit(enetaddr);
+ 
+ 	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_RXEN);	/* enable receive */
+ 
+@@ -971,12 +973,13 @@ static void encReset(void)
+ 
+ #ifndef CONFIG_ETHADDR
+ #include <asm/arch/ocotp.h>
+-void enc_set_mac_addr(uchar *addr)
++void enc_set_mac_addr(void)
+ {
+ 	if (NULL == getenv("ethaddr")) {
+ 
+-		char reg[8];
+-		char nid[20];
++		uchar reg[8];
++		uchar addr[8];
++		uchar nid[20];
+ 		ulong *s;
+ 
+ 		/*set this bit to open the OTP banks for reading*/
+diff --git a/lib_arm/board.c b/lib_arm/board.c
+index fce188d..d6864bc 100644
+--- a/lib_arm/board.c
++++ b/lib_arm/board.c
+@@ -443,8 +443,8 @@ extern void davinci_eth_set_mac_addr (const u_int8_t *addr);
+ #endif /* CONFIG_DRIVER_SMC91111 || CONFIG_DRIVER_LAN91C96 */
+ 
+ #if defined(CONFIG_ENC28J60_ETH) && !defined(CONFIG_ETHADDR)
+-	extern void enc_set_mac_addr (uchar *addr);
+-	enc_set_mac_addr (gd->bd->bi_enetaddr);
++	extern void enc_set_mac_addr (void);
++	enc_set_mac_addr ();
+ #endif /* CONFIG_ENC28J60_ETH && !CONFIG_ETHADDR*/
+ 
+ 	/* Initialize from environment */
+-- 
+1.5.4.4
+

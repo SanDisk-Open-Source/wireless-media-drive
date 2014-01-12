@@ -1,0 +1,43 @@
+From ee3511f59f0e83328f5de637f74584859ca71f08 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Tue, 26 Oct 2010 13:52:59 +0800
+Subject: [PATCH] ENGR00126874 backlight:Fix backlight value can't keep after suspend and resume.
+
+Backlight value is reset at event MXS_LCDIF_PANEL_INIT after resume.
+Check suspend status to avoid reset value.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/video/backlight/mxs_bl.c |   16 +++++++++-------
+ 1 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/video/backlight/mxs_bl.c b/drivers/video/backlight/mxs_bl.c
+index a66cbaa..271fd29 100644
+--- a/drivers/video/backlight/mxs_bl.c
++++ b/drivers/video/backlight/mxs_bl.c
+@@ -274,13 +274,15 @@ static int mxsbl_do_probe(struct mxs_bl_data *data,
+ 
+ 	data->bd->props.power = FB_BLANK_UNBLANK;
+ 	data->bd->props.fb_blank = FB_BLANK_UNBLANK;
+-	if (data->mxsbl_constrained) {
+-		data->bd->props.max_brightness = pdata->bl_cons_intensity;
+-		data->bd->props.brightness = pdata->bl_cons_intensity;
+-	} else {
+-		data->bd->props.max_brightness = pdata->bl_max_intensity;
+-		data->bd->props.brightness = pdata->bl_default_intensity;
+-	}
++
++	if (!data->mxsbl_suspended)
++		if (data->mxsbl_constrained) {
++			data->bd->props.max_brightness = pdata->bl_cons_intensity;
++			data->bd->props.brightness = pdata->bl_cons_intensity;
++		} else {
++			data->bd->props.max_brightness = pdata->bl_max_intensity;
++			data->bd->props.brightness = pdata->bl_default_intensity;
++		}
+ 
+ 	data->pdata = pdata;
+ 	mxsbl_set_intensity(data->bd);
+-- 
+1.5.4.4
+

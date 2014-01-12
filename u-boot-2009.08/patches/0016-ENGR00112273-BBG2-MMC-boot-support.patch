@@ -1,0 +1,4806 @@
+From 30e188a23150345a74f5a83aab344ac8510d38d9 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 14 May 2009 16:38:57 +0800
+Subject: [PATCH] ENGR00112273 BBG2: MMC boot support.
+
+BBG2: MMC boot support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx35_3stack/Makefile       |    1 +
+ board/freescale/mx35_3stack/flash_header.S |  108 ++
+ board/freescale/mx35_3stack/mx35_3stack.c  |  123 +++
+ board/freescale/mx35_3stack/u-boot.lds     |    2 +
+ board/freescale/mx51_3stack/mx51_3stack.c  |   79 ++
+ board/freescale/mx51_3stack/u-boot.lds     |    1 +
+ common/Makefile                            |    1 +
+ common/cmd_nvedit.c                        |   13 +-
+ common/env_common.c                        |    6 +
+ common/env_mmc.c                           |  327 ++++++
+ drivers/mmc/Makefile                       |    2 +
+ drivers/mmc/fsl_esdhc.c                    |  687 +++++++++++-
+ drivers/mmc/fsl_mmc.c                      | 1565 ++++++++++++++++++++++++++++
+ include/asm-arm/arch-mx35/mmc.h            |   16 +
+ include/asm-arm/arch-mx35/mx35.h           |    4 +
+ include/asm-arm/arch-mx35/sdhc.h           |  218 ++++
+ include/asm-arm/arch-mx51/mmc.h            |   16 +
+ include/asm-arm/arch-mx51/sdhc.h           |  218 ++++
+ include/environment.h                      |   26 +
+ include/linux/mmc/card.h                   |  141 +++
+ include/linux/mmc/core.h                   |  132 +++
+ include/linux/mmc/mmc.h                    |  291 ++++++
+ include/linux/mmc/sd.h                     |   95 ++
+ include/linux/mmc/sdhci.h                  |  223 ++++
+ 24 files changed, 4234 insertions(+), 61 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/Makefile b/board/freescale/mx35_3stack/Makefile
+index 4c38a8b..d310b82 100644
+--- a/board/freescale/mx35_3stack/Makefile
++++ b/board/freescale/mx35_3stack/Makefile
+@@ -25,6 +25,7 @@ LIB	= $(obj)lib$(BOARD).a
+ 
+ COBJS	:= mx35_3stack.o
+ SOBJS	:= lowlevel_init.o
++SOBJS	+= flash_header.o
+ 
+ SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
+ OBJS	:= $(addprefix $(obj),$(COBJS))
+diff --git a/board/freescale/mx35_3stack/flash_header.S b/board/freescale/mx35_3stack/flash_header.S
+new file mode 100644
+index 0000000..6786e8d
+--- /dev/null
++++ b/board/freescale/mx35_3stack/flash_header.S
+@@ -0,0 +1,108 @@
++/*
++ * Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx35.h>
++#include "board-mx35_3stack.h"
++
++#ifdef	CONFIG_FLASH_HEADER
++#ifndef FHEADER_OFFSET
++# error "Must define the offset of flash header"
++#endif
++
++/* Flash header setup */
++#define DCDGEN(i,type, addr, data) \
++dcd_##i:                         ;\
++    .long type                   ;\
++    .long addr                   ;\
++    .long data
++
++#define GEN_FHEADERADDR(x) (x)
++
++.section ".text.flasheader", "x"
++	b _start
++	.org FHEADER_OFFSET
++app_code_jump_v:    .long GEN_FHEADERADDR(_start)
++app_code_barker:    .long 0xB1
++app_code_csf:       .long 0
++hwcfg_ptr_ptr:      .long GEN_FHEADERADDR(hwcfg_ptr)
++super_root_key:     .long 0
++hwcfg_ptr:          .long GEN_FHEADERADDR(dcd_data)
++app_dest_ptr:       .long TEXT_BASE
++dcd_data:           .long 0xB17219E9
++#ifdef MEMORY_MDDR_ENABLE
++                    .long (dcd_data_end - dcd_data - 8)
++
++//WEIM config-CS5 init
++DCDGEN(1, 4, 0xB8002054, 0x444a4541)
++DCDGEN(1_1, 4, 0xB8002050, 0x0000dcf6)
++DCDGEN(1_2, 4, 0xB8002058, 0x44443302)
++//MDDR init
++//enable mDDR
++DCDGEN(2, 4, 0xB8001010, 0x00000004)
++//reset delay time
++DCDGEN(3, 4, 0xB8001010, 0x0000000C)
++DCDGEN(4, 4, 0xB800100C, 0x007ffc3f)
++DCDGEN(5, 4, 0xB800100C, 0x007ffc3f)
++DCDGEN(6, 4, 0xB8001004, 0x007ffc3f)
++DCDGEN(7, 4, 0xB8001000, 0x92220000)
++DCDGEN(8, 1, 0x80000400, 0xda)
++DCDGEN(9, 4, 0xB8001000, 0xA2220000)
++DCDGEN(10, 4, 0x80000000, 0x87654321)
++DCDGEN(11, 4, 0x80000000, 0x87654321)
++DCDGEN(12, 4, 0xB8001000, 0xB2220000)
++DCDGEN(13, 1, 0x80000033, 0xda)
++DCDGEN(14, 1, 0x82000000, 0xda)
++DCDGEN(15, 4, 0xB8001000, 0x82226080)
++DCDGEN(16, 4, 0xB8001010, 0x00000004)
++DCDGEN(17, 4, 0xB8001008, 0x00002000)
++
++#else
++                    .long 240
++
++//WEIM config-CS5 init
++DCDGEN(1, 4, 0xB8002050, 0x0000d843)
++DCDGEN(1_1, 4, 0xB8002054, 0x22252521)
++DCDGEN(1_2, 4, 0xB8002058, 0x22220a00)
++
++//DDR2 init
++DCDGEN(2, 4, 0xB8001010, 0x00000304)
++DCDGEN(3, 4, 0xB8001010, 0x0000030C)
++DCDGEN(4, 4, 0xB8001004, 0x007ffc3f)
++DCDGEN(5, 4, 0xB8001000, 0x92220000)
++DCDGEN(6, 4, 0x80000400, 0x12345678)
++DCDGEN(7, 4, 0xB8001000, 0xA2220000)
++DCDGEN(8, 4, 0x80000000, 0x87654321)
++DCDGEN(9, 4, 0x80000000, 0x87654321)
++DCDGEN(10, 4, 0xB8001000, 0xB2220000)
++DCDGEN(11, 1, 0x80000233, 0xda)
++DCDGEN(12, 1, 0x82000780, 0xda)
++DCDGEN(13, 1, 0x82000400, 0xda)
++DCDGEN(14, 4, 0xB8001000, 0x82226080)
++DCDGEN(15, 4, 0xB8001004, 0x007ffc3f)
++DCDGEN(16, 4, 0xB800100C, 0x007ffc3f)
++DCDGEN(17, 4, 0xB8001010, 0x00000304)
++DCDGEN(18, 4, 0xB8001008, 0x00002000)
++
++#endif
++dcd_data_end:
++
++//CARD_FLASH_CFG_PARMS_T---length
++card_cfg:           .long 0x100000
++#endif
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 41163f4..f7fb96a 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -29,8 +29,13 @@
+ #include <asm/arch/mx35_pins.h>
+ #include <asm/arch/iomux.h>
+ #include <i2c.h>
++#include <linux/types.h>
+ 
++#ifdef CONFIG_MMC
++#include <asm/arch/sdhc.h>
++#endif
+ DECLARE_GLOBAL_DATA_PTR;
++volatile u32 *esdhc_base_pointer;
+ 
+ static u32 system_rev;
+ 
+@@ -279,3 +284,121 @@ int board_eth_init(bd_t *bis)
+ #endif
+ 	return rc;
+ }
++
++#ifdef CONFIG_FSL_MMC
++
++int sdhc_init(void)
++{
++	u32 interface_esdhc = 0;
++	u32 pad_val = 0;
++
++	interface_esdhc = (readl(IIM_BASE_ADDR + 0x80c)) & (0x000000C0) >> 6;
++
++	if (!is_soc_rev(CHIP_REV_1_0)) {
++		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
++			PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++
++		switch (interface_esdhc) {
++		case 0:
++			debug("TO1 ESDHC1\n");
++
++			esdhc_base_pointer = \
++				(volatile u32 *)MMC_SDHC1_BASE_ADDR;
++
++			mxc_iomux_set_pad(MX35_PIN_SD1_DATA3, pad_val);
++			break;
++		case 1:
++			debug("TO1 ESDHC2\n");
++
++			esdhc_base_pointer = \
++				(volatile u32 *)MMC_SDHC2_BASE_ADDR;
++
++			mxc_iomux_set_pad(MX35_PIN_SD2_DATA3, pad_val);
++			break;
++		case 2:
++			debug("TO1 ESDHC3\n");
++
++			esdhc_base_pointer = \
++				(volatile u32 *)MMC_SDHC3_BASE_ADDR;
++
++			printf("TO1 ESDHC3 not supported!");
++			break;
++		default:
++			break;
++		}
++	} else if (!is_soc_rev(CHIP_REV_2_0)) {
++			/* IOMUX PROGRAMMING */
++		switch (interface_esdhc) {
++		case 0:
++			debug("TO2 ESDHC1\n");
++
++			esdhc_base_pointer = \
++				(volatile u32 *)MMC_SDHC1_BASE_ADDR;
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++					PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++					PAD_CTL_47K_PU | PAD_CTL_SRE_FAST;
++			mxc_request_iomux(MX35_PIN_SD1_CLK,
++					MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_iomux_set_pad(MX35_PIN_SD1_CLK, pad_val);
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++				PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++			mxc_request_iomux(MX35_PIN_SD1_CMD,
++				MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_iomux_set_pad(MX35_PIN_SD1_CMD, pad_val);
++			mxc_request_iomux(MX35_PIN_SD1_DATA0,
++				  MUX_CONFIG_FUNC);
++			mxc_iomux_set_pad(MX35_PIN_SD1_DATA0, pad_val);
++			mxc_request_iomux(MX35_PIN_SD1_DATA3,
++				  MUX_CONFIG_FUNC);
++			mxc_iomux_set_pad(MX35_PIN_SD1_DATA3, pad_val);
++
++			break;
++		case 1:
++			debug("TO2 ESDHC2\n");
++
++			esdhc_base_pointer = \
++				(volatile u32 *)MMC_SDHC2_BASE_ADDR;
++
++			mxc_request_iomux(MX35_PIN_SD2_CLK,
++				  MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_request_iomux(MX35_PIN_SD2_CMD,
++				  MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++			mxc_request_iomux(MX35_PIN_SD2_DATA0,
++				  MUX_CONFIG_FUNC);
++			mxc_request_iomux(MX35_PIN_SD2_DATA3,
++				  MUX_CONFIG_FUNC);
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
++				PAD_CTL_47K_PU | PAD_CTL_SRE_FAST;
++			mxc_iomux_set_pad(MX35_PIN_SD2_CLK, pad_val);
++
++			pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
++				PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++			mxc_iomux_set_pad(MX35_PIN_SD2_CMD, pad_val);
++			mxc_iomux_set_pad(MX35_PIN_SD2_DATA0, pad_val);
++			mxc_iomux_set_pad(MX35_PIN_SD2_DATA3, pad_val);
++
++			break;
++		case 2:
++			debug("TO2 ESDHC3\n");
++
++			esdhc_base_pointer = \
++				(volatile u32 *)MMC_SDHC3_BASE_ADDR;
++
++			printf("TO2 ESDHC3 not supported!");
++			break;
++		default:
++			break;
++		}
++	}
++
++	return 0;
++}
++
++#endif
+diff --git a/board/freescale/mx35_3stack/u-boot.lds b/board/freescale/mx35_3stack/u-boot.lds
+index 1b343be..c0156b5 100644
+--- a/board/freescale/mx35_3stack/u-boot.lds
++++ b/board/freescale/mx35_3stack/u-boot.lds
+@@ -38,6 +38,7 @@ SECTIONS
+ 	{
+ 	  /* WARNING - the following is hand-optimized to fit within	*/
+ 	  /* the sector layout of our flash chips!	XXX FIXME XXX	*/
++	  board/freescale/mx35_3stack/flash_header.o	(.text.flasheader)
+ 	  *(.text.head)		/*arm startup code*/
+ 	  *(.text.init)		/*platform lowlevel initial code*/
+ 	  *(.text.load)		/*load bootloader*/
+@@ -47,6 +48,7 @@ SECTIONS
+ 	  lib_arm/libarm.a		(.text)
+ 	  net/libnet.a			(.text)
+ 	  drivers/mtd/libmtd.a		(.text)
++	  drivers/mmc/libmmc.a		(.text)
+ 
+ 	  . = DEFINED(env_offset) ? env_offset : .;
+ 	  common/env_embedded.o(.text)
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index c7f93aa..9ddee40 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -35,6 +35,7 @@ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+ u32	mx51_io_base_addr;
++volatile u32 *esdhc_base_pointer;
+ 
+ u32 get_board_rev(void)
+ {
+@@ -209,3 +210,81 @@ int board_eth_init(bd_t *bis)
+ 	return rc;
+ }
+ #endif
++
++#ifdef CONFIG_FSL_MMC
++
++int sdhc_init(void)
++{
++	u32 interface_esdhc = 0;
++	u32 pad_val = 0;
++	s32 status = 0;
++
++	interface_esdhc = (readl(SRC_BASE_ADDR + 0x4) & (0x00180000)) >> 19;
++
++	switch (interface_esdhc) {
++	case 0:
++
++		esdhc_base_pointer = (volatile u32 *)MMC_SDHC1_BASE_ADDR;
++
++		mxc_request_iomux(MX51_PIN_SD1_CMD,
++			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_CLK,
++			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++
++		mxc_request_iomux(MX51_PIN_SD1_DATA0,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_DATA1,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_DATA2,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_DATA3,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		break;
++	case 1:
++		status = 1;
++		break;
++	case 2:
++		status = 1;
++		break;
++	case 3:
++		status = 1;
++		break;
++	default:
++		status = 1;
++		break;
++	}
++
++	return status = 1;
++}
++
++#endif
+diff --git a/board/freescale/mx51_3stack/u-boot.lds b/board/freescale/mx51_3stack/u-boot.lds
+index 1cf3c3d..8671fff 100644
+--- a/board/freescale/mx51_3stack/u-boot.lds
++++ b/board/freescale/mx51_3stack/u-boot.lds
+@@ -44,6 +44,7 @@ SECTIONS
+ 	  lib_arm/libarm.a		(.text)
+ 	  net/libnet.a			(.text)
+ 	  drivers/mtd/libmtd.a		(.text)
++	  drivers/mmc/libmmc.a		(.text)
+ 
+ 	  . = DEFINED(env_offset) ? env_offset : .;
+ 	  common/env_embedded.o(.text)
+diff --git a/common/Makefile b/common/Makefile
+index 3781738..7091eef 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -61,6 +61,7 @@ COBJS-$(CONFIG_ENV_IS_IN_NAND) += env_nand.o
+ COBJS-$(CONFIG_ENV_IS_IN_NVRAM) += env_nvram.o
+ COBJS-$(CONFIG_ENV_IS_IN_ONENAND) += env_onenand.o
+ COBJS-$(CONFIG_ENV_IS_IN_SPI_FLASH) += env_sf.o
++COBJS-$(CONFIG_ENV_IS_IN_MMC) += env_mmc.o
+ COBJS-$(CONFIG_ENV_IS_NOWHERE) += env_nowhere.o
+ 
+ # command
+diff --git a/common/cmd_nvedit.c b/common/cmd_nvedit.c
+index 2186205..cda14e8 100644
+--- a/common/cmd_nvedit.c
++++ b/common/cmd_nvedit.c
+@@ -60,9 +60,9 @@ DECLARE_GLOBAL_DATA_PTR;
+     !defined(CONFIG_ENV_IS_IN_NVRAM)	&& \
+     !defined(CONFIG_ENV_IS_IN_ONENAND)	&& \
+     !defined(CONFIG_ENV_IS_IN_SPI_FLASH)	&& \
++    !defined(CONFIG_ENV_IS_IN_MMC)	&& \
+     !defined(CONFIG_ENV_IS_NOWHERE)
+-# error Define one of CONFIG_ENV_IS_IN_{EEPROM|FLASH|DATAFLASH|ONENAND|\
+-SPI_FLASH|MG_DISK|NVRAM|NOWHERE}
++# error Define one of CONFIG_ENV_IS_IN_{NVRAM|EEPROM|FLASH|DATAFLASH|ONENAND|SPI_FLASH|MMC|MG_DISK|NOWHERE}
+ #endif
+ 
+ #define XMK_STR(x)	#x
+@@ -556,7 +556,6 @@ int getenv_r (char *name, char *buf, unsigned len)
+ }
+ 
+ #if defined(CONFIG_CMD_SAVEENV) && !defined(CONFIG_ENV_IS_NOWHERE)
+-
+ int do_saveenv (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+ 	extern char * env_name_spec;
+@@ -614,6 +613,14 @@ U_BOOT_CMD(
+ 	"    - delete environment variable 'name'"
+ );
+ 
++#if defined(CONFIG_CMD_SAVEENV) && !defined(CONFIG_ENV_IS_NOWHERE)
++U_BOOT_CMD(
++	saveenv, 1, 0,	do_saveenv,
++	"saveenv - save environment variables to persistent storage\n",
++	NULL
++);
++#endif
++
+ #if defined(CONFIG_CMD_ASKENV)
+ 
+ U_BOOT_CMD(
+diff --git a/common/env_common.c b/common/env_common.c
+index be64d13..eb0b374 100644
+--- a/common/env_common.c
++++ b/common/env_common.c
+@@ -139,6 +139,12 @@ uchar default_environment[] = {
+ 	"\0"
+ };
+ 
++#if defined(CONFIG_ENV_IS_IN_NAND)		/* Environment is in Nand Flash */ \
++	|| defined(CONFIG_ENV_IS_IN_SPI_FLASH) \
++	|| defined(CONFIG_ENV_IS_IN_MMC)
++int default_environment_size = sizeof(default_environment);
++#endif
++
+ void env_crc_update (void)
+ {
+ 	env_ptr->crc = crc32(0, env_ptr->data, ENV_SIZE);
+diff --git a/common/env_mmc.c b/common/env_mmc.c
+new file mode 100644
+index 0000000..413a5c7
+--- /dev/null
++++ b/common/env_mmc.c
+@@ -0,0 +1,327 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++
++ * (C) Copyright 2000-2006
++ * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++ *
++ * (C) Copyright 2001 Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Andreas Heppel <aheppel@sysgo.de>
++
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++/* #define DEBUG */
++
++#include <common.h>
++
++#if defined(CONFIG_ENV_IS_IN_MMC) /* Environment is in MMC Flash */
++
++#include <command.h>
++#include <environment.h>
++#include <linux/stddef.h>
++#include <malloc.h>
++#include <mmc.h>
++
++#if defined(CONFIG_CMD_ENV) && defined(CONFIG_CMD_MMC)
++#define CMD_SAVEENV
++#elif defined(CONFIG_ENV_OFFSET_REDUND)
++#error Cannot use CONFIG_ENV_OFFSET_REDUND without CONFIG_CMD_ENV & CONFIG_CMD_MMC
++#endif
++
++#if defined(CONFIG_ENV_SIZE_REDUND) && (CONFIG_ENV_SIZE_REDUND < CONFIG_ENV_SIZE)
++#error CONFIG_ENV_SIZE_REDUND should not be less then CONFIG_ENV_SIZE
++#endif
++
++#ifdef CONFIG_INFERNO
++#error CONFIG_INFERNO not supported yet
++#endif
++
++/* references to names in env_common.c */
++extern uchar default_environment[];
++extern int default_environment_size;
++
++char *env_name_spec = "MMC";
++
++#ifdef ENV_IS_EMBEDDED
++extern uchar environment[];
++env_t *env_ptr = (env_t *)(&environment[0]);
++#else /* ! ENV_IS_EMBEDDED */
++env_t *env_ptr;
++#endif /* ENV_IS_EMBEDDED */
++
++/* local functions */
++#if !defined(ENV_IS_EMBEDDED)
++static void use_default(void);
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++uchar env_get_char_spec(int index)
++{
++	return *((uchar *)(gd->env_addr + index));
++}
++
++
++/* this is called before nand_init()
++ * so we can't read Nand to validate env data.
++ * Mark it OK for now. env_relocate() in env_common.c
++ * will call our relocate function which will does
++ * the real validation.
++ *
++ * When using a NAND boot image (like sequoia_nand), the environment
++ * can be embedded or attached to the U-Boot image in NAND flash. This way
++ * the SPL loads not only the U-Boot image from NAND but also the
++ * environment.
++ */
++int env_init(void)
++{
++#if defined(CONFIG_IS_EMBEDDED)
++	size_t total;
++	int crc1_ok = 0, crc2_ok = 0;
++	env_t *tmp_env1, *tmp_env2;
++
++	total = CONFIG_ENV_SIZE;
++
++	tmp_env1 = env_ptr;
++	tmp_env2 = (env_t *)((ulong)env_ptr + CONFIG_ENV_SIZE);
++
++	crc1_ok = (crc32(0, tmp_env1->data, ENV_SIZE) == tmp_env1->crc);
++	crc2_ok = (crc32(0, tmp_env2->data, ENV_SIZE) == tmp_env2->crc);
++
++	if (!crc1_ok && !crc2_ok)
++		gd->env_valid = 0;
++	else if (crc1_ok && !crc2_ok)
++		gd->env_valid = 1;
++	else if (!crc1_ok && crc2_ok)
++		gd->env_valid = 2;
++	else {
++		/* both ok - check serial */
++		if (tmp_env1->flags == 255 && tmp_env2->flags == 0)
++			gd->env_valid = 2;
++		else if (tmp_env2->flags == 255 && tmp_env1->flags == 0)
++			gd->env_valid = 1;
++		else if (tmp_env1->flags > tmp_env2->flags)
++			gd->env_valid = 1;
++		else if (tmp_env2->flags > tmp_env1->flags)
++			gd->env_valid = 2;
++		else /* flags are equal - almost impossible */
++			gd->env_valid = 1;
++	}
++
++	if (gd->env_valid == 1)
++		env_ptr = tmp_env1;
++	else if (gd->env_valid == 2)
++		env_ptr = tmp_env2;
++
++#else /* ENV_IS_EMBEDDED */
++	gd->env_addr  = (ulong)&default_environment[0];
++	gd->env_valid = 1;
++
++#endif /* ENV_IS_EMBEDDED */
++
++	return 0;
++}
++
++#ifdef CMD_SAVEENV
++/*
++ * The legacy NAND code saved the environment in the first NAND device i.e.,
++ * nand_dev_desc + 0. This is also the behaviour using the new NAND code.
++ */
++#ifdef CONFIG_ENV_OFFSET_REDUND
++int saveenv(void)
++{
++	size_t total;
++	int ret = 0;
++
++	env_ptr->flags++;
++	total = CONFIG_ENV_SIZE;
++
++	if (gd->env_valid == 1) {
++		puts("Writing to redundant MMC... ");
++		ret = mmc_write((u_char *)env_ptr,
++				CONFIG_ENV_OFFSET_REDUND, total);
++	} else {
++		puts("Writing to MMC... ");
++		ret = mmc_write((u_char *)env_ptr,
++				CONFIG_ENV_OFFSET, total);
++	}
++	if (ret || total != CONFIG_ENV_SIZE) {
++		puts("failed\n");
++		return 1;
++	}
++
++	puts("done\n");
++	gd->env_valid = (gd->env_valid == 2 ? 1 : 2);
++	return ret;
++}
++#else /* ! CONFIG_ENV_OFFSET_REDUND */
++int saveenv(void)
++{
++	size_t total;
++	int ret = 0;
++
++	puts("Writing to MMC... ");
++	total = CONFIG_ENV_SIZE;
++	ret = mmc_write((u_char *)env_ptr, CONFIG_ENV_OFFSET, total);
++	if (ret || total != CONFIG_ENV_SIZE) {
++		puts("failed\n");
++		return 1;
++	}
++
++	puts("done\n");
++	return ret;
++}
++#endif /* CONFIG_ENV_OFFSET_REDUND */
++#endif /* CMD_SAVEENV */
++
++#ifdef CONFIG_ENV_OFFSET_REDUND
++void env_relocate_spec(void)
++{
++#if !defined(ENV_IS_EMBEDDED)
++	size_t total;
++	int crc1_ok = 0, crc2_ok = 0;
++	env_t *tmp_env1 = NULL, *tmp_env2 = NULL;
++
++	puts("Initialing MMC card... \n");
++
++	if (mmc_init(1) != 0) {
++		puts("No MMC card found\n");
++		goto use_default;
++	}
++
++	total = CONFIG_ENV_SIZE;
++
++	tmp_env1 = (env_t *)malloc(CONFIG_ENV_SIZE);
++	if (!tmp_env1) {
++		puts("Not enough memory!\n");
++		goto use_default;
++	}
++	memset(tmp_env1, 0, CONFIG_ENV_SIZE);
++
++	tmp_env2 = (env_t *)malloc(CONFIG_ENV_SIZE);
++	if (!tmp_env2) {
++		puts("Not enough memory!\n");
++		goto use_default;
++	}
++	memset(tmp_env2, 0, CONFIG_ENV_SIZE);
++
++	puts("Loading environment from mmc... ");
++	if (mmc_read(CONFIG_ENV_OFFSET, (uchar *)tmp_env1, total)) {
++		puts("failed\n");
++		goto use_default;
++	}
++	puts("done\n");
++
++	puts("Loading redundant environment from mmc... ");
++	if (mmc_read(CONFIG_ENV_OFFSET_REDUND, (uchar *)tmp_env2, total)) {
++		puts("failed\n");
++		goto use_default;
++	}
++	puts("done\n");
++
++	crc1_ok = (crc32(0, tmp_env1->data, ENV_SIZE) == tmp_env1->crc);
++	crc2_ok = (crc32(0, tmp_env2->data, ENV_SIZE) == tmp_env2->crc);
++
++	if (!crc1_ok && !crc2_ok)
++		goto use_default;
++	else if (crc1_ok && !crc2_ok)
++		gd->env_valid = 1;
++	else if (!crc1_ok && crc2_ok)
++		gd->env_valid = 2;
++	else {
++		/* both ok - check serial */
++		if (tmp_env1->flags == 255 && tmp_env2->flags == 0)
++			gd->env_valid = 2;
++		else if (tmp_env2->flags == 255 && tmp_env1->flags == 0)
++			gd->env_valid = 1;
++		else if (tmp_env1->flags > tmp_env2->flags)
++			gd->env_valid = 1;
++		else if (tmp_env2->flags > tmp_env1->flags)
++			gd->env_valid = 2;
++		else /* flags are equal - almost impossible */
++			gd->env_valid = 1;
++	}
++
++	free(env_ptr);
++	if (gd->env_valid == 1) {
++		env_ptr = tmp_env1;
++		free(tmp_env2);
++	} else {
++		env_ptr = tmp_env2;
++		free(tmp_env1);
++	}
++
++	return;
++
++use_default:
++	if (tmp_env1)
++		free(tmp_env1);
++	if (tmp_env2)
++		free(tmp_env2);
++	return use_default();
++
++#endif /* ! ENV_IS_EMBEDDED */
++}
++#else /* ! CONFIG_ENV_OFFSET_REDUND */
++/*
++ * The legacy NAND code saved the environment in the first NAND device i.e.,
++ * nand_dev_desc + 0. This is also the behaviour using the new NAND code.
++ */
++void env_relocate_spec(void)
++{
++#if !defined(ENV_IS_EMBEDDED)
++	size_t total;
++	int ret;
++
++	if (mmc_init(1) != 0) {
++		puts("No MMC card found\n");
++		return;
++	}
++
++	total = CONFIG_ENV_SIZE;
++	ret = mmc_read(CONFIG_ENV_OFFSET, (u_char *)env_ptr, &total);
++	if (ret || total != CONFIG_ENV_SIZE)
++		return use_default();
++
++	if (crc32(0, env_ptr->data, ENV_SIZE) != env_ptr->crc)
++		return use_default();
++#endif /* ! ENV_IS_EMBEDDED */
++}
++#endif /* CONFIG_ENV_OFFSET_REDUND */
++
++#if !defined(ENV_IS_EMBEDDED)
++static void use_default()
++{
++	puts("*** Warning - bad CRC or MMC Card, using default environment\n\n");
++
++	if (default_environment_size > CONFIG_ENV_SIZE) {
++		puts("*** Error - default environment is too large\n\n");
++		return;
++	}
++
++	memset(env_ptr, 0, sizeof(env_t));
++	memcpy(env_ptr->data,
++		default_environment,
++		default_environment_size);
++	env_ptr->crc = crc32(0, env_ptr->data, ENV_SIZE);
++	gd->env_valid = 1;
++}
++#endif
++
++#endif /* CONFIG_ENV_IS_IN_MMC */
+diff --git a/drivers/mmc/Makefile b/drivers/mmc/Makefile
+index 6fa04b8..afb74ae 100644
+--- a/drivers/mmc/Makefile
++++ b/drivers/mmc/Makefile
+@@ -32,6 +32,8 @@ COBJS-$(CONFIG_OMAP3_MMC) += omap3_mmc.o
+ COBJS-$(CONFIG_FSL_ESDHC) += fsl_esdhc.o
+ COBJS-$(CONFIG_MXC_MMC) += mxcmmc.o
+ COBJS-$(CONFIG_PXA_MMC) += pxa_mmc.o
++COBJS-$(CONFIG_FSL_MMC) += fsl_mmc.o
++COBJS-$(CONFIG_FSL_MMC) += fsl_esdhc.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/mmc/fsl_esdhc.c b/drivers/mmc/fsl_esdhc.c
+index c6e9e6e..9fcce5b 100644
+--- a/drivers/mmc/fsl_esdhc.c
++++ b/drivers/mmc/fsl_esdhc.c
+@@ -1,6 +1,5 @@
+ /*
+- * Copyright 2007, Freescale Semiconductor, Inc
+- * Andy Fleming
++ * Copyright 2008-2009 Freescale Semiconductor, Inc.
+  *
+  * Based vaguely on the pxa mmc code:
+  * (C) Copyright 2003
+@@ -25,7 +24,18 @@
+  * MA 02111-1307 USA
+  */
+ 
++/*!
++ * @file esdhc.c
++ *
++ * @brief source code for the mmc card operation
++ *
++ * @ingroup mmc
++ */
++
+ #include <config.h>
++#include <asm/arch/sdhc.h>
++#include <linux/mmc/sdhci.h>
++#include <asm/errno.h>
+ #include <common.h>
+ #include <command.h>
+ #include <hwconfig.h>
+@@ -35,9 +45,9 @@
+ #include <mmc.h>
+ #include <fsl_esdhc.h>
+ #include <fdt_support.h>
++#include <linux/types.h>
+ #include <asm/io.h>
+ 
+-
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ struct fsl_esdhc {
+@@ -67,6 +77,41 @@ struct fsl_esdhc {
+ 	uint	scr;
+ };
+ 
++#define RETRIES_TIMES 100
++
++#define REG_WRITE_OR(val, reg) { \
++		u32 temp = 0; \
++		temp = readl(reg); \
++		(temp) |= (val); \
++		writel((temp), (reg)); \
++		}
++
++#define REG_WRITE_AND(val, reg) { \
++		u32 temp = 0; \
++		temp = readl(reg); \
++		(temp) &= (val); \
++		writel((temp), (reg)); \
++		}
++
++#define SDHC_DELAY_BY_100(x) { \
++		u32 i; \
++		for (i = 0; i < x; ++i) \
++			udelay(100); \
++		}
++
++extern volatile u32 esdhc_base_pointer;
++
++static void esdhc_cmd_config(esdhc_cmd_t *);
++static u32 esdhc_check_response(void);
++static u32 esdhc_wait_buf_rdy_intr(u32, u32);
++static void esdhc_wait_op_done_intr(void);
++static u32 esdhc_check_data(void);
++static void esdhc_set_data_transfer_width(u32 data_transfer_width);
++static u32 esdhc_poll_cihb_cdihb(data_present_select data_present);
++static void esdhc_set_endianness(u32 endian_mode);
++static void esdhc_clear_buf_rdy_intr(u32 mask);
++static u32 esdhc_check_data_crc_status(void);
++
+ /* Return the XFERTYP flags for a given command and data packet */
+ uint esdhc_xfertyp(struct mmc_cmd *cmd, struct mmc_data *data)
+ {
+@@ -74,12 +119,9 @@ uint esdhc_xfertyp(struct mmc_cmd *cmd, struct mmc_data *data)
+ 
+ 	if (data) {
+ 		xfertyp |= XFERTYP_DPSEL | XFERTYP_DMAEN;
+-
+ 		if (data->blocks > 1) {
+ 			xfertyp |= XFERTYP_MSBSEL;
+ 			xfertyp |= XFERTYP_BCEN;
+-		}
+-
+ 		if (data->flags & MMC_DATA_READ)
+ 			xfertyp |= XFERTYP_DTDSEL;
+ 	}
+@@ -98,20 +140,30 @@ uint esdhc_xfertyp(struct mmc_cmd *cmd, struct mmc_data *data)
+ 	return XFERTYP_CMD(cmd->cmdidx) | xfertyp;
+ }
+ 
++/*!
++ * Send 80 SD clock to card and wait for INITA bit to get cleared.
++ */
++void interface_initialization_active(void)
++{
++	/* Send 80 clock ticks for card to power up */
++	REG_WRITE_OR(ESDHC_SYSCTL_INITA, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++
++	/* Start a general purpose timer */
++	udelay(ESDHC_CARD_INIT_TIMEOUT);
++}
++
+ static int esdhc_setup_data(struct mmc *mmc, struct mmc_data *data)
+ {
+ 	uint wml_value;
+ 	int timeout;
+ 	struct fsl_esdhc *regs = mmc->priv;
+-
+ 	wml_value = data->blocksize/4;
+ 
+ 	if (data->flags & MMC_DATA_READ) {
+ 		if (wml_value > 0x10)
+ 			wml_value = 0x10;
+-
+ 		wml_value = 0x100000 | wml_value;
+-
+ 		out_be32(&regs->dsaddr, (u32)data->dest);
+ 	} else {
+ 		if (wml_value > 0x80)
+@@ -125,24 +177,158 @@ static int esdhc_setup_data(struct mmc *mmc, struct mmc_data *data)
+ 	}
+ 
+ 	out_be32(&regs->wml, wml_value);
+-
+ 	out_be32(&regs->blkattr, data->blocks << 16 | data->blocksize);
+-
+ 	/* Calculate the timeout period for data transactions */
+ 	timeout = __ilog2(mmc->tran_speed/10);
+ 	timeout -= 13;
+-
+ 	if (timeout > 14)
+ 		timeout = 14;
+-
+ 	if (timeout < 0)
+ 		timeout = 0;
+-
+ 	clrsetbits_be32(&regs->sysctl, SYSCTL_TIMEOUT_MASK, timeout << 16);
+-
+ 	return 0;
+ }
+ 
++/*!
++ * Execute a software reset and set data bus width for eSDHC.
++ */
++u32 interface_reset(void)
++{
++	u32 reset_status = 0;
++	u32 u32Retries = 0;
++	u32 u32Temp = 0;
++
++	debug("Entry: interface_reset");
++
++	/* Reset the entire host controller by writing
++	1 to RSTA bit of SYSCTRL Register */
++	REG_WRITE_OR(ESDHC_SOFTWARE_RESET, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++
++	/* Start a general purpose timer (3 millsec delay) */
++	/* udelay(ESDHC_OPER_TIMEOUT); */
++
++	/* Wait for clearance of CIHB and CDIHB Bits */
++	for (u32Retries = RETRIES_TIMES; u32Retries > 0; --u32Retries) {
++		if (!is_soc_rev(CHIP_REV_1_0)) {
++			if (readl(esdhc_base_pointer + SDHCI_PRESENT_STATE) \
++						& ESDHC_CMD_INHIBIT) {
++				reset_status = 1;
++			} else {
++				reset_status = 0;
++				break;
++			}
++		} else if (!is_soc_rev(CHIP_REV_2_0)) {
++			if (readl(esdhc_base_pointer + SDHCI_SYSTEM_CONTROL) \
++						& ESDHC_SOFTWARE_RESET) {
++				reset_status = 1;
++			} else {
++				reset_status = 0;
++				break;
++			}
++		}
++	}
++
++	if (!is_soc_rev(CHIP_REV_1_0)) {
++		/* send 80 clock ticks for card to power up */
++		REG_WRITE_OR(ESDHC_SYSCTL_INITA, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++	}
++
++	/* Set data bus width of ESDCH */
++	esdhc_set_data_transfer_width(0x00000000);
++	/* Set Endianness of ESDHC */
++	esdhc_set_endianness(0x00000020);
++
++	/* set data timeout delay to max */
++	u32Temp = (readl(esdhc_base_pointer + SDHCI_SYSTEM_CONTROL) & \
++						0xfff0ffff) | 0x000e0000;
++	writel(u32Temp, esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++
++	return reset_status;
++}
++
++/*!
++ * Clear interrupts at eSDHC level.
++ */
++void interface_clear_interrupt(void)
++{
++	/* Clear Interrupt status register */
++	writel(ESDHC_CLEAR_INTERRUPT, esdhc_base_pointer + SDHCI_INT_STATUS);
++}
++
++/*!
++ * Enable Clock and set operating frequency.
++ */
++void interface_configure_clock(sdhc_freq_t frequency)
++{
++	u32 ident_freq = 0;
++	u32 oper_freq  = 0;
++
++	if (!is_soc_rev(CHIP_REV_1_0)) {
++		/* Enable ipg_perclk, HCLK enable and IPG Clock enable. */
++		REG_WRITE_OR(ESDHC_CLOCK_ENABLE, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++		/* Clear DTOCV SDCLKFS bits */
++		REG_WRITE_OR(ESDHC_FREQ_MASK, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++		ident_freq = ESDHC_SYSCTL_IDENT_FREQ_TO1;
++		oper_freq  = ESDHC_SYSCTL_OPERT_FREQ_TO1;
++	} else if (!is_soc_rev(CHIP_REV_2_0)) {
++		/* Clear SDCLKEN bit */
++		REG_WRITE_OR((~ESDHC_SYSCTL_SDCLKEN_MASK), \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++
++		/* Clear DTOCV, SDCLKFS, DVFS bits */
++		REG_WRITE_OR((~ESDHC_SYSCTL_FREQ_MASK), \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++		ident_freq = ESDHC_SYSCTL_IDENT_FREQ_TO2;
++		oper_freq  = ESDHC_SYSCTL_OPERT_FREQ_TO2;
++	}
++
++	if (!is_soc_rev(CHIP_REV_2_0)) {
++		/* Disable the PEREN, HCKEN and IPGEN */
++		REG_WRITE_OR((~ESDHC_SYSCTL_INPUT_CLOCK_MASK), \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++	}
++
++	if (frequency == IDENTIFICATION_FREQ) {
++		/* Input frequecy to eSDHC is 36 MHZ */
++		/* PLL3 is the source of input frequency*/
++		/*Set DTOCV and SDCLKFS bit to get SD_CLK
++		of frequency below 400 KHZ (70.31 KHZ) */
++		REG_WRITE_OR(ident_freq, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++	} else if (frequency == OPERATING_FREQ) {
++		/*Set DTOCV and SDCLKFS bit to get SD_CLK
++		of frequency around 25 MHz.(18 MHz)*/
++		REG_WRITE_OR(oper_freq, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++	}
++
++	if (!is_soc_rev(CHIP_REV_2_0)) {
++		/* Start a general purpose timer */
++		/* Wait for clock to be stable */
++		SDHC_DELAY_BY_100(96);
++
++		/* Set SDCLKEN bit to enable clock */
++		REG_WRITE_OR(ESDHC_SYSCTL_SDCLKEN_MASK, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++
++		/* Mask Data Timeout Error Status Enable Interrupt (DTOESEN) */
++		REG_WRITE_AND((~ESDHC_IRQSTATEN_DTOESEN), \
++			esdhc_base_pointer + SDHCI_INT_ENABLE);
++
++		/* Set the Data Timeout Counter Value(DTOCV) */
++		REG_WRITE_OR(ESDHC_SYSCTL_DTOCV_VAL, \
++			esdhc_base_pointer + SDHCI_SYSTEM_CONTROL);
++
++		/* Enable Data Timeout Error Status
++			Enable Interrupt (DTOESEN) */
++		REG_WRITE_OR(ESDHC_IRQSTATEN_DTOESEN, \
++			esdhc_base_pointer + SDHCI_INT_ENABLE);
++	}
++}
+ 
+ /*
+  * Sends a command out on the bus.  Takes the mmc pointer,
+@@ -154,24 +340,18 @@ esdhc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 	uint	xfertyp;
+ 	uint	irqstat;
+ 	volatile struct fsl_esdhc *regs = mmc->priv;
+-
+ 	out_be32(&regs->irqstat, -1);
+-
+ 	sync();
+-
+ 	/* Wait for the bus to be idle */
+ 	while ((in_be32(&regs->prsstat) & PRSSTAT_CICHB) ||
+ 			(in_be32(&regs->prsstat) & PRSSTAT_CIDHB));
+-
+ 	while (in_be32(&regs->prsstat) & PRSSTAT_DLA);
+-
+ 	/* Wait at least 8 SD clock cycles before the next command */
+ 	/*
+ 	 * Note: This is way more than 8 cycles, but 1ms seems to
+ 	 * resolve timing issues with some cards
+ 	 */
+ 	udelay(1000);
+-
+ 	/* Set up for a data transfer if we have one */
+ 	if (data) {
+ 		int err;
+@@ -180,30 +360,23 @@ esdhc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 		if(err)
+ 			return err;
+ 	}
+-
+ 	/* Figure out the transfer arguments */
+ 	xfertyp = esdhc_xfertyp(cmd, data);
+-
+ 	/* Send the command */
+ 	out_be32(&regs->cmdarg, cmd->cmdarg);
+ 	out_be32(&regs->xfertyp, xfertyp);
+-
+ 	/* Wait for the command to complete */
+ 	while (!(in_be32(&regs->irqstat) & IRQSTAT_CC));
+ 
+ 	irqstat = in_be32(&regs->irqstat);
+ 	out_be32(&regs->irqstat, irqstat);
+-
+ 	if (irqstat & CMD_ERR)
+ 		return COMM_ERR;
+-
+ 	if (irqstat & IRQSTAT_CTOE)
+ 		return TIMEOUT;
+-
+ 	/* Copy the response to the response buffer */
+ 	if (cmd->resp_type & MMC_RSP_136) {
+ 		u32 cmdrsp3, cmdrsp2, cmdrsp1, cmdrsp0;
+-
+ 		cmdrsp3 = in_be32(&regs->cmdrsp3);
+ 		cmdrsp2 = in_be32(&regs->cmdrsp2);
+ 		cmdrsp1 = in_be32(&regs->cmdrsp1);
+@@ -214,15 +387,12 @@ esdhc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 		cmd->response[3] = (cmdrsp0 << 8);
+ 	} else
+ 		cmd->response[0] = in_be32(&regs->cmdrsp0);
+-
+ 	/* Wait until all of the blocks are transferred */
+ 	if (data) {
+ 		do {
+ 			irqstat = in_be32(&regs->irqstat);
+-
+ 			if (irqstat & DATA_ERR)
+ 				return COMM_ERR;
+-
+ 			if (irqstat & IRQSTAT_DTOE)
+ 				return TIMEOUT;
+ 		} while (!(irqstat & IRQSTAT_TC) &&
+@@ -230,10 +400,132 @@ esdhc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 	}
+ 
+ 	out_be32(&regs->irqstat, -1);
++	return 0;
++}
++
++/*!
++ * Set data transfer width for e-SDHC.
++ */
++static void esdhc_set_data_transfer_width(u32 data_transfer_width)
++{
++	/* Set DWT bit of protocol control register according to bus_width */
++	if (!is_soc_rev(CHIP_REV_2_0))
++		REG_WRITE_AND((~ESDHC_BUS_WIDTH_MASK), \
++			esdhc_base_pointer + SDHCI_HOST_CONTROL);
++
++	REG_WRITE_OR((data_transfer_width), \
++			esdhc_base_pointer + SDHCI_HOST_CONTROL);
++}
++
++/*!
++ * Set endianness mode for e-SDHC.
++ */
++static void esdhc_set_endianness(u32 endian_mode)
++{
++	if (!is_soc_rev(CHIP_REV_2_0)) {
++		REG_WRITE_AND((~ESDHC_ENDIAN_MODE_MASK), \
++			esdhc_base_pointer + SDHCI_HOST_CONTROL);
++	}
++	/* Set DWT bit of protocol control register according to bus_width */
++	REG_WRITE_OR((endian_mode), \
++			esdhc_base_pointer + SDHCI_HOST_CONTROL);
++}
++
++/*!
++ * Poll the CIHB & CDIHB bits of the present
++ * state register and wait until it goes low.
++ */
++static u32 esdhc_poll_cihb_cdihb(data_present_select data_present)
++{
++	u32 init_status = 0;
++	u32 u32Retries = 0;
++
++	/* Start a general purpose timer */
++	for (u32Retries = RETRIES_TIMES; u32Retries > 0; u32Retries--) {
++		if (!(readl(esdhc_base_pointer + SDHCI_PRESENT_STATE) & \
++					ESDHC_PRESENT_STATE_CIHB)) {
++			init_status = 0;
++			break;
++		}
++		SDHC_DELAY_BY_100(10);
++	}
++
++	/*
++	 * Wait for the data line to be free (poll the CDIHB bit of
++	 * the present state register).
++	 */
++	if ((0 == init_status) && (data_present == DATA_PRESENT)) {
++		/* Start a general purpose timer */
++		SDHC_DELAY_BY_100(32);
++
++		if (readl(esdhc_base_pointer + SDHCI_PRESENT_STATE) & \
++			ESDHC_PRESENT_STATE_CDIHB) {
++			init_status =  1;
++		}
++	}
++
++	return init_status;
++}
++
++/*!
++ * Wait until the command and data lines are free.
++ */
++u32 interface_wait_cmd_data_lines(data_present_select data_present)
++{
++	u32 cmd_status = 0;
++
++	cmd_status = esdhc_poll_cihb_cdihb(data_present);
++
++	return cmd_status;
++}
++
++u32 interface_set_bus_width(u32 bus_width)
++{
++	u32 tmp;
++
++	tmp = readl(esdhc_base_pointer + SDHCI_HOST_CONTROL);
++	tmp &= ~SDHCI_CTRL_8BITBUS;
++	tmp |= SDHCI_CTRL_4BITBUS;
++
++	writel(tmp, esdhc_base_pointer + SDHCI_HOST_CONTROL);
+ 
+ 	return 0;
+ }
+ 
++/*!
++ * Execute a command and wait for the response.
++ */
++u32 interface_send_cmd_wait_resp(esdhc_cmd_t *cmd)
++{
++	u32 cmd_status = 0;
++
++	/* Clear Interrupt status register */
++	writel(ESDHC_CLEAR_INTERRUPT, \
++			esdhc_base_pointer + SDHCI_INT_STATUS);
++
++	/* Enable Interrupt */
++	REG_WRITE_OR(ESDHC_INTERRUPT_ENABLE, \
++			esdhc_base_pointer + SDHCI_INT_ENABLE);
++	if (!is_soc_rev(CHIP_REV_2_0)) {
++		cmd_status = interface_wait_cmd_data_lines(cmd->data_present);
++
++		if (cmd_status == 1)
++			return 1;
++	}
++
++	/* Configure Command */
++	esdhc_cmd_config(cmd);
++
++	/* Wait for interrupt CTOE or CC */
++	SDHC_DELAY_BY_100(96);
++
++	/* Mask all interrupts */
++	writel(0, esdhc_base_pointer + SDHCI_SIGNAL_ENABLE);
++
++	/* Check if an error occured */
++	return esdhc_check_response();
++}
++
+ void set_sysctl(struct mmc *mmc, uint clock)
+ {
+ 	int sdhc_clk = gd->sdhc_clk;
+@@ -247,39 +539,178 @@ void set_sysctl(struct mmc *mmc, uint clock)
+ 				break;
+ 	} else
+ 		pre_div = 2;
+-
+ 	for (div = 1; div <= 16; div++)
+ 		if ((sdhc_clk / (div * pre_div)) <= clock)
+ 			break;
+-
+ 	pre_div >>= 1;
+ 	div -= 1;
+-
+ 	clk = (pre_div << 8) | (div << 4);
+-
+ 	clrsetbits_be32(&regs->sysctl, SYSCTL_CLOCK_MASK, clk);
+-
+ 	udelay(10000);
+-
+ 	setbits_be32(&regs->sysctl, SYSCTL_PEREN);
+ }
+ 
++/*!
++ * Configure ESDHC registers for sending a command to MMC.
++ */
++static void esdhc_cmd_config(esdhc_cmd_t *cmd)
++{
++	u32 u32Temp = 0;
++
++	/* Write Command Argument in Command Argument Register */
++	writel(cmd->arg, esdhc_base_pointer + SDHCI_ARGUMENT);
++
++	/*
++	*Configure e-SDHC Register value according to Command
++	*/
++	u32Temp = \
++		(((cmd->data_transfer)<<ESDHC_DATA_TRANSFER_SHIFT) |
++		((cmd->response_format)<<ESDHC_RESPONSE_FORMAT_SHIFT) |
++		((cmd->data_present)<<ESDHC_DATA_PRESENT_SHIFT) |
++		((cmd->crc_check) << ESDHC_CRC_CHECK_SHIFT) |
++		((cmd->cmdindex_check) << ESDHC_CMD_INDEX_CHECK_SHIFT) |
++		((cmd->command) << ESDHC_CMD_INDEX_SHIFT) |
++		((cmd->block_count_enable_check) << \
++			ESDHC_BLOCK_COUNT_ENABLE_SHIFT) |
++		((cmd->multi_single_block) << \
++			ESDHC_MULTI_SINGLE_BLOCK_SELECT_SHIFT));
++
++	writel(u32Temp, esdhc_base_pointer + SDHCI_TRANSFER_MODE);
++}
++
++/*!
++ * Wait a END_CMD_RESP interrupt by interrupt status register.
++ * e-SDHC sets this bit after receving command response.
++ */
++static u32 esdhc_check_response(void)
++{
++	u32 status = 1;
++
++	/* Check whether the interrupt is an END_CMD_RESP
++	* or a response time out or a CRC error
++	*/
++	if ((readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_END_CMD_RESP_MSK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_TIME_OUT_RESP_MSK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_RESP_CRC_ERR_MSK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_RESP_CMD_INDEX_ERR_MSK))
++		status = 0;
++
++	return status;
++}
++
++/*!
++ * This function will read response from e-SDHC
++ * register according to reponse format.
++ */
++void interface_read_response(esdhc_resp_t *cmd_resp)
++{
++	/* get response values from e-SDHC CMDRSP registers.*/
++	cmd_resp->cmd_rsp0 = (u32)readl(esdhc_base_pointer + SDHCI_RESPONSE);
++	cmd_resp->cmd_rsp1 = (u32)readl(esdhc_base_pointer + \
++							SDHCI_RESPONSE + 4);
++	cmd_resp->cmd_rsp2 = (u32)readl(esdhc_base_pointer + \
++							SDHCI_RESPONSE + 8);
++	cmd_resp->cmd_rsp3 = (u32)readl(esdhc_base_pointer + \
++							SDHCI_RESPONSE + 12);
++}
++
++/*!
++ * This function will read response from e-SDHC register
++ * according to reponse format.
++ */
++u32 interface_data_read(u32 *dest_ptr, u32 blk_len)
++{
++	u32 i = 0;
++	u32 j = 0;
++	u32 status = 1;
++	u32 *tmp_ptr = dest_ptr;
++
++	debug("Entry: interface_data_read()\n");
++
++	/* Enable Interrupt */
++	REG_WRITE_OR(ESDHC_INTERRUPT_ENABLE, \
++			esdhc_base_pointer + SDHCI_INT_ENABLE);
++
++	for (i = 0; i < (blk_len) / (ESDHC_FIFO_SIZE * 4); ++i) {
++		/* Wait for BRR bit to be set */
++		status = esdhc_wait_buf_rdy_intr(ESDHC_STATUS_BUF_READ_RDY_MSK,
++						 ESDHC_READ_DATA_TIME_OUT);
++
++		debug("esdhc_wait_buf_rdy_intr: %d\n", status);
++
++		if (!status) {
++			for (j = 0; j < ESDHC_FIFO_SIZE; ++j) {
++				*tmp_ptr++ = \
++				readl(esdhc_base_pointer + SDHCI_BUFFER);
++			}
++			if (!is_soc_rev(CHIP_REV_2_0)) {
++				/* Clear the BRR */
++				esdhc_clear_buf_rdy_intr(ESDHC_STATUS_BUF_READ_RDY_MSK);
++			}
++		} else {
++			debug("esdhc_wait_buf_rdy_intr failed\n");
++			break;
++		}
++	}
++
++	esdhc_wait_op_done_intr();
++
++	status = esdhc_check_data();
++
++	if (!is_soc_rev(CHIP_REV_2_0) && !status)
++		status = 0;
++
++	debug("esdhc_check_data: %d\n", status);
++	debug("Exit: interface_data_read()\n");
++
++	return status;
++}
++
+ static void esdhc_set_ios(struct mmc *mmc)
+ {
+ 	struct fsl_esdhc *regs = mmc->priv;
+-
+ 	/* Set the clock speed */
+ 	set_sysctl(mmc, mmc->clock);
+-
+ 	/* Set the bus width */
+ 	clrbits_be32(&regs->proctl, PROCTL_DTW_4 | PROCTL_DTW_8);
+-
+ 	if (mmc->bus_width == 4)
+ 		setbits_be32(&regs->proctl, PROCTL_DTW_4);
+ 	else if (mmc->bus_width == 8)
+ 		setbits_be32(&regs->proctl, PROCTL_DTW_8);
+ }
+ 
++/*!
++ * Wait a BUF_READ_READY  interrupt by pooling STATUS register.
++ */
++static u32 esdhc_wait_buf_rdy_intr(u32 mask, u32 multi_single_block)
++{
++	u32 status = 0;
++	u32 u32Retries = 0;
++
++	/* Wait interrupt (BUF_READ_RDY)
++	*/
++
++	for (u32Retries = RETRIES_TIMES; u32Retries > 0; --u32Retries) {
++		if (!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & mask)) {
++			status = 1;
++		} else {
++			status = 0;
++			break;
++		}
++		SDHC_DELAY_BY_100(10);
++	}
++
++	if (multi_single_block == MULTIPLE && \
++		readl(esdhc_base_pointer + SDHCI_INT_STATUS) & mask)
++		REG_WRITE_OR(mask, (esdhc_base_pointer + SDHCI_INT_STATUS));
++
++	return status;
++}
++
+ static int esdhc_init(struct mmc *mmc)
+ {
+ 	struct fsl_esdhc *regs = mmc->priv;
+@@ -287,63 +718,170 @@ static int esdhc_init(struct mmc *mmc)
+ 
+ 	/* Enable cache snooping */
+ 	out_be32(&regs->scr, 0x00000040);
+-
+ 	out_be32(&regs->sysctl, SYSCTL_HCKEN | SYSCTL_IPGEN);
+-
+ 	/* Set the initial clock speed */
+ 	set_sysctl(mmc, 400000);
+-
+ 	/* Disable the BRR and BWR bits in IRQSTAT */
+ 	clrbits_be32(&regs->irqstaten, IRQSTATEN_BRR | IRQSTATEN_BWR);
+-
+ 	/* Put the PROCTL reg back to the default */
+ 	out_be32(&regs->proctl, PROCTL_INIT);
+-
+ 	while (!(in_be32(&regs->prsstat) & PRSSTAT_CINS) && --timeout)
+ 		udelay(1000);
+-
+ 	if (timeout <= 0)
+ 		return NO_CARD_ERR;
+-
+ 	return 0;
+ }
++/*!
++ * Clear BUF_READ_READY/BUF_WRITE_READY interrupt
++ * by writing 1 to STATUS register.
++ */
++static void esdhc_clear_buf_rdy_intr(u32 mask)
++{
++	writel(mask, (esdhc_base_pointer + SDHCI_INT_STATUS));
++}
++
++/*!
++ * Wait for TC, DEBE, DCE or DTOE by polling Interrupt STATUS register.
++ */
++static void esdhc_wait_op_done_intr(void)
++{
++	while (!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++			ESDHC_STATUS_TRANSFER_COMPLETE_MSK))
++	;
++}
++
++/*!
++ * If READ_OP_DONE occured check ESDHC_STATUS_TIME_OUT_READ
++ * and RD_CRC_ERR_CODE and
++ * to determine if an error occured
++ */
++static u32 esdhc_check_data(void)
++{
++	u32 status = 1;
++
++	debug("Entry: esdhc_check_data()\n");
++
++	/* Check whether the interrupt is an OP_DONE
++	* or a data time out or a CRC error
++	*/
++	if ((readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_TRANSFER_COMPLETE_MSK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_TIME_OUT_READ_MASK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_READ_CRC_ERR_MSK)) {
++		if (!is_soc_rev(CHIP_REV_2_0)) {
++			writel(ESDHC_STATUS_TRANSFER_COMPLETE_MSK, \
++				(esdhc_base_pointer + SDHCI_INT_STATUS));
++		}
++		status = 0;
++	} else {
++		status = 1;
++	}
++
++	debug("Exit: esdhc_check_data()\n");
++	return status;
++}
++
++/*!
++ * Check for Data timeout error, data CRC error and data end bit error
++ * to determine if an error occured.
++ */
++static u32 esdhc_check_data_crc_status(void)
++{
++	u32 status = 1;
++
++	/* Check whether the interrupt is DTOE/DCE/DEBE */
++	if (!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_TIME_OUT_READ_MASK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_READ_CRC_ERR_MSK) &&
++		!(readl(esdhc_base_pointer + SDHCI_INT_STATUS) & \
++		ESDHC_STATUS_RW_DATA_END_BIT_ERR_MSK)) {
++		status = 0;
++	} else {
++		status = 1;
++	}
++
++	return status;
++}
+ 
+ static int esdhc_initialize(bd_t *bis)
+ {
+ 	struct fsl_esdhc *regs = (struct fsl_esdhc *)CONFIG_SYS_FSL_ESDHC_ADDR;
+ 	struct mmc *mmc;
+ 	u32 caps;
+-
+ 	mmc = malloc(sizeof(struct mmc));
+-
+ 	sprintf(mmc->name, "FSL_ESDHC");
+ 	mmc->priv = regs;
+ 	mmc->send_cmd = esdhc_send_cmd;
+ 	mmc->set_ios = esdhc_set_ios;
+ 	mmc->init = esdhc_init;
+-
+ 	caps = regs->hostcapblt;
+-
+ 	if (caps & ESDHC_HOSTCAPBLT_VS18)
+ 		mmc->voltages |= MMC_VDD_165_195;
+ 	if (caps & ESDHC_HOSTCAPBLT_VS30)
+ 		mmc->voltages |= MMC_VDD_29_30 | MMC_VDD_30_31;
+ 	if (caps & ESDHC_HOSTCAPBLT_VS33)
+ 		mmc->voltages |= MMC_VDD_32_33 | MMC_VDD_33_34;
+-
+ 	mmc->host_caps = MMC_MODE_4BIT | MMC_MODE_8BIT;
+-
+ 	if (caps & ESDHC_HOSTCAPBLT_HSS)
+ 		mmc->host_caps |= MMC_MODE_HS_52MHz | MMC_MODE_HS;
+-
+ 	mmc->f_min = 400000;
+ 	mmc->f_max = MIN(gd->sdhc_clk, 50000000);
+-
+ 	mmc_register(mmc);
+-
+ 	return 0;
+ }
+ 
++/*!
++ * Set Block length.
++ */
++void interface_config_block_info(u32 blk_len, u32 nob, u32 wml)
++{
++	/* Configre block Attributes register */
++	writel(((nob << ESDHC_BLOCK_SHIFT) | blk_len), \
++			(esdhc_base_pointer + SDHCI_BLOCK_SIZE));
++	/* Set Read Water MArk Level register */
++	writel(wml, esdhc_base_pointer + SDHCI_WML_LEV);
++}
++
++/*!
++ * This function will write data to device  attached to interface.
++ */
++u32 interface_data_write(u32 *dest_ptr, u32 blk_len)
++{
++	u32 i = 0;
++	u32 j = 0;
++	u32 status = 1;
++	u32 *tmp_ptr = dest_ptr;
++
++	debug("Entry: interface_data_write()\n");
++
++	/* Enable Interrupt */
++	REG_WRITE_OR(ESDHC_INTERRUPT_ENABLE, \
++			(esdhc_base_pointer + SDHCI_INT_ENABLE));
++
++	for (i = 0; i < (blk_len) / (ESDHC_FIFO_SIZE * 4); ++i) {
++		/* Wait for BWR bit to be set */
++		esdhc_wait_buf_rdy_intr(ESDHC_STATUS_BUF_WRITE_RDY_MSK, \
++						SINGLE);
++		for (j = 0; j < ESDHC_FIFO_SIZE; ++j) {
++			writel((*tmp_ptr), esdhc_base_pointer + SDHCI_BUFFER);
++			++tmp_ptr;
++		}
++		esdhc_clear_buf_rdy_intr(ESDHC_STATUS_BUF_WRITE_RDY_MSK);
++	}
++
++	/* Wait for transfer complete operation interrupt */
++	esdhc_wait_op_done_intr();
++
++	/* Check for status errors */
++	status = esdhc_check_data();
++
++	debug("Exit: interface_data_write()\n");
++	return status;
++}
++
+ int fsl_esdhc_mmc_init(bd_t *bis)
+ {
+ 	return esdhc_initialize(bis);
+@@ -353,15 +891,48 @@ void fdt_fixup_esdhc(void *blob, bd_t *bd)
+ {
+ 	const char *compat = "fsl,esdhc";
+ 	const char *status = "okay";
+-
+ 	if (!hwconfig("esdhc")) {
+ 		status = "disabled";
+ 		goto out;
+ 	}
+-
+ 	do_fixup_by_compat_u32(blob, compat, "clock-frequency",
+ 			       gd->sdhc_clk, 1);
+ out:
+ 	do_fixup_by_compat(blob, compat, "status", status,
+ 			   strlen(status) + 1, 1);
+ }
++
++/*!
++ * Configure the CMD line PAD configuration for strong or weak pull-up.
++ */
++/*
++void esdhc_set_cmd_pullup(esdhc_pullup_t pull_up)
++{
++	u32 interface_esdhc = 0;
++	u32 pad_val = 0;
++
++	interface_esdhc = (readl(0x53ff080c)) & (0x000000C0) >> 6;
++
++	if (pull_up == STRONG) {
++		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++			PAD_CTL_22K_PU | PAD_CTL_SRE_FAST;
++	} else {
++		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
++			PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++	}
++
++	switch (interface_esdhc) {
++	case ESDHC1:
++		mxc_iomux_set_pad(MX51_PIN_SD1_CMD, pad_val);
++		break;
++	case ESDHC2:
++		mxc_iomux_set_pad(MX51_PIN_SD2_CMD, pad_val);
++		break;
++	case ESDHC3:
++	default:
++		break;
++	}
++}
++*/
+diff --git a/drivers/mmc/fsl_mmc.c b/drivers/mmc/fsl_mmc.c
+new file mode 100644
+index 0000000..2fbf4d6
+--- /dev/null
++++ b/drivers/mmc/fsl_mmc.c
+@@ -0,0 +1,1565 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for	list of people who contributed to this
++ * project.
++ *
++ * This	program	is free	software; you can redistribute it and/or
++ * modify it under the terms of	the GNU General Public License as
++ * published by	the Free Software Foundation; either version 2 of
++ * the License,	or (at your option) any later version.
++ *
++ * This	program	is distributed in the hope that	it will	be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59	Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#ifdef CONFIG_MMC
++#include <linux/mmc/mmc.h>
++#include <linux/mmc/sd.h>
++#include <linux/mmc/core.h>
++#include <linux/mmc/card.h>
++#include <asm/errno.h>
++#include <part.h>
++#include <asm/arch/sdhc.h>
++#include <linux/types.h>
++
++#define CARD_SUPPORT_BYTE_MODE			(0)
++#define CARD_SUPPORT_SECT_MODE			(1)
++
++#define RETRY_TIMEOUT					(10)
++
++
++extern int fat_register_device(block_dev_desc_t *dev_desc, int part_no);
++
++static block_dev_desc_t	mmc_dev;
++
++block_dev_desc_t *mmc_get_dev(int dev)
++{
++	return (block_dev_desc_t *)&mmc_dev;
++}
++
++/*
++ * FIXME needs to read cid and csd info	to determine block size
++ * and other parameters
++ */
++static int mmc_ready;
++static u32 g_Card_Address_Mode;
++static u32 g_Card_rca;
++
++enum states {
++    IDLE,
++    READY,
++    IDENT,
++    STBY,
++    TRAN,
++    DATA,
++    RCV,
++    PRG,
++    DIS,
++    BTST,
++    SLP
++};
++
++static u32 mmc_cmd(struct mmc_command *cmd, u32 opcode,
++		u32 arg, u32 xfer, u32 fmt, u32 write,
++		u32 crc, u32 cmd_check_en);
++static u32 mmc_acmd(struct mmc_command *cmd, u32 opcode,
++		u32 arg, u32 xfer, u32 fmt, u32 write,
++		u32 crc, u32 cmd_check_en);
++static s32 mmc_decode_cid(struct mmc_card *card);
++static s32 mmc_decode_csd(struct mmc_card *card);
++static s32 sd_voltage_validation(void);
++static s32 mmc_voltage_validation(void);
++static s32 mmc_send_cid(struct mmc_card *card);
++static s32 mmc_send_csd(struct mmc_card *card, u32 u32CardRCA);
++static s32 mmc_select_card(u32 card_rca);
++static s32 mmcsd_check_status(u32 card_rca, u32 timeout,
++		u32 card_state, u32 status_bit);
++static s32 mmc_send_relative_addr(u32 *u32CardRCA);
++static s32 mmc_decode_scr(struct mmc_card *card);
++static s32 mmc_send_scr(struct mmc_card *card);
++static s32 mmc_set_relative_addr(u32 u32CardRCA);
++static s32 mmc_app_set_bus_width(s32 width);
++static s32 mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value);
++static s32 mmc_sd_switch(struct mmc_card *card, s32 mode, s32 group,
++						u8 value, u8 *resp);
++
++static u32 mmc_cmd(struct mmc_command *cmd, u32 opcode,
++			u32 arg, u32 xfer, u32 fmt,
++			u32 write, u32 crc, u32 cmd_check_en)
++{
++	struct mmc_command *pCmd = cmd;
++
++	pCmd->cmd.command = opcode;
++	pCmd->cmd.arg =	arg;
++	pCmd->cmd.data_transfer	= xfer;
++	pCmd->cmd.response_format = pCmd->resp.format = fmt;
++	pCmd->cmd.data_present = write;
++	pCmd->cmd.crc_check = crc;
++	pCmd->cmd.cmdindex_check = cmd_check_en;
++
++	if (MMC_READ_MULTIPLE_BLOCK == opcode || \
++		MMC_WRITE_MULTIPLE_BLOCK == opcode) {
++		pCmd->cmd.block_count_enable_check = ENABLE;
++		pCmd->cmd.multi_single_block = MULTIPLE;
++	} else {
++		pCmd->cmd.block_count_enable_check = DISABLE;
++		pCmd->cmd.multi_single_block = SINGLE;
++	}
++
++	if (interface_send_cmd_wait_resp(&(pCmd->cmd))) {
++		debug("interface_send_cmd_wait_resp Failed!");
++		return EPERM;
++	}
++
++	interface_read_response(&(pCmd->resp));
++
++	return 0;
++}
++
++static u32 mmc_acmd(struct mmc_command *cmd, u32 opcode,
++			u32 arg, u32 xfer, u32 fmt, u32 write,
++			u32 crc, u32 cmd_check_en)
++{
++	struct mmc_command *pCmd = cmd;
++	struct mmc_command stAPCmd;
++
++	memset(&stAPCmd, 0, sizeof(struct mmc_command));
++
++	/* Send MMC_APP_CMD first to use ACMD */
++	stAPCmd.cmd.command = MMC_APP_CMD;
++	stAPCmd.cmd.arg = (g_Card_rca << 16);
++	stAPCmd.cmd.data_transfer = READ;
++	stAPCmd.cmd.response_format = stAPCmd.resp.format = RESPONSE_48;
++	stAPCmd.cmd.data_present = DATA_PRESENT_NONE;
++	stAPCmd.cmd.crc_check = ENABLE;
++	stAPCmd.cmd.cmdindex_check = ENABLE;
++
++	if (interface_send_cmd_wait_resp(&(stAPCmd.cmd))) {
++		debug("Send MMC_APP_CMD Failed! :(");
++		return EPERM;
++	}
++
++	pCmd->cmd.command = opcode;
++	pCmd->cmd.arg =	arg;
++	pCmd->cmd.data_transfer	= xfer;
++	pCmd->cmd.response_format = pCmd->resp.format = fmt;
++	pCmd->cmd.data_present = write;
++	pCmd->cmd.crc_check = crc;
++	pCmd->cmd.cmdindex_check = cmd_check_en;
++
++	if (interface_send_cmd_wait_resp(&(pCmd->cmd))) {
++		debug("interface_send_cmd_wait_resp Failed!, :(");
++		return EPERM;
++	}
++
++	interface_read_response(&(pCmd->resp));
++
++	return 0;
++}
++
++int
++/****************************************************/
++mmc_read(ulong src, uchar *dst, int size)
++/****************************************************/
++{
++	struct mmc_command stCmd;
++	u32 u32Offset = src;
++	u32 *pu32Dst = (u32 *)dst;
++	s32 s32Rslt = EPERM;
++	s32 s32ReadRslt	= 0;
++	u32 u32BlkLen = BLK_LEN;
++	u32 u32MultiBlkNum = 0;
++
++	if (!mmc_ready)	{
++		printf("Please initial the Card first\n");
++		return EPERM;
++	}
++
++	if (size == 0)
++		return 0;
++
++	debug("Entry: mmc_read");
++
++	debug("src:%08x	dst:%08x size:%d", src,	dst, size);
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	if (g_Card_Address_Mode	== CARD_SUPPORT_SECT_MODE) {
++		u32BlkLen = 1;
++		u32Offset /= BLK_LEN;
++	}
++
++	u32MultiBlkNum = (size % BLK_LEN) ? ((size / BLK_LEN) + 1) \
++					 : (size / BLK_LEN);
++
++	if (mmcsd_check_status(g_Card_rca, 96, TRAN, R1_ERROR)) {
++		debug("Can't wait for TRAN state! :(\n");
++		return EPERM;
++	}
++
++	interface_config_block_info(BLK_LEN, u32MultiBlkNum, \
++				(u32)0x00000080);
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			((u32MultiBlkNum > 1) ? MMC_READ_MULTIPLE_BLOCK : MMC_READ_SINGLE_BLOCK),
++			u32Offset,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT,
++			ENABLE,
++			ENABLE);
++
++	if (s32Rslt) {
++		debug("Send MMC_READ_MULTIPLE_BLOCK Failed! :(\n");
++		return EPERM;
++	}
++
++	s32Rslt	= interface_data_read((u32 *)pu32Dst, BLK_LEN * u32MultiBlkNum);
++
++	if (s32Rslt) {
++		debug("interface_data_read Failed! :(\n");
++		return EPERM;
++	}
++
++	if (u32MultiBlkNum > 1) {
++		s32Rslt	= mmc_cmd(&stCmd,
++				MMC_STOP_TRANSMISSION,
++				0,
++				READ,
++				RESPONSE_48,
++				DATA_PRESENT_NONE,
++				ENABLE,
++				ENABLE);
++
++		if (s32Rslt) {
++			debug("Send MMC_STOP_TRANSMISSION Failed! :(\n");
++			return EPERM;
++		}
++	}
++
++	debug("mmc_read	succeed! :)");
++
++	debug("Exit: mmc_read");
++
++	return s32ReadRslt;
++}
++
++int
++/****************************************************/
++mmc_write(uchar *src, ulong dst, int size)
++/****************************************************/
++{
++	struct mmc_command stCmd;
++	u32 u32Offset = dst;
++	s32 s32Rslt = EPERM;
++	s32 s32WriteRslt = 0;
++	u32 u32BlkLen = BLK_LEN;
++	u32 *pu32Src = (u32 *)src;
++	u32 u32MultiBlkNum = 0;
++
++	debug("Entry: mmc_write");
++
++	debug("src:%08x	dst:%08x size:%d", src,	dst, size);
++
++	if (!mmc_ready)	{
++		printf("Please initial the Card first\n");
++		return -1;
++	}
++
++	if (size == 0)
++		return 0;
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	if (g_Card_Address_Mode	== CARD_SUPPORT_SECT_MODE) {
++		u32BlkLen = 1;
++		u32Offset /= BLK_LEN;
++	}
++
++	u32MultiBlkNum = (size % BLK_LEN) ? ((size / BLK_LEN) + 1) \
++					 : (size / BLK_LEN);
++
++	if (mmcsd_check_status(g_Card_rca, 96, TRAN, R1_ERROR)) {
++		debug("Can't wait for TRAN state! :(\n");
++		return EPERM;
++	}
++
++	interface_config_block_info(BLK_LEN, u32MultiBlkNum, \
++					(u32)0x00800000);
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			((u32MultiBlkNum > 1) ? MMC_WRITE_MULTIPLE_BLOCK : MMC_WRITE_BLOCK),
++			u32Offset,
++			WRITE,
++			RESPONSE_48,
++			DATA_PRESENT,
++			ENABLE,
++			ENABLE);
++
++	if (s32Rslt) {
++		debug("Send MMC_WRITE_BLOCK Failed! :(");
++		return EPERM;
++	}
++
++	s32Rslt	= interface_data_write((u32 *)pu32Src,
++					BLK_LEN * u32MultiBlkNum);
++
++	if (s32Rslt) {
++		debug("interface_data_read Failed! :(");
++		return EPERM;
++	}
++
++	if (u32MultiBlkNum > 1) {
++		s32Rslt	= mmc_cmd(&stCmd,
++				MMC_STOP_TRANSMISSION,
++				0,
++				READ,
++				RESPONSE_48,
++				DATA_PRESENT_NONE,
++				ENABLE,
++				ENABLE);
++
++		if (s32Rslt) {
++			debug("Send MMC_STOP_TRANSMISSION Failed! :(");
++			return EPERM;
++		}
++	}
++
++	debug("mmc_write succeed! :)");
++
++	debug("Exit: mmc_write");
++
++	return s32WriteRslt;
++}
++
++ulong
++/****************************************************/
++mmc_bread(int dev, ulong blknr, lbaint_t blkcnt, void *dst)
++/****************************************************/
++{
++	int mmc_block_size = BLK_LEN;
++	ulong src = blknr * mmc_block_size + CONFIG_MMC_BASE;
++
++	if (mmc_read(src, (uchar *)dst, blkcnt * mmc_block_size))
++		return 0;
++	else
++		return blkcnt;
++}
++
++ulong
++/****************************************************/
++mmc_bwrite(int dev, ulong blknr, lbaint_t blkcnt, const void *src)
++/****************************************************/
++{
++	int mmc_block_size = BLK_LEN;
++	ulong dst = blknr * mmc_block_size + CONFIG_MMC_BASE;
++
++	if (mmc_write((uchar *)src, dst, blkcnt * mmc_block_size))
++		return 0;
++	else
++		return blkcnt;
++}
++
++#define	UNSTUFF_BITS(resp, start, size)					\
++	({								\
++		const int __size = size;				\
++		const uint32_t __mask =	(__size	< 32 ? 1 << __size : 0) - 1; \
++		const int32_t __off = 3 - ((start) / 32); \
++		const int32_t __shft = (start) & 31; \
++		uint32_t __res;						\
++									\
++		__res =	resp[__off] >> __shft;				\
++		if (__size + __shft > 32)				\
++			__res |= resp[__off-1] << ((32 - __shft) % 32);	\
++		__res &	__mask;						\
++	})
++
++static const unsigned int tran_exp[] = {
++	10000, 100000, 1000000, 10000000,
++	0, 0, 0, 0
++};
++
++static const unsigned char tran_mant[] = {
++	0,  10, 12, 13, 15, 20, 25, 30,
++	35, 40, 45, 50, 55, 60, 70, 80,
++};
++
++static const unsigned int tacc_exp[] = {
++	1, 10, 100, 1000, 10000, 100000, 1000000, 10000000,
++};
++
++static const unsigned int tacc_mant[] = {
++	0,  10, 12, 13, 15, 20, 25, 30,
++	35, 40, 45, 50, 55, 60, 70, 80,
++};
++
++static s32 mmc_set_blk_len(u32 len)
++{
++	s32 s32Rslt = 0;
++	struct mmc_command stCmd;
++
++	debug("Entry: mmc_set_blk_len");
++
++	memset(&stCmd, 0, sizeof(struct mmc_command));
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_SET_BLOCKLEN,
++			BLK_LEN,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++
++	if (s32Rslt) {
++		debug("Send MMC_SET_BLOCKLEN Failed! :(");
++		return EPERM;
++	}
++
++	debug("Exit: mmc_set_blk_len");
++
++	return s32Rslt;
++}
++
++/*
++ * Given the decoded CSD structure, decode the raw CID to our CID structure.
++ */
++static s32 mmc_decode_cid(struct mmc_card *card)
++{
++	u32 *resp = card->raw_cid;
++
++	debug("Entry: mmc_decode_cid");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return EPERM;
++	}
++
++	memset(&card->cid, 0, sizeof(struct mmc_cid));
++
++	switch (card->type) {
++	case MMC_TYPE_MMC:
++		debug("MMC Card!");
++		/*
++		* The selection	of the format here is based upon published
++		* specs	from sandisk and from what people have reported.
++		*/
++		switch (card->csd.mmca_vsn) {
++		case 0:	/* MMC v1.0 - v1.2 */
++		case 1:	/* MMC v1.4	*/
++			card->cid.manfid	= \
++				UNSTUFF_BITS(resp, 104, 24);
++			card->cid.prod_name[0]	= \
++				UNSTUFF_BITS(resp, 96, 8);
++			card->cid.prod_name[1]	= \
++				UNSTUFF_BITS(resp, 88, 8);
++			card->cid.prod_name[2]	= \
++				UNSTUFF_BITS(resp, 80, 8);
++			card->cid.prod_name[3]	= \
++				UNSTUFF_BITS(resp, 72, 8);
++			card->cid.prod_name[4]	= \
++				UNSTUFF_BITS(resp, 64, 8);
++			card->cid.prod_name[5]	= \
++				UNSTUFF_BITS(resp, 56, 8);
++			card->cid.prod_name[6]	= \
++				UNSTUFF_BITS(resp, 48, 8);
++			card->cid.hwrev	= UNSTUFF_BITS(resp, 44, 4);
++			card->cid.fwrev	= UNSTUFF_BITS(resp, 40, 4);
++			card->cid.serial = UNSTUFF_BITS(resp, 16, 24);
++			card->cid.month	= UNSTUFF_BITS(resp, 12, 4);
++			card->cid.year	= \
++				UNSTUFF_BITS(resp, 8,	4) + 1997;
++
++			sprintf((char *)mmc_dev.vendor,
++				"Man %08x \"%c%c%c%c%c%c%c\" Date %02u/%04u",
++				card->cid.manfid,
++				card->cid.prod_name[0],
++				card->cid.prod_name[1],
++				card->cid.prod_name[2],
++				card->cid.prod_name[3],
++				card->cid.prod_name[4],
++				card->cid.prod_name[5],
++				card->cid.prod_name[6],
++				card->cid.month,
++				card->cid.year);
++			sprintf((char *)mmc_dev.revision, "%d.%d",
++					card->cid.hwrev,
++					card->cid.fwrev);
++			sprintf((char *)mmc_dev.product, "%u",
++					card->cid.serial);
++			break;
++		case 2:	/* MMC v2.0 - v2.2 */
++		case 3:	/* MMC v3.1 - v3.3 */
++		case 4:	/* MMC v4 */
++			card->cid.manfid = UNSTUFF_BITS(resp, 120, 8);
++			card->cid.oemid.mmc_id	= \
++				UNSTUFF_BITS(resp, 104, 16);
++			card->cid.prod_name[0]	= \
++				UNSTUFF_BITS(resp, 96, 8);
++			card->cid.prod_name[1]	= \
++				UNSTUFF_BITS(resp, 88, 8);
++			card->cid.prod_name[2]	= \
++				UNSTUFF_BITS(resp, 80, 8);
++			card->cid.prod_name[3]	= \
++				UNSTUFF_BITS(resp, 72, 8);
++			card->cid.prod_name[4]	= \
++				UNSTUFF_BITS(resp, 64, 8);
++			card->cid.prod_name[5]	= \
++				UNSTUFF_BITS(resp, 56, 8);
++			card->cid.serial = UNSTUFF_BITS(resp, 16, 32);
++			card->cid.month	 = UNSTUFF_BITS(resp, 12, 4);
++			card->cid.year	 = \
++				UNSTUFF_BITS(resp, 8, 4) + 1997;
++
++			sprintf((char *)mmc_dev.vendor,
++			"Man %02x OEM %04x \"%c%c%c%c%c%c\" Date %02u/%04u",
++				card->cid.manfid,
++				card->cid.oemid.mmc_id,
++				card->cid.prod_name[0],
++				card->cid.prod_name[1],
++				card->cid.prod_name[2],
++				card->cid.prod_name[3],
++				card->cid.prod_name[4],
++				card->cid.prod_name[5],
++				card->cid.month,
++				card->cid.year);
++			sprintf((char *)mmc_dev.product, "%u",
++					card->cid.serial);
++			sprintf((char *)mmc_dev.revision, "N/A");
++			break;
++		default:
++			printf("MMC card has unknown MMCA version %d\n",
++				card->csd.mmca_vsn);
++			return EPERM;
++		}
++		break;
++
++	case MMC_TYPE_SD:
++		debug("SD Card!");
++		card->cid.manfid	= UNSTUFF_BITS(resp, 120, 8);
++		card->cid.oemid.sd_id[0] = UNSTUFF_BITS(resp, 112, 8);
++		card->cid.oemid.sd_id[1] = UNSTUFF_BITS(resp, 104, 8);
++		card->cid.prod_name[0]	= UNSTUFF_BITS(resp, 96, 8);
++		card->cid.prod_name[1]	= UNSTUFF_BITS(resp, 88, 8);
++		card->cid.prod_name[2]	= UNSTUFF_BITS(resp, 80, 8);
++		card->cid.prod_name[3]	= UNSTUFF_BITS(resp, 72, 8);
++		card->cid.prod_name[4]	= UNSTUFF_BITS(resp, 64, 8);
++		card->cid.hwrev		= UNSTUFF_BITS(resp, 60, 4);
++		card->cid.fwrev		= UNSTUFF_BITS(resp, 56, 4);
++		card->cid.serial	= UNSTUFF_BITS(resp, 24, 32);
++		card->cid.year		= UNSTUFF_BITS(resp, 12, 8);
++		card->cid.month		= UNSTUFF_BITS(resp, 8,	4);
++		card->cid.year += 2000;	/* SD cards year offset */
++
++		sprintf((char *)mmc_dev.vendor,
++			"Man %02x OEM %c%c \"%c%c%c%c%c\" Date %02u/%04u",
++			card->cid.manfid,
++			card->cid.oemid.sd_id[0],
++			card->cid.oemid.sd_id[1],
++			card->cid.prod_name[0],
++			card->cid.prod_name[1],
++			card->cid.prod_name[2],
++			card->cid.prod_name[3],
++			card->cid.prod_name[4],
++			card->cid.month,
++			card->cid.year);
++		sprintf((char *)mmc_dev.revision, "%d.%d",
++				card->cid.hwrev, card->cid.fwrev);
++		sprintf((char *)mmc_dev.product, "%u",
++				card->cid.serial);
++		break;
++
++	default:
++		printf("unknown card type!");
++		return EPERM;
++	}
++
++	printf("%s card.\nVendor: %s\nProduct: %s\nRevision: %s\n",
++	       (IF_TYPE_SD == mmc_dev.if_type) ? "SD" : "MMC", mmc_dev.vendor,
++	       mmc_dev.product, mmc_dev.revision);
++
++	debug("Exit: mmc_decode_cid");
++
++	return 0;
++}
++
++/*
++ * Given a 128-bit response, decode to our card CSD structure.
++ */
++static s32 mmc_decode_csd(struct mmc_card *card)
++{
++	struct mmc_csd *csd = &card->csd;
++	u32 e, m, csd_struct;
++	u32 *resp = card->raw_csd;
++
++	debug("Entry: mmc_decode_csd");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return EPERM;
++	}
++
++	switch (card->type) {
++	case MMC_TYPE_MMC:
++		/*
++		 * We only understand CSD structure v1.1 and v1.2.
++		 * v1.2	has extra information in bits 15, 11 and 10.
++		 */
++		csd_struct = UNSTUFF_BITS(resp,	126, 2);
++		if (csd_struct != 1 && csd_struct != 2)	{
++			printf("unrecognised CSD structure version %d\n",
++				csd_struct);
++			return EPERM;
++		}
++
++		csd->mmca_vsn	 = UNSTUFF_BITS(resp, 122, 4);
++		m = UNSTUFF_BITS(resp, 115, 4);
++		e = UNSTUFF_BITS(resp, 112, 3);
++		csd->tacc_ns   = (tacc_exp[e] * tacc_mant[m] + 9) / 10;
++		csd->tacc_clks = UNSTUFF_BITS(resp, 104, 8) * 100;
++
++		m = UNSTUFF_BITS(resp, 99, 4);
++		e = UNSTUFF_BITS(resp, 96, 3);
++		csd->max_dtr  = tran_exp[e] * tran_mant[m];
++		csd->cmdclass = UNSTUFF_BITS(resp, 84, 12);
++
++		e =	UNSTUFF_BITS(resp, 47, 3);
++		m =	UNSTUFF_BITS(resp, 62, 12);
++		csd->capacity = (1 + m) << (e + 2);
++
++		csd->read_blkbits = UNSTUFF_BITS(resp, 80, 4);
++		csd->read_partial = UNSTUFF_BITS(resp, 79, 1);
++		csd->write_misalign = UNSTUFF_BITS(resp, 78, 1);
++		csd->read_misalign = UNSTUFF_BITS(resp, 77, 1);
++		csd->r2w_factor	= UNSTUFF_BITS(resp, 26, 3);
++		csd->write_blkbits = UNSTUFF_BITS(resp,	22, 4);
++		csd->write_partial = UNSTUFF_BITS(resp,	21, 1);
++
++		mmc_dev.if_type = IF_TYPE_MMC;
++
++		mmc_dev.lba = csd->capacity;
++		mmc_dev.blksz = 1 << csd->read_blkbits;
++		mmc_dev.part_type = PART_TYPE_DOS;
++		mmc_dev.dev = 0;
++		mmc_dev.lun = 0;
++		mmc_dev.type = DEV_TYPE_HARDDISK;
++		mmc_dev.removable = 0;
++		mmc_dev.block_read  = mmc_bread;
++		mmc_dev.block_write = mmc_bwrite;
++
++		break;
++
++	case MMC_TYPE_SD:
++		csd_struct = UNSTUFF_BITS(resp,	126, 2);
++
++		switch (csd_struct) {
++		case 0:
++			m = UNSTUFF_BITS(resp, 115, 4);
++			e = UNSTUFF_BITS(resp, 112, 3);
++			csd->tacc_ns = (tacc_exp[e] * tacc_mant[m] + 9)	/ 10;
++			csd->tacc_clks = UNSTUFF_BITS(resp, 104, 8) * 100;
++
++			m = UNSTUFF_BITS(resp, 99, 4);
++			e = UNSTUFF_BITS(resp, 96, 3);
++			csd->max_dtr = tran_exp[e] * tran_mant[m];
++			csd->cmdclass = UNSTUFF_BITS(resp, 84, 12);
++
++			e = UNSTUFF_BITS(resp, 47, 3);
++			m = UNSTUFF_BITS(resp, 62, 12);
++			csd->capacity = (1 + m) << (e + 2);
++
++			csd->read_blkbits = UNSTUFF_BITS(resp, 80, 4);
++			csd->read_partial = UNSTUFF_BITS(resp, 79, 1);
++			csd->write_misalign = UNSTUFF_BITS(resp, 78, 1);
++			csd->read_misalign = UNSTUFF_BITS(resp,	77, 1);
++			csd->r2w_factor	= UNSTUFF_BITS(resp, 26, 3);
++			csd->write_blkbits = UNSTUFF_BITS(resp, 22, 4);
++			csd->write_partial = UNSTUFF_BITS(resp,	21, 1);
++
++			mmc_dev.if_type = IF_TYPE_SD;
++
++			mmc_dev.lba = csd->capacity;
++			mmc_dev.blksz = 1 << csd->read_blkbits;
++			mmc_dev.part_type = PART_TYPE_DOS;
++			mmc_dev.dev = 0;
++			mmc_dev.lun = 0;
++			mmc_dev.type = DEV_TYPE_HARDDISK;
++			mmc_dev.removable = 0;
++			mmc_dev.block_read  = mmc_bread;
++			mmc_dev.block_write = mmc_bwrite;
++
++			break;
++		case 1:
++			/*
++			 * This	is a block-addressed SDHC card.	Most
++			 * interesting fields are unused and have fixed
++			 * values. To avoid getting tripped by buggy cards,
++			 * we assume those fixed values	ourselves.
++			 */
++			mmc_card_set_blockaddr(card);
++
++			csd->tacc_ns   = 0; /* Unused */
++			csd->tacc_clks = 0; /* Unused */
++
++			m = UNSTUFF_BITS(resp, 99, 4);
++			e = UNSTUFF_BITS(resp, 96, 3);
++			csd->max_dtr  = tran_exp[e] * tran_mant[m];
++			csd->cmdclass = UNSTUFF_BITS(resp, 84, 12);
++
++			m = UNSTUFF_BITS(resp, 48, 22);
++			csd->capacity = (1 + m) << 10;
++
++			csd->read_blkbits = 9;
++			csd->read_partial = 0;
++			csd->write_misalign = 0;
++			csd->read_misalign = 0;
++			csd->r2w_factor	= 4; /*	Unused */
++			csd->write_blkbits = 9;
++			csd->write_partial = 0;
++
++			mmc_dev.if_type = IF_TYPE_SD;
++
++			mmc_dev.lba = csd->capacity;
++			mmc_dev.blksz = 512;
++			mmc_dev.part_type = PART_TYPE_DOS;
++			mmc_dev.dev = 0;
++			mmc_dev.lun = 0;
++			mmc_dev.type = DEV_TYPE_HARDDISK;
++			mmc_dev.removable = 0;
++			mmc_dev.block_read = mmc_bread;
++
++			break;
++		default:
++			printf("unrecognised CSD structure version %d\n",
++					csd_struct);
++			return EPERM;
++		}
++		break;
++
++	default:
++		printf("unknown	card type!");
++		return EPERM;
++		}
++
++	debug("Exit: mmc_decode_csd");
++
++	return 0;
++}
++
++/*
++ * Do SD voltage validation.
++ */
++static s32 sd_voltage_validation(void)
++{
++	struct mmc_command stCmd;
++	u32 u32OcrVal =	0;
++	u32 u32VoltageValidation = EPERM;
++	s32 s32Rslt	= EPERM;
++	s32 s32Retries = 0;
++	/* Supported arguments for CMD8 */
++	const u32 sd_if_cmd_arg[SD_IF_CMD_ARG_COUNT] = {
++		SD_IF_HV_COND_ARG,
++		SD_IF_LV_COND_ARG };
++	const u32 sd_ocr_value[SD_OCR_VALUE_COUNT] = {
++		SD_OCR_VALUE_HV_HC,
++		SD_OCR_VALUE_LV_HC,
++		SD_OCR_VALUE_HV_LC };
++
++	debug("Entry: sd_voltage_validation");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	for (s32Retries = 0; s32Retries < SD_IF_CMD_ARG_COUNT; ++s32Retries) {
++		/* Configure CMD55 for SD card */
++		/* This	command	expects	defualt	RCA 0x0000 as argument.*/
++		s32Rslt	= mmc_cmd(&stCmd,
++				SD_SEND_IF_COND,
++				sd_if_cmd_arg[s32Retries],
++				READ,
++				RESPONSE_48,
++				DATA_PRESENT_NONE,
++				ENABLE,
++				ENABLE);
++
++		if (!s32Rslt) {
++			if (sd_if_cmd_arg[s32Retries] == \
++			(stCmd.resp.cmd_rsp0 & sd_if_cmd_arg[s32Retries])) {
++				u32OcrVal = sd_ocr_value[s32Retries];
++			} else {
++				u32OcrVal = 0;
++			}
++			break;
++		}
++	}
++
++	if (s32Rslt) {
++		debug("Card is of SD-1.x spec with LC");
++		u32OcrVal = SD_OCR_VALUE_HV_LC;
++	}
++
++	for (s32Retries = RETRY_TIMEOUT; s32Retries; --s32Retries) {
++		/* Configure ACMD41	for	SD card	*/
++		/* This	command	expects	operating voltage range	as argument.*/
++		s32Rslt	= mmc_acmd(&stCmd,
++				SD_APP_OP_COND,
++				u32OcrVal,
++				READ,
++				RESPONSE_48,
++				DATA_PRESENT_NONE,
++				DISABLE,
++				DISABLE);
++
++		/* Issue ACMD41	to SD Memory card to determine OCR value */
++		if (s32Rslt == EPERM) {
++			debug("Send SD_APP_OP_COND Failed! :(");
++			break;
++		}
++
++		/* Obtain OCR value	from the response buffer
++		*/
++		u32OcrVal = stCmd.resp.cmd_rsp0;
++
++		/* Check if	card busy bit is cleared or	not	*/
++		if (!(u32OcrVal	& MMC_CARD_BUSY))
++			continue;
++
++		u32VoltageValidation = 0;
++
++		/* Check if volatge	lies in	range or not*/
++		g_Card_Address_Mode = (u32OcrVal & 0x40000000) ? \
++			 CARD_SUPPORT_SECT_MODE : CARD_SUPPORT_BYTE_MODE;
++		break;
++	}
++
++	debug("Exit: sd_voltage_validation");
++
++	return u32VoltageValidation;
++}
++
++/*
++ * Do SD voltage validation.
++ */
++static s32 mmc_voltage_validation(void)
++{
++	struct mmc_command stCmd;
++	u32 u32Respones	= 0;
++	u32 u32VoltageValidation = EPERM;
++	s32 s32Rslt = EPERM;
++	s32 s32Retries = 0;
++
++	debug("Entry: mmc_voltage_validation");
++
++	for (s32Retries = RETRY_TIMEOUT; s32Retries; --s32Retries) {
++		s32Rslt	= mmc_cmd(&stCmd,
++				MMC_SEND_OP_COND,
++				(u32)0x40FF8000,
++				READ,
++				RESPONSE_48,
++				DATA_PRESENT_NONE,
++				DISABLE,
++				DISABLE);
++
++		/* Issue CMD55 to SD Memory card*/
++		if (s32Rslt == EPERM) {
++			debug("Send MMC_SEND_OP_COND Failed! :(");
++			break;
++		}
++
++		/* Obtain OCR value from the response buffer
++		*/
++		u32Respones = stCmd.resp.cmd_rsp0;
++
++		/* Check if card busy bit is cleared or not */
++		if (!(u32Respones & MMC_CARD_BUSY)) {
++			debug("Card Busy!");
++			continue;
++		}
++
++		u32VoltageValidation = 0;
++
++		/* Check if volatge lies in range or not*/
++		if (0x40000000 == (u32Respones & 0x60000000)) {
++			debug("Address_mode: SECT_MODE");
++			g_Card_Address_Mode = CARD_SUPPORT_SECT_MODE;
++		} else {
++			debug("Address_mode: BYTE_MODE");
++			g_Card_Address_Mode = CARD_SUPPORT_BYTE_MODE;
++		}
++	}
++
++	debug("mmc_voltage_validation succeed! :)");
++
++	debug("Exit: mmc_voltage_validation");
++
++	return u32VoltageValidation;
++}
++
++static s32 mmc_send_cid(struct mmc_card *card)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++
++	debug("Entry: mmc_send_cid");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return EPERM;
++	}
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_ALL_SEND_CID,
++			0,
++			READ,
++			RESPONSE_136,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			DISABLE);
++
++	/* Issue CMD55 to SD Memory card*/
++	if (s32Rslt) {
++		debug("Send MMC_ALL_SEND_CID Failed! :(");
++		return EPERM;
++	}
++
++	/*
++	card->raw_cid[0] = stCmd.resp.cmd_rsp0;
++	card->raw_cid[1] = stCmd.resp.cmd_rsp1;
++	card->raw_cid[2] = stCmd.resp.cmd_rsp2;
++	card->raw_cid[3] = stCmd.resp.cmd_rsp3;
++	*/
++
++	card->raw_cid[0] = (stCmd.resp.cmd_rsp3 << 8) | \
++				(stCmd.resp.cmd_rsp2 >> 24);
++	card->raw_cid[1] = (stCmd.resp.cmd_rsp2 << 8) | \
++				(stCmd.resp.cmd_rsp1 >> 24);
++	card->raw_cid[2] = (stCmd.resp.cmd_rsp1 << 8) | \
++				(stCmd.resp.cmd_rsp0 >> 24);
++	card->raw_cid[3] = stCmd.resp.cmd_rsp0 << 8;
++
++	debug("mmc_send_cid succeed! :)");
++
++	debug("Exit: mmc_send_cid");
++
++	return 0;
++}
++
++static s32 mmc_send_csd(struct mmc_card *card, u32 u32CardRCA)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++
++	debug("Entry: mmc_send_csd");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return s32Rslt;
++	}
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_SEND_CSD,
++			(u32CardRCA << 16),
++			READ,
++			RESPONSE_136,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			DISABLE);
++
++	 /* Issue CMD55 to SD Memory card*/
++	 if (s32Rslt) {
++		debug("Send MMC_SEND_CSD Failed! :(");
++		return EPERM;
++	 }
++
++	 /*
++	card->raw_csd[0] = stCmd.resp.cmd_rsp0;
++	card->raw_csd[1] = stCmd.resp.cmd_rsp1;
++	card->raw_csd[2] = stCmd.resp.cmd_rsp2;
++	card->raw_csd[3] = stCmd.resp.cmd_rsp3;
++	*/
++
++	card->raw_csd[0] = (stCmd.resp.cmd_rsp3 << 8) | \
++				(stCmd.resp.cmd_rsp2 >> 24);
++	card->raw_csd[1] = (stCmd.resp.cmd_rsp2 << 8) | \
++				(stCmd.resp.cmd_rsp1 >> 24);
++	card->raw_csd[2] = (stCmd.resp.cmd_rsp1 << 8) | \
++				(stCmd.resp.cmd_rsp0 >> 24);
++	card->raw_csd[3] = stCmd.resp.cmd_rsp0 << 8;
++
++	debug("mmc_send_csd succeed! :)");
++
++	debug("Exit: mmc_send_csd");
++
++	return 0;
++}
++
++static s32 mmc_select_card(u32 card_rca)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++	u32 u32CardAddr = card_rca << 16;
++
++	debug("Entry: mmcsd_set_data_transfer_mode");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_SELECT_CARD,
++			u32CardAddr,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++	if (s32Rslt) {
++		debug("Send MMC_SELECT_CARD Failed! :(");
++		return EPERM;
++	}
++
++	debug("Exit mmcsd_set_data_transfer_mode");
++
++	return mmcsd_check_status(card_rca, 96, TRAN, R1_ERROR);
++}
++
++static s32 mmcsd_check_status(u32 card_rca, u32 timeout, \
++				u32 card_state, u32 status_bit)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++	s32 s32Retries = 0;
++	u32 u32CardAddr	= card_rca << 16;
++	s32 s32Status =	1;
++
++	debug("Entry: mmcsd_check_status");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	for (s32Retries = 10; s32Retries; --s32Retries)	{
++
++		udelay(timeout);
++
++		s32Rslt	= mmc_cmd(&stCmd,
++			MMC_SEND_STATUS,
++			u32CardAddr,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++		if (s32Rslt) {
++			debug("Send MMC_SEND_STATUS Failed!	:(");
++			break;
++		}
++
++		if (stCmd.resp.cmd_rsp0 & status_bit) {
++			debug("R1 Error! :(");
++			break;
++		}
++
++		if (R1_CURRENT_STATE(stCmd.resp.cmd_rsp0) == card_state) {
++			debug("Get state! :)");
++			s32Status = 0;
++			break;
++		}
++	}
++
++	debug("Exit: mmcsd_check_status");
++
++	return s32Status;
++}
++
++static s32 mmc_send_relative_addr(u32 *u32CardRCA)
++{
++	struct mmc_command stCmd;
++	s32 s32Status = 1;
++	s32	s32Rslt	= EPERM;
++
++	debug("Entry: mmc_send_relative_addr");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			SD_SEND_RELATIVE_ADDR,
++			0,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++	if (s32Rslt) {
++		debug("Send SD_SEND_RELATIVE_ADDR Failed! :(");
++		return s32Status;
++	}
++
++	*u32CardRCA = (u32)stCmd.resp.cmd_rsp0 >> 16;
++
++	if (R1_CURRENT_STATE(stCmd.resp.cmd_rsp0) != IDENT) {
++		debug("Invalid R1 State! :(");
++		return s32Status;
++	}
++
++	debug("Exit: mmc_send_relative_addr");
++
++	return 0;
++}
++
++static s32 mmc_set_relative_addr(u32 u32CardRCA)
++{
++	struct mmc_command stCmd;
++	s32	s32Rslt	= EPERM;
++
++	debug("Entry: mmc_set_relative_addr");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	/* Set RCA */
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_SET_RELATIVE_ADDR,
++			(u32CardRCA	<< 16),
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++	if (s32Rslt) {
++		debug("Send MMC_SET_RELATIVE_ADDR Failed! :(");
++		return 1;
++	}
++
++	if (R1_CURRENT_STATE(stCmd.resp.cmd_rsp0) != IDENT) {
++		debug("Invalid R1 State! :(");
++		return 1;
++	}
++
++	debug("Exit: mmc_set_relative_addr");
++
++	return 0;
++}
++
++static s32 mmc_send_scr(struct mmc_card *card)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++
++	debug("Entry: mmc_app_send_scr");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return s32Rslt;
++	}
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	s32Rslt	= mmc_acmd(&stCmd,
++			SD_APP_SEND_SCR,
++			0,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++
++	 /* Issue CMD55 to SD Memory card*/
++	 if (s32Rslt) {
++		debug("Send SD_APP_SEND_SCR Failed! :(");
++		return EPERM;
++	 }
++
++	card->raw_scr[0] = stCmd.resp.cmd_rsp0;
++	card->raw_scr[1] = stCmd.resp.cmd_rsp1;
++
++	mmc_decode_scr(card);
++
++	debug("mmc_send_scr succeed! :)");
++
++	debug("Exit: mmc_app_send_scr");
++
++	return 0;
++}
++
++static s32 mmc_decode_scr(struct mmc_card *card)
++{
++	struct sd_scr *scr = &card->scr;
++	unsigned int scr_struct;
++	u32 resp[4];
++
++	resp[3] = card->raw_scr[1];
++	resp[2] = card->raw_scr[0];
++
++	scr_struct = UNSTUFF_BITS(resp, 60, 4);
++	if (scr_struct != 0) {
++		printf("Unrecognised SCR structure version %d\n", scr_struct);
++		return 1;
++	}
++
++	scr->sda_vsn = UNSTUFF_BITS(resp, 56, 4);
++	scr->bus_widths = UNSTUFF_BITS(resp, 48, 4);
++
++	return 0;
++}
++
++static s32 mmc_read_switch(struct mmc_card *card)
++{
++	u8 status[64] = { 0 };
++
++	if (card->scr.sda_vsn < SCR_SPEC_VER_1)
++		return 0;
++
++	if (!(card->csd.cmdclass & CCC_SWITCH)) {
++		printf("card lacks mandatory switch "
++			"function, performance might suffer.\n");
++		return 0;
++	}
++
++	if (mmc_sd_switch(card, 0, 0, 1, status)) {
++		/*
++		 * We all hosts that cannot perform the command
++		 * to fail more gracefully
++		 */
++		printf("problem reading switch "
++			"capabilities, performance might suffer.\n");
++
++		return 1;
++	}
++
++	if (status[13] & 0x02)
++		card->sw_caps.hs_max_dtr = 50000000;
++
++	return 0;
++}
++
++static s32 mmc_sd_switch(struct mmc_card *card, s32 mode, s32 group,
++						u8 value, u8 *resp)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++	u32 u32Args = 0;
++
++	debug("Entry: mmc_sd_switch");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return s32Rslt;
++	}
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	u32Args = mode << 31 | 0x00FFFFFF;
++	u32Args &= ~(0xF << (group * 4));
++	u32Args |= value << (group * 4);
++
++	s32Rslt	= mmc_acmd(&stCmd,
++			SD_SWITCH,
++			u32Args,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT,
++			ENABLE,
++			ENABLE);
++
++	 /* Issue CMD55 to SD Memory card*/
++	 if (s32Rslt) {
++		debug("Send SD_SWITCH Failed! :(");
++		return EPERM;
++	 }
++
++	return 0;
++}
++
++static s32 mmc_app_set_bus_width(s32 width)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++
++	debug("Entry: mmc_app_set_bus_width");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	s32Rslt	= mmc_acmd(&stCmd,
++			SD_APP_SET_BUS_WIDTH,
++			width,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++
++	if (s32Rslt) {
++		debug("Send SD_APP_SET_BUS_WIDTH Failed! :(");
++		return EPERM;
++	 }
++
++	debug("Exit: mmc_app_set_bus_width");
++
++	return 0;
++}
++
++static s32 mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value)
++{
++	struct mmc_command stCmd;
++	s32 s32Rslt = EPERM;
++	u32 u32Args = 0;
++
++	debug("Entry: mmc_sd_switch");
++
++	if (!card) {
++		debug("NULL card pointer!");
++		return s32Rslt;
++	}
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++
++	u32Args = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
++				(index << 16) | (value << 8) | set;
++
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_SWITCH,
++			u32Args,
++			READ,
++			RESPONSE_48,
++			DATA_PRESENT_NONE,
++			ENABLE,
++			ENABLE);
++
++	/* Issue CMD55 to SD Memory card*/
++	if (s32Rslt) {
++		debug("Send SD_SWITCH Failed! :(");
++		return EPERM;
++	}
++
++	debug("Entry: mmc_sd_switch");
++
++	return 0;
++}
++
++
++static s32 mmc_init_sd(struct mmc_card *card)
++{
++	u32 u32CardRCA = 0;
++
++	if (mmc_send_cid(card)) {
++		debug("mmcsd_get_cid Failed! :(");
++		return 1;
++	}
++
++	if (mmc_send_relative_addr(&u32CardRCA)) {
++		debug("sd_send_relative_addr Failed! :(");
++		return 1;
++	}
++
++	if (mmc_send_csd(card, u32CardRCA)) {
++		debug("mmcsd_get_csd Failed! :(");
++		return 1;
++	}
++
++	g_Card_rca = u32CardRCA;
++
++	mmc_decode_csd(card);
++	mmc_decode_cid(card);
++
++	/* Enable operating	frequency */
++	interface_configure_clock(OPERATING_FREQ);
++
++	if (mmc_select_card(u32CardRCA)) {
++		debug("mmc_select_card Failed! :(");
++		return 1;
++	}
++
++	if (mmcsd_check_status(g_Card_rca, 96, TRAN, R1_ERROR)) {
++		debug("Can't wait for TRAN state! :(\n");
++		return EPERM;
++	}
++
++	if (mmc_set_blk_len(BLK_LEN)) {
++		debug("mmc_set_blk_len Failed! :(");
++		return EPERM;
++	}
++
++	/*
++	if (mmc_send_scr(card)) {
++		debug("mmc_send_scr Failed! :(");
++		return 1;
++	}
++	*/
++
++	if (mmc_app_set_bus_width(SD_BUS_WIDTH_4)) {
++		/* Try to set 1 bit mode */
++		if (mmc_app_set_bus_width(SD_BUS_WIDTH_1)) {
++			debug("mmc_app_set_bus_width Failed");
++			return EPERM;
++		}
++		interface_set_bus_width(SD_BUS_WIDTH_1);
++	} else {
++		interface_set_bus_width(SD_BUS_WIDTH_4);
++	}
++
++	return 0;
++}
++
++static s32 mmc_init_mmc(struct mmc_card *card)
++{
++	u32 u32CardRCA = 1;
++
++	/* mmc init */
++	if (mmc_send_cid(card)) {
++		debug("mmcsd_get_cid Failed! :(");
++		return 1;
++	}
++
++	/* Set RCA */
++	if (mmc_set_relative_addr(u32CardRCA)) {
++		debug("mmc_set_relative_addr Failed! :(");
++		return 1;
++	}
++
++	if (mmc_send_csd(card, u32CardRCA)) {
++		debug("mmcsd_get_csd Failed! :(");
++		return 1;
++	}
++
++	g_Card_rca = u32CardRCA;
++
++	mmc_decode_csd(card);
++	mmc_decode_cid(card);
++
++	/* Enable operating frequency */
++	interface_configure_clock(OPERATING_FREQ);
++
++	if (mmc_select_card(u32CardRCA)) {
++		debug("mmc_select_card Failed! :(");
++		return 1;
++	}
++
++	if (mmcsd_check_status(g_Card_rca, 96, TRAN, R1_ERROR)) {
++		debug("Can't wait for TRAN state! :(\n");
++		return EPERM;
++	}
++
++	if (mmc_set_blk_len(BLK_LEN)) {
++		debug("mmc_set_blk_len Failed! :(");
++		return 1;
++	}
++
++	if (card->csd.mmca_vsn >= CSD_SPEC_VER_4) {
++		if (mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
++			EXT_CSD_BUS_WIDTH, EXT_CSD_BUS_WIDTH_4)) {
++			debug("Switch card to 4 bits failed! :(\n");
++			return 1;
++		}
++		interface_set_bus_width(MMC_BUS_WIDTH_4);
++	}
++
++	return 0;
++}
++
++int
++/****************************************************/
++mmc_init(int verbose)
++/****************************************************/
++{
++	struct mmc_command stCmd;
++	s32	s32InitStatus =	-1;
++	struct mmc_card	card;
++	s32	s32Rslt	= EPERM;
++
++	debug("Entry: mmc_init");
++
++	memset(&stCmd, 0, sizeof(struct	mmc_command));
++	memset(&card, 0, sizeof(struct mmc_card));
++
++	g_Card_rca = 0;
++
++	/* Reset device	interface type */
++	mmc_dev.if_type	= IF_TYPE_UNKNOWN;
++
++	/* initialize Interface	Controller */
++	sdhc_init();
++
++	/* Software reset to Interface Controller */
++	if (interface_reset()) {
++		debug("interface_reset failed! :(");
++		return s32InitStatus;
++	}
++
++	/* Enable Identification Frequency */
++	interface_configure_clock(IDENTIFICATION_FREQ);
++
++	/* Software reset */
++	s32Rslt	= mmc_cmd(&stCmd,
++			MMC_GO_IDLE_STATE,
++			0,
++			READ,
++			RESPONSE_NONE,
++			DATA_PRESENT_NONE,
++			DISABLE,
++			DISABLE);
++
++	if (!sd_voltage_validation()) {
++		debug("SD Card Detected!");
++		card.type = MMC_TYPE_SD;
++
++		/* SD init */
++		if (mmc_init_sd(&card)) {
++			debug("mmc_init_sd Failed! :(");
++			return s32InitStatus;
++		}
++
++		s32InitStatus = 0;
++		mmc_ready = 1;
++	} else if (!mmc_voltage_validation()) {
++		debug("MMC Card	Detected!");
++		card.type = MMC_TYPE_MMC;
++
++		/* mmc init	*/
++		if (mmc_init_mmc(&card)) {
++			debug("mmc_init_mmc Failed! :(");
++			return s32InitStatus;
++		}
++
++		s32InitStatus = 0;
++		mmc_ready = 1;
++	} else {
++		mmc_ready = 0;
++		return s32InitStatus;
++	}
++
++	fat_register_device(&mmc_dev, 1); /* partitions start counting with 1 */
++
++	debug("Exit: mmc_init");
++
++	return s32InitStatus;
++}
++
++int mmc_ident(block_dev_desc_t *dev)
++{
++	return 0;
++}
++
++int mmc2info(ulong addr)
++{
++	/* Not avaiable for cp command now. */
++	return 0;
++
++	if (addr >= CONFIG_MMC_BASE
++	    && addr < CONFIG_MMC_BASE + (mmc_dev.lba * mmc_dev.blksz)) {
++		return 1;
++	}
++	return 0;
++
++}
++
++#endif /* CONFIG_MMC */
++
+diff --git a/include/asm-arm/arch-mx35/mmc.h b/include/asm-arm/arch-mx35/mmc.h
+new file mode 100644
+index 0000000..8699f40
+--- /dev/null
++++ b/include/asm-arm/arch-mx35/mmc.h
+@@ -0,0 +1,16 @@
++/*
++ *  (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ *  linux/drivers/mmc/mmc.h
++ *
++ *  Author: Vladimir Shebordaev, Igor Oblakov
++ *  Copyright:  MontaVista Software Inc.
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License version 2 as
++ *  published by the Free Software Foundation.
++ */
++#ifndef __MMC_MX35_3STACK_H__
++#define __MMC_MX35_3STACK_H__
++
++#endif /* __MMC_MX35_3STACK_H__ */
+diff --git a/include/asm-arm/arch-mx35/mx35.h b/include/asm-arm/arch-mx35/mx35.h
+index c96092c..9d1ae54 100644
+--- a/include/asm-arm/arch-mx35/mx35.h
++++ b/include/asm-arm/arch-mx35/mx35.h
+@@ -69,6 +69,9 @@
+ #define EPIT1_BASE_ADDR         0x53F94000
+ #define EPIT2_BASE_ADDR         0x53F98000
+ #define GPIO3_BASE_ADDR         0x53FA4000
++#define MMC_SDHC1_BASE_ADDR 	0x53FB4000
++#define MMC_SDHC2_BASE_ADDR 	0x53FB8000
++#define MMC_SDHC3_BASE_ADDR 	0x53FBC000
+ #define IPU_CTRL_BASE_ADDR      0x53FC0000
+ #define GPIO3_BASE_ADDR         0x53FA4000
+ #define GPIO1_BASE_ADDR         0x53FCC000
+@@ -249,6 +252,7 @@ MXC_UART_CLK,
+ extern unsigned int mxc_get_clock(enum mxc_clock clk);
+ extern unsigned int get_board_rev(void);
+ extern int is_soc_rev(int rev);
++extern int sdhc_init(void);
+ 
+ #define fixup_before_linux	\
+ 	{		\
+diff --git a/include/asm-arm/arch-mx35/sdhc.h b/include/asm-arm/arch-mx35/sdhc.h
+new file mode 100644
+index 0000000..5514ad4
+--- /dev/null
++++ b/include/asm-arm/arch-mx35/sdhc.h
+@@ -0,0 +1,218 @@
++/*
++ * Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef SDHC_H
++#define SDHC_H
++
++#include <linux/types.h>
++
++#define ESDHC_SOFTWARE_RESET_DATA ((u32)0x04000000)
++#define ESDHC_SOFTWARE_RESET_CMD  ((u32)0x02000000)
++#define ESDHC_SOFTWARE_RESET      ((u32)0x01000000)
++#define ESDHC_CMD_INHIBIT       0x00000003
++#define ESDHC_SYSCTL_INITA        ((u32)0x08000000)
++#define ESDHC_LITTLE_ENDIAN_MODE  ((u32)0x00000020)
++#define ESDHC_HW_BIG_ENDIAN_MODE  ((u32)0x00000010)
++#define ESDHC_BIG_ENDIAN_MODE     ((u32)0x00000000)
++#define ESDHC_ONE_BIT_SUPPORT     ((u32)0x00000000)
++#define ESDHC_FOUR_BIT_SUPPORT    ((u32)0x00000002)
++#define ESDHC_EIGHT_BIT_SUPPORT   ((u32)0x00000004)
++#define ESDHC_CLOCK_ENABLE 		0x00000007
++#define ESDHC_FREQ_MASK 0xffff0007
++#define ESDHC_SYSCTL_FREQ_MASK    ((u32)0x000FFFF0)
++#define ESDHC_SYSCTL_IDENT_FREQ_TO1   ((u32)0x0000800e)
++#define ESDHC_SYSCTL_OPERT_FREQ_TO1   ((u32)0x00000200)
++#define ESDHC_SYSCTL_IDENT_FREQ_TO2   ((u32)0x00002040)
++#define ESDHC_SYSCTL_OPERT_FREQ_TO2   ((u32)0x00000050)
++#define ESDHC_INTERRUPT_ENABLE    ((u32)0x007f0133)
++#define ESDHC_CLEAR_INTERRUPT     ((u32)0x117f01ff)
++#define ESDHC_SYSCTL_DTOCV_VAL    ((u32)0x000E0000)
++#define ESDHC_IRQSTATEN_DTOESEN   ((u32)0x00100000)
++#define ESDHC_ENDIAN_MODE_MASK    ((u32)0x00000030)
++#define ESDHC_SYSCTRL_RSTC        ((u32)0x02000000)
++#define ESDHC_SYSCTRL_RSTD        ((u32)0x04000000)
++#define ESDHC_CONFIG_BLOCK 0x00010200
++#define ESDHC_OPER_TIMEOUT (96 * 100)
++#define ESDHC_ACMD41_TIMEOUT      (32000)
++#define ESDHC_CMD1_TIMEOUT        (32000)
++#define ESDHC_BLOCK_SHIFT         (16)
++#define ESDHC_CARD_INIT_TIMEOUT   (64)
++
++#define ESDHC_SYSCTL_SDCLKEN_MASK     ((u32)0x00000008)
++#define ESDHC_PRSSTAT_SDSTB_BIT       ((u32)0x00000008)
++#define ESDHC_SYSCTL_INPUT_CLOCK_MASK ((u32)0x00000007)
++
++#define ESDHC_BUS_WIDTH_MASK                    ((u32)0x00000006)
++#define ESDHC_DATA_TRANSFER_SHIFT               (4)
++#define ESDHC_RESPONSE_FORMAT_SHIFT             (16)
++#define ESDHC_DATA_PRESENT_SHIFT                (21)
++#define ESDHC_CRC_CHECK_SHIFT                   (19)
++#define ESDHC_CMD_INDEX_CHECK_SHIFT             (20)
++#define ESDHC_CMD_INDEX_SHIFT                   (24)
++#define ESDHC_BLOCK_COUNT_ENABLE_SHIFT          (1)
++#define ESDHC_MULTI_SINGLE_BLOCK_SELECT_SHIFT   (5)
++#define BLK_LEN                           		(512)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_4       ((u32)0x00000001)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_8       ((u32)0x00000002)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_16      ((u32)0x00000004)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_64      ((u32)0x00000010)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_512     ((u32)0x00000080)
++
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_4      ((u32)0x00010000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_8      ((u32)0x00020000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_16     ((u32)0x00040000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_64     ((u32)0x00100000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_512    ((u32)0x00800000)
++
++#define WRITE_READ_WATER_MARK_LEVEL 0x00800080
++
++/* Present State register bit masks */
++#define ESDHC_PRESENT_STATE_CIHB    ((u32)0x00000001)
++#define ESDHC_PRESENT_STATE_CDIHB   ((u32)0x00000002)
++#define ONE                         (1)
++#define ESDHC_FIFO_SIZE             (128)
++
++#define ESDHC_STATUS_END_CMD_RESP_MSK         ((u32)0x00000001)
++#define ESDHC_STATUS_END_CMD_RESP_TIME_MSK    ((u32)0x000F0001)
++#define ESDHC_STATUS_TIME_OUT_RESP_MSK        ((u32)0x00010000)
++#define ESDHC_STATUS_RESP_CRC_ERR_MSK         ((u32)0x00020000)
++#define ESDHC_STATUS_RESP_CMD_INDEX_ERR_MSK   ((u32)0x00080000)
++#define ESDHC_STATUS_BUF_READ_RDY_MSK         ((u32)0x00000020)
++#define ESDHC_STATUS_BUF_WRITE_RDY_MSK        ((u32)0x00000010)
++#define ESDHC_STATUS_TRANSFER_COMPLETE_MSK    ((u32)0x00000002)
++#define ESDHC_STATUS_DATA_RW_MSK              ((u32)0x00700002)
++#define ESDHC_STATUS_TRANSFER_COMPLETE_MSK    ((u32)0x00000002)
++#define ESDHC_STATUS_TIME_OUT_READ_MASK       ((u32)0x00100000)
++#define ESDHC_STATUS_READ_CRC_ERR_MSK         ((u32)0x00200000)
++#define ESDHC_STATUS_RESP_CMD_END_BIT_ERR_MSK ((u32)0x00040000)
++#define ESDHC_STATUS_RW_DATA_END_BIT_ERR_MSK  ((u32)0x00400000)
++
++#define ESDHC_STATUS_TIME_OUT_READ  (3200)
++#define ESDHC_READ_DATA_TIME_OUT    (3200)
++#define ESDHC_WRITE_DATA_TIME_OUT   (8000)
++
++#define ESDHC_CONFIG_BLOCK_512      ((u32)0x00000200)
++#define ESDHC_CONFIG_BLOCK_64       ((u32)0x00000040)
++#define ESDHC_CONFIG_BLOCK_8        ((u32)0x00000008)
++#define ESDHC_CONFIG_BLOCK_4        ((u32)0x00000004)
++
++#define ESDHC_MAX_BLOCK_COUNT       ((u32)0x0000ffff)
++
++typedef enum {
++	ESDHC1,
++	ESDHC2,
++	ESDHC3
++} esdhc_num_t;
++
++typedef enum {
++	WRITE,
++	READ,
++} xfer_type_t;
++
++typedef enum {
++	RESPONSE_NONE,
++	RESPONSE_136,
++	RESPONSE_48,
++	RESPONSE_48_CHECK_BUSY
++} response_format_t;
++
++
++typedef enum {
++	DATA_PRESENT_NONE,
++	DATA_PRESENT
++} data_present_select;
++
++typedef enum {
++	DISABLE,
++	ENABLE
++} crc_check_enable, cmdindex_check_enable, block_count_enable;
++
++typedef enum {
++	SINGLE,
++	MULTIPLE
++} multi_single_block_select;
++
++typedef struct {
++	u32 command;
++	u32 arg;
++	xfer_type_t data_transfer;
++	response_format_t response_format;
++	data_present_select data_present;
++	crc_check_enable crc_check;
++	cmdindex_check_enable cmdindex_check;
++	block_count_enable block_count_enable_check;
++	multi_single_block_select multi_single_block;
++} esdhc_cmd_t;
++
++typedef struct {
++	response_format_t format;
++	u32 cmd_rsp0;
++	u32 cmd_rsp1;
++	u32 cmd_rsp2;
++	u32 cmd_rsp3;
++} esdhc_resp_t;
++
++typedef enum {
++	BIG_ENDIAN,
++	HALF_WORD_BIG_ENDIAN,
++	LITTLE_ENDIAN
++} endian_mode_t;
++
++typedef enum {
++	OPERATING_FREQ = 20000,   /* in kHz */
++	IDENTIFICATION_FREQ = 400   /* in kHz */
++} sdhc_freq_t;
++
++enum esdhc_data_status {
++	ESDHC_DATA_ERR = 3,
++	ESDHC_DATA_OK = 4
++};
++
++enum esdhc_int_cntr_val {
++	ESDHC_INT_CNTR_END_CD_RESP = 0x4,
++	ESDHC_INT_CNTR_BUF_WR_RDY = 0x8
++};
++
++enum esdhc_reset_status {
++	ESDHC_WRONG_RESET = 0,
++	ESDHC_CORRECT_RESET = 1
++};
++
++typedef enum {
++	WEAK = 0,
++	STRONG = 1
++} esdhc_pullup_t;
++
++extern u32 interface_reset(void);
++extern void interface_configure_clock(sdhc_freq_t);
++extern void interface_read_response(esdhc_resp_t *);
++extern u32 interface_send_cmd_wait_resp(esdhc_cmd_t *);
++extern u32 interface_data_read(u32 *, u32);
++extern void interface_config_block_info(u32, u32, u32);
++extern u32 interface_data_write(u32 *, u32);
++extern void interface_clear_interrupt(void);
++extern void interface_initialization_active(void);
++extern void esdhc_set_cmd_pullup(esdhc_pullup_t pull_up);
++extern void esdhc_soft_reset(u32 mask);
++extern u32 interface_set_bus_width(u32 bus_width);
++/*================================================================================================*/
++#endif  /* ESDHC_H */
+diff --git a/include/asm-arm/arch-mx51/mmc.h b/include/asm-arm/arch-mx51/mmc.h
+new file mode 100644
+index 0000000..062c568
+--- /dev/null
++++ b/include/asm-arm/arch-mx51/mmc.h
+@@ -0,0 +1,16 @@
++/*
++ *  (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ *  linux/drivers/mmc/mmc.h
++ *
++ *  Author: Vladimir Shebordaev, Igor Oblakov
++ *  Copyright:  MontaVista Software Inc.
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License version 2 as
++ *  published by the Free Software Foundation.
++ */
++#ifndef __MMC_MX51_3STACK_H__
++#define __MMC_MX51_3STACK_H__
++
++#endif /* __MMC_MX51_3STACK_H__ */
+diff --git a/include/asm-arm/arch-mx51/sdhc.h b/include/asm-arm/arch-mx51/sdhc.h
+new file mode 100644
+index 0000000..5514ad4
+--- /dev/null
++++ b/include/asm-arm/arch-mx51/sdhc.h
+@@ -0,0 +1,218 @@
++/*
++ * Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef SDHC_H
++#define SDHC_H
++
++#include <linux/types.h>
++
++#define ESDHC_SOFTWARE_RESET_DATA ((u32)0x04000000)
++#define ESDHC_SOFTWARE_RESET_CMD  ((u32)0x02000000)
++#define ESDHC_SOFTWARE_RESET      ((u32)0x01000000)
++#define ESDHC_CMD_INHIBIT       0x00000003
++#define ESDHC_SYSCTL_INITA        ((u32)0x08000000)
++#define ESDHC_LITTLE_ENDIAN_MODE  ((u32)0x00000020)
++#define ESDHC_HW_BIG_ENDIAN_MODE  ((u32)0x00000010)
++#define ESDHC_BIG_ENDIAN_MODE     ((u32)0x00000000)
++#define ESDHC_ONE_BIT_SUPPORT     ((u32)0x00000000)
++#define ESDHC_FOUR_BIT_SUPPORT    ((u32)0x00000002)
++#define ESDHC_EIGHT_BIT_SUPPORT   ((u32)0x00000004)
++#define ESDHC_CLOCK_ENABLE 		0x00000007
++#define ESDHC_FREQ_MASK 0xffff0007
++#define ESDHC_SYSCTL_FREQ_MASK    ((u32)0x000FFFF0)
++#define ESDHC_SYSCTL_IDENT_FREQ_TO1   ((u32)0x0000800e)
++#define ESDHC_SYSCTL_OPERT_FREQ_TO1   ((u32)0x00000200)
++#define ESDHC_SYSCTL_IDENT_FREQ_TO2   ((u32)0x00002040)
++#define ESDHC_SYSCTL_OPERT_FREQ_TO2   ((u32)0x00000050)
++#define ESDHC_INTERRUPT_ENABLE    ((u32)0x007f0133)
++#define ESDHC_CLEAR_INTERRUPT     ((u32)0x117f01ff)
++#define ESDHC_SYSCTL_DTOCV_VAL    ((u32)0x000E0000)
++#define ESDHC_IRQSTATEN_DTOESEN   ((u32)0x00100000)
++#define ESDHC_ENDIAN_MODE_MASK    ((u32)0x00000030)
++#define ESDHC_SYSCTRL_RSTC        ((u32)0x02000000)
++#define ESDHC_SYSCTRL_RSTD        ((u32)0x04000000)
++#define ESDHC_CONFIG_BLOCK 0x00010200
++#define ESDHC_OPER_TIMEOUT (96 * 100)
++#define ESDHC_ACMD41_TIMEOUT      (32000)
++#define ESDHC_CMD1_TIMEOUT        (32000)
++#define ESDHC_BLOCK_SHIFT         (16)
++#define ESDHC_CARD_INIT_TIMEOUT   (64)
++
++#define ESDHC_SYSCTL_SDCLKEN_MASK     ((u32)0x00000008)
++#define ESDHC_PRSSTAT_SDSTB_BIT       ((u32)0x00000008)
++#define ESDHC_SYSCTL_INPUT_CLOCK_MASK ((u32)0x00000007)
++
++#define ESDHC_BUS_WIDTH_MASK                    ((u32)0x00000006)
++#define ESDHC_DATA_TRANSFER_SHIFT               (4)
++#define ESDHC_RESPONSE_FORMAT_SHIFT             (16)
++#define ESDHC_DATA_PRESENT_SHIFT                (21)
++#define ESDHC_CRC_CHECK_SHIFT                   (19)
++#define ESDHC_CMD_INDEX_CHECK_SHIFT             (20)
++#define ESDHC_CMD_INDEX_SHIFT                   (24)
++#define ESDHC_BLOCK_COUNT_ENABLE_SHIFT          (1)
++#define ESDHC_MULTI_SINGLE_BLOCK_SELECT_SHIFT   (5)
++#define BLK_LEN                           		(512)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_4       ((u32)0x00000001)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_8       ((u32)0x00000002)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_16      ((u32)0x00000004)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_64      ((u32)0x00000010)
++#define ESDHC_READ_WATER_MARK_LEVEL_BL_512     ((u32)0x00000080)
++
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_4      ((u32)0x00010000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_8      ((u32)0x00020000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_16     ((u32)0x00040000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_64     ((u32)0x00100000)
++#define ESDHC_WRITE_WATER_MARK_LEVEL_BL_512    ((u32)0x00800000)
++
++#define WRITE_READ_WATER_MARK_LEVEL 0x00800080
++
++/* Present State register bit masks */
++#define ESDHC_PRESENT_STATE_CIHB    ((u32)0x00000001)
++#define ESDHC_PRESENT_STATE_CDIHB   ((u32)0x00000002)
++#define ONE                         (1)
++#define ESDHC_FIFO_SIZE             (128)
++
++#define ESDHC_STATUS_END_CMD_RESP_MSK         ((u32)0x00000001)
++#define ESDHC_STATUS_END_CMD_RESP_TIME_MSK    ((u32)0x000F0001)
++#define ESDHC_STATUS_TIME_OUT_RESP_MSK        ((u32)0x00010000)
++#define ESDHC_STATUS_RESP_CRC_ERR_MSK         ((u32)0x00020000)
++#define ESDHC_STATUS_RESP_CMD_INDEX_ERR_MSK   ((u32)0x00080000)
++#define ESDHC_STATUS_BUF_READ_RDY_MSK         ((u32)0x00000020)
++#define ESDHC_STATUS_BUF_WRITE_RDY_MSK        ((u32)0x00000010)
++#define ESDHC_STATUS_TRANSFER_COMPLETE_MSK    ((u32)0x00000002)
++#define ESDHC_STATUS_DATA_RW_MSK              ((u32)0x00700002)
++#define ESDHC_STATUS_TRANSFER_COMPLETE_MSK    ((u32)0x00000002)
++#define ESDHC_STATUS_TIME_OUT_READ_MASK       ((u32)0x00100000)
++#define ESDHC_STATUS_READ_CRC_ERR_MSK         ((u32)0x00200000)
++#define ESDHC_STATUS_RESP_CMD_END_BIT_ERR_MSK ((u32)0x00040000)
++#define ESDHC_STATUS_RW_DATA_END_BIT_ERR_MSK  ((u32)0x00400000)
++
++#define ESDHC_STATUS_TIME_OUT_READ  (3200)
++#define ESDHC_READ_DATA_TIME_OUT    (3200)
++#define ESDHC_WRITE_DATA_TIME_OUT   (8000)
++
++#define ESDHC_CONFIG_BLOCK_512      ((u32)0x00000200)
++#define ESDHC_CONFIG_BLOCK_64       ((u32)0x00000040)
++#define ESDHC_CONFIG_BLOCK_8        ((u32)0x00000008)
++#define ESDHC_CONFIG_BLOCK_4        ((u32)0x00000004)
++
++#define ESDHC_MAX_BLOCK_COUNT       ((u32)0x0000ffff)
++
++typedef enum {
++	ESDHC1,
++	ESDHC2,
++	ESDHC3
++} esdhc_num_t;
++
++typedef enum {
++	WRITE,
++	READ,
++} xfer_type_t;
++
++typedef enum {
++	RESPONSE_NONE,
++	RESPONSE_136,
++	RESPONSE_48,
++	RESPONSE_48_CHECK_BUSY
++} response_format_t;
++
++
++typedef enum {
++	DATA_PRESENT_NONE,
++	DATA_PRESENT
++} data_present_select;
++
++typedef enum {
++	DISABLE,
++	ENABLE
++} crc_check_enable, cmdindex_check_enable, block_count_enable;
++
++typedef enum {
++	SINGLE,
++	MULTIPLE
++} multi_single_block_select;
++
++typedef struct {
++	u32 command;
++	u32 arg;
++	xfer_type_t data_transfer;
++	response_format_t response_format;
++	data_present_select data_present;
++	crc_check_enable crc_check;
++	cmdindex_check_enable cmdindex_check;
++	block_count_enable block_count_enable_check;
++	multi_single_block_select multi_single_block;
++} esdhc_cmd_t;
++
++typedef struct {
++	response_format_t format;
++	u32 cmd_rsp0;
++	u32 cmd_rsp1;
++	u32 cmd_rsp2;
++	u32 cmd_rsp3;
++} esdhc_resp_t;
++
++typedef enum {
++	BIG_ENDIAN,
++	HALF_WORD_BIG_ENDIAN,
++	LITTLE_ENDIAN
++} endian_mode_t;
++
++typedef enum {
++	OPERATING_FREQ = 20000,   /* in kHz */
++	IDENTIFICATION_FREQ = 400   /* in kHz */
++} sdhc_freq_t;
++
++enum esdhc_data_status {
++	ESDHC_DATA_ERR = 3,
++	ESDHC_DATA_OK = 4
++};
++
++enum esdhc_int_cntr_val {
++	ESDHC_INT_CNTR_END_CD_RESP = 0x4,
++	ESDHC_INT_CNTR_BUF_WR_RDY = 0x8
++};
++
++enum esdhc_reset_status {
++	ESDHC_WRONG_RESET = 0,
++	ESDHC_CORRECT_RESET = 1
++};
++
++typedef enum {
++	WEAK = 0,
++	STRONG = 1
++} esdhc_pullup_t;
++
++extern u32 interface_reset(void);
++extern void interface_configure_clock(sdhc_freq_t);
++extern void interface_read_response(esdhc_resp_t *);
++extern u32 interface_send_cmd_wait_resp(esdhc_cmd_t *);
++extern u32 interface_data_read(u32 *, u32);
++extern void interface_config_block_info(u32, u32, u32);
++extern u32 interface_data_write(u32 *, u32);
++extern void interface_clear_interrupt(void);
++extern void interface_initialization_active(void);
++extern void esdhc_set_cmd_pullup(esdhc_pullup_t pull_up);
++extern void esdhc_soft_reset(u32 mask);
++extern u32 interface_set_bus_width(u32 bus_width);
++/*================================================================================================*/
++#endif  /* ESDHC_H */
+diff --git a/include/environment.h b/include/environment.h
+index 5bed32f..4d13437 100644
+--- a/include/environment.h
++++ b/include/environment.h
+@@ -96,7 +96,33 @@
+ # endif
+ #endif /* CONFIG_ENV_IS_IN_MG_DISK */
+ 
++#if defined(CONFIG_ENV_IS_IN_MMC)
++#ifndef CONFIG_MMC_BASE
++# error "Need to define CONFIG_MMC_BASE when using CONFIG_ENV_IS_IN_MMC"
++#endif
++# ifndef CONFIG_ENV_OFFSET
++#  error "Need to define CONFIG_ENV_OFFSET when using CONFIG_ENV_IS_IN_MMC"
++# endif
++# ifndef CONFIG_ENV_ADDR
++#  define CONFIG_ENV_ADDR	(CONFIG_MMC_BASE + CONFIG_ENV_OFFSET)
++# endif
++# ifndef CONFIG_ENV_OFFSET
++#  define CONFIG_ENV_OFFSET (CONFIG_ENV_ADDR - CONFIG_MMC_BASE)
++# endif
++# ifdef CONFIG_ENV_OFFSET_REDUND
++#  define CONFIG_SYS_REDUNDAND_ENVIRONMENT
++# endif
++# ifdef CONFIG_ENV_IS_EMBEDDED
++#  define ENV_IS_EMBEDDED	1
++# endif
++#endif /* CONFIG_ENV_IS_IN_MMC */
++
+ #include "compiler.h"
++#ifdef USE_HOSTCC
++# include <stdint.h>
++#else
++# include <linux/types.h>
++#endif
+ 
+ #ifdef CONFIG_SYS_REDUNDAND_ENVIRONMENT
+ # define ENV_HEADER_SIZE	(sizeof(uint32_t) + 1)
+diff --git a/include/linux/mmc/card.h b/include/linux/mmc/card.h
+new file mode 100644
+index 0000000..393d587
+--- /dev/null
++++ b/include/linux/mmc/card.h
+@@ -0,0 +1,141 @@
++/*
++ * Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ *  linux/include/linux/mmc/card.h
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ *  Card driver specific definitions.
++ */
++#ifndef LINUX_MMC_CARD_H
++#define LINUX_MMC_CARD_H
++
++#include "core.h"
++
++struct mmc_cid {
++	unsigned int		manfid;
++	char			    prod_name[8];
++	unsigned int		serial;
++	union {
++	unsigned short		mmc_id;
++	char				sd_id[2];
++	} oemid;
++	unsigned short		year;
++	unsigned char		hwrev;
++	unsigned char		fwrev;
++	unsigned char		month;
++};
++
++struct mmc_csd {
++	unsigned char		mmca_vsn;
++	unsigned short		cmdclass;
++	unsigned short		tacc_clks;
++	unsigned int		tacc_ns;
++	unsigned int		r2w_factor;
++	unsigned int		max_dtr;
++	unsigned int		read_blkbits;
++	unsigned int		write_blkbits;
++	unsigned int		capacity;
++	unsigned int		read_partial:1,
++				read_misalign:1,
++				write_partial:1,
++				write_misalign:1;
++};
++
++struct mmc_ext_csd {
++	unsigned int		hs_max_dtr;
++	unsigned int		sectors;
++};
++
++struct sd_scr {
++	unsigned char		sda_vsn;
++	unsigned char		bus_widths;
++#define SD_SCR_BUS_WIDTH_1	(1<<0)
++#define SD_SCR_BUS_WIDTH_4	(1<<2)
++};
++
++struct sd_switch_caps {
++	unsigned int		hs_max_dtr;
++};
++
++struct sdio_cccr {
++	unsigned int		sdio_vsn;
++	unsigned int		sd_vsn;
++	unsigned int		multi_block:1,
++				low_speed:1,
++				wide_bus:1,
++				high_power:1,
++				high_speed:1;
++};
++
++struct sdio_cis {
++	unsigned short		vendor;
++	unsigned short		device;
++	unsigned short		blksize;
++	unsigned int		max_dtr;
++};
++
++struct mmc_host;
++struct sdio_func;
++struct sdio_func_tuple;
++
++#define SDIO_MAX_FUNCS		7
++
++/*
++ * MMC device
++ */
++struct mmc_card {
++	unsigned int rca; /* relative card address of device */
++	unsigned int type;	/* card type */
++#define MMC_TYPE_MMC 0  /* MMC card */
++#define MMC_TYPE_SD  1  /* SD card */
++#define MMC_TYPE_SDIO 2 /* SDIO card */
++	unsigned int state; /* (our) card state */
++#define MMC_STATE_PRESENT   (1<<0) /* present in sysfs */
++#define MMC_STATE_READONLY  (1<<1) /* card is read-only */
++#define MMC_STATE_HIGHSPEED (1<<2) /* card is in high speed mode */
++#define MMC_STATE_BLOCKADDR (1<<3) /* card uses block-addressing */
++
++	u32 raw_cid[4]; /* raw card CID */
++	u32 raw_csd[4]; /* raw card CSD */
++	u32 raw_scr[2]; /* raw card SCR */
++	struct mmc_cid cid; /* card identification */
++	struct mmc_csd csd; /* card specific */
++	struct mmc_ext_csd ext_csd; /* mmc v4 extended card specific */
++	struct sd_scr  scr; /* extra SD information */
++	struct sd_switch_caps sw_caps; /* switch (CMD6) caps */
++
++	unsigned int sdio_funcs; /* number of SDIO functions */
++	struct sdio_cccr cccr;   /* common card info */
++	struct sdio_cis  cis;    /* common tuple info */
++	/* SDIO functions (devices) */
++	struct sdio_func *sdio_func[SDIO_MAX_FUNCS];
++	unsigned num_info; /* number of info strings */
++	const char **info; /* info strings */
++	struct sdio_func_tuple *tuples; /* unknown common tuples */
++};
++
++#define mmc_card_mmc(c)  ((c)->type == MMC_TYPE_MMC)
++#define mmc_card_sd(c)   ((c)->type == MMC_TYPE_SD)
++#define mmc_card_sdio(c) ((c)->type == MMC_TYPE_SDIO)
++
++#define mmc_card_present(c)   ((c)->state & MMC_STATE_PRESENT)
++#define mmc_card_readonly(c)  ((c)->state & MMC_STATE_READONLY)
++#define mmc_card_highspeed(c) ((c)->state & MMC_STATE_HIGHSPEED)
++#define mmc_card_blockaddr(c) ((c)->state & MMC_STATE_BLOCKADDR)
++
++#define mmc_card_set_present(c) ((c)->state |= MMC_STATE_PRESENT)
++#define mmc_card_set_readonly(c) ((c)->state |= MMC_STATE_READONLY)
++#define mmc_card_set_highspeed(c) ((c)->state |= MMC_STATE_HIGHSPEED)
++#define mmc_card_set_blockaddr(c) ((c)->state |= MMC_STATE_BLOCKADDR)
++
++#define mmc_card_name(c) ((c)->cid.prod_name)
++#define mmc_card_id(c)   ((c)->dev.bus_id)
++
++#define mmc_list_to_card(l) container_of(l, struct mmc_card, node)
++#define mmc_get_drvdata(c)  dev_get_drvdata(&(c)->dev)
++#define mmc_set_drvdata(c, d) dev_set_drvdata(&(c)->dev, d)
++
++#endif
+diff --git a/include/linux/mmc/core.h b/include/linux/mmc/core.h
+new file mode 100644
+index 0000000..7f0e786
+--- /dev/null
++++ b/include/linux/mmc/core.h
+@@ -0,0 +1,132 @@
++/*
++ *  (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ *  linux/include/linux/mmc/core.h
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++#ifndef MMC_CORE_H
++#define MMC_CORE_H
++
++#include <asm/arch/sdhc.h>
++
++struct request;
++struct mmc_data;
++struct mmc_request;
++
++struct mmc_command {
++    esdhc_cmd_t cmd;
++	esdhc_resp_t resp;
++#define MMC_RSP_PRESENT	(1 << 0)
++#define MMC_RSP_136	(1 << 1)      /* 136 bit response */
++#define MMC_RSP_CRC	(1 << 2)      /* expect valid crc */
++#define MMC_RSP_BUSY	(1 << 3)  /* card may send busy */
++#define MMC_RSP_OPCODE	(1 << 4)  /* response contains opcode */
++
++#define MMC_CMD_MASK	(3 << 5)  /* non-SPI command type */
++#define MMC_CMD_AC	(0 << 5)
++#define MMC_CMD_ADTC	(1 << 5)
++#define MMC_CMD_BC	(2 << 5)
++#define MMC_CMD_BCR	(3 << 5)
++
++#define MMC_RSP_SPI_S1	(1 << 7)  /* one status byte */
++#define MMC_RSP_SPI_S2	(1 << 8)  /* second byte */
++#define MMC_RSP_SPI_B4	(1 << 9)  /* four data bytes */
++#define MMC_RSP_SPI_BUSY (1 << 10) /* card may send busy */
++
++/*
++ * These are the native response types, and correspond to valid bit
++ * patterns of the above flags.  One additional valid pattern
++ * is all zeros, which means we don't expect a response.
++ */
++#define MMC_RSP_NONE	(0)
++#define MMC_RSP_R1	(MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++#define MMC_RSP_R1B (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE|MMC_RSP_BUSY)
++#define MMC_RSP_R2	(MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC)
++#define MMC_RSP_R3	(MMC_RSP_PRESENT)
++#define MMC_RSP_R4	(MMC_RSP_PRESENT)
++#define MMC_RSP_R5	(MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++#define MMC_RSP_R6	(MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++#define MMC_RSP_R7	(MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++
++#define mmc_resp_type(cmd) ((cmd)->flags & \
++		(MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC| \
++		 MMC_RSP_BUSY|MMC_RSP_OPCODE))
++
++#define MMC_KEEP_CLK_RUN (1 << 31) /* Keep card clock on after request */
++
++/*
++ * These are the SPI response types for MMC, SD, and SDIO cards.
++ * Commands return R1, with maybe more info.  Zero is an error type;
++ * callers must always provide the appropriate MMC_RSP_SPI_Rx flags.
++ */
++#define MMC_RSP_SPI_R1  (MMC_RSP_SPI_S1)
++#define MMC_RSP_SPI_R1B (MMC_RSP_SPI_S1|MMC_RSP_SPI_BUSY)
++#define MMC_RSP_SPI_R2  (MMC_RSP_SPI_S1|MMC_RSP_SPI_S2)
++#define MMC_RSP_SPI_R3  (MMC_RSP_SPI_S1|MMC_RSP_SPI_B4)
++#define MMC_RSP_SPI_R4  (MMC_RSP_SPI_S1|MMC_RSP_SPI_B4)
++#define MMC_RSP_SPI_R5  (MMC_RSP_SPI_S1|MMC_RSP_SPI_S2)
++#define MMC_RSP_SPI_R7  (MMC_RSP_SPI_S1|MMC_RSP_SPI_B4)
++
++#define mmc_spi_resp_type(cmd) ((cmd)->flags & \
++		(MMC_RSP_SPI_S1|MMC_RSP_SPI_BUSY|MMC_RSP_SPI_S2|MMC_RSP_SPI_B4))
++
++/*
++ * These are the command types.
++ */
++#define mmc_cmd_type(cmd) ((cmd)->flags & MMC_CMD_MASK)
++
++	unsigned int        retries; /* max number of retries */
++	unsigned int        error;   /* command error */
++
++/*
++ * Standard errno values are used for errors, but some have specific
++ * meaning in the MMC layer:
++ *
++ * ETIMEDOUT    Card took too long to respond
++ * EILSEQ       Basic format problem with the received or sent data
++ *              (e.g. CRC check failed, incorrect opcode in response
++ *              or bad end bit)
++ * EINVAL       Request cannot be performed because of restrictions
++ *              in hardware and/or the driver
++ * ENOMEDIUM    Host can determine that the slot is empty and is
++ *              actively failing requests
++ */
++
++	struct mmc_data *data;      /* data segment associated with cmd */
++	struct mmc_request *mrq;    /* associated request */
++};
++
++struct mmc_data {
++	unsigned int timeout_ns;   /* data timeout (in ns, max 80ms) */
++	unsigned int timeout_clks; /* data timeout (in clocks) */
++	unsigned int blksz;        /* data block size */
++	unsigned int blocks;       /* number of blocks */
++	unsigned int error;        /* data error */
++	unsigned int flags;
++
++#define MMC_DATA_WRITE	(1 << 8)
++#define MMC_DATA_READ	(1 << 9)
++#define MMC_DATA_STREAM	(1 << 10)
++
++	unsigned int       bytes_xfered;
++
++	struct mmc_command *stop;  /* stop command */
++	struct mmc_request *mrq;   /* associated request */
++
++	unsigned int       sg_len; /* size of scatter list */
++	struct scatterlist *sg;    /* I/O scatter list */
++};
++
++struct mmc_request {
++	struct mmc_command  *cmd;
++	struct mmc_data     *data;
++	struct mmc_command  *stop;
++
++	void *done_data;           /* completion data */
++	void (*done)(struct mmc_request *); /* completion function */
++};
++
++#endif
+diff --git a/include/linux/mmc/mmc.h b/include/linux/mmc/mmc.h
+new file mode 100644
+index 0000000..4b9bde9
+--- /dev/null
++++ b/include/linux/mmc/mmc.h
+@@ -0,0 +1,291 @@
++/* (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * Header for MultiMediaCard (MMC)
++ *
++ * Copyright 2002 Hewlett-Packard Company
++ *
++ * Use consistent with the GNU GPL is permitted,
++ * provided that this copyright notice is
++ * preserved in its entirety in all copies and derived works.
++ *
++ * HEWLETT-PACKARD COMPANY MAKES NO WARRANTIES, EXPRESSED OR IMPLIED,
++ * AS TO THE USEFULNESS OR CORRECTNESS OF THIS CODE OR ITS
++ * FITNESS FOR ANY PARTICULAR PURPOSE.
++ *
++ * Many thanks to Alessandro Rubini and Jonathan Corbet!
++ *
++ * Based strongly on code by:
++ *
++ * Author: Yong-iL Joh <tolkien@mizi.com>
++ * Date  : $Date: 2002/06/18 12:37:30 $
++ *
++ * Author:  Andrew Christian
++ *          15 May 2002
++ */
++
++#ifndef MMC_MMC_H
++#define MMC_MMC_H
++
++/* Standard MMC commands (4.1)           type  argument     response */
++   /* class 1 */
++#define MMC_GO_IDLE_STATE         0   /* bc                          */
++#define MMC_SEND_OP_COND          1   /* bcr  [31:0] OCR         R3  */
++#define MMC_ALL_SEND_CID          2   /* bcr                     R2  */
++#define MMC_SET_RELATIVE_ADDR     3   /* ac   [31:16] RCA        R1  */
++#define MMC_SET_DSR               4   /* bc   [31:16] RCA            */
++#define MMC_SWITCH                6   /* ac   [31:0] See below   R1b */
++#define MMC_SELECT_CARD           7   /* ac   [31:16] RCA        R1  */
++#define MMC_SEND_EXT_CSD          8   /* adtc                    R1  */
++#define MMC_SEND_CSD              9   /* ac   [31:16] RCA        R2  */
++#define MMC_SEND_CID             10   /* ac   [31:16] RCA        R2  */
++#define MMC_READ_DAT_UNTIL_STOP  11   /* adtc [31:0] dadr        R1  */
++#define MMC_STOP_TRANSMISSION    12   /* ac                      R1b */
++#define MMC_SEND_STATUS          13   /* ac   [31:16] RCA        R1  */
++#define MMC_GO_INACTIVE_STATE    15   /* ac   [31:16] RCA            */
++#define MMC_SPI_READ_OCR         58   /* spi                  spi_R3 */
++#define MMC_SPI_CRC_ON_OFF       59   /* spi  [0:0] flag      spi_R1 */
++
++  /* class 2 */
++#define MMC_SET_BLOCKLEN         16   /* ac   [31:0] block len   R1  */
++#define MMC_READ_SINGLE_BLOCK    17   /* adtc [31:0] data addr   R1  */
++#define MMC_READ_MULTIPLE_BLOCK  18   /* adtc [31:0] data addr   R1  */
++
++  /* class 3 */
++#define MMC_WRITE_DAT_UNTIL_STOP 20   /* adtc [31:0] data addr   R1  */
++
++  /* class 4 */
++#define MMC_SET_BLOCK_COUNT      23   /* adtc [31:0] data addr   R1  */
++#define MMC_WRITE_BLOCK          24   /* adtc [31:0] data addr   R1  */
++#define MMC_WRITE_MULTIPLE_BLOCK 25   /* adtc                    R1  */
++#define MMC_PROGRAM_CID          26   /* adtc                    R1  */
++#define MMC_PROGRAM_CSD          27   /* adtc                    R1  */
++
++  /* class 6 */
++#define MMC_SET_WRITE_PROT       28   /* ac   [31:0] data addr   R1b */
++#define MMC_CLR_WRITE_PROT       29   /* ac   [31:0] data addr   R1b */
++#define MMC_SEND_WRITE_PROT      30   /* adtc [31:0] wpdata addr R1  */
++
++  /* class 5 */
++#define MMC_ERASE_GROUP_START    35   /* ac   [31:0] data addr   R1  */
++#define MMC_ERASE_GROUP_END      36   /* ac   [31:0] data addr   R1  */
++#define MMC_ERASE                38   /* ac                      R1b */
++
++  /* class 9 */
++#define MMC_FAST_IO              39   /* ac   <Complex>          R4  */
++#define MMC_GO_IRQ_STATE         40   /* bcr                     R5  */
++
++  /* class 7 */
++#define MMC_LOCK_UNLOCK          42   /* adtc                    R1b */
++
++  /* class 8 */
++#define MMC_APP_CMD              55   /* ac   [31:16] RCA        R1  */
++#define MMC_GEN_CMD              56   /* adtc [0] RD/WR          R1  */
++
++/*
++ * MMC_SWITCH argument format:
++ *
++ *	[31:26] Always 0
++ *	[25:24] Access Mode
++ *	[23:16] Location of target Byte in EXT_CSD
++ *	[15:08] Value Byte
++ *	[07:03] Always 0
++ *	[02:00] Command Set
++ */
++
++#define MMC_BUS_WIDTH_1		0
++#define MMC_BUS_WIDTH_4		2
++#define MMC_BUS_WIDTH_8		3
++
++/*
++  MMC status in R1, for native mode (SPI bits are different)
++  Type
++	e : error bit
++	s : status bit
++	r : detected and set for the actual command response
++	x : detected and set during command execution. the host must poll
++		the card by sending status command in order to read these bits.
++  Clear condition
++	a : according to the card state
++	b : always related to the previous command. Reception of
++		a valid command will clear it (with a delay of one command)
++	c : clear by read
++ */
++
++#define R1_OUT_OF_RANGE		(1 << 31)	/* er, c */
++#define R1_ADDRESS_ERROR	(1 << 30)	/* erx, c */
++#define R1_BLOCK_LEN_ERROR	(1 << 29)	/* er, c */
++#define R1_ERASE_SEQ_ERROR      (1 << 28)	/* er, c */
++#define R1_ERASE_PARAM		(1 << 27)	/* ex, c */
++#define R1_WP_VIOLATION		(1 << 26)	/* erx, c */
++#define R1_CARD_IS_LOCKED	(1 << 25)	/* sx, a */
++#define R1_LOCK_UNLOCK_FAILED	(1 << 24)	/* erx, c */
++#define R1_COM_CRC_ERROR	(1 << 23)	/* er, b */
++#define R1_ILLEGAL_COMMAND	(1 << 22)	/* er, b */
++#define R1_CARD_ECC_FAILED	(1 << 21)	/* ex, c */
++#define R1_CC_ERROR		(1 << 20)	/* erx, c */
++#define R1_ERROR		(1 << 19)	/* erx, c */
++#define R1_UNDERRUN		(1 << 18)	/* ex, c */
++#define R1_OVERRUN		(1 << 17)	/* ex, c */
++#define R1_CID_CSD_OVERWRITE	(1 << 16)	/* erx, c, CID/CSD overwrite */
++#define R1_WP_ERASE_SKIP	(1 << 15)	/* sx, c */
++#define R1_CARD_ECC_DISABLED	(1 << 14)	/* sx, a */
++#define R1_ERASE_RESET		(1 << 13)	/* sr, c */
++#define R1_STATUS(x)            (x & 0xFFFFE000)
++#define R1_CURRENT_STATE(x)	((x & 0x00001E00) >> 9)	/* sx, b (4 bits) */
++#define R1_READY_FOR_DATA	(1 << 8)	/* sx, a */
++#define R1_APP_CMD		(1 << 5)	/* sr, c */
++
++/*
++ * MMC/SD in SPI mode reports R1 status always, and R2 for SEND_STATUS
++ * R1 is the low order byte; R2 is the next highest byte, when present.
++ */
++#define R1_SPI_IDLE		(1 << 0)
++#define R1_SPI_ERASE_RESET	(1 << 1)
++#define R1_SPI_ILLEGAL_COMMAND	(1 << 2)
++#define R1_SPI_COM_CRC		(1 << 3)
++#define R1_SPI_ERASE_SEQ	(1 << 4)
++#define R1_SPI_ADDRESS		(1 << 5)
++#define R1_SPI_PARAMETER	(1 << 6)
++/* R1 bit 7 is always zero */
++#define R2_SPI_CARD_LOCKED	(1 << 8)
++#define R2_SPI_WP_ERASE_SKIP	(1 << 9)	/* or lock/unlock fail */
++#define R2_SPI_LOCK_UNLOCK_FAIL	R2_SPI_WP_ERASE_SKIP
++#define R2_SPI_ERROR		(1 << 10)
++#define R2_SPI_CC_ERROR		(1 << 11)
++#define R2_SPI_CARD_ECC_ERROR	(1 << 12)
++#define R2_SPI_WP_VIOLATION	(1 << 13)
++#define R2_SPI_ERASE_PARAM	(1 << 14)
++#define R2_SPI_OUT_OF_RANGE	(1 << 15)	/* or CSD overwrite */
++#define R2_SPI_CSD_OVERWRITE	R2_SPI_OUT_OF_RANGE
++
++/* These are unpacked versions of the actual responses */
++
++struct _mmc_csd {
++	u8  csd_structure;
++	u8  spec_vers;
++	u8  taac;
++	u8  nsac;
++	u8  tran_speed;
++	u16 ccc;
++	u8  read_bl_len;
++	u8  read_bl_partial;
++	u8  write_blk_misalign;
++	u8  read_blk_misalign;
++	u8  dsr_imp;
++	u16 c_size;
++	u8  vdd_r_curr_min;
++	u8  vdd_r_curr_max;
++	u8  vdd_w_curr_min;
++	u8  vdd_w_curr_max;
++	u8  c_size_mult;
++	union {
++		struct { /* MMC system specification version 3.1 */
++			u8  erase_grp_size;
++			u8  erase_grp_mult;
++		} v31;
++		struct { /* MMC system specification version 2.2 */
++			u8  sector_size;
++			u8  erase_grp_size;
++		} v22;
++	} erase;
++	u8  wp_grp_size;
++	u8  wp_grp_enable;
++	u8  default_ecc;
++	u8  r2w_factor;
++	u8  write_bl_len;
++	u8  write_bl_partial;
++	u8  file_format_grp;
++	u8  copy;
++	u8  perm_write_protect;
++	u8  tmp_write_protect;
++	u8  file_format;
++	u8  ecc;
++};
++
++/*
++ * OCR bits are mostly in host.h
++ */
++#define MMC_CARD_BUSY	0x80000000	/* Card Power up status bit */
++
++/*
++ * Card Command Classes (CCC)
++ */
++#define CCC_BASIC		(1<<0)	/* (0) Basic protocol functions */
++					/* (CMD0,1,2,3,4,7,9,10,12,13,15) */
++					/* (and for SPI, CMD58,59) */
++#define CCC_STREAM_READ		(1<<1)	/* (1) Stream read commands */
++					/* (CMD11) */
++#define CCC_BLOCK_READ		(1<<2)	/* (2) Block read commands */
++					/* (CMD16,17,18) */
++#define CCC_STREAM_WRITE	(1<<3)	/* (3) Stream write commands */
++					/* (CMD20) */
++#define CCC_BLOCK_WRITE		(1<<4)	/* (4) Block write commands */
++					/* (CMD16,24,25,26,27) */
++#define CCC_ERASE		(1<<5)	/* (5) Ability to erase blocks */
++					/* (CMD32,33,34,35,36,37,38,39) */
++#define CCC_WRITE_PROT		(1<<6)	/* (6) Able to write protect blocks */
++					/* (CMD28,29,30) */
++#define CCC_LOCK_CARD		(1<<7)	/* (7) Able to lock down card */
++					/* (CMD16,CMD42) */
++#define CCC_APP_SPEC		(1<<8)	/* (8) Application specific */
++					/* (CMD55,56,57,ACMD*) */
++#define CCC_IO_MODE		(1<<9)	/* (9) I/O mode */
++					/* (CMD5,39,40,52,53) */
++#define CCC_SWITCH		(1<<10)	/* (10) High speed switch */
++					/* (CMD6,34,35,36,37,50) */
++					/* (11) Reserved */
++					/* (CMD?) */
++
++/*
++ * CSD field definitions
++ */
++
++#define CSD_STRUCT_VER_1_0  0  /* Valid for system specification 1.0 - 1.2 */
++#define CSD_STRUCT_VER_1_1  1  /* Valid for system specification 1.4 - 2.2 */
++/* Valid for system specification 3.1 - 3.2 - 3.31 - 4.0 - 4.1 */
++#define CSD_STRUCT_VER_1_2  2
++/* Version is coded in CSD_STRUCTURE in EXT_CSD */
++#define CSD_STRUCT_EXT_CSD  3
++
++#define CSD_SPEC_VER_0 0  /* Implements system specification 1.0 - 1.2 */
++#define CSD_SPEC_VER_1 1  /* Implements system specification 1.4 */
++#define CSD_SPEC_VER_2 2  /* Implements system specification 2.0 - 2.2 */
++#define CSD_SPEC_VER_3 3  /* Implements system specification 3.1 - 3.2 - 3.31 */
++#define CSD_SPEC_VER_4 4  /* Implements system specification 4.0 - 4.1 */
++
++/*
++ * EXT_CSD fields
++ */
++
++#define EXT_CSD_BUS_WIDTH	183	/* R/W */
++#define EXT_CSD_HS_TIMING	185	/* R/W */
++#define EXT_CSD_CARD_TYPE	196	/* RO */
++#define EXT_CSD_REV		192	/* RO */
++#define EXT_CSD_SEC_CNT		212	/* RO, 4 bytes */
++
++/*
++ * EXT_CSD field definitions
++ */
++
++#define EXT_CSD_CMD_SET_NORMAL		(1<<0)
++#define EXT_CSD_CMD_SET_SECURE		(1<<1)
++#define EXT_CSD_CMD_SET_CPSECURE	(1<<2)
++
++#define EXT_CSD_CARD_TYPE_26	(1<<0)	/* Card can run at 26MHz */
++#define EXT_CSD_CARD_TYPE_52	(1<<1)	/* Card can run at 52MHz */
++
++#define EXT_CSD_BUS_WIDTH_1	0	/* Card is in 1 bit mode */
++#define EXT_CSD_BUS_WIDTH_4	1	/* Card is in 4 bit mode */
++#define EXT_CSD_BUS_WIDTH_8	2	/* Card is in 8 bit mode */
++
++/*
++ * MMC_SWITCH access modes
++ */
++
++#define MMC_SWITCH_MODE_CMD_SET	  0x00  /* Change the command set */
++#define MMC_SWITCH_MODE_SET_BITS  0x01  /* Set bits which are 1 in value */
++#define MMC_SWITCH_MODE_CLEAR_BITS 0x02 /* Clear bits which are 1 in value */
++#define MMC_SWITCH_MODE_WRITE_BYTE 0x03 /* Set target to value */
++
++#endif  /* MMC_MMC_PROTOCOL_H */
++
+diff --git a/include/linux/mmc/sd.h b/include/linux/mmc/sd.h
+new file mode 100644
+index 0000000..f236909
+--- /dev/null
++++ b/include/linux/mmc/sd.h
+@@ -0,0 +1,95 @@
++/*
++ *  include/linux/mmc/sd.h
++ *
++ *  Copyright (C) 2005-2007 Pierre Ossman, All Rights Reserved.
++ *
++ * Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ */
++
++#ifndef MMC_SD_H
++#define MMC_SD_H
++
++/* SD commands                           type  argument     response */
++  /* class 0 */
++/* This is basically the same command as for MMC with some quirks. */
++#define SD_SEND_RELATIVE_ADDR     3   /* bcr                     R6  */
++#define SD_SEND_IF_COND           8   /* bcr  [11:0] See below   R7  */
++
++  /* class 10 */
++#define SD_SWITCH                 6   /* adtc [31:0] See below   R1  */
++
++  /* Application commands */
++#define SD_APP_SET_BUS_WIDTH      6   /* ac   [1:0] bus width    R1  */
++#define SD_APP_SEND_NUM_WR_BLKS  22   /* adtc                    R1  */
++#define SD_APP_OP_COND           41   /* bcr  [31:0] OCR         R3  */
++#define SD_APP_SEND_SCR          51   /* adtc                    R1  */
++
++#define SD_OCR_VALUE_HV_LC     (0x00ff8000)
++#define SD_OCR_VALUE_HV_HC     (0x40ff8000)
++#define SD_OCR_VALUE_LV_HC     (0x40000080)
++#define SD_OCR_HC_RES          (0x40000000)
++#define SD_IF_HV_COND_ARG      (0x000001AA)
++#define SD_IF_LV_COND_ARG      (0x000002AA)
++
++#define SD_OCR_VALUE_COUNT     (3)
++#define SD_IF_CMD_ARG_COUNT    (2)
++
++/*
++ * SD_SWITCH argument format:
++ *
++ *      [31] Check (0) or switch (1)
++ *      [30:24] Reserved (0)
++ *      [23:20] Function group 6
++ *      [19:16] Function group 5
++ *      [15:12] Function group 4
++ *      [11:8] Function group 3
++ *      [7:4] Function group 2
++ *      [3:0] Function group 1
++ */
++
++/*
++ * SD_SEND_IF_COND argument format:
++ *
++ *	[31:12] Reserved (0)
++ *	[11:8] Host Voltage Supply Flags
++ *	[7:0] Check Pattern (0xAA)
++ */
++
++/*
++ * SCR field definitions
++ */
++
++#define SCR_SPEC_VER_0  0   /* Implements system specification 1.0 - 1.01 */
++#define SCR_SPEC_VER_1  1   /* Implements system specification 1.10 */
++#define SCR_SPEC_VER_2  2   /* Implements system specification 2.00 */
++
++/*
++ * SD bus widths
++ */
++#define SD_BUS_WIDTH_1  0
++#define SD_BUS_WIDTH_4  2
++
++/*
++ * SD_SWITCH mode
++ */
++#define SD_SWITCH_CHECK 0
++#define SD_SWITCH_SET   1
++
++/*
++ * SD_SWITCH function groups
++ */
++#define SD_SWITCH_GRP_ACCESS 0
++
++/*
++ * SD_SWITCH access modes
++ */
++#define SD_SWITCH_ACCESS_DEF 0
++#define SD_SWITCH_ACCESS_HS  1
++
++#endif
++
+diff --git a/include/linux/mmc/sdhci.h b/include/linux/mmc/sdhci.h
+new file mode 100644
+index 0000000..ee7fb26
+--- /dev/null
++++ b/include/linux/mmc/sdhci.h
+@@ -0,0 +1,223 @@
++/*
++ *  linux/drivers/mmc/host/sdhci.h - Secure Digital Host Controller Interface driver
++ *
++ *  (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *  Copyright (C) 2005-2008 Pierre Ossman, All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or (at
++ * your option) any later version.
++ */
++
++/*
++ * PCI registers
++ */
++
++#define PCI_SDHCI_IFPIO			0x00
++#define PCI_SDHCI_IFDMA			0x01
++#define PCI_SDHCI_IFVENDOR		0x02
++
++#define PCI_SLOT_INFO			0x40	/* 8 bits */
++#define  PCI_SLOT_INFO_SLOTS(x)		((x >> 4) & 7)
++#define  PCI_SLOT_INFO_FIRST_BAR_MASK	0x07
++
++/*
++ * Controller registers
++ */
++
++#define SDHCI_DMA_ADDRESS	0x00
++
++#define SDHCI_BLOCK_SIZE	0x04
++#define  SDHCI_MAKE_BLKSZ(dma, blksz) (((dma & 0x7) << 12) | (blksz & 0xFFF))
++
++#define SDHCI_BLOCK_COUNT	0x06
++
++#define SDHCI_ARGUMENT		0x08
++
++#define SDHCI_TRANSFER_MODE	0x0C
++#define  SDHCI_TRNS_DMA		0x01
++#define  SDHCI_TRNS_BLK_CNT_EN	0x02
++#define  SDHCI_TRNS_ACMD12	0x04
++#define  SDHCI_TRNS_READ	0x10
++#define  SDHCI_TRNS_MULTI	0x20
++
++#define SDHCI_COMMAND		0x0E
++#define  SDHCI_CMD_RESP_MASK	0x03
++#define  SDHCI_CMD_CRC		0x08
++#define  SDHCI_CMD_INDEX	0x10
++#define  SDHCI_CMD_DATA		0x20
++
++#define  SDHCI_CMD_RESP_NONE	0x00
++#define  SDHCI_CMD_RESP_LONG	0x01
++#define  SDHCI_CMD_RESP_SHORT	0x02
++#define  SDHCI_CMD_RESP_SHORT_BUSY 0x03
++
++#define SDHCI_MAKE_CMD(c, f) (((c & 0xff) << 8) | (f & 0xff))
++
++#define SDHCI_RESPONSE		0x10
++
++#define SDHCI_BUFFER		0x20
++
++#define SDHCI_PRESENT_STATE	0x24
++#define  SDHCI_CMD_INHIBIT	0x00000001
++#define  SDHCI_DATA_INHIBIT	0x00000002
++#define  SDHCI_DOING_WRITE	0x00000100
++#define  SDHCI_DOING_READ	0x00000200
++#define  SDHCI_SPACE_AVAILABLE	0x00000400
++#define  SDHCI_DATA_AVAILABLE	0x00000800
++#define  SDHCI_CARD_PRESENT	0x00010000
++#define  SDHCI_WRITE_PROTECT	0x00080000
++
++#define SDHCI_HOST_CONTROL 	0x28
++#define  SDHCI_CTRL_LED		0x01
++#define  SDHCI_CTRL_4BITBUS	0x00000002
++#define  SDHCI_CTRL_8BITBUS	0x00000004
++#define  SDHCI_CTRL_HISPD	0x04
++
++#define SDHCI_POWER_CONTROL	0x29
++#define  SDHCI_POWER_ON		0x01
++#define  SDHCI_POWER_180	0x0A
++#define  SDHCI_POWER_300	0x0C
++#define  SDHCI_POWER_330	0x0E
++
++#define SDHCI_BLOCK_GAP_CONTROL	0x2A
++
++#define SDHCI_WAKE_UP_CONTROL	0x2B
++
++#define SDHCI_CLOCK_CONTROL	0x2C
++#define SDHCI_SYSTEM_CONTROL 0x2C
++#define  SDHCI_DIVIDER_SHIFT	8
++#define  SDHCI_CLOCK_CARD_EN	0x0004
++#define  SDHCI_CLOCK_INT_STABLE	0x0002
++#define  SDHCI_CLOCK_INT_EN	0x0001
++
++#define SDHCI_TIMEOUT_CONTROL	0x2E
++
++#define SDHCI_SOFTWARE_RESET	0x2F
++#define  SDHCI_RESET_ALL	0x01
++#define  SDHCI_RESET_CMD	0x02
++#define  SDHCI_RESET_DATA	0x04
++
++#define SDHCI_INT_STATUS	0x30
++#define SDHCI_INT_ENABLE	0x34
++#define SDHCI_SIGNAL_ENABLE	0x38
++#define  SDHCI_INT_RESPONSE	0x00000001
++#define  SDHCI_INT_DATA_END	0x00000002
++#define  SDHCI_INT_DMA_END	0x00000008
++#define  SDHCI_INT_SPACE_AVAIL	0x00000010
++#define  SDHCI_INT_DATA_AVAIL	0x00000020
++#define  SDHCI_INT_CARD_INSERT	0x00000040
++#define  SDHCI_INT_CARD_REMOVE	0x00000080
++#define  SDHCI_INT_CARD_INT	0x00000100
++#define  SDHCI_INT_ERROR	0x00008000
++#define  SDHCI_INT_TIMEOUT	0x00010000
++#define  SDHCI_INT_CRC		0x00020000
++#define  SDHCI_INT_END_BIT	0x00040000
++#define  SDHCI_INT_INDEX	0x00080000
++#define  SDHCI_INT_DATA_TIMEOUT	0x00100000
++#define  SDHCI_INT_DATA_CRC	0x00200000
++#define  SDHCI_INT_DATA_END_BIT	0x00400000
++#define  SDHCI_INT_BUS_POWER	0x00800000
++#define  SDHCI_INT_ACMD12ERR	0x01000000
++
++#define  SDHCI_INT_NORMAL_MASK	0x00007FFF
++#define  SDHCI_INT_ERROR_MASK	0xFFFF8000
++
++#define  SDHCI_INT_CMD_MASK	(SDHCI_INT_RESPONSE | SDHCI_INT_TIMEOUT | \
++		SDHCI_INT_CRC | SDHCI_INT_END_BIT | SDHCI_INT_INDEX)
++#define  SDHCI_INT_DATA_MASK	(SDHCI_INT_DATA_END | SDHCI_INT_DMA_END | \
++		SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL | \
++		SDHCI_INT_DATA_TIMEOUT | SDHCI_INT_DATA_CRC | \
++		SDHCI_INT_DATA_END_BIT)
++
++#define SDHCI_ACMD12_ERR	0x3C
++
++/* 3E-3F reserved */
++
++#define SDHCI_CAPABILITIES	0x40
++#define  SDHCI_TIMEOUT_CLK_MASK	0x0000003F
++#define  SDHCI_TIMEOUT_CLK_SHIFT 0
++#define  SDHCI_TIMEOUT_CLK_UNIT	0x00000080
++#define  SDHCI_CLOCK_BASE_MASK	0x00003F00
++#define  SDHCI_CLOCK_BASE_SHIFT	8
++#define  SDHCI_MAX_BLOCK_MASK	0x00030000
++#define  SDHCI_MAX_BLOCK_SHIFT  16
++#define  SDHCI_CAN_DO_HISPD	0x00200000
++#define  SDHCI_CAN_DO_DMA	0x00400000
++#define  SDHCI_CAN_VDD_330	0x01000000
++#define  SDHCI_CAN_VDD_300	0x02000000
++#define  SDHCI_CAN_VDD_180	0x04000000
++
++/* 44-47 reserved for more caps */
++#define SDHCI_WML_LEV		0x44
++
++#define SDHCI_MAX_CURRENT	0x48
++
++/* 4C-4F reserved for more max current */
++
++/* 50-FB reserved */
++
++#define SDHCI_SLOT_INT_STATUS	0xFC
++
++#define SDHCI_HOST_VERSION	0xFE
++#define  SDHCI_VENDOR_VER_MASK	0xFF00
++#define  SDHCI_VENDOR_VER_SHIFT	8
++#define  SDHCI_SPEC_VER_MASK	0x00FF
++#define  SDHCI_SPEC_VER_SHIFT	0
++
++#if 0
++
++struct sdhci_chip;
++
++struct sdhci_host {
++	struct sdhci_chip	*chip;
++	struct mmc_host		*mmc;		/* MMC structure */
++
++#ifdef CONFIG_LEDS_CLASS
++	struct led_classdev	led;		/* LED control */
++#endif
++
++	spinlock_t		lock;		/* Mutex */
++
++	int			flags;		/* Host attributes */
++#define SDHCI_USE_DMA		(1<<0)		/* Host is DMA capable */
++#define SDHCI_REQ_USE_DMA	(1<<1)		/* Use DMA for this req. */
++
++	unsigned int		max_clk;	/* Max possible freq (MHz) */
++	unsigned int		timeout_clk;	/* Timeout freq (KHz) */
++
++	unsigned int		clock;		/* Current clock (MHz) */
++	unsigned short		power;		/* Current voltage */
++
++	struct mmc_request	*mrq;		/* Current request */
++	struct mmc_command	*cmd;		/* Current command */
++	struct mmc_data		*data;		/* Current data request */
++	unsigned int		data_early:1;	/* Data finished before cmd */
++
++	struct scatterlist	*cur_sg;	/* We're working on this */
++	int			num_sg;		/* Entries left */
++	int			offset;		/* Offset into current sg */
++	int			remain;		/* Bytes left in current */
++
++	int			irq;		/* Device IRQ */
++	int			bar;		/* PCI BAR index */
++	unsigned long		addr;		/* Bus address */
++	void __iomem		*ioaddr;		/* Mapped address */
++
++	struct tasklet_struct	card_tasklet;	/* Tasklet structures */
++	struct tasklet_struct	finish_tasklet;
++
++	struct timer_list	timer;		/* Timer for timeouts */
++};
++
++struct sdhci_chip {
++	struct pci_dev		*pdev;
++
++	unsigned long		quirks;
++
++	int			num_slots;	/* Slots on controller */
++	struct sdhci_host	*hosts[0];	/* Pointers to hosts */
++};
++
++#endif
+-- 
+1.5.4.4
+

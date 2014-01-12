@@ -1,0 +1,40 @@
+From 3d73cfbd161f145368b22b9566ab501a9ec048f4 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Thu, 10 Mar 2011 14:31:51 +0800
+Subject: [PATCH] ENGR00140462 esdhci fix the errors after implement the new SOC rev APIs
+
+Fix the errors after implement the new soc rev APIs
+Refine the SOC revision APIs in the esdhc driver.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index 92e59e4..438edcf 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -243,7 +243,7 @@ static void sdhci_init(struct sdhci_host *host)
+ 	    SDHCI_INT_DMA_END | SDHCI_INT_DATA_END | SDHCI_INT_RESPONSE;
+ 
+ 	if ((mx50_revision() == IMX_CHIP_REVISION_1_0)
+-			|| (mx53_revision() < IMX_CHIP_REVISION_2_0))
++			|| (mx53_revision() == IMX_CHIP_REVISION_1_0))
+ 		intmask |= SDHCI_INT_ACMD12ERR;
+ 
+ 	if (host->flags & SDHCI_USE_DMA)
+@@ -663,8 +663,8 @@ static void sdhci_finish_data(struct sdhci_host *host)
+ 	}
+ 	data->bytes_xfered = data->blksz * data->blocks;
+ 
+-	if ((data->stop) && ((mx50_revision() >= IMX_CHIP_REVISION_1_1)
+-				|| (mx53_revision() >= IMX_CHIP_REVISION_2_0))) {
++	if ((data->stop) && !((mx50_revision() == IMX_CHIP_REVISION_1_0) ||
++				(mx53_revision() == IMX_CHIP_REVISION_1_0))) {
+ 		/*
+ 		 * The controller needs a reset of internal state machines
+ 		 * upon error conditions.
+-- 
+1.5.4.4
+

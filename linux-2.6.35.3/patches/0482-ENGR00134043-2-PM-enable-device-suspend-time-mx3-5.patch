@@ -1,0 +1,45 @@
+From 22de5f5ed42148d1c173699c8030890773843b16 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Thu, 25 Nov 2010 12:57:59 +0800
+Subject: [PATCH] ENGR00134043-2 PM:enable device suspend time mx3/5
+
+Since the device suspend timing driver is
+default set to off, so add it to default config of mx5, mx3.
+If you want to debug your driver's suspend / resume
+timing, please enable it by write time in microsecond.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    3 ++-
+ arch/arm/configs/mx3_defconfig  |    1 +
+ 2 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 1e17e86..e19d9db 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -410,7 +410,8 @@ CONFIG_HAVE_AOUT=y
+ # Power management options
+ #
+ CONFIG_PM=y
+-# CONFIG_PM_DEBUG is not set
++CONFIG_PM_DEBUG=y
++CONFIG_SUSPEND_DEVICE_TIME_DEBUG=y
+ CONFIG_PM_SLEEP=y
+ CONFIG_SUSPEND_NVS=y
+ CONFIG_SUSPEND=y
+diff --git a/arch/arm/configs/mx3_defconfig b/arch/arm/configs/mx3_defconfig
+index d87f3d4..ca26bc4 100644
+--- a/arch/arm/configs/mx3_defconfig
++++ b/arch/arm/configs/mx3_defconfig
+@@ -402,6 +402,7 @@ CONFIG_HAVE_AOUT=y
+ #
+ CONFIG_PM=y
+ CONFIG_PM_DEBUG=y
++CONFIG_SUSPEND_DEVICE_TIME_DEBUG=y
+ # CONFIG_PM_ADVANCED_DEBUG is not set
+ # CONFIG_PM_VERBOSE is not set
+ CONFIG_CAN_PM_TRACE=y
+-- 
+1.5.4.4
+

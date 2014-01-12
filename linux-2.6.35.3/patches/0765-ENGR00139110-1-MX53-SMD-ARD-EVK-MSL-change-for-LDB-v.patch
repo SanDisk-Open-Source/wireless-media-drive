@@ -1,0 +1,130 @@
+From 3c65eec162512077215f719aa4fb6709a89c67f4 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Sat, 12 Feb 2011 15:51:16 +0800
+Subject: [PATCH] ENGR00139110-1 MX53 SMD/ARD/EVK:MSL change for LDB video mode
+
+This patch removes LDB related video modes from MSL code.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c  |   17 -----------------
+ arch/arm/mach-mx5/mx53_evk.c  |   17 -----------------
+ arch/arm/mach-mx5/mx53_loco.c |   17 -----------------
+ arch/arm/mach-mx5/mx53_smd.c  |   17 -----------------
+ 4 files changed, 0 insertions(+), 68 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 1d6e68d..4d4d05b 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -374,23 +374,6 @@ static struct fb_videomode video_modes[] = {
+ 	FB_SYNC_HOR_HIGH_ACT|FB_SYNC_VERT_HIGH_ACT,
+ 	FB_VMODE_NONINTERLACED,
+ 	0,},
+-	/* 2 LVDS modes, had better remove from here */
+-	{
+-	 "1080P60", 60, 1920, 1080, 7692,
+-	 100, 40,
+-	 30, 3,
+-	 10, 2,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+-	{
+-	 "XGA", 60, 1024, 768, 15385,
+-	 220, 40,
+-	 21, 7,
+-	 60, 10,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+ };
+ 
+ static iomux_v3_cfg_t mx53_ard_pwm_pads[] = {
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 0abb4d0..83110fc 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -411,23 +411,6 @@ static struct fb_videomode video_modes[] = {
+ 	FB_SYNC_HOR_HIGH_ACT|FB_SYNC_VERT_HIGH_ACT,
+ 	FB_VMODE_NONINTERLACED,
+ 	0,},
+-	/* 2 LVDS modes, had better remove from here */
+-	{
+-	 "1080P60", 60, 1920, 1080, 7692,
+-	 100, 40,
+-	 30, 3,
+-	 10, 2,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+-	{
+-	 "XGA", 60, 1024, 768, 15385,
+-	 220, 40,
+-	 21, 7,
+-	 60, 10,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+ };
+ 
+ static struct mxc_w1_config mxc_w1_data = {
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 041056a..1ce4c94 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -270,23 +270,6 @@ static struct fb_videomode video_modes[] = {
+ 	FB_SYNC_HOR_HIGH_ACT|FB_SYNC_VERT_HIGH_ACT,
+ 	FB_VMODE_NONINTERLACED,
+ 	0,},
+-	/* 2 LVDS modes, had better remove from here */
+-	{
+-	 "1080P60", 60, 1920, 1080, 7692,
+-	 100, 40,
+-	 30, 3,
+-	 10, 2,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+-	{
+-	 "XGA", 60, 1024, 768, 15385,
+-	 220, 40,
+-	 21, 7,
+-	 60, 10,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+ };
+ 
+ static struct platform_pwm_backlight_data mxc_pwm_backlight_data = {
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index ad91601..0879f3d 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -432,23 +432,6 @@ static struct fb_videomode video_modes[] = {
+ 	FB_SYNC_HOR_HIGH_ACT|FB_SYNC_VERT_HIGH_ACT,
+ 	FB_VMODE_NONINTERLACED,
+ 	0,},
+-	/* 2 LVDS modes, had better remove from here */
+-	{
+-	 "1080P60", 60, 1920, 1080, 7692,
+-	 100, 40,
+-	 30, 3,
+-	 10, 2,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+-	{
+-	 "XGA", 60, 1024, 768, 15385,
+-	 220, 40,
+-	 21, 7,
+-	 60, 10,
+-	 0,
+-	 FB_VMODE_NONINTERLACED,
+-	 0,},
+ };
+ 
+ static struct platform_pwm_backlight_data mxc_pwm_backlight_data = {
+-- 
+1.5.4.4
+

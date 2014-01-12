@@ -1,0 +1,42 @@
+From 79d53549c793df63bdc4fbba1983936441ce78aa Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Tue, 25 Jan 2011 14:16:57 -0600
+Subject: [PATCH] ENGR00138516: MX5X: Initialize CPU working point correctly for DVFS-CORE
+
+CPU working point needs to be initialized based on the current CPU
+frequency in start_dvfs() and should correspond with the correct entry
+in the cpu_wp_auto table.
+
+If its not initialized correctly, DVFS-CORE will fail when PLL-relock
+results in a frequency that is not the same as set in the cpu_wp_auto table.
+So fix it by finding the entry that closely matches the CPU frequency.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/dvfs_core.c |    9 ++++-----
+ 1 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/dvfs_core.c b/arch/arm/plat-mxc/dvfs_core.c
+index 807fa63..8830dce 100644
+--- a/arch/arm/plat-mxc/dvfs_core.c
++++ b/arch/arm/plat-mxc/dvfs_core.c
+@@ -370,12 +370,11 @@ static int start_dvfs(void)
+ 
+ 	/* get current working point */
+ 	cpu_rate = clk_get_rate(cpu_clk);
+-	for (curr_wp = 0; curr_wp < cpu_wp_nr; curr_wp++)
+-		if (cpu_rate == cpu_wp_tbl[curr_wp].cpu_rate)
++	curr_wp = cpu_wp_nr - 1;
++	do {
++		if (cpu_rate <= cpu_wp_tbl[curr_wp].cpu_rate)
+ 			break;
+-	/* if doesn't find it, set it as the lowest point */
+-	if (curr_wp == cpu_wp_nr)
+-		curr_wp--;
++	} while (--curr_wp >= 0);
+ 	old_wp = curr_wp;
+ 	/* config reg GPC_CNTR */
+ 	reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+-- 
+1.5.4.4
+

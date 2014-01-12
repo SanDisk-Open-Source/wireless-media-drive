@@ -1,0 +1,119 @@
+From ba9aaf1a51a4de40bb0efb1f20dee6d8f1939d7b Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Tue, 14 Sep 2010 19:29:20 +0800
+Subject: [PATCH] ENGR00131479-2 MX53: Enable CS42888 by default
+
+Correct the pad setting and clock name for ESAI, and
+enable CS42888 by default.
+
+Signed-off-by: William Lai <b04597@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig             |    6 ++++--
+ arch/arm/mach-mx5/clock.c                   |    4 +++-
+ arch/arm/plat-mxc/include/mach/iomux-mx53.h |   26 ++++++++++++++------------
+ 3 files changed, 21 insertions(+), 15 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 7bd1991..eccc04b 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Mon Sep 13 21:09:06 2010
++# Tue Sep 14 17:19:49 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -1598,15 +1598,17 @@ CONFIG_SND_USB=y
+ CONFIG_SND_SOC=y
+ CONFIG_SND_MXC_SOC=y
+ CONFIG_SND_MXC_SOC_SSI=y
++CONFIG_SND_MXC_SOC_ESAI=y
+ CONFIG_SND_MXC_SOC_IRAM=y
+ CONFIG_SND_SOC_IMX_3STACK_SGTL5000=y
+ # CONFIG_SND_SOC_IMX_3STACK_AK4647 is not set
+ # CONFIG_SND_SOC_IMX_3STACK_WM8580 is not set
+ # CONFIG_SND_SOC_IMX_3STACK_AK5702 is not set
+ # CONFIG_SND_SOC_IMX_3STACK_BLUETOOTH is not set
+-# CONFIG_SND_SOC_IMX_3STACK_CS42888 is not set
++CONFIG_SND_SOC_IMX_3STACK_CS42888=y
+ CONFIG_SND_SOC_I2C_AND_SPI=y
+ # CONFIG_SND_SOC_ALL_CODECS is not set
++CONFIG_SND_SOC_CS42888=y
+ CONFIG_SND_SOC_SGTL5000=y
+ # CONFIG_SOUND_PRIME is not set
+ CONFIG_HID_SUPPORT=y
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 7673dc9..2d6f666 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4179,7 +4179,9 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK("FlexCAN.0", NULL, can1_clk[0]),
+ 	_REGISTER_CLOCK("FlexCAM.1", NULL, can2_clk[0]),
+ 	_REGISTER_CLOCK("mxc_ldb", NULL, ldb_di_clk[0]),
+-	_REGISTER_CLOCK("mxc_esai.0", NULL, esai_clk[0]),
++	_REGISTER_CLOCK("esai_clk", NULL, esai_clk[0]),
++	_REGISTER_CLOCK("esai_ipg_clk", NULL, esai_clk[1]),
++
+ };
+ 
+ static void clk_tree_init(void)
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx53.h b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+index 864ac02..7a45528 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx53.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+@@ -49,6 +49,8 @@ typedef enum iomux_config {
+ 				PAD_CTL_PUE | PAD_CTL_PKE | PAD_CTL_HYS)
+ #define MX53_FEC_PAD_CTRL	(PAD_CTL_HYS | PAD_CTL_PKE | PAD_CTL_PUE | \
+ 			PAD_CTL_PUS_22K_UP | PAD_CTL_ODE | PAD_CTL_DSE_HIGH)
++#define MX53_ESAI_PAD_CTRL	(PAD_CTL_DSE_HIGH | PAD_CTL_HYS | PAD_CTL_PKE |\
++				PAD_CTL_PUE | PAD_CTL_PUS_100K_UP)
+ #define PAD_CTRL_1	(PAD_CTL_HYS | PAD_CTL_DSE_HIGH)
+ #define PAD_CTRL_2	(PAD_CTL_PKE | PAD_CTL_PUE | PAD_CTL_DSE_HIGH)
+ #define PAD_CTRL_3	(PAD_CTL_PKE | PAD_CTL_PUE | PAD_CTL_DSE_HIGH | \
+@@ -550,28 +552,28 @@ typedef enum iomux_config {
+ 
+ /* ESAI */
+ #define MX53_PAD_FEC_MDIO__ESAI_SCKR		IOMUX_PAD(0x5C4, 0x248, 2, \
+-							0x7DC, 0, PAD_CTRL_9)
++					    0x7DC, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_REF_CLK__ESAI_FSR	IOMUX_PAD(0x5C8, 0x24C, 2, \
+-							0x7CC, 0, PAD_CTRL_9)
++					    0x7CC, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_RX_ER__ESAI_HCKR	IOMUX_PAD(0x5CC, 0x250, 2, \
+-							0x7D4, 0, PAD_CTRL_9)
++					    0x7D4, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_CRS_DV__ESAI_SCKT	IOMUX_PAD(0x5D0, 0x254, 2, \
+-							0x7E0, 0, PAD_CTRL_9)
++					    0x7E0, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_RXD1__ESAI_FST		IOMUX_PAD(0x5D4, 0x258, 2, \
+-							0x7D0, 0, PAD_CTRL_9)
++					    0x7D0, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_RXD0__ESAI_HCKT		IOMUX_PAD(0x5D8, 0x25C, 2, \
+-							0x7D8, 0, PAD_CTRL_9)
++					    0x7D8, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_TX_EN__ESAI_TX3_RX2	IOMUX_PAD(0x5DC, 0x260, 2, \
+-							0x7F0, 0, PAD_CTRL_9)
++					    0x7F0, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_TXD1__ESAI_TX2_RX3	IOMUX_PAD(0x5E0, 0x264, 2, \
+-							0x7EC, 0, PAD_CTRL_9)
++					    0x7EC, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_TXD0__ESAI_TX4_RX1	IOMUX_PAD(0x5E4, 0x268, 2, \
+-							0x7F4, 0, PAD_CTRL_9)
++					    0x7F4, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_FEC_MDC__ESAI_TX5_RX0	IOMUX_PAD(0x5E8, 0x26C, 2, \
+-							0x7F8, 0, PAD_CTRL_9)
++					    0x7F8, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_NANDF_CS2__ESAI_TX0		IOMUX_PAD(0x5B8, 0x240, 3, \
+-							0x7E4, 0, PAD_CTRL_9)
++					    0x7E4, 0, MX53_ESAI_PAD_CTRL)
+ #define MX53_PAD_NANDF_CS3__ESAI_TX1		IOMUX_PAD(0x5BC, 0x244, 3, \
+-							0x7E8, 0, PAD_CTRL_9)
++					    0x7E8, 0, MX53_ESAI_PAD_CTRL)
+ 
+ #endif /* __MACH_IOMUX_MX53_H__ */
+-- 
+1.5.4.4
+

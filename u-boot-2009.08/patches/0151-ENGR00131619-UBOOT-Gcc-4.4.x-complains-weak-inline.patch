@@ -1,0 +1,58 @@
+From e690b07341aa9993586f203bdf4c0428924ced17 Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.net>
+Date: Thu, 16 Sep 2010 11:17:37 +0800
+Subject: [PATCH] ENGR00131619 UBOOT: Gcc 4.4.x complains weak inline
+
+new toolchain with gcc 4.4.x get some compile error about:
+
+board.c:
+error: inline function 'red_LED_on' cannot be declared weak
+error: inline function 'red_LED_off' cannot be declared weak
+
+gcc 4.4.x not allow weak symbol be inline, remove inline.
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ lib_arm/board.c |   18 +++++++++---------
+ 1 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/lib_arm/board.c b/lib_arm/board.c
+index bc2b0bc..ead4452 100644
+--- a/lib_arm/board.c
++++ b/lib_arm/board.c
+@@ -124,23 +124,23 @@ void *sbrk (ptrdiff_t increment)
+  * May be supplied by boards if desired
+  */
+ void inline __coloured_LED_init (void) {}
+-void inline coloured_LED_init (void) __attribute__((weak, alias("__coloured_LED_init")));
++void coloured_LED_init(void)__attribute__((weak, alias("__coloured_LED_init")));
+ void inline __red_LED_on (void) {}
+-void inline red_LED_on (void) __attribute__((weak, alias("__red_LED_on")));
++void red_LED_on(void) __attribute__((weak, alias("__red_LED_on")));
+ void inline __red_LED_off(void) {}
+-void inline red_LED_off(void)	     __attribute__((weak, alias("__red_LED_off")));
++void red_LED_off(void)       __attribute__((weak, alias("__red_LED_off")));
+ void inline __green_LED_on(void) {}
+-void inline green_LED_on(void) __attribute__((weak, alias("__green_LED_on")));
++void green_LED_on(void) __attribute__((weak, alias("__green_LED_on")));
+ void inline __green_LED_off(void) {}
+-void inline green_LED_off(void)__attribute__((weak, alias("__green_LED_off")));
++void green_LED_off(void) __attribute__((weak, alias("__green_LED_off")));
+ void inline __yellow_LED_on(void) {}
+-void inline yellow_LED_on(void)__attribute__((weak, alias("__yellow_LED_on")));
++void yellow_LED_on(void) __attribute__((weak, alias("__yellow_LED_on")));
+ void inline __yellow_LED_off(void) {}
+-void inline yellow_LED_off(void)__attribute__((weak, alias("__yellow_LED_off")));
++void yellow_LED_off(void) __attribute__((weak, alias("__yellow_LED_off")));
+ void inline __blue_LED_on(void) {}
+-void inline blue_LED_on(void)__attribute__((weak, alias("__blue_LED_on")));
++void blue_LED_on(void) __attribute__((weak, alias("__blue_LED_on")));
+ void inline __blue_LED_off(void) {}
+-void inline blue_LED_off(void)__attribute__((weak, alias("__blue_LED_off")));
++void blue_LED_off(void) __attribute__((weak, alias("__blue_LED_off")));
+ 
+ /************************************************************************
+  * Init Utilities							*
+-- 
+1.5.4.4
+

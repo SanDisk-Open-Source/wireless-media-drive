@@ -1,0 +1,28 @@
+From 69256d73ac0bc34f2f637a516b4a0a9645db116d Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Tue, 3 Aug 2010 15:19:32 +0800
+Subject: [PATCH] ENGR00125849 RTC: enable wakeup source node in sys directory
+
+There are not MX28/MX23 power/wakeup node at sys directory.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/rtc/rtc-mxs.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/rtc/rtc-mxs.c b/drivers/rtc/rtc-mxs.c
+index 4ed5b40..02fcfcc 100644
+--- a/drivers/rtc/rtc-mxs.c
++++ b/drivers/rtc/rtc-mxs.c
+@@ -255,6 +255,8 @@ static int mxs_rtc_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, rtc_data);
+ 
++	device_init_wakeup(&pdev->dev, 1);
++
+ 	return 0;
+ }
+ 
+-- 
+1.5.4.4
+

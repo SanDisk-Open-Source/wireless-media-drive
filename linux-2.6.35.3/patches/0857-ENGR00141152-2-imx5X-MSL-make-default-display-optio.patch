@@ -1,0 +1,205 @@
+From 60df3c30c4583a227e66eed9c963a7962efa3bfa Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Mon, 28 Mar 2011 13:24:16 +0800
+Subject: [PATCH] ENGR00141152-2 imx5X MSL: make default display option
+
+Change MSL files.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/mach-mx5/early_setup.c  |   15 +++++++++++----
+ arch/arm/mach-mx5/mx51_babbage.c |    5 +++++
+ arch/arm/mach-mx5/mx53_ard.c     |    7 ++++++-
+ arch/arm/mach-mx5/mx53_evk.c     |    4 ++++
+ arch/arm/mach-mx5/mx53_loco.c    |    7 ++++++-
+ arch/arm/mach-mx5/mx53_smd.c     |   14 ++++++++++----
+ 6 files changed, 42 insertions(+), 10 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/early_setup.c b/arch/arm/mach-mx5/early_setup.c
+index dd731d7..b569e48 100644
+--- a/arch/arm/mach-mx5/early_setup.c
++++ b/arch/arm/mach-mx5/early_setup.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -19,11 +19,18 @@
+ #include <linux/init.h>
+ #include <linux/string.h>
+ 
+-int __initdata primary_di = { 0 };
+-static int __init di_setup(char *__unused)
++int __initdata primary_di = { -1 };
++static int __init di1_setup(char *__unused)
+ {
+ 	primary_di = 1;
+ 	return 1;
+ }
+-__setup("di1_primary", di_setup);
++__setup("di1_primary", di1_setup);
++
++static int __init di0_setup(char *__unused)
++{
++	primary_di = 0;
++	return 1;
++}
++__setup("di0_primary", di0_setup);
+ 
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 90528c2..a4ba0fa 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -576,6 +576,10 @@ static int __init mxc_init_fb(void)
+ 	/* WVGA Reset */
+ 	gpio_set_value(BABBAGE_DISP_BRIGHTNESS_CTL, 1);
+ 
++	/*for bbg board, set default display as DVI*/
++	if (primary_di < 0)
++		primary_di = 0;
++
+ 	if (primary_di) {
+ 		printk(KERN_INFO "DI1 is primary\n");
+ 
+@@ -805,6 +809,7 @@ static struct mxc_ddc_platform_data mxc_ddc_dvi_data = {
+ 	.di = 0,
+ 	.init = ddc_dvi_init,
+ 	.update = ddc_dvi_update,
++	.boot_enable = 1,
+ };
+ 
+ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index d376338..4f1e8c9 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -540,6 +540,7 @@ static struct mxc_bus_freq_platform_data bus_freq_data = {
+ 
+ static struct ldb_platform_data ldb_data = {
+ 	.ext_ref = 1,
++	.boot_enable = MXC_LDBDI0,
+ };
+ 
+ static struct tve_platform_data tve_data = {
+@@ -651,7 +652,7 @@ static struct resource mxcfb_resources[] = {
+ 
+ static struct mxc_fb_platform_data fb_data[] = {
+ 	{
+-	 .interface_pix_fmt = IPU_PIX_FMT_RGB24,
++	 .interface_pix_fmt = IPU_PIX_FMT_RGB666,
+ 	 .mode_str = "XGA",
+ 	 .mode = video_modes,
+ 	 .num_modes = ARRAY_SIZE(video_modes),
+@@ -670,6 +671,10 @@ static int __init mxc_init_fb(void)
+ 	if (!machine_is_mx53_ard())
+ 		return 0;
+ 
++	/*for ard board, set default display as LDB*/
++	if (primary_di < 0)
++		primary_di = 0;
++
+ 	if (primary_di) {
+ 		printk(KERN_INFO "DI1 is primary\n");
+ 		/* DI1 -> DP-BG channel: */
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index ebe9629..cf35c74 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -783,6 +783,10 @@ static int __init mxc_init_fb(void)
+ 	if (!machine_is_mx53_evk())
+ 		return 0;
+ 
++	/*for evk board, set default display as CLAA-WVGA*/
++	if (primary_di < 0)
++		primary_di = 0;
++
+ 	if (primary_di) {
+ 		printk(KERN_INFO "DI1 is primary\n");
+ 		/* DI1 -> DP-BG channel: */
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 4179328..09bf1a2 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -327,6 +327,7 @@ static struct mxc_bus_freq_platform_data bus_freq_data = {
+ 
+ static struct tve_platform_data tve_data = {
+ 	.dac_reg = "DA9052_LDO7",
++	.boot_enable = MXC_TVE_VGA,
+ };
+ 
+ static struct ldb_platform_data ldb_data = {
+@@ -380,7 +381,7 @@ static struct mxc_fb_platform_data fb_data[] = {
+ 	 },
+ 	{
+ 	 .interface_pix_fmt = IPU_PIX_FMT_GBR24,
+-	 .mode_str = "1024x768M-16@60",
++	 .mode_str = "VGA-XGA",
+ 	 .mode = video_modes,
+ 	 .num_modes = ARRAY_SIZE(video_modes),
+ 	 },
+@@ -392,6 +393,10 @@ static int __init mxc_init_fb(void)
+ 	if (!machine_is_mx53_loco())
+ 		return 0;
+ 
++	/*for loco board, set default display as VGA*/
++	if (primary_di < 0)
++		primary_di = 1;
++
+ 	if (primary_di) {
+ 		printk(KERN_INFO "DI1 is primary\n");
+ 		/* DI1 -> DP-BG channel: */
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 55917da..d48b096 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -501,6 +501,7 @@ static struct tve_platform_data tve_data = {
+ 
+ static struct ldb_platform_data ldb_data = {
+ 	.ext_ref = 1,
++	.boot_enable = MXC_LDBDI1,
+ };
+ 
+ static void mxc_iim_enable_fuse(void)
+@@ -543,14 +544,14 @@ static struct resource mxcfb_resources[] = {
+ 
+ static struct mxc_fb_platform_data fb_data[] = {
+ 	{
+-	 .interface_pix_fmt = IPU_PIX_FMT_RGB565,
+-	 .mode_str = "CLAA-WVGA",
++	 .interface_pix_fmt = IPU_PIX_FMT_RGB24,
++	 .mode_str = "1024x768M-16@60",
+ 	 .mode = video_modes,
+ 	 .num_modes = ARRAY_SIZE(video_modes),
+ 	 },
+ 	{
+-	 .interface_pix_fmt = IPU_PIX_FMT_GBR24,
+-	 .mode_str = "1024x768M-16@60",
++	 .interface_pix_fmt = IPU_PIX_FMT_RGB666,
++	 .mode_str = "XGA",
+ 	 .mode = video_modes,
+ 	 .num_modes = ARRAY_SIZE(video_modes),
+ 	 },
+@@ -562,6 +563,10 @@ static int __init mxc_init_fb(void)
+ 	if (!machine_is_mx53_smd())
+ 		return 0;
+ 
++	/*for smd board, set default display as LDB*/
++	if (primary_di < 0)
++		primary_di = 1;
++
+ 	if (primary_di) {
+ 		printk(KERN_INFO "DI1 is primary\n");
+ 		/* DI1 -> DP-BG channel: */
+@@ -603,6 +608,7 @@ static void sii902x_hdmi_reset(void)
+ static struct mxc_lcd_platform_data sii902x_hdmi_data = {
+ 	.reset = sii902x_hdmi_reset,
+ 	.analog_reg = "DA9052_LDO2",
++	.boot_enable = 1,
+ };
+ 
+ static struct imxi2c_platform_data mxci2c_data = {
+-- 
+1.5.4.4
+

@@ -1,0 +1,46 @@
+From 08631fe7020d6d42fbe63ef0f9ef02a2548eed03 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Fri, 30 Jul 2010 10:46:37 +0800
+Subject: [PATCH] ENGR00125693-2 OV3640:Set gpo regulator's voltage to be 2.8V
+
+Set gpo regulator's voltage to be 2.8V.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/ov3640.c |    9 ++++++---
+ 1 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/ov3640.c b/drivers/media/video/mxc/capture/ov3640.c
+index e6d869d..b7b552a 100644
+--- a/drivers/media/video/mxc/capture/ov3640.c
++++ b/drivers/media/video/mxc/capture/ov3640.c
+@@ -26,7 +26,7 @@
+ #define OV3640_VOLTAGE_ANALOG               2800000
+ #define OV3640_VOLTAGE_DIGITAL_CORE         1500000
+ #define OV3640_VOLTAGE_DIGITAL_IO           1800000
+-
++#define OV3640_VOLTAGE_DIGITAL_GPO	    2800000
+ 
+ /* Check these values! */
+ #define MIN_FPS 15
+@@ -1317,12 +1317,15 @@ static int ov3640_probe(struct i2c_client *client,
+ 		gpo_regulator = regulator_get(&client->dev,
+ 					      plat_data->gpo_regulator);
+ 		if (!IS_ERR(gpo_regulator)) {
++			regulator_set_voltage(gpo_regulator,
++					      OV3640_VOLTAGE_DIGITAL_GPO,
++					      OV3640_VOLTAGE_DIGITAL_GPO);
+ 			if (regulator_enable(gpo_regulator) != 0) {
+-				pr_err("%s:gpo3 enable error\n", __func__);
++				pr_err("%s:gpo enable error\n", __func__);
+ 				goto err4;
+ 			} else {
+ 				dev_dbg(&client->dev,
+-					"%s:gpo3 enable ok\n", __func__);
++					"%s:gpo enable ok\n", __func__);
+ 			}
+ 		} else
+ 			gpo_regulator = NULL;
+-- 
+1.5.4.4
+

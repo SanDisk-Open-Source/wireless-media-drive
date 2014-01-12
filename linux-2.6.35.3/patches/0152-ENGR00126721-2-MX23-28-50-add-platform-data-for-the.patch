@@ -1,0 +1,346 @@
+From 0f44f606a96ea32016be9fb613227bb099afda94 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 30 Aug 2010 09:54:18 +0800
+Subject: [PATCH] ENGR00126721-2 MX23/28/50: add platform data for the ocotp device
+
+Add the ocotp device and ocotp clock for the ocotp controller.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/mach-mx23/device.c             |   44 ++++++++++++++++++++++++++++++
+ arch/arm/mach-mx28/device.c             |   45 +++++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/clock_mx50.c          |   19 +++++++++++-
+ arch/arm/mach-mx5/devices.c             |   14 +++++++++
+ arch/arm/mach-mx5/devices.h             |    1 +
+ arch/arm/mach-mx5/mx50_arm2.c           |   29 ++++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/mxc.h    |    6 ++++
+ arch/arm/plat-mxs/device.c              |   18 ++++++++++++
+ arch/arm/plat-mxs/include/mach/device.h |    6 ++++
+ 9 files changed, 180 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx23/device.c b/arch/arm/mach-mx23/device.c
+index 814c4ef..cda2285 100644
+--- a/arch/arm/mach-mx23/device.c
++++ b/arch/arm/mach-mx23/device.c
+@@ -931,6 +931,49 @@ static void mx23_init_persistent()
+ }
+ #endif
+ 
++#if defined(CONFIG_FSL_OTP)
++/* Building up eight registers's names of a bank */
++#define BANK(a, b, c, d, e, f, g, h)	\
++	{\
++	("HW_OCOTP_"#a), ("HW_OCOTP_"#b), ("HW_OCOTP_"#c), ("HW_OCOTP_"#d), \
++	("HW_OCOTP_"#e), ("HW_OCOTP_"#f), ("HW_OCOTP_"#g), ("HW_OCOTP_"#h) \
++	}
++
++#define BANKS		(4)
++#define BANK_ITEMS	(8)
++static const char *bank_reg_desc[BANKS][BANK_ITEMS] = {
++	BANK(CUST0, CUST1, CUST2, CUST3, CRYPTO0, CRYPTO1, CRYPTO2, CRYPTO3),
++	BANK(HWCAP0, HWCAP1, HWCAP2, HWCAP3, HWCAP4, HWCAP5, SWCAP, CUSTCAP),
++	BANK(LOCK, OPS0, OPS1, OPS2, OPS3, UN0, UN1, UN2),
++	BANK(ROM0, ROM1, ROM2, ROM3, ROM4, ROM5, ROM6, ROM7),
++};
++
++static struct fsl_otp_data otp_data = {
++	.fuse_name	= (char **)bank_reg_desc,
++	.regulator_name	= "vddio",
++	.fuse_num	= BANKS * BANK_ITEMS,
++};
++#undef BANK
++#undef BANKS
++#undef BANK_ITEMS
++
++static void mx23_init_otp(void)
++{
++	struct platform_device *pdev;
++	pdev = mxs_get_device("ocotp", 0);
++	if (pdev == NULL || IS_ERR(pdev))
++		return;
++	pdev->dev.platform_data = &otp_data;
++	pdev->resource = NULL;
++	pdev->num_resources = 0;
++	mxs_add_device(pdev, 3);
++}
++#else
++static void mx23_init_otp(void)
++{
++}
++#endif
++
+ int __init mx23_device_init(void)
+ {
+ 	mx23_init_dma();
+@@ -951,6 +994,7 @@ int __init mx23_device_init(void)
+ 	mx23_init_pxp();
+ 	mx23_init_battery();
+ 	mx23_init_persistent();
++	mx23_init_otp();
+ 
+ 	return 0;
+ }
+diff --git a/arch/arm/mach-mx28/device.c b/arch/arm/mach-mx28/device.c
+index 3277d4b..068d178 100644
+--- a/arch/arm/mach-mx28/device.c
++++ b/arch/arm/mach-mx28/device.c
+@@ -1460,6 +1460,50 @@ static void mx28_init_persistent()
+ }
+ #endif
+ 
++#if defined(CONFIG_FSL_OTP)
++/* Building up eight registers's names of a bank */
++#define BANK(a, b, c, d, e, f, g, h)	\
++	{\
++	("HW_OCOTP_"#a), ("HW_OCOTP_"#b), ("HW_OCOTP_"#c), ("HW_OCOTP_"#d), \
++	("HW_OCOTP_"#e), ("HW_OCOTP_"#f), ("HW_OCOTP_"#g), ("HW_OCOTP_"#h) \
++	}
++
++#define BANKS		(5)
++#define BANK_ITEMS	(8)
++static const char *bank_reg_desc[BANKS][BANK_ITEMS] = {
++	BANK(CUST0, CUST1, CUST2, CUST3, CRYPTO0, CRYPTO1, CRYPTO2, CRYPTO3),
++	BANK(HWCAP0, HWCAP1, HWCAP2, HWCAP3, HWCAP4, HWCAP5, SWCAP, CUSTCAP),
++	BANK(LOCK, OPS0, OPS1, OPS2, OPS3, UN0, UN1, UN2),
++	BANK(ROM0, ROM1, ROM2, ROM3, ROM4, ROM5, ROM6, ROM7),
++	BANK(SRK0, SRK1, SRK2, SRK3, SRK4, SRK5, SRK6, SRK7),
++};
++
++static struct fsl_otp_data otp_data = {
++	.fuse_name	= (char **)bank_reg_desc,
++	.regulator_name	= "vddio",
++	.fuse_num	= BANKS * BANK_ITEMS,
++};
++#undef BANK
++#undef BANKS
++#undef BANK_ITEMS
++
++static void __init mx28_init_otp(void)
++{
++	struct platform_device *pdev;
++	pdev = mxs_get_device("ocotp", 0);
++	if (pdev == NULL || IS_ERR(pdev))
++		return;
++	pdev->dev.platform_data = &otp_data;
++	pdev->resource = NULL;
++	pdev->num_resources = 0;
++	mxs_add_device(pdev, 3);
++}
++#else
++static void mx28_init_otp(void)
++{
++}
++#endif
++
+ int __init mx28_device_init(void)
+ {
+ 	mx28_init_dma();
+@@ -1484,6 +1528,7 @@ int __init mx28_device_init(void)
+ 	mx28_init_dcp();
+ 	mx28_init_battery();
+ 	mx28_init_persistent();
++	mx28_init_otp();
+ 	return 0;
+ }
+ 
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index a39d0fc..e4c76f9 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2424,6 +2424,14 @@ static struct clk gpmi_nfc_clk[] = {
+ 	},
+ };
+ 
++static struct clk ocotp_clk = {
++	.parent = &ahb_clk,
++	.enable = _clk_enable,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGR7_CG13_OFFSET,
++	.disable = _clk_disable,
++};
++
+ static int _clk_gpu2d_set_parent(struct clk *clk, struct clk *parent)
+ {
+ 	u32 reg, mux;
+@@ -3000,6 +3008,10 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "bch", gpmi_nfc_clk[2]),
+ 	_REGISTER_CLOCK(NULL, "bch-apb", gpmi_nfc_clk[3]),
+ 	_REGISTER_CLOCK(NULL, "rng_clk", rng_clk),
++	_REGISTER_CLOCK(NULL, "dcp_clk", dcp_clk[0]),
++	_REGISTER_CLOCK(NULL, "dcp_sec1_clk", dcp_clk[1]),
++	_REGISTER_CLOCK(NULL, "dcp_sec2_clk", dcp_clk[2]),
++	_REGISTER_CLOCK(NULL, "ocotp_ctrl_apb", ocotp_clk),
+ };
+ 
+ static void clk_tree_init(void)
+@@ -3135,8 +3147,11 @@ int __init mx50_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 
+ 	clk_enable(&main_bus_clk);
+ 
+-	/* TO DO
+-	clk_enable(&apbh_dma_clk);*/
++	clk_enable(&ocotp_clk);
++
++	clk_enable(&apbh_dma_clk);
++
++	propagate_rate(&apll_clk);
+ 
+ 	/* Initialise the parents to be axi_b, parents are set to
+ 	 * axi_a when the clocks are enabled.
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 3fff897..7b3d7de 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1010,6 +1010,20 @@ struct platform_device pata_fsl_device = {
+ 	},
+ };
+ 
++/* On-Chip OTP device and resource */
++static struct resource otp_resource = {
++	.start	= OCOTP_CTRL_BASE_ADDR,
++	.end 	= OCOTP_CTRL_BASE_ADDR + SZ_8K - 1,
++	.flags 	= IORESOURCE_MEM,
++};
++
++struct platform_device fsl_otp_device = {
++	.name	= "ocotp",
++	.id	= -1,
++	.resource      = &otp_resource,
++	.num_resources = 1,
++};
++
+ static struct resource ahci_fsl_resources[] = {
+ 	{
+ 		.start = MX53_SATA_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 1d0f1e7..1337c8a 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -64,6 +64,7 @@ extern struct platform_device mxcsdhc2_device;
+ extern struct platform_device mxcsdhc3_device;
+ extern struct platform_device ahci_fsl_device;
+ extern struct platform_device pata_fsl_device;
++extern struct platform_device fsl_otp_device;
+ extern struct platform_device gpu_device;
+ extern struct platform_device mxc_usbdr_udc_device;
+ extern struct platform_device mxc_usbdr_otg_device;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 0eff14a..fb7f89d 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1016,6 +1016,32 @@ static struct gpmi_nfc_platform_data  gpmi_nfc_platform_data = {
+ 	.partition_count         = 0,
+ };
+ 
++/* OTP data */
++/* Building up eight registers's names of a bank */
++#define BANK(a, b, c, d, e, f, g, h)	\
++	{\
++	("HW_OCOTP_"#a), ("HW_OCOTP_"#b), ("HW_OCOTP_"#c), ("HW_OCOTP_"#d), \
++	("HW_OCOTP_"#e), ("HW_OCOTP_"#f), ("HW_OCOTP_"#g), ("HW_OCOTP_"#h) \
++	}
++
++#define BANKS		(5)
++#define BANK_ITEMS	(8)
++static const char *bank_reg_desc[BANKS][BANK_ITEMS] = {
++	BANK(LOCK, CFG0, CFG1, CFG2, CFG3, CFG4, CFG5, CFG6),
++	BANK(MEM0, MEM1, MEM2, MEM3, MEM4, MEM5, GP0, GP1),
++	BANK(SCC0, SCC1, SCC2, SCC3, SCC4, SCC5, SCC6, SCC7),
++	BANK(SRK0, SRK1, SRK2, SRK3, SRK4, SRK5, SRK6, SRK7),
++	BANK(SJC0, SJC1, MAC0, MAC1, HWCAP0, HWCAP1, HWCAP2, SWCAP),
++};
++
++static struct fsl_otp_data otp_data = {
++	.fuse_name	= (char **)bank_reg_desc,
++	.fuse_num	= BANKS * BANK_ITEMS,
++};
++#undef BANK
++#undef BANKS
++#undef BANK_ITEMS
++
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -1160,6 +1186,9 @@ static void __init mxc_board_init(void)
+ 	mx5_usbh1_init();
+ 
+ 	mxc_register_device(&mxc_rngb_device, NULL);
++
++	mxc_register_device(&dcp_device, NULL);
++	mxc_register_device(&fsl_otp_device, &otp_data);
+ }
+ 
+ static void __init mx50_arm2_timer_init(void)
+diff --git a/arch/arm/plat-mxc/include/mach/mxc.h b/arch/arm/plat-mxc/include/mach/mxc.h
+index b677ec5..a2769ea 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc.h
++++ b/arch/arm/plat-mxc/include/mach/mxc.h
+@@ -221,6 +221,12 @@ void mxc_pg_disable(struct platform_device *pdev);
+ 
+ struct mxc_unifi_platform_data *get_unifi_plat_data(void);
+ 
++struct fsl_otp_data {
++	char 		**fuse_name;
++	char		*regulator_name;
++	unsigned int 	fuse_num;
++};
++
+ struct mxs_dma_plat_data {
+ 	unsigned int burst8:1;
+ 	unsigned int burst:1;
+diff --git a/arch/arm/plat-mxs/device.c b/arch/arm/plat-mxs/device.c
+index 0274089..e3783d3 100644
+--- a/arch/arm/plat-mxs/device.c
++++ b/arch/arm/plat-mxs/device.c
+@@ -485,6 +485,16 @@ static struct platform_device mxs_persistent = {
+ };
+ #endif
+ 
++#ifdef CONFIG_FSL_OTP
++static struct platform_device otp_device = {
++	.name			= "ocotp",
++	.id			= 0,
++	.dev = {
++		.release = mxs_nop_release,
++		},
++};
++#endif
++
+ static inline void mxs_init_busfreq(void)
+ {
+ 	(void)platform_device_register(&busfreq_device);
+@@ -566,6 +576,14 @@ static struct mxs_dev_lookup dev_lookup[] = {
+ 	},
+ #endif
+ 
++#if defined(CONFIG_FSL_OTP)
++	{
++	.name = "ocotp",
++	.size = 1,
++	.pdev = &otp_device,
++	},
++#endif
++
+ #if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE)
+ 	{
+ 	 .name	= "mxs-fb",
+diff --git a/arch/arm/plat-mxs/include/mach/device.h b/arch/arm/plat-mxs/include/mach/device.h
+index 65663e3..7be62fb 100644
+--- a/arch/arm/plat-mxs/include/mach/device.h
++++ b/arch/arm/plat-mxs/include/mach/device.h
+@@ -54,6 +54,12 @@ struct mxs_dma_plat_data {
+ 	unsigned int chan_num;
+ };
+ 
++struct fsl_otp_data {
++	char 		**fuse_name;
++	char		*regulator_name;
++	unsigned int 	fuse_num;
++};
++
+ struct mxs_i2c_plat_data {
+ 	unsigned int pioqueue_mode:1;
+ };
+-- 
+1.5.4.4
+

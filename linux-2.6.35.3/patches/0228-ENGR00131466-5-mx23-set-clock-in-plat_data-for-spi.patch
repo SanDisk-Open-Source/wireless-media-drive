@@ -1,0 +1,67 @@
+From 2967c56ac8188bcf98970aed6e3818e8c8c415e7 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Tue, 14 Sep 2010 13:54:02 +0800
+Subject: [PATCH] ENGR00131466-5 mx23: set clock in plat_data for spi device
+
+1. Set the correct clock to use in plat_data
+2. Change to use the platform_data of platform_device to pass the pin
+configuration functions and clocks.
+Platform_data of spi_device will bypass to spi slave driver.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx23/device.c  |    7 +++++++
+ arch/arm/mach-mx23/mx23evk.c |    5 -----
+ 2 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/mach-mx23/device.c b/arch/arm/mach-mx23/device.c
+index cda2285..8352540 100644
+--- a/arch/arm/mach-mx23/device.c
++++ b/arch/arm/mach-mx23/device.c
+@@ -671,6 +671,12 @@ static void mx23_init_mmc(void)
+ #endif
+ 
+ #if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
++static struct mxs_spi_platform_data ssp1_data = {
++	.hw_pin_init = mxs_spi_enc_pin_init,
++	.hw_pin_release = mxs_spi_enc_pin_release,
++	.clk = "ssp.0",
++};
++
+ static struct resource ssp1_resources[] = {
+ 	{
+ 		.start	= SSP1_PHYS_ADDR,
+@@ -700,6 +706,7 @@ static void __init mx23_init_spi1(void)
+ 		return;
+ 	pdev->resource = ssp1_resources;
+ 	pdev->num_resources = ARRAY_SIZE(ssp1_resources);
++	pdev->dev.platform_data = &ssp1_data;
+ 
+ 	mxs_add_device(pdev, 3);
+ }
+diff --git a/arch/arm/mach-mx23/mx23evk.c b/arch/arm/mach-mx23/mx23evk.c
+index 6ce1583..44e1e22 100644
+--- a/arch/arm/mach-mx23/mx23evk.c
++++ b/arch/arm/mach-mx23/mx23evk.c
+@@ -60,10 +60,6 @@ static void i2c_device_init(void)
+ 	i2c_register_board_info(0, &mma7450_i2c_device, 1);
+ }
+ 
+-static struct mxs_spi_platform_data enc_data = {
+-	.hw_pin_init = mxs_spi_enc_pin_init,
+-	.hw_pin_release = mxs_spi_enc_pin_release,
+-};
+ static struct spi_board_info spi_board_info[] __initdata = {
+ #if defined(CONFIG_ENC28J60) || defined(CONFIG_ENC28J60_MODULE)
+ 	{
+@@ -71,7 +67,6 @@ static struct spi_board_info spi_board_info[] __initdata = {
+ 		.max_speed_hz   = 6 * 1000 * 1000,
+ 		.bus_num	= 1,
+ 		.chip_select    = 0,
+-		.platform_data  = &enc_data,
+ 	},
+ #endif
+ };
+-- 
+1.5.4.4
+

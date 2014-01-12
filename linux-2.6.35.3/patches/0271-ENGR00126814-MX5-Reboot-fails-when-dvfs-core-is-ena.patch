@@ -1,0 +1,84 @@
+From 7d9b9adb47975c4ea80227ea0585e2353e33ea47 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 15 Sep 2010 11:20:22 -0500
+Subject: [PATCH] ENGR00126814 MX5: Reboot fails when dvfs-core is enabled.
+
+Disable dvfs-core before the reboot process starts since its possible that the
+core voltage is at 0.85V when reboot command was issued. This will cause the
+reboot to fail since the ROM code does not set the core voltage.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/system.c    |    2 ++
+ arch/arm/plat-mxc/dvfs_core.c |    3 ++-
+ arch/arm/plat-mxc/system.c    |    8 ++++++++
+ 3 files changed, 12 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index ddc52cd..f12b2b3 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -34,11 +34,13 @@
+ 
+ extern int mxc_jtag_enabled;
+ extern int iram_ready;
++extern int dvfs_core_is_active;
+ extern void __iomem *ccm_base;
+ extern void __iomem *databahn_base;
+ extern void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
+ extern void *wait_in_iram_base;
+ extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
++extern void stop_dvfs(void);
+ 
+ static struct clk *gpc_dvfs_clk;
+ 
+diff --git a/arch/arm/plat-mxc/dvfs_core.c b/arch/arm/plat-mxc/dvfs_core.c
+index ec2e722..9c0223e 100644
+--- a/arch/arm/plat-mxc/dvfs_core.c
++++ b/arch/arm/plat-mxc/dvfs_core.c
+@@ -89,6 +89,7 @@ extern int cpufreq_trig_needed;
+ struct timeval core_prev_intr;
+ 
+ void dump_dvfs_core_regs(void);
++void stop_dvfs(void);
+ static struct delayed_work dvfs_core_handler;
+ 
+ /*
+@@ -551,7 +552,7 @@ END:	/* Set MAXF, MINF */
+ /*!
+  * This function disables the DVFS module.
+  */
+-static void stop_dvfs(void)
++void stop_dvfs(void)
+ {
+ 	u32 reg = 0;
+ 	unsigned long flags;
+diff --git a/arch/arm/plat-mxc/system.c b/arch/arm/plat-mxc/system.c
+index 65e945a..398b4e1 100644
+--- a/arch/arm/plat-mxc/system.c
++++ b/arch/arm/plat-mxc/system.c
+@@ -32,6 +32,8 @@
+ #include <asm/system.h>
+ 
+ static void __iomem *wdog_base;
++extern int dvfs_core_is_active;
++extern void stop_dvfs(void);
+ 
+ /*
+  * Reset the system. It is called by machine_restart().
+@@ -55,6 +57,12 @@ void arch_reset(char mode, const char *cmd)
+ 		__raw_writel(0x20600, IO_ADDRESS(NFC_BASE_ADDR) + 0x28);
+ #endif
+ 
++#ifdef CONFIG_ARCH_MX5
++	/* Stop DVFS-CORE before reboot. */
++	if (dvfs_core_is_active)
++		stop_dvfs();
++#endif
++
+ 	if (cpu_is_mx1()) {
+ 		wcr_enable = (1 << 0);
+ 	} else {
+-- 
+1.5.4.4
+

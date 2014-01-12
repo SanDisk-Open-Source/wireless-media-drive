@@ -1,0 +1,91 @@
+From 3cca1fb9be3e2f5d804d2970bfcc4e276b6a51cd Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Wed, 16 Mar 2011 11:00:50 +0800
+Subject: [PATCH] ENGR00140710-1 usb-device: add more device wakeup modes
+
+Following usb device wakeup modes is supported are added:
+-vbus failing wakeup: it happens when our SoC suspend and host's vbus failing
+(after host(pc) suspends 10 seconds later)
+-device receives reset wakeup: it happens follow below steps:
+	--Find MSC device at pc for soc
+  	--Right-click -> Disable (this will suspend the device)
+	--let soc go to suspend
+	--Right-click -> Enable (this will reset the device)
+-device receives resume signal from pc: it can be tested by pc HSET tools
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/mach-mx5/usb_dr.c               |   26 +++++++++++++++++++++-----
+ arch/arm/plat-mxc/include/mach/arc_otg.h |    5 ++++-
+ 2 files changed, 25 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/usb_dr.c b/arch/arm/mach-mx5/usb_dr.c
+index d0dba3a..183a782 100644
+--- a/arch/arm/mach-mx5/usb_dr.c
++++ b/arch/arm/mach-mx5/usb_dr.c
+@@ -18,7 +18,7 @@
+ #include <linux/fsl_devices.h>
+ #include <mach/arc_otg.h>
+ #include <mach/hardware.h>
+-#include <asm/delay.h>
++#include <linux/delay.h>
+ #include "usb.h"
+ static int usbotg_init_ext(struct platform_device *pdev);
+ static void usbotg_uninit_ext(struct fsl_usb2_platform_data *pdata);
+@@ -259,12 +259,28 @@ static enum usb_wakeup_event _is_device_wakeup(struct fsl_usb2_platform_data *pd
+ {
+ 	int wakeup_req = USBCTRL & UCTRL_OWIR;
+ 
+-	if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID) && (UOG_OTGSC & OTGSC_IS_B_SESSION_VALID)) {
+-		printk(KERN_INFO "otg udc wakeup\n");
+-		return WAKEUP_EVENT_VBUS;
++	printk(KERN_DEBUG "the otgsc is 0x%x, usbsts is 0x%x, portsc is 0x%x, wakeup_irq is 0x%x\n", UOG_OTGSC, UOG_USBSTS, UOG_PORTSC1, wakeup_req);
++
++	/* if ID=1, it is a device wakeup event */
++	if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID) && (UOG_PORTSC1 & PORTSC_PORT_FORCE_RESUME)) {
++		printk(KERN_INFO "otg udc wakeup, host sends resume signal\n");
++		return true;
++	}
++	if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID) && (UOG_USBSTS & USBSTS_URI)) {
++		printk(KERN_INFO "otg udc wakeup, host sends reset signal\n");
++		return true;
++	}
++	if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID) && (UOG_OTGSC & OTGSC_STS_A_VBUS_VALID) \
++		&& (UOG_OTGSC & OTGSC_IS_B_SESSION_VALID)) {
++		printk(KERN_INFO "otg udc vbus rising wakeup\n");
++		return true;
++	}
++	if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID) && !(UOG_OTGSC & OTGSC_STS_A_VBUS_VALID)) {
++		printk(KERN_INFO "otg udc vbus falling wakeup\n");
++		return true;
+ 	}
+-	return WAKEUP_EVENT_INVALID;
+ 
++	return WAKEUP_EVENT_INVALID;
+ }
+ 
+ static void device_wakeup_handler(struct fsl_usb2_platform_data *pdata)
+diff --git a/arch/arm/plat-mxc/include/mach/arc_otg.h b/arch/arm/plat-mxc/include/mach/arc_otg.h
+index 320fd7d..8e1c4cd 100644
+--- a/arch/arm/plat-mxc/include/mach/arc_otg.h
++++ b/arch/arm/plat-mxc/include/mach/arc_otg.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -219,6 +219,9 @@ extern volatile u32 *mx3_usb_otg_addr;
+ #define  OTGSC_IE_B_SESSION_END		(1 << 28)
+ #define  OTGSC_IE_1ms_TIMER		(1 << 29)
+ #define  OTGSC_IE_DATA_PULSE		(1 << 30)
++/* UOG_USBSTS bits */
++#define USBSTS_PCI			(1 << 2) /* Port Change Detect */
++#define USBSTS_URI			(1 << 6) /* USB Reset Received */
+ 
+ #if 1				/* FIXME these here for compatibility between my names and Leo's */
+ /* OTG interrupt enable bit masks */
+-- 
+1.5.4.4
+

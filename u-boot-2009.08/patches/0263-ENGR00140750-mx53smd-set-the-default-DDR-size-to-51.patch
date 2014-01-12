@@ -1,0 +1,34 @@
+From a7b2f005d5b8a96f8cb0bd3c87aa2dba69aef95a Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Thu, 17 Mar 2011 11:38:41 +0800
+Subject: [PATCH] ENGR00140750 mx53smd: set the default DDR size to 512MB for android configure
+
+Decrease the default DDR size to 512MB in the default android
+uboot configuration file. This can align with most customers'
+hardware design, and help us to find more issues before release.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ include/configs/mx53_smd_android.h |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index f7f4ceb..dcc2798 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -296,10 +296,9 @@
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+ #define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
+ #define PHYS_SDRAM_2		CSD1_BASE_ADDR
+-#define PHYS_SDRAM_2_SIZE	(512 * 1024 * 1024)
++#define PHYS_SDRAM_2_SIZE	0
+ #define iomem_valid_addr(addr, size) \
+-	((addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE)) \
+-	|| (addr >= PHYS_SDRAM_2 && addr <= (PHYS_SDRAM_2 + PHYS_SDRAM_2_SIZE)))
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+-- 
+1.5.4.4
+

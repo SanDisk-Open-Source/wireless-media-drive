@@ -1,0 +1,47 @@
+From ecf9416a721bcfb0fee5e6e6e3137cb218521ff3 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Tue, 11 Jan 2011 16:05:02 +0800
+Subject: [PATCH] ENGR0000137838 SDHCI Some eMMC cards can't work well in our BSP
+
+Pick up the patch from the community.
+
+fc8a0985c2846292312556cba10b8a4182f55967
+From: Hanumath Prasad <hanumath.prasad@stericsson.com>
+Date: Tue, 10 Aug 2010 18:01:45 -0700
+Subject: [PATCH] mmc: only set blockaddressed for >2GiB cards
+A non-zero value of SEC_COUNT does not indicate that
+the card is sector
+addressed. According to the MMC specification, cards
+with a densitygreater than 2GiB are sector
+addressed.
+
+Acked-by: Linus Walleij <linus.walleij@stericsson.com>
+Signed-off-by: Hanumath Prasad <hanumath.prasad@stericsson.com>
+Signed-off-by: Rabin Vincent <rabin.vincent@stericsson.com>
+Cc: <linux-mmc@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ drivers/mmc/core/mmc.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/core/mmc.c b/drivers/mmc/core/mmc.c
+index 4a9e2ed..95e13c2 100644
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+@@ -222,7 +222,9 @@ static int mmc_read_ext_csd(struct mmc_card *card)
+ 			ext_csd[EXT_CSD_SEC_CNT + 1] << 8 |
+ 			ext_csd[EXT_CSD_SEC_CNT + 2] << 16 |
+ 			ext_csd[EXT_CSD_SEC_CNT + 3] << 24;
+-		if (card->ext_csd.sectors)
++
++		/* Cards with density > 2GiB are sector addressed */
++		if (card->ext_csd.sectors > (2u * 1024 * 1024 * 1024) / 512)
+ 			mmc_card_set_blockaddr(card);
+ 	}
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,329 @@
+From 9e81bc3e98f47e0e1e4a434ea3527f559af530d5 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 5 Jan 2011 13:19:04 +0800
+Subject: [PATCH] ENGR00136007-1 MX53 TO2.0: Add ASRC support
+
+Add ASRC support for MX53 TO2.0:
+- Add ASRC clock support
+- MX53 clk source is different from MX35. Add clk map version.
+- Add ASRC resource data. Get ASRC irq from resource data
+- Add ASRC support for all MX53 boards
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c     |   78 ++++++++++++++++++++++++++++++++++++++++-
+ arch/arm/mach-mx5/devices.c   |   24 ++++++++++++-
+ arch/arm/mach-mx5/devices.h   |    3 +-
+ arch/arm/mach-mx5/mx53_ard.c  |   16 ++++++++
+ arch/arm/mach-mx5/mx53_evk.c  |   18 +++++++++-
+ arch/arm/mach-mx5/mx53_loco.c |   14 +++++++
+ arch/arm/mach-mx5/mx53_smd.c  |   14 +++++++
+ 7 files changed, 163 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index ac73329..79974fb 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -4195,6 +4195,80 @@ static struct clk cko1_clk = {
+ 	.round_rate = cko1_round_rate,
+ 	.set_parent = cko1_set_parent,
+ };
++static int _clk_asrc_set_parent(struct clk *clk, struct clk *parent)
++{
++	u32 reg;
++
++	reg = __raw_readl(MXC_CCM_CSCMR2);
++	if (parent == &pll4_sw_clk)
++		reg |= MXC_CCM_CSCMR2_ASRC_CLK_SEL;
++	else
++		reg &= ~MXC_CCM_CSCMR2_ASRC_CLK_SEL;
++	 __raw_writel(reg, MXC_CCM_CSCMR2);
++
++	return 0;
++}
++
++static unsigned long _clk_asrc_get_rate(struct clk *clk)
++{
++	u32 reg, prediv, podf;
++
++	reg = __raw_readl(MXC_CCM_CSCDR2);
++	prediv = ((reg & MXC_CCM_CSCDR2_ASRC_CLK_PRED_MASK) >>
++		MXC_CCM_CSCDR2_ASRC_CLK_PRED_OFFSET) + 1;
++	if (prediv == 1)
++		BUG();
++	podf = ((reg & MXC_CCM_CSCDR2_ASRC_CLK_PODF_MASK) >>
++		MXC_CCM_CSCDR2_ASRC_CLK_PODF_OFFSET) + 1;
++
++	return clk_get_rate(clk->parent) / (prediv * podf);
++}
++
++static int _clk_asrc_set_rate(struct clk *clk, unsigned long rate)
++{
++	u32 reg;
++	u32 div;
++	u32 pre, post;
++	u32 parent_rate = clk_get_rate(clk->parent);
++
++	div = parent_rate / rate;
++
++	if ((parent_rate / div) != rate)
++		return -EINVAL;
++
++	__calc_pre_post_dividers(div, &pre, &post);
++
++	reg = __raw_readl(MXC_CCM_CSCDR2) &
++		~(MXC_CCM_CSCDR2_ASRC_CLK_PRED_MASK |
++		MXC_CCM_CSCDR2_ASRC_CLK_PODF_MASK);
++	reg |= (post - 1) << MXC_CCM_CSCDR2_ASRC_CLK_PODF_OFFSET;
++	reg |= (pre - 1) << MXC_CCM_CSCDR2_ASRC_CLK_PRED_OFFSET;
++	__raw_writel(reg, MXC_CCM_CSCDR2);
++
++	return 0;
++}
++
++static struct clk asrc_clk[] = {
++	{
++	.id = 0,
++	.parent = &pll4_sw_clk,
++	.set_parent = _clk_asrc_set_parent,
++	.get_rate = _clk_asrc_get_rate,
++	.set_rate = _clk_asrc_set_rate,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG1_OFFSET,
++	.enable = _clk_enable,
++	.disable = _clk_disable,
++	},
++	{
++	.id = 0,
++	.parent = &ipg_clk,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG0_OFFSET,
++	.enable = _clk_enable,
++	.disable = _clk_disable,
++	},
++};
+ 
+ #define _REGISTER_CLOCK(d, n, c) \
+ 	{ \
+@@ -4307,6 +4381,8 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "ldb_di1_clk", ldb_di_clk[1]),
+ 	_REGISTER_CLOCK(NULL, "esai_clk", esai_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "esai_ipg_clk", esai_clk[1]),
++	_REGISTER_CLOCK(NULL, "asrc_clk", asrc_clk[1]),
++	_REGISTER_CLOCK(NULL, "asrc_serial_clk", asrc_clk[0]),
+ };
+ 
+ static struct mxc_clk mx51_clks[ARRAY_SIZE(lookups) + ARRAY_SIZE(mx51_lookups)];
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index bacd603..6ca14b0 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -865,6 +865,26 @@ struct platform_device mxc_dvfs_per_device = {
+ 	 .resource = dvfs_per_resources,
+ };
+ 
++static struct resource asrc_resources[] = {
++	{
++	 .start = ASRC_BASE_ADDR,
++	 .end = ASRC_BASE_ADDR + SZ_4K - 1,
++	 .flags = IORESOURCE_MEM,
++	 },
++	{
++	 .start = MXC_INT_ASRC,
++	 .end = MXC_INT_ASRC,
++	 .flags = IORESOURCE_IRQ,
++	},
++};
++
++struct platform_device mxc_asrc_device = {
++	.name = "mxc_asrc",
++	.id = 0,
++	.num_resources = ARRAY_SIZE(asrc_resources),
++	.resource = asrc_resources,
++};
++
+ struct mxc_gpio_port mxc_gpio_ports[] = {
+ 	{
+ 		.chip.label = "gpio-0",
+@@ -1771,6 +1791,8 @@ int __init mxc_init_devices(void)
+ 		spdif_resources[0].end -= MX53_OFFSET;
+ 		spdif_resources[1].start = MXC_INT_SPDIF_MX53;
+ 		spdif_resources[1].end = MXC_INT_SPDIF_MX53;
++		asrc_resources[0].start -= MX53_OFFSET;
++		asrc_resources[0].end -= MX53_OFFSET;
+ 		mxc_m4if_resources[0].start -= MX53_OFFSET;
+ 		mxc_m4if_resources[0].end -= MX53_OFFSET;
+ 		mxc_iim_resources[0].start -= MX53_OFFSET;
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 2337d46..55d9028 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -93,4 +93,5 @@ extern struct platform_device dcp_device;
+ extern struct platform_device pm_device;
+ extern struct platform_device fixed_volt_reg_device;
+ extern struct platform_device mxc_zq_calib_device;
++extern struct platform_device mxc_asrc_device;
+ extern int z160_revision;
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 1a5afc5..eaf0f4d 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1029,6 +1029,11 @@ static struct flash_platform_data mxc_nand_data = {
+ 	.init = nand_init,
+ };
+ 
++static struct mxc_asrc_platform_data mxc_asrc_data = {
++	.channel_bits = 4,
++	.clk_map_ver = 2.
++};
++
+ static struct mxc_spdif_platform_data mxc_spdif_data = {
+ 	.spdif_tx = 0,
+ 	.spdif_rx = 1,
+@@ -1326,6 +1331,17 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxcsdhc2_device, &mmc2_data);
+ 
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
++
++	/* ASRC is only available for MX53 TO2.0 */
++	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
++		clk_put(mxc_asrc_data.asrc_core_clk);
++		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
++		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
++		clk_put(mxc_asrc_data.asrc_audio_clk);
++		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
++	}
++
+ 	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
+ 
+ 	spi_register_board_info(mxc_dataflash_device,
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 0a9f7b2..f9d7440 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -1270,6 +1270,11 @@ static struct flash_platform_data mxc_nand_data = {
+ 	.init = nand_init,
+ };
+ 
++static struct mxc_asrc_platform_data mxc_asrc_data = {
++	.channel_bits = 4,
++	.clk_map_ver = 2,
++};
++
+ static struct mxc_spdif_platform_data mxc_spdif_data = {
+ 	.spdif_tx = 1,
+ 	.spdif_rx = 0,
+@@ -1611,6 +1616,17 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_ssi1_device, NULL);
+ 	mxc_register_device(&mxc_ssi2_device, NULL);
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
++
++	/* ASRC is only available for MX53 TO2.0 */
++	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
++		clk_put(mxc_asrc_data.asrc_core_clk);
++		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
++		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
++		clk_put(mxc_asrc_data.asrc_audio_clk);
++		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
++	}
++
+ 	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
+ 	if (!mxc_apc_on) {
+ 		mxc_register_device(&mxc_fec_device, &fec_data);
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index a60c9a2..673b88f 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -682,6 +682,11 @@ static struct platform_device mxc_sgtl5000_device = {
+ 	.name = "imx-3stack-sgtl5000",
+ };
+ 
++static struct mxc_asrc_platform_data mxc_asrc_data = {
++	.channel_bits = 4,
++	.clk_map_ver = 2,
++};
++
+ static struct mxc_spdif_platform_data mxc_spdif_data = {
+ 	.spdif_tx = 1,
+ 	.spdif_rx = 0,
+@@ -861,6 +866,15 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
++	/* ASRC is only available for MX53 TO2.0 */
++	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
++		clk_put(mxc_asrc_data.asrc_core_clk);
++		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
++		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
++		clk_put(mxc_asrc_data.asrc_audio_clk);
++		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
++	}
+ 
+ 	i2c_register_board_info(0, mxc_i2c0_board_info,
+ 				ARRAY_SIZE(mxc_i2c0_board_info));
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index c10efa1..9d5ed6c 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -934,6 +934,11 @@ static struct platform_device mxc_sgtl5000_device = {
+ 	.name = "imx-3stack-sgtl5000",
+ };
+ 
++static struct mxc_asrc_platform_data mxc_asrc_data = {
++	.channel_bits = 4,
++	.clk_map_ver = 2,
++};
++
+ static struct mxc_spdif_platform_data mxc_spdif_data = {
+ 	.spdif_tx = 1,
+ 	.spdif_rx = 0,
+@@ -1127,6 +1132,15 @@ static void __init mxc_board_init(void)
+ 	gpio_direction_output(MX53_SMD_SATA_PWR_EN, 1);
+ 
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
++	/* ASRC is only available for MX53 TO2.0 */
++	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
++		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
++		clk_put(mxc_asrc_data.asrc_core_clk);
++		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
++		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
++		clk_put(mxc_asrc_data.asrc_audio_clk);
++		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
++	}
+ 
+ 	i2c_register_board_info(0, mxc_i2c0_board_info,
+ 				ARRAY_SIZE(mxc_i2c0_board_info));
+-- 
+1.5.4.4
+

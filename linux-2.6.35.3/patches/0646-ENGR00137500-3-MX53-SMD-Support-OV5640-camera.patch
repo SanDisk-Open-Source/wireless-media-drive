@@ -1,0 +1,71 @@
+From a7dd97d2e9fef11dea60defec51845d40179feb8 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Fri, 31 Dec 2010 13:43:36 +0800
+Subject: [PATCH] ENGR00137500-3 MX53 SMD:Support OV5640 camera
+
+1) Add platform data for OV5640 camera.
+2) Add camera reset and power down support.
+3) Use ssi_ext1 clock as mclk for camera.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |   24 +++++++++++++++++++++++-
+ 1 files changed, 23 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index efd7b68..a59a77d 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -380,7 +380,7 @@ static struct pad_desc mx53_smd_pads[] = {
+ 	MX53_PAD_ATA_DMACK__GPIO_6_18,
+ 	/* CABC_EN0 */
+ 	MX53_PAD_ATA_INTRQ__GPIO_7_2,
+-	MX53_PAD_GPIO_0__CLKO,
++	MX53_PAD_GPIO_0__SSI_EXT1_CLK,
+ 	MX53_PAD_GPIO_1__PWMO,
+ 	/* KEY_RESET */
+ 	MX53_PAD_GPIO_2__GPIO_1_2,
+@@ -758,11 +758,23 @@ static struct imxi2c_platform_data mxci2c_data = {
+        .bitrate = 100000,
+ };
+ 
++static struct mxc_camera_platform_data camera_data = {
++	.analog_regulator = "DA9052_LDO7",
++	.core_regulator = "DA9052_LDO9",
++	.mclk = 24000000,
++	.csi = 0,
++};
++
+ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
+ 	{
+ 	.type = "mma8451",
+ 	.addr = 0x1C,
+ 	 },
++	{
++	.type = "ov5640",
++	.addr = 0x3C,
++	.platform_data = (void *)&camera_data,
++	 },
+ };
+ 
+ static u16 smd_touchkey_martix[4] = {
+@@ -1124,6 +1136,16 @@ static void __init mx53_smd_io_init(void)
+ 	gpio_request(MX53_SMD_KEY_INT, "cap-button-irq");
+ 	gpio_direction_input(MX53_SMD_KEY_INT);
+ 	gpio_free(MX53_SMD_KEY_INT);
++
++	/* Camera reset */
++	gpio_request(MX53_SMD_CSI0_RST, "cam-reset");
++	gpio_set_value(MX53_SMD_CSI0_RST, 1);
++
++	/* Camera power down */
++	gpio_request(MX53_SMD_CSI0_PWN, "cam-pwdn");
++	gpio_direction_output(MX53_SMD_CSI0_PWN, 1);
++	msleep(1);
++	gpio_set_value(MX53_SMD_CSI0_PWN, 0);
+ }
+ 
+ /*!
+-- 
+1.5.4.4
+

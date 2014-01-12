@@ -1,0 +1,46 @@
+From 32a628eda410e2c4295bf3f649661033c9c7c6dc Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Fri, 24 Dec 2010 10:45:21 +0800
+Subject: [PATCH] ENGR00137317-2 USB: handle non-intent wakeup irq triggered by PHCD change
+
+PORTSC PHCD will be changed while system shuts down usb host. This triggers
+wake-up interrupt. But it's not host wake-up or device wake-up. OWIR bit in
+USBCTRL doesn't be cleared. It keeps bring interrupt on. So
+- Clear OWIR bit in wakeup ISR if host/device doesn't need to wake up.
+- Close wakeup irq before shut down USB host.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ drivers/usb/host/ehci-arc.c |    3 +++
+ include/linux/fsl_devices.h |    1 +
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index bc719df..acad573 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -445,6 +445,9 @@ static void ehci_fsl_shutdown(struct usb_hcd *hcd)
+ 		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+ 		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
+ 	}
++	/* Disable wakeup event first */
++	usb_host_set_wakeup(hcd->self.controller, false);
++
+ 	ehci_shutdown(hcd);
+ 	if (test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
+ 		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 4f68788..01fa535 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -128,6 +128,7 @@ struct fsl_usb2_platform_data {
+ struct fsl_usb2_wakeup_platform_data {
+ 	char *name;
+ 	void (*usb_clock_for_pm) (bool);
++	void (*usb_wakeup_exhandle) (void);
+ 	struct fsl_usb2_platform_data *usb_pdata[3];
+ 	/* This waitqueue is used to wait "usb_wakeup thread" to finish
+ 	 * during system resume routine. "usb_wakeup theard" should be finished
+-- 
+1.5.4.4
+

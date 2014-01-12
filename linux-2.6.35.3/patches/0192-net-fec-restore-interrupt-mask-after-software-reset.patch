@@ -1,0 +1,51 @@
+From 4564456cecafdabe4e5e3c253dbea21cffb5286f Mon Sep 17 00:00:00 2001
+From: Wolfram Sang <w.sang@pengutronix.de>
+Date: Wed, 21 Jul 2010 02:51:13 +0000
+Subject: [PATCH] net/fec: restore interrupt mask after software-reset in fec_stop()
+
+After the change from mdio polling to irq, it became necessary to
+restore the interrupt mask after resetting the chip in fec_stop().
+Otherwise, with all irqs disabled, no communication with the PHY will be
+possible after e.g. un-/replugging the cable and the device gets
+stalled.
+
+Signed-off-by: Wolfram Sang <w.sang@pengutronix.de>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/fec.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/fec.c b/drivers/net/fec.c
+index 34fe0ab..1dab8ee 100644
+--- a/drivers/net/fec.c
++++ b/drivers/net/fec.c
+@@ -112,6 +112,8 @@
+ #define FEC_ENET_MII	((uint)0x00800000)	/* MII interrupt */
+ #define FEC_ENET_EBERR	((uint)0x00400000)	/* SDMA bus error */
+ 
++#define FEC_DEFAULT_IMASK (FEC_ENET_TXF | FEC_ENET_RXF | FEC_ENET_MII)
++
+ /* The FEC stores dest/src/type, data, and checksum for receive packets.
+  */
+ #define PKT_MAXBUF_SIZE		1518
+@@ -1299,8 +1301,7 @@ fec_restart(struct net_device *dev, int duplex)
+ 	writel(0, fep->hwp + FEC_R_DES_ACTIVE);
+ 
+ 	/* Enable interrupts we wish to service */
+-	writel(FEC_ENET_TXF | FEC_ENET_RXF | FEC_ENET_MII,
+-		fep->hwp + FEC_IMASK);
++	writel(FEC_DEFAULT_IMASK, fep->hwp + FEC_IMASK);
+ }
+ 
+ static void
+@@ -1332,6 +1333,7 @@ fec_stop(struct net_device *dev)
+ 	/* Clear outstanding MII command interrupts. */
+ 	writel(FEC_ENET_MII, fep->hwp + FEC_IEVENT);
+ 	writel(fep->phy_speed, fep->hwp + FEC_MII_SPEED);
++	writel(FEC_DEFAULT_IMASK, fep->hwp + FEC_IMASK);
+ }
+ 
+ static int __devinit
+-- 
+1.5.4.4
+

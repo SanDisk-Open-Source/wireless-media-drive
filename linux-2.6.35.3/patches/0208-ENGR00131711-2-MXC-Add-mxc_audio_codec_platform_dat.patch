@@ -1,0 +1,34 @@
+From f7cac6a6000c0ee0b5f6531afc73bf5ab53b9943 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Sun, 19 Sep 2010 16:15:05 +0800
+Subject: [PATCH] ENGR00131711-2 MXC: Add mxc_audio_codec_platform_data structrue
+
+The mxc_audio_codec_platform_data passes the board specific data
+to the codec, i.e., regulator, mclk and pwdn function.
+
+Signed-off-by: William Lai <b04597@freescale.com>
+---
+ include/linux/fsl_devices.h |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index ddfdc42..67398a6 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -251,6 +251,13 @@ struct mxc_bt_platform_data {
+ 	void (*bt_reset) (void);
+ };
+ 
++struct mxc_audio_codec_platform_data {
++	char *core_regulator;
++	char *io_regulator;
++	char *analog_regulator;
++	void (*pwdn)(int pwdn);
++};
++
+ struct mxc_lightsensor_platform_data {
+ 	char *vdd_reg;
+ 	int rext;
+-- 
+1.5.4.4
+

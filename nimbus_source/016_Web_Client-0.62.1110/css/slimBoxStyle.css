@@ -1,0 +1,15 @@
+body{ margin:0; padding:0; background:#000; color:#FFF;}
+#slimBoxContainer{ margin:0 auto; width:1000px;}
+#slimBoxContainer .closed{ text-align:right; padding:20px 0 30px 0; }
+#slimBoxContainer .closed a{ color:#FFF; text-decoration:none;}
+#slimBoxContainer .closed a:hover{ text-decoration:underline;}
+#slimBoxContainer .showImg{ text-align:center;}
+
+.btnContainer{ position:relative;}
+a.clickLeft{ background:url(../images/arrowL.png) no-repeat; width:46px; height:110px; display:block; position:absolute; left:0px; top:-250px;}
+a.clcikRight{ background:url(../images/arrowR.png) no-repeat; width:46px; height:110px; display:block;  position:absolute; right:0px;top:-250px;}
+.pages{ text-align:center; margin-top:30px; }
+
+.functions{ text-align:right; }
+.functions a{color:#FFF; text-decoration:none; font-size:18px; margin-right:20px;}
+.functions a:hover{ text-decoration:underline;}

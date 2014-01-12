@@ -1,0 +1,42 @@
+From c1aa9915bdba9a69e34056d30bc7bd61dcdba4d4 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Thu, 24 Dec 2009 19:09:55 +0800
+Subject: [PATCH] ENGR00119625 i.MX35: UBoot doesn't accept commands if program uboot to NOR
+
+Bug detailed description:
+1. Program uboot to NOR.
+2. UBoot can boot up, but it doesn't accept commands. log:
+MX35 U-Boot >
+MX35 U-Boot > help
+Unknown command 'help' - try 'help'
+MX35 U-Boot > printenv
+Unknown command 'printenv' - try 'help'
+MX35 U-Boot > help
+Unknown command 'help' - try 'help'
+MX35 U-Boot >
+
+Signed-off-by: Fred.fan <r01011@freescale.com
+---
+ cpu/arm1136/start.S |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/cpu/arm1136/start.S b/cpu/arm1136/start.S
+index 2da16e7..0312856 100644
+--- a/cpu/arm1136/start.S
++++ b/cpu/arm1136/start.S
+@@ -210,10 +210,10 @@ relocate:				/* relocate U-Boot to RAM	    */
+ 	ldr	r1, =_armboot_start
+ 	cmp	r0, r1			/* don't reloc during debug	    */
+ 	beq	stack_setup
+-	ldr 	r2, _TEXT_BASE
++	ldr 	r2, _armboot_start
+ 	sub	r0, r1, r0
+ 	sub	r0, r2, r0
+-	ldr	r1, _TEXT_BASE
++	mov	r1, r2
+ 	ldr	r2, _armboot_start
+ 	ldr	r3, _bss_start
+ 	sub	r2, r3, r2		/* r2 <- size of armboot	    */
+-- 
+1.5.4.4
+

@@ -1,0 +1,87 @@
+From db98c855841577fb6d48016c1eace31275113508 Mon Sep 17 00:00:00 2001
+From: Rob Herring <r.herring@freescale.com>
+Date: Wed, 16 Sep 2009 11:43:45 -0500
+Subject: [PATCH] nand: export symbols needed for stmp3xxx nand
+ nand: increase max nand page and oob sizes
+
+Signed-off-by: Rob Herring <r.herring@freescale.com>
+---
+ drivers/mtd/nand/nand_base.c |    7 +++++--
+ include/linux/mtd/nand.h     |    8 ++++++--
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 4a7b864..ce60862 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -1424,7 +1424,7 @@ static uint8_t *nand_transfer_oob(struct nand_chip *chip, uint8_t *oob,
+  *
+  * Internal function. Called with chip held.
+  */
+-static int nand_do_read_ops(struct mtd_info *mtd, loff_t from,
++int nand_do_read_ops(struct mtd_info *mtd, loff_t from,
+ 			    struct mtd_oob_ops *ops)
+ {
+ 	int chipnr, page, realpage, col, bytes, aligned;
+@@ -1553,6 +1553,7 @@ static int nand_do_read_ops(struct mtd_info *mtd, loff_t from,
+ 
+ 	return  mtd->ecc_stats.corrected - stats.corrected ? -EUCLEAN : 0;
+ }
++EXPORT_SYMBOL(nand_do_read_ops);
+ 
+ /**
+  * nand_read - [MTD Interface] MTD compability function for nand_do_read_ecc
+@@ -2133,7 +2134,7 @@ static uint8_t *nand_fill_oob(struct nand_chip *chip, uint8_t *oob, size_t len,
+  *
+  * NAND write with ECC
+  */
+-static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
++int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
+ 			     struct mtd_oob_ops *ops)
+ {
+ 	int chipnr, realpage, page, blockmask, column;
+@@ -2237,6 +2238,7 @@ static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
+ 		ops->oobretlen = ops->ooblen;
+ 	return ret;
+ }
++EXPORT_SYMBOL(nand_do_write_ops);
+ 
+ /**
+  * panic_nand_write - [MTD Interface] NAND write with ECC
+@@ -2649,6 +2651,7 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 	/* Return more or less happy */
+ 	return ret;
+ }
++EXPORT_SYMBOL_GPL(nand_erase_nand);
+ 
+ /**
+  * nand_sync - [MTD Interface] sync
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index a81b185..0f795f0 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -53,8 +53,8 @@ extern int nand_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len);
+  * is supported now. If you add a chip with bigger oobsize/page
+  * adjust this accordingly.
+  */
+-#define NAND_MAX_OOBSIZE	256
+-#define NAND_MAX_PAGESIZE	4096
++#define NAND_MAX_OOBSIZE	(256 * NAND_MAX_CHIPS)
++#define NAND_MAX_PAGESIZE	(4096 * NAND_MAX_CHIPS)
+ 
+ /*
+  * Constants for hardware specific CLE/ALE/NCE function
+@@ -489,6 +489,10 @@ extern int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 			   int allowbbt);
+ extern int nand_do_read(struct mtd_info *mtd, loff_t from, size_t len,
+ 			size_t * retlen, uint8_t * buf);
++extern int nand_do_read_ops(struct mtd_info *mtd, loff_t from,
++			    struct mtd_oob_ops *ops);
++extern int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
++			     struct mtd_oob_ops *ops);
+ 
+ /**
+  * struct platform_nand_chip - chip level device structure
+-- 
+1.5.4.4
+

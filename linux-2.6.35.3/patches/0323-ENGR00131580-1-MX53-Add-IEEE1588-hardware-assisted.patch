@@ -1,0 +1,204 @@
+From c3dbe9cf07ef87e9c03b322ea21d3ea964aed180 Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Thu, 14 Oct 2010 14:02:01 +0800
+Subject: [PATCH] ENGR00131580-1 MX53: Add IEEE1588 hardware-assisted device definition
+
+Add IEEE1588 device's resource definition, and set default clock input
+for ptp RTC.
+
+Signed-off-by: Xie Xiaobo <X.Xie@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c    |   80 ++++++++++++++++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/devices.c  |   34 ++++++++++++++++++
+ arch/arm/mach-mx5/devices.h  |    1 +
+ arch/arm/mach-mx5/mx53_evk.c |    4 ++-
+ 4 files changed, 118 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 7e77a5f..40ea013 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -2449,6 +2449,81 @@ static struct clk cspi3_clk = {
+ 	.secondary = &aips_tz2_clk,
+ };
+ 
++static unsigned long _clk_ieee_rtc_get_rate(struct clk *clk)
++{
++	u32 reg, prediv, podf;
++
++	reg = __raw_readl(MXC_CCM_CSCDR2);
++	prediv = ((reg & MXC_CCM_CSCDR2_IEEE_CLK_PRED_MASK) >>
++		  MXC_CCM_CSCDR2_IEEE_CLK_PRED_OFFSET) + 1;
++	if (prediv == 1)
++		BUG();
++	podf = ((reg & MXC_CCM_CSCDR2_IEEE_CLK_PODF_MASK) >>
++		MXC_CCM_CSCDR2_IEEE_CLK_PODF_OFFSET) + 1;
++
++	return clk_get_rate(clk->parent) / (prediv * podf);
++}
++
++static int _clk_ieee_rtc_set_rate(struct clk *clk, unsigned long rate)
++{
++	u32 reg, div, pre, post;
++	u32 parent_rate = clk_get_rate(clk->parent);
++
++	div = parent_rate / rate;
++	if (div == 0)
++		div++;
++	if (((parent_rate / div) != rate) || div > 512)
++		return -EINVAL;
++
++	__calc_pre_post_dividers(div, &pre, &post);
++
++	reg = __raw_readl(MXC_CCM_CSCDR2);
++	reg &= ~(MXC_CCM_CSCDR2_IEEE_CLK_PRED_MASK |
++		 MXC_CCM_CSCDR2_IEEE_CLK_PODF_MASK);
++	reg |= (post - 1) << MXC_CCM_CSCDR2_IEEE_CLK_PODF_OFFSET;
++	reg |= (pre - 1) << MXC_CCM_CSCDR2_IEEE_CLK_PRED_OFFSET;
++	__raw_writel(reg, MXC_CCM_CSCDR2);
++
++	return 0;
++}
++
++static unsigned long _clk_ieee_rtc_round_rate(struct clk *clk,
++						unsigned long rate)
++{
++	u32 pre, post;
++	u32 parent_rate = clk_get_rate(clk->parent);
++	u32 div = parent_rate / rate;
++
++	if (parent_rate % rate)
++		div++;
++
++	__calc_pre_post_dividers(div, &pre, &post);
++
++	return parent_rate / (pre * post);
++}
++
++static int _clk_ieee_rtc_set_parent(struct clk *clk, struct clk *parent)
++{
++	u32 reg, mux;
++
++	mux = _get_mux(parent, &pll3_sw_clk, &pll4_sw_clk,
++		       NULL, NULL);
++	reg = __raw_readl(MXC_CCM_CSCMR2) & ~MXC_CCM_CSCMR2_IEEE_CLK_SEL_MASK;
++	reg |= mux << MXC_CCM_CSCMR2_IEEE_CLK_SEL_OFFSET;
++	__raw_writel(reg, MXC_CCM_CSCMR2);
++
++	return 0;
++}
++
++static struct clk ieee_rtc_clk = {
++	.id = 0,
++	.parent = &pll3_sw_clk,
++	.set_parent = _clk_ieee_rtc_set_parent,
++	.set_rate = _clk_ieee_rtc_set_rate,
++	.round_rate = _clk_ieee_rtc_round_rate,
++	.get_rate = _clk_ieee_rtc_get_rate,
++};
++
+ static int _clk_ssi_lp_apm_set_parent(struct clk *clk, struct clk *parent)
+ {
+ 	u32 reg, mux;
+@@ -4241,6 +4316,7 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "ocram_clk", ocram_clk),
+ 	_REGISTER_CLOCK(NULL, "imx_sata_clk", sata_clk),
+ 	_REGISTER_CLOCK(NULL, "ieee_1588_clk", ieee_1588_clk),
++	_REGISTER_CLOCK(NULL, "ieee_rtc_clk", ieee_rtc_clk),
+ 	_REGISTER_CLOCK("mxc_mlb.0", NULL, mlb_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "can_clk", can1_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "can_clk", can2_clk[0]),
+@@ -4846,6 +4922,10 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	clk_set_rate(&esdhc1_clk[0], 200000000);
+ 	clk_set_rate(&esdhc3_clk[0], 200000000);
+ 
++	 /* Set the 1588 RTC input clocks as 108MHZ */
++	clk_set_parent(&ieee_rtc_clk, &pll3_sw_clk);
++	clk_set_rate(&ieee_rtc_clk, 108000000);
++
+ 	/* Set the current working point. */
+ 	cpu_wp_tbl = get_cpu_wp(&cpu_wp_nr);
+ 	/* Update the cpu working point table based on the PLL1 freq
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 986314c..0ae1801 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -551,6 +551,36 @@ struct platform_device mxc_fec_device = {
+ 	.resource = mxc_fec_resources,
+ };
+ 
++static struct resource mxc_ptp_resources[] = {
++	{
++		.start	= PTP_BASE_ADDR,
++		.end	= PTP_BASE_ADDR + SZ_4K - 1,
++		.flags	= IORESOURCE_MEM
++	},
++	{
++		.start	= RTC_BASE_ADDR,
++		.end	= RTC_BASE_ADDR + SZ_4K - 1,
++		.flags	= IORESOURCE_MEM
++	},
++	{
++		.start	= MXC_INT_PTP,
++		.end	= MXC_INT_PTP,
++		.flags	= IORESOURCE_IRQ
++	},
++	{
++		.start	= MXC_INT_RTC,
++		.end	= MXC_INT_RTC,
++		.flags	= IORESOURCE_IRQ
++	},
++};
++
++struct platform_device mxc_ptp_device = {
++	.name = "ptp",
++	.id = 0,
++	.num_resources = ARRAY_SIZE(mxc_ptp_resources),
++	.resource = mxc_ptp_resources,
++};
++
+ static struct resource mxcspi1_resources[] = {
+ 	{
+ 		.start = CSPI1_BASE_ADDR,
+@@ -1626,6 +1656,10 @@ int __init mxc_init_devices(void)
+ 		flexcan1_resources[0].end -= MX53_OFFSET;
+ 		mxc_fec_resources[0].start -= MX53_OFFSET;
+ 		mxc_fec_resources[0].end -= MX53_OFFSET;
++		mxc_ptp_resources[0].start -= MX53_OFFSET;
++		mxc_ptp_resources[0].end -= MX53_OFFSET;
++		mxc_ptp_resources[1].start -= MX53_OFFSET;
++		mxc_ptp_resources[1].end -= MX53_OFFSET;
+ 		vpu_resources[0].start -= MX53_OFFSET;
+ 		vpu_resources[0].end -= MX53_OFFSET;
+ 		scc_resources[0].start -= MX53_OFFSET;
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index d1b7f82..75e76f2 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -21,6 +21,7 @@ extern struct platform_device mxc_uart_device0;
+ extern struct platform_device mxc_uart_device1;
+ extern struct platform_device mxc_uart_device2;
+ extern struct platform_device mxc_fec_device;
++extern struct platform_device mxc_ptp_device;
+ extern struct platform_device mxc_usbdr_host_device;
+ extern struct platform_device mxc_usbh1_device;
+ extern struct platform_device mxc_usbdr_udc_device;
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 562a048..992bc57 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1657,8 +1657,10 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_ssi2_device, NULL);
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
+ 	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
+-	if (!mxc_apc_on)
++	if (!mxc_apc_on) {
+ 		mxc_register_device(&mxc_fec_device, &fec_data);
++		mxc_register_device(&mxc_ptp_device, NULL);
++	}
+ 	spi_register_board_info(mxc_dataflash_device,
+ 				ARRAY_SIZE(mxc_dataflash_device));
+ 	i2c_register_board_info(0, mxc_i2c0_board_info,
+-- 
+1.5.4.4
+

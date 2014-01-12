@@ -1,0 +1,53 @@
+From 9e581d60bc60b45de5493cd410fa682295970933 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Fri, 7 Jan 2011 13:56:53 +0800
+Subject: [PATCH] ENGR00137733 MXC V4L2 overlay:Fill black data to fb before preview
+
+This patch fills black data to overlay fb before preview to get rid
+of dirty data splashing the screen.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c b/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
+index 893c82d..27fa92f 100644
+--- a/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
++++ b/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
+@@ -48,6 +48,7 @@ static int prpvf_start(void *private)
+ 	u32 vf_out_format = 0;
+ 	u32 size = 2, temp = 0;
+ 	int err = 0, i = 0;
++	short *tmp, color;
+ 
+ 	if (!cam) {
+ 		printk(KERN_ERR "private is NULL\n");
+@@ -81,9 +82,11 @@ static int prpvf_start(void *private)
+ 		/* Use DP to do CSC so that we can get better performance */
+ 		vf_out_format = IPU_PIX_FMT_UYVY;
+ 		fbvar.nonstd = vf_out_format;
++		color = 0x80;
+ 	} else {
+ 		vf_out_format = IPU_PIX_FMT_RGB565;
+ 		fbvar.nonstd = 0;
++		color = 0x0;
+ 	}
+ 
+ 	fbvar.bits_per_pixel = 16;
+@@ -97,6 +100,12 @@ static int prpvf_start(void *private)
+ 	ipu_disp_set_window_pos(MEM_FG_SYNC, cam->win.w.left,
+ 			cam->win.w.top);
+ 
++	/* Fill black color for framebuffer */
++	tmp = (short *) fbi->screen_base;
++	for (i = 0; i < (fbi->fix.line_length * fbi->var.yres)/2;
++			i++, tmp++)
++		*tmp = color;
++
+ 	acquire_console_sem();
+ 	fb_blank(fbi, FB_BLANK_UNBLANK);
+ 	release_console_sem();
+-- 
+1.5.4.4
+

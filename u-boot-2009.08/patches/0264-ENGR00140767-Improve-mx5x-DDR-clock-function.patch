@@ -1,0 +1,188 @@
+From 5f1d08aefc9adbf034a06b98eb7416c406057ee9 Mon Sep 17 00:00:00 2001
+From: Terry <r65388@freescale.com>
+Date: Thu, 17 Mar 2011 16:18:38 +0800
+Subject: [PATCH] ENGR00140767: Improve mx5x DDR clock function
+
+As now mx51 DDR frequency is derived from PLL1.
+We need to get DDR frequency from PLL1.
+
+Mx53 don't use PLL1 for ddr clock source,
+so just the precision is adjusted.
+
+Mx50 don't support clk command yet.
+DDR config function is modified according to
+mx50 spec, but not tested yet.
+
+Signed-off-by: Terry <r65388@freescale.com>
+---
+ cpu/arm_cortexa8/mx50/generic.c |   44 +++++++++++++-------------------------
+ cpu/arm_cortexa8/mx51/generic.c |   42 ++++++++++++++++++++++---------------
+ cpu/arm_cortexa8/mx53/generic.c |    2 +-
+ 3 files changed, 41 insertions(+), 47 deletions(-)
+
+diff --git a/cpu/arm_cortexa8/mx50/generic.c b/cpu/arm_cortexa8/mx50/generic.c
+index bf24318..a964218 100644
+--- a/cpu/arm_cortexa8/mx50/generic.c
++++ b/cpu/arm_cortexa8/mx50/generic.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -356,8 +356,7 @@ static u32 __get_ddr_clk(void)
+ 			clk /= ddr_pll_div;
+ 		ret_val = clk;
+ 	} else {
+-
+-		printf("Warning, Fixme Not handle PFD1 mux\n");
++		printf("Warning, Fixme Not handle PFD0 mux\n");
+ 	}
+ 
+ 	return ret_val;
+@@ -963,8 +962,8 @@ int config_ddr_clk(u32 emi_clk)
+ {
+ 	u32 clk_src;
+ 	s32 shift = 0, clk_sel, div = 1;
+-	u32 cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
+-	u32 cbcdr = readl(CCM_BASE_ADDR + CLKCTL_CBCDR);
++	u32 clk_ddr = __REG(MXC_CCM_CLK_DDR);
++	u32 ddr_clk_sel = clk_ddr & MXC_CCM_CLK_DDR_DDR_PFD_SEL;
+ 
+ 	if (emi_clk > MAX_DDR_CLK) {
+ 		printf("DDR clock should be less than"
+@@ -973,36 +972,23 @@ int config_ddr_clk(u32 emi_clk)
+ 		emi_clk = MAX_DDR_CLK;
+ 	}
+ 
+-	clk_src = __get_periph_clk();
+-	/* Find DDR clock input */
+-	clk_sel = (cbcmr >> 10) & 0x3;
+-	switch (clk_sel) {
+-	case 0:
+-		shift = 16;
+-		break;
+-	case 1:
+-		shift = 19;
+-		break;
+-	case 2:
+-		shift = 22;
+-		break;
+-	case 3:
+-		shift = 10;
+-		break;
+-	default:
+-		return -1;
++	if (!ddr_clk_sel)
++		clk_src = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++	else {
++		printf("Warning, Fixme Not handle PFD1 mux\n");
++		return 0;
+ 	}
+ 
+-	if ((clk_src % emi_clk) == 0)
++	if ((clk_src % emi_clk) < 10000000)
+ 		div = clk_src / emi_clk;
+ 	else
+ 		div = (clk_src / emi_clk) + 1;
+-	if (div > 8)
+-		div = 8;
++	if (div > 64)
++		div = 64;
+ 
+-	cbcdr = cbcdr & ~(0x7 << shift);
+-	cbcdr |= ((div - 1) << shift);
+-	writel(cbcdr, CCM_BASE_ADDR + CLKCTL_CBCDR);
++	clk_ddr = clk_ddr & ~0x3f;
++	clk_ddr |= (div - 1);
++	writel(clk_ddr, MXC_CCM_CLK_DDR);
+ 	while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
+ 		;
+ 	writel(0x0, CCM_BASE_ADDR + CLKCTL_CCDR);
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index cb174ff..2a1c430 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -2,7 +2,7 @@
+  * (C) Copyright 2007
+  * Sascha Hauer, Pengutronix
+  *
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -243,24 +243,32 @@ static u32 __get_ddr_clk(void)
+ {
+ 	u32 ret_val = 0;
+ 	u32 cbcmr = __REG(MXC_CCM_CBCMR);
++	u32 cbcdr = __REG(MXC_CCM_CBCDR);
+ 	u32 ddr_clk_sel = (cbcmr & MXC_CCM_CBCMR_DDR_CLK_SEL_MASK) \
+ 				>> MXC_CCM_CBCMR_DDR_CLK_SEL_OFFSET;
+ 
+-	switch (ddr_clk_sel) {
+-	case 0:
+-		ret_val =  __get_axi_a_clk();
+-		break;
+-	case 1:
+-		ret_val =  __get_axi_b_clk();
+-		break;
+-	case 2:
+-		ret_val =  __get_emi_slow_clk();
+-		break;
+-	case 3:
+-		ret_val =  __get_ahb_clk();
+-		break;
+-	default:
+-		break;
++	if (((cbcdr >> 30) & 0x1) == 0x1) {
++		u32 ddr_clk_podf = (cbcdr >> 27) & 0x7;
++
++		ret_val = __decode_pll(PLL1_CLK, CONFIG_MX51_HCLK_FREQ)
++			/ (ddr_clk_podf + 1);
++	} else {
++		switch (ddr_clk_sel) {
++		case 0:
++			ret_val =  __get_axi_a_clk();
++			break;
++		case 1:
++			ret_val =  __get_axi_b_clk();
++			break;
++		case 2:
++			ret_val =  __get_emi_slow_clk();
++			break;
++		case 3:
++			ret_val =  __get_ahb_clk();
++			break;
++		default:
++			break;
++		}
+ 	}
+ 
+ 	return ret_val;
+@@ -879,7 +887,7 @@ static int config_ddr_clk(u32 emi_clk)
+ 		}
+ 	}
+ 
+-	if ((clk_src % emi_clk) == 0)
++	if ((clk_src % emi_clk) < 10000000)
+ 		div = clk_src / emi_clk;
+ 	else
+ 		div = (clk_src / emi_clk) + 1;
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 4283c7a..3065965 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -913,7 +913,7 @@ static int config_ddr_clk(u32 emi_clk)
+ 		return -1;
+ 	}
+ 
+-	if ((clk_src % emi_clk) == 0)
++	if ((clk_src % emi_clk) < 10000000)
+ 		div = clk_src / emi_clk;
+ 	else
+ 		div = (clk_src / emi_clk) + 1;
+-- 
+1.5.4.4
+

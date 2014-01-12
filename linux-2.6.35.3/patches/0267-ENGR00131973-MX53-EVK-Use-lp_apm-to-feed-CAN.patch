@@ -1,0 +1,144 @@
+From b765a6f47bc36ef50ecc3fc00e6d6fdff77e9583 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Tue, 28 Sep 2010 10:58:25 +0800
+Subject: [PATCH] ENGR00131973 MX53 EVK: Use lp_apm to feed CAN
+
+Use lp_apm clock, which is 24MHz, to feed the CAN.
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c    |   33 +++++++++++++++++++++++----------
+ arch/arm/mach-mx5/mx53_evk.c |   22 ++++++++++++----------
+ 2 files changed, 35 insertions(+), 20 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 31ff8a3..35390ff 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -3305,22 +3305,35 @@ static struct clk mlb_clk[] = {
+ 	},
+ };
+ 
++static int _can_root_clk_set(struct clk *clk, struct clk *parent)
++{
++	u32 reg, mux;
++
++	mux = _get_mux(parent, &ipg_clk, &ckih_clk, &ckih2_clk, &lp_apm_clk);
++	reg = __raw_readl(MXC_CCM_CSCMR2) & ~MXC_CCM_CSCMR2_CAN_CLK_SEL_MASK;
++	reg |= mux << MXC_CCM_CSCMR2_CAN_CLK_SEL_OFFSET;
++	__raw_writel(reg, MXC_CCM_CSCMR2);
++
++	return 0;
++}
++
+ static struct clk can1_clk[] = {
+ 	{
+ 	.id = 0,
+-	.parent = &ipg_clk,
++	.parent = &lp_apm_clk,
++	.set_parent = _can_root_clk_set,
+ 	.enable = _clk_enable,
+ 	.secondary = &can1_clk[1],
+ 	.enable_reg = MXC_CCM_CCGR6,
+-	.enable_shift = MXC_CCM_CCGRx_CG10_OFFSET,
++	.enable_shift = MXC_CCM_CCGRx_CG11_OFFSET,
+ 	.disable = _clk_disable,
+ 	 },
+ 	{
+ 	.id = 0,
+-	.parent = &lp_apm_clk,
++	.parent = &ipg_clk,
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR6,
+-	.enable_shift = MXC_CCM_CCGRx_CG11_OFFSET,
++	.enable_shift = MXC_CCM_CCGRx_CG10_OFFSET,
+ 	.disable = _clk_disable,
+ 	 },
+ };
+@@ -3328,11 +3341,12 @@ static struct clk can1_clk[] = {
+ static struct clk can2_clk[] = {
+ 	{
+ 	.id = 1,
+-	.parent = &ipg_clk,
++	.parent = &lp_apm_clk,
++	.set_parent = _can_root_clk_set,
+ 	.enable = _clk_enable,
+ 	.secondary = &can2_clk[1],
+ 	.enable_reg = MXC_CCM_CCGR4,
+-	.enable_shift = MXC_CCM_CCGRx_CG3_OFFSET,
++	.enable_shift = MXC_CCM_CCGRx_CG4_OFFSET,
+ 	.disable = _clk_disable,
+ 	 },
+ 	{
+@@ -3340,7 +3354,7 @@ static struct clk can2_clk[] = {
+ 	.parent = &lp_apm_clk,
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR4,
+-	.enable_shift = MXC_CCM_CCGRx_CG4_OFFSET,
++	.enable_shift = MXC_CCM_CCGRx_CG3_OFFSET,
+ 	.disable = _clk_disable,
+ 	 },
+ };
+@@ -4181,13 +4195,12 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "imx_sata_clk", sata_clk),
+ 	_REGISTER_CLOCK(NULL, "ieee_1588_clk", ieee_1588_clk),
+ 	_REGISTER_CLOCK("mxc_mlb.0", NULL, mlb_clk[0]),
+-	_REGISTER_CLOCK("FlexCAN.0", NULL, can1_clk[0]),
+-	_REGISTER_CLOCK("FlexCAM.1", NULL, can2_clk[0]),
++	_REGISTER_CLOCK(NULL, "can_clk", can1_clk[0]),
++	_REGISTER_CLOCK(NULL, "can_clk", can2_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ldb_di0_clk", ldb_di_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ldb_di1_clk", ldb_di_clk[1]),
+ 	_REGISTER_CLOCK(NULL, "esai_clk", esai_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "esai_ipg_clk", esai_clk[1]),
+-
+ };
+ 
+ static void clk_tree_init(void)
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 3778ddf..d6bdab8 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -548,13 +548,14 @@ static void flexcan_xcvr_enable(int id, int en)
+ static struct flexcan_platform_data flexcan0_data = {
+ 	.core_reg = NULL,
+ 	.io_reg = NULL,
++	.root_clk_id = "lp_apm", /*lp_apm is 24MHz */
+ 	.xcvr_enable = flexcan_xcvr_enable,
+-	.br_clksrc = 1,
++	.br_clksrc = 0,
+ 	.br_rjw = 2,
+-	.br_presdiv = 5,
+-	.br_propseg = 5,
+-	.br_pseg1 = 4,
+-	.br_pseg2 = 7,
++	.br_presdiv = 3,
++	.br_propseg = 2,
++	.br_pseg1 = 3,
++	.br_pseg2 = 3,
+ 	.bcc = 1,
+ 	.srx_dis = 1,
+ 	.smp = 1,
+@@ -565,13 +566,14 @@ static struct flexcan_platform_data flexcan0_data = {
+ static struct flexcan_platform_data flexcan1_data = {
+ 	.core_reg = NULL,
+ 	.io_reg = NULL,
++	.root_clk_id = "lp_apm", /*lp_apm is 24MHz */
+ 	.xcvr_enable = flexcan_xcvr_enable,
+-	.br_clksrc = 1,
++	.br_clksrc = 0,
+ 	.br_rjw = 2,
+-	.br_presdiv = 5,
+-	.br_propseg = 5,
+-	.br_pseg1 = 4,
+-	.br_pseg2 = 7,
++	.br_presdiv = 3,
++	.br_propseg = 2,
++	.br_pseg1 = 3,
++	.br_pseg2 = 3,
+ 	.bcc = 1,
+ 	.srx_dis = 1,
+ 	.boff_rec = 1,
+-- 
+1.5.4.4
+

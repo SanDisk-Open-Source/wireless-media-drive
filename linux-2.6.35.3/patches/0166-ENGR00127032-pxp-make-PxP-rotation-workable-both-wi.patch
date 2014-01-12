@@ -1,0 +1,80 @@
+From 07151aa0f4e25f2f5ca31fbf53c7161f823026f1 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 2 Sep 2010 17:43:30 +0800
+Subject: [PATCH] ENGR00127032 pxp: make PxP rotation workable both with epdc and v4l2
+
+In rotation case, we need to swap width and height in HW_PXP_OUTSIZE.
+It can be done in PxP driver. However, since EPDC driver did this swap itself.
+Here, just do so for V4L2 to make things easy to go.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c                     |   11 +++--------
+ drivers/media/video/mxc/output/mxc_pxp_v4l2.c |   15 ++++++++++++++-
+ 2 files changed, 17 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index 38f814e..39e119e 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -274,14 +274,9 @@ static void pxp_set_outbuf(struct pxps *pxp)
+ 
+ 	__raw_writel(out_params->paddr, pxp->base + HW_PXP_OUTBUF);
+ 
+-	if (proc_data->rotate % 180)
+-		__raw_writel(BF_PXP_OUTSIZE_WIDTH(out_params->height) |
+-			     BF_PXP_OUTSIZE_HEIGHT(out_params->width),
+-			     pxp->base + HW_PXP_OUTSIZE);
+-	else
+-		__raw_writel(BF_PXP_OUTSIZE_WIDTH(out_params->width) |
+-			     BF_PXP_OUTSIZE_HEIGHT(out_params->height),
+-			     pxp->base + HW_PXP_OUTSIZE);
++	__raw_writel(BF_PXP_OUTSIZE_WIDTH(out_params->width) |
++		     BF_PXP_OUTSIZE_HEIGHT(out_params->height),
++		     pxp->base + HW_PXP_OUTSIZE);
+ }
+ 
+ static void pxp_set_s0colorkey(struct pxps *pxp)
+diff --git a/drivers/media/video/mxc/output/mxc_pxp_v4l2.c b/drivers/media/video/mxc/output/mxc_pxp_v4l2.c
+index 493d813..2855bb6 100644
+--- a/drivers/media/video/mxc/output/mxc_pxp_v4l2.c
++++ b/drivers/media/video/mxc/output/mxc_pxp_v4l2.c
+@@ -748,6 +748,18 @@ static int pxp_buf_prepare(struct videobuf_queue *q,
+ 					&pxp_conf->s0_param,
+ 					sizeof(struct pxp_layer_param));
+ 			} else if (i == 1) { /* Output */
++				if (proc_data->rotate % 180) {
++					pxp_conf->out_param.width =
++						pxp->fb.fmt.height;
++					pxp_conf->out_param.height =
++						pxp->fb.fmt.width;
++				} else {
++					pxp_conf->out_param.width =
++						pxp->fb.fmt.width;
++					pxp_conf->out_param.height =
++						pxp->fb.fmt.height;
++				}
++
+ 				pxp_conf->out_param.paddr = pxp->outb_phys;
+ 				memcpy(&desc->layer_param.out_param,
+ 					&pxp_conf->out_param,
+@@ -1056,6 +1068,8 @@ static int pxp_close(struct file *file)
+ 	videobuf_stop(&pxp->s0_vbq);
+ 	videobuf_mmap_free(&pxp->s0_vbq);
+ 	pxp->active = NULL;
++	kfree(pxp->outb);
++	pxp->outb = NULL;
+ 
+ 	mutex_lock(&pxp->mutex);
+ 	pxp->users--;
+@@ -1191,7 +1205,6 @@ static int __devexit pxp_remove(struct platform_device *pdev)
+ 	video_unregister_device(pxp->vdev);
+ 	video_device_release(pxp->vdev);
+ 
+-	kfree(pxp->outb);
+ 	kfree(pxp);
+ 
+ 	return 0;
+-- 
+1.5.4.4
+

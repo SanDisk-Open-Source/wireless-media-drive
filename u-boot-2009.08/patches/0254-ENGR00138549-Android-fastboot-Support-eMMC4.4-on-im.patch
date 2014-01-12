@@ -1,0 +1,253 @@
+From a069e6b2ca7e8f0ad39375ca12bec11bb0d41ba4 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Thu, 27 Jan 2011 21:57:04 +0800
+Subject: [PATCH] ENGR00138549 Android fastboot: Support eMMC4.4 on imx53_smd
+
+Support eMMC4.4 storage on imx53_smd android fastboot, using
+environment to control it, the command is:
+ > setenv fastboot_dev mmc1
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ common/cmd_fastboot.c              |   18 ++++-------
+ drivers/fastboot/fastboot.c        |   58 ++++++++++++++++++++++++++++--------
+ include/configs/mx51_bbg_android.h |    1 -
+ include/configs/mx53_evk_android.h |    1 -
+ include/configs/mx53_smd_android.h |    1 -
+ include/fastboot.h                 |   13 +++++++-
+ 6 files changed, 64 insertions(+), 28 deletions(-)
+
+diff --git a/common/cmd_fastboot.c b/common/cmd_fastboot.c
+index cf51b3a..8d49b88 100644
+--- a/common/cmd_fastboot.c
++++ b/common/cmd_fastboot.c
+@@ -98,6 +98,8 @@ static struct cmd_fastboot_interface interface = {
+ 	.transfer_buffer_size  = 0,
+ };
+ 
++extern struct fastboot_device_info fastboot_devinfo;
++
+ static unsigned int download_size;
+ static unsigned int download_bytes;
+ static unsigned int download_bytes_unpadded;
+@@ -106,7 +108,6 @@ static unsigned int continue_booting;
+ static unsigned int upload_size;
+ static unsigned int upload_bytes;
+ static unsigned int upload_error;
+-static unsigned int mmc_controller_no;
+ 
+ /* To support the Android-style naming of flash */
+ #define MAX_PTN		    16
+@@ -1141,18 +1142,15 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 					printf("saveenv to '%s' DONE!\n", ptn->name);
+ 					sprintf(response, "OKAY");
+ 				} else {
+-					char *fastboot_env;
+ 					char source[32], dest[32];
+ 					char length[32], slot_no[32];
+ 					unsigned int temp;
+ 
+ 					/* Normal case */
+-					fastboot_env = getenv("fastboot_dev");
+-					if ((fastboot_env == NULL) ||
+-					     strcmp(fastboot_env, "sata")) {
++					if (fastboot_devinfo.type == DEV_MMC)
+ 						/* download to mmc */
+ 						goto mmc_ops;
+-					} else {
++					else {
+ 						/* downaload to sata */
+ #ifdef CONFIG_CMD_SATA
+ 					char *sata_write[5] = {"sata", "write",
+@@ -1189,11 +1187,8 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 							    strlen(response));
+ 					return ret; /* End of sata download */
+ 				}
+-mmc_ops:
+-					/* Save the MMC controller number */
+-					mmc_controller_no =
+-							CONFIG_FASTBOOT_MMC_NO;
+ 
++mmc_ops:
+ 					printf("writing to partition '%s'\n", ptn->name);
+ 					char *mmc_write[6] = {"mmc", "write",
+ 							NULL, NULL, NULL, NULL};
+@@ -1205,7 +1200,8 @@ mmc_ops:
+ 					mmc_write[4] = dest;
+ 					mmc_write[5] = length;
+ 
+-					sprintf(slot_no, "%d", mmc_controller_no);
++					sprintf(slot_no, "%d",
++						    fastboot_devinfo.dev_id);
+ 					sprintf(source, "0x%x", interface.transfer_buffer);
+ 
+ 					/* block offset */
+diff --git a/drivers/fastboot/fastboot.c b/drivers/fastboot/fastboot.c
+index 36e7474..6613550 100644
+--- a/drivers/fastboot/fastboot.c
++++ b/drivers/fastboot/fastboot.c
+@@ -81,6 +81,8 @@ enum {
+     PTN_RECOVERY_INDEX
+ };
+ 
++struct fastboot_device_info fastboot_devinfo;
++
+ /* defined and used by gadget/ep0.c */
+ extern struct usb_string_descriptor **usb_strings;
+ 
+@@ -229,6 +231,26 @@ static void str2wide(char *str, u16 * wide)
+ }
+ 
+ /*
++   Get mmc control number from passed string, eg, "mmc1" mean device 1. Only
++   support "mmc0" to "mmc9" currently. It will be treated as device 0 for
++   other string.
++*/
++static int get_mmc_no(char *env_str)
++{
++	int digit = 0;
++	unsigned char a;
++
++	if (env_str && (strlen(env_str) >= 4) &&
++	    !strncmp(env_str, "mmc", 3)) {
++		a = env_str[3];
++		if (a >= '0' && a <= '9')
++			digit = a - '0';
++	}
++
++	return digit;
++}
++
++/*
+  * Initialize fastboot
+  */
+ int fastboot_init(struct cmd_fastboot_interface *interface)
+@@ -269,19 +291,9 @@ static int fastboot_init_mmc_sata_ptable(void)
+ 	fastboot_ptentry ptable[PTN_RECOVERY_INDEX + 1];
+ 
+ 	fastboot_env = getenv("fastboot_dev");
+-	if ((fastboot_env == NULL) || strcmp(fastboot_env, "sata")) {
+-		puts("flash target is SD card\n");
+-		mmc = find_mmc_device(CONFIG_FASTBOOT_MMC_NO);
+-		if (mmc && mmc_init(mmc))
+-			printf("MMC card init failed!\n");
+-
+-		dev_desc = get_dev("mmc", CONFIG_FASTBOOT_MMC_NO);
+-		if (NULL == dev_desc) {
+-			printf("** Block device MMC %d not supported\n",
+-				CONFIG_FASTBOOT_MMC_NO);
+-			return -1;
+-		}
+-	} else {
++	/* sata case in env */
++	if (fastboot_env && !strcmp(fastboot_env, "sata")) {
++		fastboot_devinfo.type = DEV_SATA;
+ #ifdef CONFIG_CMD_SATA
+ 		puts("flash target is SATA\n");
+ 		if (sata_initialize())
+@@ -297,6 +309,25 @@ static int fastboot_init_mmc_sata_ptable(void)
+ 		puts("SATA isn't buildin\n");
+ 		return -1;
+ #endif
++	} else {
++		int mmc_no = 0;
++
++		mmc_no = get_mmc_no(fastboot_env);
++
++		fastboot_devinfo.type = DEV_MMC;
++		fastboot_devinfo.dev_id = mmc_no;
++
++		printf("flash target is MMC:%d\n", mmc_no);
++		mmc = find_mmc_device(mmc_no);
++		if (mmc && mmc_init(mmc))
++			printf("MMC card init failed!\n");
++
++		dev_desc = get_dev("mmc", mmc_no);
++		if (NULL == dev_desc) {
++			printf("** Block device MMC %d not supported\n",
++				mmc_no);
++			return -1;
++		}
+ 	}
+ 
+ 	memset((char *)ptable, 0,
+@@ -724,3 +755,4 @@ int fastboot_cdc_setup(struct usb_device_request *request, struct urb *urb)
+ {
+ 	return 0;
+ }
++
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 04607a1..6206678 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -100,7 +100,6 @@
+ #define CONFIG_FASTBOOT_CONFIGURATION_STR  "Android fastboot"
+ #define CONFIG_FASTBOOT_INTERFACE_STR    "Android fastboot"
+ #define CONFIG_FASTBOOT_SERIAL_NUM	 "12345"
+-#define CONFIG_FASTBOOT_MMC_NO		 0
+ #define CONFIG_FASTBOOT_TRANSFER_BUF	 0xA0000000
+ #define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x8000000 /* 128M byte */
+ 
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index 4552cd1..77eec2d 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -90,7 +90,6 @@
+ #define CONFIG_FASTBOOT_CONFIGURATION_STR  "Android fastboot"
+ #define CONFIG_FASTBOOT_INTERFACE_STR    "Android fastboot"
+ #define CONFIG_FASTBOOT_SERIAL_NUM      "12345"
+-#define CONFIG_FASTBOOT_MMC_NO          0
+ #define CONFIG_FASTBOOT_TRANSFER_BUF    0x80000000
+ #define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x8000000 /* 128M byte */
+ 
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index 953ceba..717c758 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -90,7 +90,6 @@
+ #define CONFIG_FASTBOOT_CONFIGURATION_STR  "Android fastboot"
+ #define CONFIG_FASTBOOT_INTERFACE_STR    "Android fastboot"
+ #define CONFIG_FASTBOOT_SERIAL_NUM      "12345"
+-#define CONFIG_FASTBOOT_MMC_NO          0
+ #define CONFIG_FASTBOOT_SATA_NO          0
+ #define CONFIG_FASTBOOT_TRANSFER_BUF    0x80000000
+ #define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x8000000 /* 128M byte */
+diff --git a/include/fastboot.h b/include/fastboot.h
+index 8a012b8..5d2512e 100644
+--- a/include/fastboot.h
++++ b/include/fastboot.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * (C) Copyright 2008 - 2009
+  * Windriver, <www.windriver.com>
+@@ -92,6 +92,12 @@
+ #define CFG_FASTBOOT_MKBOOTIMAGE_PAGE_SIZE 2048
+ #endif
+ 
++enum {
++    DEV_SATA,
++    DEV_MMC,
++    DEV_NAND
++};
++
+ struct cmd_fastboot_interface {
+ 	/* This function is called when a buffer has been
+ 	   recieved from the client app.
+@@ -168,6 +174,11 @@ struct fastboot_ptentry {
+ 	unsigned int flags;
+ };
+ 
++struct fastboot_device_info {
++	unsigned char type;
++	unsigned char dev_id;
++};
++
+ /* Lower byte shows if the read/write/erase operation in
+    repeated.  The base address is incremented.
+    Either 0 or 1 is ok for a default */
+-- 
+1.5.4.4
+

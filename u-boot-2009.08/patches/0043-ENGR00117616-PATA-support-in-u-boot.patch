@@ -1,0 +1,1200 @@
+From feca871a16ac0b8eed05f06ec0ca467fb469ab27 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 23 Oct 2009 19:57:09 +0800
+Subject: [PATCH] ENGR00117616: PATA support in u-boot.
+
+PATA support in u-boot.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/flash_header.S |    2 +-
+ board/freescale/mx51_3stack/mx51_3stack.c  |  244 +++++++++++++++-
+ common/Makefile                            |    1 +
+ common/cmd_pata.c                          |  203 +++++++++++++
+ drivers/block/Makefile                     |    1 +
+ drivers/block/mxc_ata.c                    |  454 ++++++++++++++++++++++++++++
+ drivers/block/mxc_ata.h                    |   90 ++++++
+ include/configs/mx51_3stack.h              |   14 +
+ include/pata.h                             |   35 +++
+ 9 files changed, 1039 insertions(+), 5 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/flash_header.S b/board/freescale/mx51_3stack/flash_header.S
+index 794ab6b..172220a 100644
+--- a/board/freescale/mx51_3stack/flash_header.S
++++ b/board/freescale/mx51_3stack/flash_header.S
+@@ -108,6 +108,6 @@ MXC_DCD_ITEM(54, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDMISC, 0x000ad6d0)
+ MXC_DCD_ITEM(55, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCDLYGD, 0x90000000)
+ MXC_DCD_ITEM(56, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00000000)
+ dcd_data_end:
+-image_len:		.word	0x40000
++image_len:		.word	0x80000
+ //image_len:		.word	_end - _start
+ #endif
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 50aec8c..8e315bd 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -159,6 +159,110 @@ static void setup_expio(void)
+ 	writew(reg, mx51_io_base_addr + PBC_SW_RESET);
+ }
+ 
++#if defined(CONFIG_MXC_ATA)
++int setup_ata()
++{
++	u32 pad;
++
++	pad = (PAD_CTL_DRV_HIGH | PAD_CTL_DRV_VOT_HIGH);
++
++	/* Need to disable nand iomux first */
++	mxc_request_iomux(MX51_PIN_NANDF_ALE, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_ALE, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_CS2, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_CS2, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_CS3, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_CS3, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_CS4, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_CS4, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_CS5, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_CS5, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_CS6, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_CS6, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_RE_B, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_RE_B, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_WE_B, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_WE_B, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_CLE, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_CLE, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_RB0, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_RB0, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_WP_B, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_WP_B, pad);
++
++	/* TO 2.0 */
++	mxc_request_iomux(MX51_PIN_GPIO_NAND, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_GPIO_NAND, pad);
++
++	/* TO 1.0 */
++	mxc_request_iomux(MX51_PIN_NANDF_RB5, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_RB5, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_RB1, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_RB1, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D0, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D0, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D1, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D1, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D2, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D2, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D3, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D3, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D4, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D4, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D5, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D5, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D6, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D6, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D7, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D7, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D8, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D8, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D9, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D9, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D10, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D10, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D11, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D11, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D12, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D12, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D13, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D13, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D14, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D14, pad);
++
++	mxc_request_iomux(MX51_PIN_NANDF_D15, IOMUX_CONFIG_ALT1);
++	mxc_iomux_set_pad(MX51_PIN_NANDF_D15, pad);
++
++	return 0;
++}
++#endif
++
+ #ifdef CONFIG_I2C_MXC
+ static setup_i2c(unsigned int module_base)
+ {
+@@ -214,11 +318,143 @@ static setup_i2c(unsigned int module_base)
+ 		break;
+ 	}
+ }
++
++#define REV_ATLAS_LITE_1_0	   0x8
++#define REV_ATLAS_LITE_1_1	   0x9
++#define REV_ATLAS_LITE_2_0	   0x10
++#define REV_ATLAS_LITE_2_1	   0x11
++
++void setup_core_voltages(void)
++{
++	unsigned char buf[4] = { 0 };
++
++	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
++
++	if (is_soc_rev(CHIP_REV_2_0) <= 0) {
++		/* Set core voltage to 1.1V */
++		if (i2c_read(0x8, 24, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x18 fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0x1F)) | 0x14;
++		if (i2c_write(0x8, 24, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x18 fail\n");
++			return;
++		}
++
++		/* Setup VCC (SW2) to 1.25 */
++		if (i2c_read(0x8, 25, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x19 fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0x1F)) | 0x1A;
++		if (i2c_write(0x8, 25, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x19 fail\n");
++			return;
++		}
++
++		/* Setup 1V2_DIG1 (SW3) to 1.25 */
++		if (i2c_read(0x8, 26, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x1A fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0x1F)) | 0x1A;
++		if (i2c_write(0x8, 26, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x1A fail\n");
++			return;
++		}
++
++		udelay(50);
++
++		/* Raise the core frequency to 800MHz */
++		writel(0x0, CCM_BASE_ADDR + CLKCTL_CACRR);
++	} else {
++		/* TO 3.0 */
++		/* Setup VCC (SW2) to 1.225 */
++		if (i2c_read(0x8, 25, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x19 fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0x1F)) | 0x19;
++		if (i2c_write(0x8, 25, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x19 fail\n");
++			return;
++		}
++
++		/* Setup 1V2_DIG1 (SW3) to 1.2 */
++		if (i2c_read(0x8, 26, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x1A fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0x1F)) | 0x18;
++		if (i2c_write(0x8, 26, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x1A fail\n");
++			return;
++		}
++	}
++
++	if (i2c_read(0x8, 7, 1, buf, 3)) {
++		puts("setup_core_voltages: read PMIC@0x08:0x07 fail\n");
++		return;
++	}
++
++	if (((buf[2] & 0x1F) < REV_ATLAS_LITE_2_0) || (((buf[1] >> 1) & 0x3) == 0)) {
++		/* Set switchers in PWM mode for Atlas 2.0 and lower */
++		/* Setup the switcher mode for SW1 & SW2*/
++		if (i2c_read(0x8, 28, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x1C fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0xF)) | 0x5;
++		buf[1] = (buf[1] & (~0x3C)) | 0x14;
++		if (i2c_write(0x8, 28, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x1C fail\n");
++			return;
++		}
++
++		/* Setup the switcher mode for SW3 & SW4*/
++		if (i2c_read(0x8, 29, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x1D fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0xF)) | 0x5;
++		buf[1] = (buf[1] & (~0xF)) | 0x5;
++		if (i2c_write(0x8, 29, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x1D fail\n");
++			return;
++		}
++	} else {
++		/* Set switchers in Auto in NORMAL mode & STANDBY mode for Atlas 2.0a */
++		/* Setup the switcher mode for SW1 & SW2*/
++		if (i2c_read(0x8, 28, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x1C fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0xF)) | 0x8;
++		buf[1] = (buf[1] & (~0x3C)) | 0x20;
++		if (i2c_write(0x8, 28, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x1C fail\n");
++			return;
++		}
++
++		/* Setup the switcher mode for SW3 & SW4*/
++		if (i2c_read(0x8, 29, 1, buf, 3)) {
++			puts("setup_core_voltages: read PMIC@0x08:0x1D fail\n");
++			return;
++		}
++		buf[2] = (buf[2] & (~0xF)) | 0x8;
++		buf[1] = (buf[1] & (~0xF)) | 0x8;
++		if (i2c_write(0x8, 29, 1, buf, 3)) {
++			puts("setup_core_voltages: write PMIC@0x08:0x1D fail\n");
++			return;
++		}
++	}
++}
++
+ #endif
+ 
+ int board_init(void)
+ {
+-	int pad;
+ 	setup_soc_rev();
+ 
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX51_3DS;	/* board id for linux */
+@@ -230,6 +466,7 @@ int board_init(void)
+ 	setup_expio();
+ #ifdef CONFIG_I2C_MXC
+ 	setup_i2c(I2C2_BASE_ADDR);
++	setup_core_voltages();
+ #endif
+ 	return 0;
+ }
+@@ -243,7 +480,6 @@ int board_late_init(void)
+ 	int state = 0, boot_mode_switch = 0;
+ #endif
+ 
+-
+ #if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
+ 	mxc_kpp_init();
+ 
+@@ -321,7 +557,7 @@ int board_late_init(void)
+ 
+ int checkboard(void)
+ {
+-	printf("Board: MX51 3STACK [");
++	printf("Board: MX51 3STACK ");
+ 
+ 	if (system_rev & CHIP_REV_2_0) {
+ 		printf("2.0 [");
+@@ -345,7 +581,7 @@ int checkboard(void)
+ 	default:
+ 		printf("unknown");
+ 	}
+-	printf("]]\n");
++	printf("]\n");
+ 	return 0;
+ }
+ 
+diff --git a/common/Makefile b/common/Makefile
+index f71053e..118569a 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -123,6 +123,7 @@ COBJS-y += cmd_nand.o
+ COBJS-$(CONFIG_CMD_NET) += cmd_net.o
+ COBJS-$(CONFIG_CMD_ONENAND) += cmd_onenand.o
+ COBJS-$(CONFIG_CMD_OTP) += cmd_otp.o
++COBJS-$(CONFIG_CMD_PATA) += cmd_pata.o
+ ifdef CONFIG_PCI
+ COBJS-$(CONFIG_CMD_PCI) += cmd_pci.o
+ endif
+diff --git a/common/cmd_pata.c b/common/cmd_pata.c
+new file mode 100644
+index 0000000..d326c1e
+--- /dev/null
++++ b/common/cmd_pata.c
+@@ -0,0 +1,203 @@
++/*
++ * Copyright (C) 2000-2005, DENX Software Engineering
++ *		Wolfgang Denk <wd@denx.de>
++ * Copyright (C) Procsys. All rights reserved.
++ *		Mushtaq Khan <mushtaq_k@procsys.com>
++ *			<mushtaqk_921@yahoo.co.in>
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *		Terry Lv <r65388@freescale.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <command.h>
++#include <part.h>
++#include <ata.h>
++#include <pata.h>
++
++int pata_curr_device = -1;
++block_dev_desc_t pata_dev_desc[CONFIG_SYS_ATA_MAX_DEVICE];
++
++int pata_initialize(void)
++{
++	int rc;
++	int i;
++
++	for (i = 0; i < CONFIG_SYS_ATA_MAX_DEVICE; i++) {
++		memset(&pata_dev_desc[i], 0, sizeof(struct block_dev_desc));
++		pata_dev_desc[i].if_type = IF_TYPE_ATAPI;
++		pata_dev_desc[i].dev = i;
++		pata_dev_desc[i].part_type = PART_TYPE_UNKNOWN;
++		pata_dev_desc[i].type = DEV_TYPE_HARDDISK;
++		pata_dev_desc[i].lba = 0;
++		pata_dev_desc[i].blksz = 512;
++		pata_dev_desc[i].block_read = pata_read;
++		pata_dev_desc[i].block_write = pata_write;
++
++		rc = init_pata(i);
++		rc = scan_pata(i);
++		if ((pata_dev_desc[i].lba > 0) && (pata_dev_desc[i].blksz > 0))
++			init_part(&pata_dev_desc[i]);
++	}
++	pata_curr_device = 0;
++	return rc;
++}
++
++block_dev_desc_t *pata_get_dev(int dev)
++{
++	return (dev < CONFIG_SYS_ATA_MAX_DEVICE) ? &pata_dev_desc[dev] : NULL;
++}
++
++int do_pata(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	int rc = 0;
++
++	if (argc == 2 && strcmp(argv[1], "init") == 0)
++		return pata_initialize();
++
++	/* If the user has not yet run `pata init`, do it now */
++	if (pata_curr_device == -1)
++		if (pata_initialize())
++			return 1;
++
++	switch (argc) {
++	case 0:
++	case 1:
++		printf("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	case 2:
++		if (strncmp(argv[1], "inf", 3) == 0) {
++			int i;
++			putc('\n');
++			for (i = 0; i < CONFIG_SYS_ATA_MAX_DEVICE; ++i) {
++				if (pata_dev_desc[i].type == DEV_TYPE_UNKNOWN)
++					continue;
++				printf("PATA device %d: ", i);
++				dev_print(&pata_dev_desc[i]);
++			}
++			return 0;
++		} else if (strncmp(argv[1], "dev", 3) == 0) {
++			if ((pata_curr_device < 0) || \
++					(pata_curr_device >= CONFIG_SYS_ATA_MAX_DEVICE)) {
++				puts("\nno PATA devices available\n");
++				return 1;
++			}
++			printf("\nPATA device %d: ", pata_curr_device);
++			dev_print(&pata_dev_desc[pata_curr_device]);
++			return 0;
++		} else if (strncmp(argv[1], "part", 4) == 0) {
++			int dev, ok;
++
++			for (ok = 0, dev = 0; dev < CONFIG_SYS_ATA_MAX_DEVICE; ++dev) {
++				if (pata_dev_desc[dev].part_type != PART_TYPE_UNKNOWN) {
++					++ok;
++					if (dev)
++						putc('\n');
++					print_part(&pata_dev_desc[dev]);
++				}
++			}
++			if (!ok) {
++				puts("\nno PATA devices available\n");
++				rc++;
++			}
++			return rc;
++		}
++		printf("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	case 3:
++		if (strncmp(argv[1], "dev", 3) == 0) {
++			int dev = (int)simple_strtoul(argv[2], NULL, 10);
++
++			printf("\nPATA device %d: ", dev);
++			if (dev >= CONFIG_SYS_ATA_MAX_DEVICE) {
++				puts("unknown device\n");
++				return 1;
++			}
++			dev_print(&pata_dev_desc[dev]);
++
++			if (pata_dev_desc[dev].type == DEV_TYPE_UNKNOWN)
++				return 1;
++
++			pata_curr_device = dev;
++
++			puts("... is now current device\n");
++
++			return 0;
++		} else if (strncmp(argv[1], "part", 4) == 0) {
++			int dev = (int)simple_strtoul(argv[2], NULL, 10);
++
++			if (pata_dev_desc[dev].part_type != PART_TYPE_UNKNOWN) {
++				print_part(&pata_dev_desc[dev]);
++			} else {
++				printf("\nPATA device %d not available\n", dev);
++				rc = 1;
++			}
++			return rc;
++		}
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++
++	default: /* at least 4 args */
++		if (strcmp(argv[1], "read") == 0) {
++			ulong addr = simple_strtoul(argv[2], NULL, 16);
++			ulong cnt = simple_strtoul(argv[4], NULL, 16);
++			ulong n;
++			lbaint_t blk = simple_strtoul(argv[3], NULL, 16);
++
++			printf("\nPATA read: device %d block # %ld, count %ld ... ",
++				pata_curr_device, blk, cnt);
++
++			n = pata_read(pata_curr_device, blk, cnt, (u32 *)addr);
++
++			/* flush cache after read */
++			flush_cache(addr, cnt * pata_dev_desc[pata_curr_device].blksz);
++
++			printf("%ld blocks read: %s\n",
++				n, (n == cnt) ? "OK" : "ERROR");
++			return (n == cnt) ? 0 : 1;
++		} else if (strcmp(argv[1], "write") == 0) {
++			ulong addr = simple_strtoul(argv[2], NULL, 16);
++			ulong cnt = simple_strtoul(argv[4], NULL, 16);
++			ulong n;
++
++			lbaint_t blk = simple_strtoul(argv[3], NULL, 16);
++
++			printf("\nPATA write: device %d block # %ld, count %ld ... ",
++				pata_curr_device, blk, cnt);
++
++			n = pata_write(pata_curr_device, blk, cnt, (u32 *)addr);
++
++			printf("%ld blocks written: %s\n",
++				n, (n == cnt) ? "OK" : "ERROR");
++			return (n == cnt) ? 0 : 1;
++		} else {
++			printf("Usage:\n%s\n", cmdtp->usage);
++			rc = 1;
++		}
++
++		return rc;
++	}
++}
++
++U_BOOT_CMD(
++	pata, 5, 1, do_pata,
++	"pata	- PATA sub system\n",
++	"pata info - show available PATA devices\n"
++	"pata device [dev] - show or set current device\n"
++	"pata part [dev] - print partition table\n"
++	"pata read addr blk# cnt\n"
++	"pata write addr blk# cnt\n");
+diff --git a/drivers/block/Makefile b/drivers/block/Makefile
+index 3f6ad5c..0a5dc8c 100644
+--- a/drivers/block/Makefile
++++ b/drivers/block/Makefile
+@@ -36,6 +36,7 @@ COBJS-$(CONFIG_SATA_SIL3114) += sata_sil3114.o
+ COBJS-$(CONFIG_SCSI_AHCI) += ahci.o
+ COBJS-$(CONFIG_SCSI_SYM53C8XX) += sym53c8xx.o
+ COBJS-$(CONFIG_SYSTEMACE) += systemace.o
++COBJS-$(CONFIG_MXC_ATA) += mxc_ata.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/block/mxc_ata.c b/drivers/block/mxc_ata.c
+new file mode 100644
+index 0000000..aed7476
+--- /dev/null
++++ b/drivers/block/mxc_ata.c
+@@ -0,0 +1,454 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for	list of people who contributed to this
++ * project.
++ *
++ * This	program	is free	software; you can redistribute it and/or
++ * modify it under the terms of	the GNU General Public License as
++ * published by	the Free Software Foundation; either version 2 of
++ * the License,	or (at your option) any later version.
++ *
++ * This	program	is distributed in the hope that	it will	be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59	Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include "mxc_ata.h"
++
++#include <pata.h>
++#include <libata.h>
++#include <common.h>
++#include <malloc.h>
++#include <asm/io.h>
++#include <linux/types.h>
++
++extern block_dev_desc_t pata_dev_desc[CONFIG_SYS_ATA_MAX_DEVICE];
++extern void setup_ata(void);
++
++struct mxc_ata_time_regs {
++	u8 time_off, time_on, time_1, time_2w;
++	u8 time_2r, time_ax, time_pio_rdx, time_4;
++	u8 time_9, time_m, time_jn, time_d;
++	u8 time_k, time_ack, time_env, time_rpx;
++	u8 time_zah, time_mlix, time_dvh, time_dzfs;
++	u8 time_dvs, time_cvh, time_ss, time_cyc;
++};
++
++/*
++ * This structure contains the timing parameters for
++ * ATA bus timing in the 5 PIO modes.  The timings
++ * are in nanoseconds, and are converted to clock
++ * cycles before being stored in the ATA controller
++ * timing registers.
++ */
++static struct {
++	s16 t0, t1, t2_8, t2_16, t2i, t4, t9, tA;
++} pio_specs[] = {
++	[0] = {
++	.t0 = 600, .t1 = 70, .t2_8 = 290, .t2_16 = 165, .t2i = 40, .t4 =
++		30, .t9 = 20, .tA = 50,},
++	[1] = {
++	.t0 = 383, .t1 = 50, .t2_8 = 290, .t2_16 = 125, .t2i = 0, .t4 =
++		20, .t9 = 15, .tA = 50,},
++	[2] = {
++	.t0 = 240, .t1 = 30, .t2_8 = 290, .t2_16 = 100, .t2i = 0, .t4 =
++		15, .t9 = 10, .tA = 50,},
++	[3] = {
++	.t0 = 180, .t1 = 30, .t2_8 = 80, .t2_16 = 80, .t2i = 0, .t4 =
++		10, .t9 = 10, .tA = 50,},
++	[4] = {
++	.t0 = 120, .t1 = 25, .t2_8 = 70, .t2_16 = 70, .t2i = 0, .t4 =
++		10, .t9 = 10, .tA = 50,},
++	};
++
++#define NR_PIO_SPECS (sizeof(pio_specs) / sizeof(pio_specs[0]))
++
++static inline void mdelay(u32 msec)
++{
++	u32 i;
++	for (i = 0; i < msec; i++)
++		udelay(1000);
++}
++
++static inline void sdelay(u32 sec)
++{
++	u32 i;
++	for (i = 0; i < sec; i++)
++		mdelay(1000);
++}
++
++void dprint_buffer(u8 *buf, s32 len)
++{
++	s32 i, j;
++
++	i = 0;
++	j = 0;
++	printf("\n\r");
++
++	for (i = 0; i < len; i++) {
++		printf("%02x ", *buf++);
++		j++;
++		if (j == 16) {
++			printf("\n\r");
++			j = 0;
++		}
++	}
++	printf("\n\r");
++}
++
++
++static void update_timing_config(struct mxc_ata_time_regs *tp)
++{
++	u32 *lp = (u32 *)tp;
++	u32 *ctlp = (u32 *) ATA_BASE_ADDR;
++	s32 i;
++
++	for (i = 0; i < 5; ++i) {
++		writel(*lp, ctlp);
++		lp++;
++		ctlp++;
++	}
++}
++
++static void set_ata_bus_timing(u8 xfer_mode)
++{
++	s32 speed = xfer_mode;
++	struct mxc_ata_time_regs tr = { 0 };
++	s32 T = 1 * 1000 * 1000 * 1000 / mxc_get_clock(MXC_IPG_CLK);
++
++	if (speed >= NR_PIO_SPECS)
++		return;
++
++	tr.time_off = 3;
++	tr.time_on = 3;
++
++	tr.time_1 = (pio_specs[speed].t1 + T) / T;
++	tr.time_2w = (pio_specs[speed].t2_8 + T) / T;
++
++	tr.time_2r = (pio_specs[speed].t2_8 + T) / T;
++	tr.time_ax = (pio_specs[speed].tA + T) / T + 2;
++	tr.time_pio_rdx = 1;
++	tr.time_4 = (pio_specs[speed].t4 + T) / T;
++
++	tr.time_9 = (pio_specs[speed].t9 + T) / T;
++
++	update_timing_config(&tr);
++}
++
++static u8 ata_sff_busy_wait(u32 bits, u32 max, u32 delay)
++{
++	u8 status;
++	u32 iterations = 1;
++
++	if (max != 0)
++		iterations = max;
++
++	do {
++		udelay(delay);
++		status = readb(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DCDR);
++		if (max != 0)
++			iterations--;
++	} while (status != 0xff && (status & bits) && (iterations > 0));
++
++	if (iterations == 0) {
++		printf("ata_sff_busy_wait timeout status = %x\n", status);
++		return 0xff;
++	}
++
++	return status;
++}
++
++static void ata_sff_exec_command(u16 cmd)
++{
++	writeb(cmd, CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DCDR);
++	readb(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_CONTROL);
++	udelay(4);
++}
++
++static s32 ata_identify(int dev, u16 *id)
++{
++	int i;
++	int CIS[256] = { 0 };
++
++	ata_sff_exec_command(ATA_CMD_ID_ATA);
++	if (ata_sff_busy_wait(ATA_BUSY, 5000, 500) == 0xff)
++		return -1;
++
++	for (i = 0 ; i < 256; ++i)
++		id[i] = (u16)readw(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_DATA);
++
++	ata_swap_buf_le16(id, ATA_ID_WORDS);
++
++	return 0;
++}
++
++static s32 ata_dev_set_feature(int dev, u32 feature)
++{
++	u8 status;
++
++	writeb(feature, CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DFTR);
++	/* Issue Set feature command */
++	ata_sff_exec_command(ATA_CMD_SET_FEATURES);
++	status = ata_sff_busy_wait(ATA_BUSY, 5000, 500);
++
++	if (status == 0xff)
++		return 1;
++	if (status & ATA_ERR)
++		return 1;
++
++	return 0;
++}
++
++static void write_sector_pio(u32 *addr, s32 num_of_sectors)
++{
++	int i, j;
++
++	for (i = 0; i < num_of_sectors; i++) {
++		for (j = 0; j < ATA_SECTOR_SIZE; j = j + 4) {
++			/* Write 4 bytes in each iteration */
++			writew((*addr & 0xFFFF),
++					ATA_BASE_ADDR + MXC_ATA_DRIVE_DATA) ;
++			writew(((*addr >> 16) & 0xFFFF),
++					ATA_BASE_ADDR + MXC_ATA_DRIVE_DATA) ;
++			addr++;
++		}
++		ata_sff_busy_wait(ATA_BUSY, 5000, 50);
++	}
++	readb(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_CONTROL);
++}
++
++static void read_sector_pio(u32 *addr, s32 num_of_sectors)
++{
++	int i, j;
++	u32 data[2];
++
++	for (i = 0; i < num_of_sectors; i++) {
++		for (j = 0; j < ATA_SECTOR_SIZE; j = j + 4) {
++			/* Read 4 bytes in each iteration */
++			data[0] = readw(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_DATA);
++			data[1] = readw(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_DATA);
++			*addr = ((data[1] << 16) & 0xFFFF0000) | \
++					(data[0] & 0xFFFF);
++			addr++;
++		}
++		ata_sff_busy_wait(ATA_BUSY, 5000, 10);
++	}
++	readb(CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_CONTROL);
++}
++
++static s32 mxc_pata_reset(int dev)
++{
++	setup_ata();
++
++	/* Deassert the reset bit to enable the interface */
++	writel(MXC_ATA_CTRL_ATA_RST_B, \
++			CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_CONTROL);
++	writel(MXC_ATA_CTRL_ATA_RST_B | MXC_ATA_CTRL_FIFO_RST_B, \
++			CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_CONTROL);
++	/* Set initial timing and mode */
++	set_ata_bus_timing(PIO_XFER_MODE_4);
++	/* set fifo alarm to 20 halfwords, midway */
++	writeb(20, CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_FIFO_ALARM);
++
++	/* software reset */
++	writeb(ATA_NIEN, \
++			CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_CONTROL);
++	udelay(20);
++	writeb(ATA_NIEN | ATA_SRST, \
++			CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_CONTROL);
++	udelay(20);
++	writeb(ATA_NIEN, \
++			CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DRIVE_CONTROL);
++
++	writeb(0, CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DDHR);
++
++	if (ata_sff_busy_wait(ATA_BUSY | ATA_DRQ, \
++				6000, 1000) == 0xff) {
++		puts("Failed to initialize the ATA drive\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++/*
++ * PATA interface between low level driver and command layer
++ */
++int init_pata(int dev)
++{
++	if (dev < 0 || dev > (CONFIG_SYS_ATA_MAX_DEVICE - 1)) {
++		printf("the pata index %d is out of ranges\n\r", dev);
++		return -1;
++	}
++
++	return mxc_pata_reset(dev);
++}
++
++ulong pata_read(int dev, ulong blknr, ulong blkcnt, void *buffer)
++{
++	u8  lba_addr[4] = { 0 };
++	u32 num_of_sectors = 0;
++	u8  status = 0;
++	u32 total_blks = blkcnt;
++
++	while (blkcnt > 0) {
++		lba_addr[0] = blknr & 0xFF;
++		lba_addr[1] = (blknr >> 8) & 0xFF;
++		lba_addr[2] = (blknr >> 16) & 0xFF;
++		/* Enable the LBA bit */
++		lba_addr[3] = (1 << 6) | ((blknr >> 24) & 0xF);
++
++		if (blkcnt >= MAX_SECTORS)
++			num_of_sectors = 0;
++		else
++			num_of_sectors = blkcnt;
++
++		ata_sff_busy_wait(ATA_BUSY | ATA_DRQ, 5000, 50);
++		writeb(num_of_sectors, CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DSCR);
++		writeb(lba_addr[0], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DSNR);
++		writeb(lba_addr[1], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DCLR);
++		writeb(lba_addr[2], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DCHR);
++		writeb(lba_addr[3], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DDHR);
++
++		/* Issue Read command */
++		ata_sff_exec_command(ATA_CMD_PIO_READ);
++		status = ata_sff_busy_wait(ATA_BUSY, 5000, 50);
++		if (status & ATA_ERR) {
++			puts("Error while issuing ATA Read command\n");
++			return -1;
++		}
++		if (num_of_sectors == 0) {
++			read_sector_pio((u32 *)buffer, MAX_SECTORS);
++			blkcnt -= MAX_SECTORS;
++			blknr += MAX_SECTORS;
++			buffer += (MAX_SECTORS * ATA_SECTOR_SIZE);
++		} else {
++			read_sector_pio((u32 *)buffer, num_of_sectors);
++			blkcnt -= num_of_sectors;
++			blknr += num_of_sectors;
++			buffer += (num_of_sectors * ATA_SECTOR_SIZE);
++		}
++	}
++
++	return total_blks;
++}
++
++ulong pata_write(int dev, ulong blknr, ulong blkcnt, const void *buffer)
++{
++	s32 lba_addr[4] = { 0 },
++		num_of_sectors = 0;
++	u8  status = 0;
++	u32 total_blks = blkcnt;
++
++	while (blkcnt > 0) {
++		lba_addr[0] = blknr & 0xFF;
++		lba_addr[1] = (blknr >> 8) & 0xFF;
++		lba_addr[2] = (blknr >> 16) & 0xFF;
++		/* Enable the LBA bit */
++		lba_addr[3] = (1 << 6) | ((blknr >> 24) & 0xF);
++
++		if (blkcnt >= MAX_SECTORS)
++			num_of_sectors = 0;
++		else
++			num_of_sectors = blkcnt;
++
++		ata_sff_busy_wait(ATA_BUSY | ATA_DRQ, 5000, 50);
++		writeb(num_of_sectors, CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DSCR);
++		writeb(lba_addr[0], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DSNR);
++		writeb(lba_addr[1], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DCLR);
++		writeb(lba_addr[2], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DCHR);
++		writeb(lba_addr[3], CONFIG_SYS_ATA_BASE_ADDR + MXC_ATA_DDHR);
++
++		/* Issue Write command */
++		ata_sff_exec_command(ATA_CMD_PIO_WRITE);
++		ata_sff_busy_wait(ATA_BUSY, 5000, 50);
++		if (status & ATA_ERR) {
++			puts("Error while issuing ATA Write command\n");
++			return -1;
++		}
++		if (num_of_sectors == 0) {
++			write_sector_pio((u32 *)buffer, MAX_SECTORS);
++			blkcnt -= MAX_SECTORS;
++			blknr += MAX_SECTORS;
++			buffer += (MAX_SECTORS * ATA_SECTOR_SIZE);
++		} else {
++			write_sector_pio((u32 *)buffer, num_of_sectors);
++			blkcnt -= num_of_sectors;
++			blknr += num_of_sectors;
++			buffer += (num_of_sectors * ATA_SECTOR_SIZE);
++		}
++	}
++
++	return total_blks;
++}
++
++int scan_pata(int dev)
++{
++	u8 serial[ATA_ID_SERNO_LEN + 1];
++	u8 firmware[ATA_ID_FW_REV_LEN + 1];
++	u8 product[ATA_ID_PROD_LEN + 1];
++	u16 *id;
++	u64 n_sectors;
++
++	id = (u16 *)malloc(ATA_ID_WORDS * 2);
++	if (!id) {
++		printf("id malloc failed\n\r");
++		return -1;
++	}
++
++retry:
++	/* Identify device to get information */
++	ata_identify(dev, id);
++
++	if (ata_id_is_ata(id)) {
++		if ((id[2] == 0x37c8 || id[2] == 0x738c)) {
++			s32 err_mask = 0;
++
++			err_mask = ata_dev_set_feature(dev, SETFEATURES_SPINUP);
++			if (err_mask && id[2] != 0x738c) {
++				puts("ATA SPINUP Failed \n");
++				return -1;
++			}
++			if (id[2] == 0x37c8)
++				goto retry;
++		}
++	} else {
++		puts("ATA IDENTIFY DEVICE command Failed \n");
++	}
++
++	/* Serial number */
++	ata_id_c_string(id, serial, ATA_ID_SERNO, sizeof(serial));
++	memcpy(pata_dev_desc[dev].product, serial, sizeof(serial));
++
++	/* Firmware version */
++	ata_id_c_string(id, firmware, ATA_ID_FW_REV, sizeof(firmware));
++	memcpy(pata_dev_desc[dev].revision, firmware, sizeof(firmware));
++
++	/* Product model */
++	ata_id_c_string(id, product, ATA_ID_PROD, sizeof(product));
++	memcpy(pata_dev_desc[dev].vendor, product, sizeof(product));
++
++	/* Totoal sectors */
++	n_sectors = ata_id_n_sectors(id);
++	pata_dev_desc[dev].lba = (u32)n_sectors;
++
++	/* Check if support LBA48 */
++	if (ata_id_has_lba48(id)) {
++		pata_dev_desc[dev].lba48 = 1;
++		debug("Device support LBA48\n\r");
++	}
++
++#ifdef DEBUG
++	fsl_pata_identify(dev, id);
++	ata_dump_id(id);
++#endif
++	free((void *)id);
++	return 0;
++}
+diff --git a/drivers/block/mxc_ata.h b/drivers/block/mxc_ata.h
+new file mode 100644
+index 0000000..5d198f1
+--- /dev/null
++++ b/drivers/block/mxc_ata.h
+@@ -0,0 +1,90 @@
++#ifndef _MXC_ATA_H_
++#define _MXC_ATA_H_
++
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for	list of people who contributed to this
++ * project.
++ *
++ * This	program	is free	software; you can redistribute it and/or
++ * modify it under the terms of	the GNU General Public License as
++ * published by	the Free Software Foundation; either version 2 of
++ * the License,	or (at your option) any later version.
++ *
++ * This	program	is distributed in the hope that	it will	be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59	Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#define MXC_ATA_TIMING_REGS                             0x00
++#define MXC_ATA_FIFO_FILL                                   0x20
++#define MXC_ATA_CONTROL                                     0x24
++#define MXC_ATA_INT_PEND                                   0x28
++#define MXC_ATA_INT_EN                                       0x2C
++#define MXC_ATA_INT_CLEAR                                 0x30
++#define MXC_ATA_FIFO_ALARM                              0x34
++#define MXC_ATA_ADMA_ERROR_STATUS               0x38
++#define MXC_ATA_SYS_DMA_BADDR                       0x3C
++#define MXC_ATA_ADMA_SYS_ADDR                       0x40
++#define MXC_ATA_BLOCK_COUNT                            0x48
++#define MXC_ATA_BURST_LENGTH                          0x4C
++#define MXC_ATA_SECTOR_SIZE                             0x50
++#define MXC_ATA_DRIVE_DATA                              0xA0
++#define MXC_ATA_DFTR                                          0xA4
++#define MXC_ATA_DSCR                                          0xA8
++#define MXC_ATA_DSNR                                          0xAC
++#define MXC_ATA_DCLR                                           0xB0
++#define MXC_ATA_DCHR                                          0xB4
++#define MXC_ATA_DDHR                                          0xB8
++#define MXC_ATA_DCDR                                          0xBC
++#define MXC_ATA_DRIVE_CONTROL                         0xD8
++
++/* bits within MXC_ATA_CONTROL */
++#define MXC_ATA_CTRL_DMA_SRST                         0x1000
++#define MXC_ATA_CTRL_DMA_64ADMA                    0x800
++#define MXC_ATA_CTRL_DMA_32ADMA                    0x400
++#define MXC_ATA_CTRL_DMA_STAT_STOP               0x200
++#define MXC_ATA_CTRL_DMA_ENABLE                     0x100
++#define MXC_ATA_CTRL_FIFO_RST_B                       0x80
++#define MXC_ATA_CTRL_ATA_RST_B                        0x40
++#define MXC_ATA_CTRL_FIFO_TX_EN                      0x20
++#define MXC_ATA_CTRL_FIFO_RCV_EN                    0x10
++#define MXC_ATA_CTRL_DMA_PENDING                   0x08
++#define MXC_ATA_CTRL_DMA_ULTRA                       0x04
++#define MXC_ATA_CTRL_DMA_WRITE                       0x02
++#define MXC_ATA_CTRL_IORDY_EN                          0x01
++
++/* bits within the interrupt control registers */
++#define MXC_ATA_INTR_ATA_INTRQ1                      0x80
++#define MXC_ATA_INTR_FIFO_UNDERFLOW             0x40
++#define MXC_ATA_INTR_FIFO_OVERFLOW               0x20
++#define MXC_ATA_INTR_CTRL_IDLE                         0x10
++#define MXC_ATA_INTR_ATA_INTRQ2                      0x08
++#define MXC_ATA_INTR_DMA_ERR                           0x04
++#define MXC_ATA_INTR_DMA_TRANS_OVER            0x02
++
++/* ADMA Addr Descriptor Attribute Filed */
++#define MXC_ADMA_DES_ATTR_VALID                     0x01
++#define MXC_ADMA_DES_ATTR_END                        0x02
++#define MXC_ADMA_DES_ATTR_INT                         0x04
++#define MXC_ADMA_DES_ATTR_SET                         0x10
++#define MXC_ADMA_DES_ATTR_TRAN                      0x20
++#define MXC_ADMA_DES_ATTR_LINK                       0x30
++
++#define PIO_XFER_MODE_0                                     0
++#define PIO_XFER_MODE_1                                     1
++#define PIO_XFER_MODE_2                                     2
++#define PIO_XFER_MODE_3                                     3
++#define PIO_XFER_MODE_4                                     4
++
++#define ATA_SECTOR_SIZE                                     512
++#define MAX_SECTORS                       256
++
++#endif /* _IMX_ATA_H_ */
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index bd2d27b..2714857 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -83,8 +83,10 @@
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
+ /* Enable below configure when supporting nand */
++/*
+ #define CONFIG_CMD_NAND
+ #define CONFIG_MXC_NAND
++*/
+ #define CONFIG_CMD_ENV
+ #define CMD_SAVEENV
+ #undef CONFIG_CMD_IMLS
+@@ -115,6 +117,17 @@
+ #define CONFIG_SYS_I2C_SPEED            400000
+ #define CONFIG_SYS_I2C_SLAVE            0xfe
+ 
++/*
++ * PATA Configs
++ */
++#define CONFIG_CMD_PATA
++#define CONFIG_CMD_EXT2
++#define CONFIG_MXC_ATA
++#define CONFIG_LIBATA
++#define CONFIG_LBA48
++#define CONFIG_SYS_ATA_MAX_DEVICE	1
++#define CONFIG_SYS_ATA_BASE_ADDR	ATA_BASE_ADDR
++
+ #define CONFIG_BOOTDELAY	3
+ 
+ #define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
+@@ -210,6 +223,7 @@
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_NAND
+ /* #define CONFIG_FSL_ENV_IN_NAND */
++/* #define CONFIG_FSL_ENV_IN_MMC */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE		CONFIG_ENV_SECT_SIZE
+diff --git a/include/pata.h b/include/pata.h
+new file mode 100644
+index 0000000..ef14810
+--- /dev/null
++++ b/include/pata.h
+@@ -0,0 +1,35 @@
++#ifndef __PATA_H__
++#define __PATA_H__
++
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <linux/types.h>
++
++int init_pata(int dev);
++int scan_pata(int dev);
++ulong pata_read(int dev, ulong blknr, ulong blkcnt, void *buffer);
++ulong pata_write(int dev, ulong blknr, ulong blkcnt, const void *buffer);
++
++int pata_initialize();
++
++#endif
+-- 
+1.5.4.4
+

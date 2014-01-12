@@ -1,0 +1,47 @@
+From 64dcd3ea7681bfa32f714b29dd0cce18eaad7c00 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 25 Oct 2010 10:53:48 +0800
+Subject: [PATCH] ENGR00131983-1 MTD: Fix wrong check register_blkdev return value
+
+register_blkdev return 1..255 when major = 0.
+
+if (ret ) {
+	printk(KERN_WARNING "Unable to register %s block device on major %d: %d\n",
+		tr->name, tr->major, ret);
+	      mutex_unlock(&mtd_table_mutex);
+	return ret;
+}
+
+Above code will return fail when register_blkdev return allocated major number.
+
+Signed-off-by: Patrick Turley <patrick.turley@freescale.com>
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/mtd/mtd_blkdevs.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/mtd_blkdevs.c b/drivers/mtd/mtd_blkdevs.c
+index 03e19c1..39f4852 100644
+--- a/drivers/mtd/mtd_blkdevs.c
++++ b/drivers/mtd/mtd_blkdevs.c
+@@ -485,13 +485,16 @@ int register_mtd_blktrans(struct mtd_blktrans_ops *tr)
+ 	mutex_lock(&mtd_table_mutex);
+ 
+ 	ret = register_blkdev(tr->major, tr->name);
+-	if (ret) {
++	if (ret < 0) {
+ 		printk(KERN_WARNING "Unable to register %s block device on major %d: %d\n",
+ 		       tr->name, tr->major, ret);
+ 		mutex_unlock(&mtd_table_mutex);
+ 		return ret;
+ 	}
+ 
++	if (ret)
++		tr->major = ret;
++
+ 	tr->blkshift = ffs(tr->blksize) - 1;
+ 
+ 	INIT_LIST_HEAD(&tr->devs);
+-- 
+1.5.4.4
+

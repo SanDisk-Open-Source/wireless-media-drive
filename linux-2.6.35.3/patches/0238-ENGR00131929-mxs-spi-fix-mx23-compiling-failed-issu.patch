@@ -1,0 +1,30 @@
+From 07424fb284e4697bc7dec594631d20a82327440b Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Sat, 25 Sep 2010 16:57:41 +0800
+Subject: [PATCH] ENGR00131929 mxs spi: fix mx23 compiling failed issue
+
+Missed another pre-defined micro on spi driver for mx23 which will
+cause mx23 kernel build failed.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/spi/spi_mxs.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/spi/spi_mxs.c b/drivers/spi/spi_mxs.c
+index a6ca061..c6e66fd 100644
+--- a/drivers/spi/spi_mxs.c
++++ b/drivers/spi/spi_mxs.c
+@@ -55,6 +55,9 @@
+ #define BM_SSP_XFER_SIZE_XFER_COUNT	HW_SSP_VERSION
+ #endif
+ 
++#ifndef HW_SSP_XFER_SIZE
++#define HW_SSP_XFER_SIZE HW_SSP_VERSION
++#endif
+ 
+ /* 0 means DMA modei(recommended, default), !0 - PIO mode */
+ static int pio /* = 0 */ ;
+-- 
+1.5.4.4
+

@@ -1,0 +1,35 @@
+From 47ee6bf850e0bb77aa85ed975b6d1971fe7a91fa Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Tue, 15 Feb 2011 10:52:16 +0800
+Subject: [PATCH] ENGR00139191 [MMC]vendor spec register will be overwrittern
+
+	during multi-block transfer and MX50 TO1.1/MX53 TO2
+	SDHCI_VERDOR_SPEC register will be overwritten
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index 54910b7..1d932b3 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -750,12 +750,13 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
+ 				 * set bit1 of Vendor Spec Registor
+ 				 */
+ 				if (cmd->opcode == 0x35 && (cmd->data->flags
+-							& MMC_DATA_READ))
++							& MMC_DATA_READ)) {
+ 					timeout = readl(host->ioaddr
+ 							+ SDHCI_VENDOR_SPEC);
+ 					timeout |= 0x2;
+ 					writel(timeout, host->ioaddr
+ 							+ SDHCI_VENDOR_SPEC);
++				}
+ 			}
+ 		}
+ 		if (cmd->data->flags & MMC_DATA_READ)
+-- 
+1.5.4.4
+

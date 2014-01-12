@@ -1,0 +1,2166 @@
+From 15f7bc70e4bc3753eba52c455f06ebac6499adf0 Mon Sep 17 00:00:00 2001
+From: Richard Zhao <richard.zhao@freescale.com>
+Date: Tue, 28 Sep 2010 16:43:00 +0800
+Subject: [PATCH] ENGR00132486 GPU: Upgrade to Rel 1.1
+
+Upgrade to AMD "Production Release 1.1 for September 10,2010"
+
+Signed-off-by: Richard Zhao <richard.zhao@freescale.com>
+---
+ drivers/mxc/amd-gpu/common/gsl_cmdstream.c         |   34 +++-
+ drivers/mxc/amd-gpu/common/gsl_cmdwindow.c         |   25 ++
+ drivers/mxc/amd-gpu/common/gsl_device.c            |   11 +
+ drivers/mxc/amd-gpu/common/gsl_drawctxt.c          |  270 +++++++++++---------
+ drivers/mxc/amd-gpu/common/gsl_g12.c               |   37 ++-
+ drivers/mxc/amd-gpu/common/gsl_mmu.c               |   47 ++++
+ drivers/mxc/amd-gpu/common/gsl_ringbuffer.c        |   15 +
+ drivers/mxc/amd-gpu/common/gsl_yamato.c            |   11 +
+ drivers/mxc/amd-gpu/include/api/gsl_klibapi.h      |    1 +
+ drivers/mxc/amd-gpu/include/api/gsl_libapi.h       |    1 +
+ drivers/mxc/amd-gpu/include/api/gsl_types.h        |   14 +-
+ drivers/mxc/amd-gpu/include/gsl_buildconfig.h      |    2 +-
+ drivers/mxc/amd-gpu/include/gsl_device.h           |    9 +
+ drivers/mxc/amd-gpu/include/gsl_drawctxt.h         |   14 +-
+ drivers/mxc/amd-gpu/include/gsl_driver.h           |    2 +-
+ drivers/mxc/amd-gpu/include/gsl_ioctl.h            |   51 ++--
+ drivers/mxc/amd-gpu/include/gsl_mmu.h              |    3 +
+ drivers/mxc/amd-gpu/include/gsl_ringbuffer.h       |   17 ++-
+ .../amd-gpu/include/reg/yamato/10/yamato_mask.h    |   14 -
+ .../include/reg/yamato/10/yamato_registers.h       |   14 -
+ .../amd-gpu/include/reg/yamato/10/yamato_struct.h  |  150 -----------
+ .../amd-gpu/include/reg/yamato/14/yamato_struct.h  |  150 -----------
+ .../amd-gpu/include/reg/yamato/22/yamato_struct.h  |  150 -----------
+ drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c  |   12 +
+ 24 files changed, 410 insertions(+), 644 deletions(-)
+
+diff --git a/drivers/mxc/amd-gpu/common/gsl_cmdstream.c b/drivers/mxc/amd-gpu/common/gsl_cmdstream.c
+index 338192c..4f0d107 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_cmdstream.c
++++ b/drivers/mxc/amd-gpu/common/gsl_cmdstream.c
+@@ -20,6 +20,20 @@
+ #include "gsl_hal.h"
+ #include "gsl_cmdstream.h"
+ 
++#ifdef GSL_LOCKING_FINEGRAIN
++#define GSL_CMDSTREAM_MUTEX_CREATE()        device->cmdstream_mutex = kos_mutex_create("gsl_cmdstream"); \
++                                            if (!device->cmdstream_mutex) return (GSL_FAILURE);
++#define GSL_CMDSTREAM_MUTEX_LOCK()          kos_mutex_lock(device->cmdstream_mutex)
++#define GSL_CMDSTREAM_MUTEX_UNLOCK()        kos_mutex_unlock(device->cmdstream_mutex)
++#define GSL_CMDSTREAM_MUTEX_FREE()          kos_mutex_free(device->cmdstream_mutex); device->cmdstream_mutex = 0;
++#else
++#define GSL_CMDSTREAM_MUTEX_CREATE()
++#define GSL_CMDSTREAM_MUTEX_LOCK()
++#define GSL_CMDSTREAM_MUTEX_UNLOCK()
++#define GSL_CMDSTREAM_MUTEX_FREE()
++#endif
++
++
+ //////////////////////////////////////////////////////////////////////////////
+ // functions
+ //////////////////////////////////////////////////////////////////////////////
+@@ -27,6 +41,8 @@
+ int
+ kgsl_cmdstream_init(gsl_device_t *device)
+ {
++    GSL_CMDSTREAM_MUTEX_CREATE();
++
+     return GSL_SUCCESS;
+ }
+ 
+@@ -35,6 +51,8 @@ kgsl_cmdstream_init(gsl_device_t *device)
+ int
+ kgsl_cmdstream_close(gsl_device_t *device)
+ {
++    GSL_CMDSTREAM_MUTEX_FREE();
++
+     return GSL_SUCCESS;
+ }
+ 
+@@ -133,17 +151,22 @@ kgsl_cmdstream_memqueue_drain(gsl_device_t *device)
+     gsl_memnode_t     *memnode, *nextnode, *freehead;
+     gsl_timestamp_t   timestamp, ts_processed;
+     gsl_memqueue_t    *memqueue = &device->memqueue;
++
++    GSL_CMDSTREAM_MUTEX_LOCK();
++
+     // check head
+     if (memqueue->head == NULL)
+     {
++        GSL_CMDSTREAM_MUTEX_UNLOCK();
+         return;
+     }
+     // get current EOP timestamp
+     ts_processed = kgsl_cmdstream_readtimestamp0(device->id, GSL_TIMESTAMP_RETIRED);
+     timestamp = memqueue->head->timestamp;
+     // check head timestamp
+-    if (!(((ts_processed - timestamp) >= 0) || ((ts_processed - timestamp) < -20000)))
++    if (!(((ts_processed - timestamp) >= 0) || ((ts_processed - timestamp) < -GSL_TIMESTAMP_EPSILON)))
+     {
++        GSL_CMDSTREAM_MUTEX_UNLOCK();
+         return;
+     }
+     memnode  = memqueue->head;
+@@ -160,7 +183,7 @@ kgsl_cmdstream_memqueue_drain(gsl_device_t *device)
+             break;
+         }
+         timestamp = nextnode->timestamp;
+-        if (!(((ts_processed - timestamp) >= 0) || ((ts_processed - timestamp) < -20000)))
++        if (!(((ts_processed - timestamp) >= 0) || ((ts_processed - timestamp) < -GSL_TIMESTAMP_EPSILON)))
+         {
+             // drained up to a point
+             memqueue->head = nextnode;
+@@ -177,6 +200,8 @@ kgsl_cmdstream_memqueue_drain(gsl_device_t *device)
+         kgsl_sharedmem_free0(&memnode->memdesc, memnode->pid);
+         kos_free(memnode);
+     }
++
++    GSL_CMDSTREAM_MUTEX_UNLOCK();
+ }
+ 
+ //----------------------------------------------------------------------------
+@@ -190,6 +215,7 @@ kgsl_cmdstream_freememontimestamp(gsl_deviceid_t device_id, gsl_memdesc_t *memde
+     (void)type; // unref. For now just use EOP timestamp
+ 
+ 	GSL_API_MUTEX_LOCK();
++	GSL_CMDSTREAM_MUTEX_LOCK();
+ 
+ 	memqueue = &device->memqueue;
+ 
+@@ -198,6 +224,7 @@ kgsl_cmdstream_freememontimestamp(gsl_deviceid_t device_id, gsl_memdesc_t *memde
+     if (!memnode)
+     {
+         // other solution is to idle and free which given that the upper level driver probably wont check, probably a better idea
++		GSL_CMDSTREAM_MUTEX_UNLOCK();
+ 		GSL_API_MUTEX_UNLOCK();
+         return (GSL_FAILURE);
+     }
+@@ -220,6 +247,7 @@ kgsl_cmdstream_freememontimestamp(gsl_deviceid_t device_id, gsl_memdesc_t *memde
+         memqueue->tail = memnode;
+     }
+ 
++    GSL_CMDSTREAM_MUTEX_UNLOCK();
+ 	GSL_API_MUTEX_UNLOCK();
+ 
+     return (GSL_SUCCESS);
+@@ -228,7 +256,7 @@ kgsl_cmdstream_freememontimestamp(gsl_deviceid_t device_id, gsl_memdesc_t *memde
+ static int kgsl_cmdstream_timestamp_cmp(gsl_timestamp_t ts_new, gsl_timestamp_t ts_old)
+ {
+ 	gsl_timestamp_t ts_diff = ts_new - ts_old;
+-	return (ts_diff >= 0) || (ts_diff < -20000);
++	return (ts_diff >= 0) || (ts_diff < -GSL_TIMESTAMP_EPSILON);
+ }
+ 
+ int kgsl_cmdstream_check_timestamp(gsl_deviceid_t device_id, gsl_timestamp_t timestamp)
+diff --git a/drivers/mxc/amd-gpu/common/gsl_cmdwindow.c b/drivers/mxc/amd-gpu/common/gsl_cmdwindow.c
+index 4d70da5..d19832d 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_cmdwindow.c
++++ b/drivers/mxc/amd-gpu/common/gsl_cmdwindow.c
+@@ -31,12 +31,31 @@
+ 
+ 
+ //////////////////////////////////////////////////////////////////////////////
++// macros
++//////////////////////////////////////////////////////////////////////////////
++#ifdef GSL_LOCKING_FINEGRAIN
++#define GSL_CMDWINDOW_MUTEX_CREATE()        device->cmdwindow_mutex = kos_mutex_create("gsl_cmdwindow"); \
++                                            if (!device->cmdwindow_mutex) return (GSL_FAILURE);
++#define GSL_CMDWINDOW_MUTEX_LOCK()          kos_mutex_lock(device->cmdwindow_mutex)
++#define GSL_CMDWINDOW_MUTEX_UNLOCK()        kos_mutex_unlock(device->cmdwindow_mutex)
++#define GSL_CMDWINDOW_MUTEX_FREE()          kos_mutex_free(device->cmdwindow_mutex); device->cmdwindow_mutex = 0;
++#else
++#define GSL_CMDWINDOW_MUTEX_CREATE()
++#define GSL_CMDWINDOW_MUTEX_LOCK()
++#define GSL_CMDWINDOW_MUTEX_UNLOCK()
++#define GSL_CMDWINDOW_MUTEX_FREE()
++#endif
++
++
++//////////////////////////////////////////////////////////////////////////////
+ // functions
+ //////////////////////////////////////////////////////////////////////////////
+ 
+ int
+ kgsl_cmdwindow_init(gsl_device_t *device)
+ {
++    GSL_CMDWINDOW_MUTEX_CREATE();
++
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -45,6 +64,8 @@ kgsl_cmdwindow_init(gsl_device_t *device)
+ int 
+ kgsl_cmdwindow_close(gsl_device_t *device)
+ {
++    GSL_CMDWINDOW_MUTEX_FREE();
++
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -98,6 +119,8 @@ kgsl_cmdwindow_write0(gsl_deviceid_t device_id, gsl_cmdwindow_t target, unsigned
+     cmdwinaddr  = ((target << GSL_CMDWINDOW_TARGET_SHIFT) & GSL_CMDWINDOW_TARGET_MASK);
+     cmdwinaddr |= ((addr   << GSL_CMDWINDOW_ADDR_SHIFT)   & GSL_CMDWINDOW_ADDR_MASK);
+ 
++    GSL_CMDWINDOW_MUTEX_LOCK();
++
+ #ifndef GSL_NO_MMU
+     // set mmu pagetable
+ 	kgsl_mmu_setpagetable(device, GSL_CALLER_PROCESSID_GET());
+@@ -109,6 +132,8 @@ kgsl_cmdwindow_write0(gsl_deviceid_t device_id, gsl_cmdwindow_t target, unsigned
+     // write data
+     device->ftbl.device_regwrite(device, (cmdstream)>>2, data);
+ 
++    GSL_CMDWINDOW_MUTEX_UNLOCK();
++
+     kgsl_log_write( KGSL_LOG_GROUP_COMMAND | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_cmdwindow_write. Return value %B\n", GSL_SUCCESS );
+ 
+     return (GSL_SUCCESS);
+diff --git a/drivers/mxc/amd-gpu/common/gsl_device.c b/drivers/mxc/amd-gpu/common/gsl_device.c
+index c399f6d..6c41d3d 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_device.c
++++ b/drivers/mxc/amd-gpu/common/gsl_device.c
+@@ -565,6 +565,17 @@ kgsl_device_idle(gsl_deviceid_t device_id, unsigned int timeout)
+ //----------------------------------------------------------------------------
+ 
+ KGSL_API int
++kgsl_device_isidle(gsl_deviceid_t device_id)
++{
++	gsl_timestamp_t retired = kgsl_cmdstream_readtimestamp0(device_id, GSL_TIMESTAMP_RETIRED);
++	gsl_timestamp_t consumed = kgsl_cmdstream_readtimestamp0(device_id, GSL_TIMESTAMP_CONSUMED);
++	gsl_timestamp_t ts_diff = retired - consumed;
++	return (ts_diff >= 0) || (ts_diff < -GSL_TIMESTAMP_EPSILON) ? GSL_SUCCESS : GSL_FAILURE;
++}
++
++//----------------------------------------------------------------------------
++
++KGSL_API int
+ kgsl_device_regread(gsl_deviceid_t device_id, unsigned int offsetwords, unsigned int *value)
+ {
+     int           status = GSL_FAILURE_NOTINITIALIZED;
+diff --git a/drivers/mxc/amd-gpu/common/gsl_drawctxt.c b/drivers/mxc/amd-gpu/common/gsl_drawctxt.c
+index afa44e6..1e8fa1a 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_drawctxt.c
++++ b/drivers/mxc/amd-gpu/common/gsl_drawctxt.c
+@@ -24,9 +24,6 @@
+ 
+ #ifdef GSL_BLD_YAMATO
+ 
+-//#define DISABLE_SHADOW_WRITES
+-
+-/*
+ //////////////////////////////////////////////////////////////////////////////
+ //
+ // Memory Map for Register, Constant & Instruction Shadow, and Command Buffers (34.5KB)
+@@ -34,8 +31,8 @@
+ // +---------------------+------------+-------------+---+---------------------+
+ // | ALU Constant Shadow | Reg Shadow | C&V Buffers |Tex| Shader Instr Shadow |
+ // +---------------------+------------+-------------+---+---------------------+
+-//   ________________________________/               \___________________
+-//  /                                                                    \
++//   ________________________________'               '___________________
++//  '                                                                    '
+ // +--------------+-----------+------+-----------+------------------------+
+ // | Restore Regs | Save Regs | Quad | Gmem Save | Gmem Restore | unused  |
+ // +--------------+-----------+------+-----------+------------------------+
+@@ -69,15 +66,11 @@
+ // constants would require an additional 8KB each, for alignment.]
+ //
+ //////////////////////////////////////////////////////////////////////////////
+-*/
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // Constants
+ //////////////////////////////////////////////////////////////////////////////
+ 
+-
+-
+-
+ #define ALU_CONSTANTS           2048                // DWORDS
+ #define NUM_REGISTERS           1024                // DWORDS
+ #ifdef DISABLE_SHADOW_WRITES
+@@ -117,6 +110,23 @@
+ #define CONTEXT_SIZE            (SHADER_OFFSET + 3 * SHADER_SHADOW_SIZE)
+ 
+ 
++/////////////////////////////////////////////////////////////////////////////
++// macros
++//////////////////////////////////////////////////////////////////////////////
++#ifdef GSL_LOCKING_FINEGRAIN
++#define GSL_CONTEXT_MUTEX_CREATE()          device->drawctxt_mutex = kos_mutex_create("gsl_drawctxt"); \
++                                            if (!device->drawctxt_mutex) {return (GSL_FAILURE);}
++#define GSL_CONTEXT_MUTEX_LOCK()            kos_mutex_lock(device->drawctxt_mutex)
++#define GSL_CONTEXT_MUTEX_UNLOCK()          kos_mutex_unlock(device->drawctxt_mutex)
++#define GSL_CONTEXT_MUTEX_FREE()            kos_mutex_free(device->drawctxt_mutex); device->drawctxt_mutex = 0;
++#else
++#define GSL_CONTEXT_MUTEX_CREATE()
++#define GSL_CONTEXT_MUTEX_LOCK()
++#define GSL_CONTEXT_MUTEX_UNLOCK()
++#define GSL_CONTEXT_MUTEX_FREE()
++#endif
++
++
+ //////////////////////////////////////////////////////////////////////////////
+ // temporary work structure
+ //////////////////////////////////////////////////////////////////////////////
+@@ -392,6 +402,41 @@ static unsigned int gmem_copy_texcoord[TEXCOORD_LEN] = {
+     0x3f800000, 0x00000000
+ };
+ 
++#define NUM_COLOR_FORMATS   13
++
++static SurfaceFormat surface_format_table[NUM_COLOR_FORMATS] =
++{
++	FMT_4_4_4_4,		   // COLORX_4_4_4_4
++	FMT_1_5_5_5,		   // COLORX_1_5_5_5
++	FMT_5_6_5,		       // COLORX_5_6_5
++	FMT_8,			       // COLORX_8
++	FMT_8_8,		       // COLORX_8_8
++	FMT_8_8_8_8,		   // COLORX_8_8_8_8
++	FMT_8_8_8_8,		   // COLORX_S8_8_8_8
++	FMT_16_FLOAT,		   // COLORX_16_FLOAT
++	FMT_16_16_FLOAT,	   // COLORX_16_16_FLOAT
++	FMT_16_16_16_16_FLOAT, // COLORX_16_16_16_16_FLOAT
++	FMT_32_FLOAT,		   // COLORX_32_FLOAT
++	FMT_32_32_FLOAT,	   // COLORX_32_32_FLOAT
++	FMT_32_32_32_32_FLOAT, // COLORX_32_32_32_32_FLOAT
++};
++
++static unsigned int format2bytesperpixel[NUM_COLOR_FORMATS] =
++{
++    2,  // COLORX_4_4_4_4
++	2,  // COLORX_1_5_5_5
++	2,  // COLORX_5_6_5
++	1,  // COLORX_8
++	2,  // COLORX_8_8_8
++	4,  // COLORX_8_8_8_8
++	4,  // COLORX_S8_8_8_8
++	2,  // COLORX_16_FLOAT
++	4,  // COLORX_16_16_FLOAT
++	8,  // COLORX_16_16_16_16_FLOAT
++	4,  // COLORX_32_FLOAT
++	8,  // COLORX_32_32_FLOAT
++	16, // COLORX_32_32_32_32_FLOAT
++};
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // shader linkage info
+@@ -426,10 +471,14 @@ config_gmemsize(gmem_shadow_t *shadow, int gmem_size)
+             h *= 2;
+ 
+     shadow->width  = w;
+-    shadow->pitch  = w;
+     shadow->height = h;
++    shadow->pitch  = w;
++	shadow->format = COLORX_8_8_8_8;
++    shadow->size   = shadow->pitch * shadow->height * 4;
+ 
+-    shadow->size = shadow->pitch * shadow->height * 4;
++	shadow->gmem_width  = w;
++	shadow->gmem_height = h;
++	shadow->gmem_pitch  = w;
+ }
+ 
+ 
+@@ -490,7 +539,7 @@ reg_to_mem(unsigned int *cmds, gpuaddr_t dst, gpuaddr_t src, int dwords)
+ 
+ #ifdef DISABLE_SHADOW_WRITES
+ 
+-static void build_reg_to_mem_range(unsigned int start, unsigned int end, unsigned int** cmd, /*ctx_t *ctx, unsigned int* offset) //*/gsl_drawctxt_t *drawctxt)
++static void build_reg_to_mem_range(unsigned int start, unsigned int end, unsigned int** cmd, gsl_drawctxt_t *drawctxt)
+ {
+     unsigned int i = start;
+ 
+@@ -687,16 +736,19 @@ build_gmem2sys_cmds(gsl_drawctxt_t *drawctxt, ctx_t* ctx, gmem_shadow_t *shadow)
+     // change colour buffer to RGBA8888, MSAA = 1, and matching pitch
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+     *cmds++ = PM4_REG(mmRB_SURFACE_INFO);
+-    *cmds++ = drawctxt->context_gmem_shadow.pitch; // GMEM pitch is equal to context GMEM shadow pitch
++    *cmds++ = shadow->gmem_pitch;
+ 
+     // RB_COLOR_INFO        Endian=none, Linear, Format=RGBA8888, Swap=0, Base=gmem_base
+     if( ctx )
+     {
+         KOS_ASSERT((ctx->gmem_base & 0xFFF) == 0);   // gmem base assumed 4K aligned.
+-        *cmds++ = (COLORX_8_8_8_8 << RB_COLOR_INFO__COLOR_FORMAT__SHIFT) | ctx->gmem_base;
++        *cmds++ = (shadow->format << RB_COLOR_INFO__COLOR_FORMAT__SHIFT) | ctx->gmem_base;
+     }
+     else
+-        cmds++;
++    {
++		unsigned int temp = *cmds;
++		*cmds++ = (temp & ~RB_COLOR_INFO__COLOR_FORMAT_MASK) | (shadow->format << RB_COLOR_INFO__COLOR_FORMAT__SHIFT);
++    }
+ 
+     // disable Z
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 2);
+@@ -714,12 +766,12 @@ build_gmem2sys_cmds(gsl_drawctxt_t *drawctxt, ctx_t* ctx, gmem_shadow_t *shadow)
+     // set the scissor to the extents of the draw surface
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+     *cmds++ = PM4_REG(mmPA_SC_SCREEN_SCISSOR_TL);
+-    *cmds++ = (0 << 16) | 0;
+-    *cmds++ = (drawctxt->context_gmem_shadow.height << 16) | drawctxt->context_gmem_shadow.width;
++    *cmds++ = (shadow->gmem_offset_y << 16) | shadow->gmem_offset_x;
++    *cmds++ = (shadow->gmem_height << 16) | shadow->gmem_width;
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+     *cmds++ = PM4_REG(mmPA_SC_WINDOW_SCISSOR_TL);
+-    *cmds++ = (unsigned int) ((1U << 31) | (0 << 16) | 0);
+-    *cmds++ = (drawctxt->context_gmem_shadow.height << 16) | drawctxt->context_gmem_shadow.width;
++    *cmds++ = (1U << 31) | (0 << 16) | 0;
++    *cmds++ = (shadow->height << 16) | shadow->width;
+ 
+     // load the viewport so that z scale = clear depth and z offset = 0.0f
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+@@ -732,19 +784,18 @@ build_gmem2sys_cmds(gsl_drawctxt_t *drawctxt, ctx_t* ctx, gmem_shadow_t *shadow)
+     *cmds++ = PM4_REG(mmRB_COPY_CONTROL);
+     *cmds++ = 0;                                                // RB_COPY_CONTROL
+ 
+-    *cmds++ = (shadow->gmemshadow.gpuaddr+shadow->offset*4) & 0xfffff000;   // RB_COPY_DEST_BASE
+-
+-    *cmds++ = shadow->pitch >> 5;           // RB_COPY_DEST_PITCH
+-    *cmds++ = 0x0003c058;                   // Endian=none, Linear, Format=RGBA8888,Swap=0,!Dither,MaskWrite:R=G=B=A=1
+-
+     {
+         // Calculate the new offset based on the adjusted base
+-        unsigned int addr = (shadow->gmemshadow.gpuaddr+shadow->offset*4);
+-        unsigned int offset = (addr-(addr&0xfffff000))/4;
++		unsigned int bytesperpixel = format2bytesperpixel[shadow->format];
++		unsigned int addr = (shadow->gmemshadow.gpuaddr + shadow->offset * bytesperpixel);
++		unsigned int offset = (addr - (addr & 0xfffff000)) / bytesperpixel;
+ 
+-        kos_assert( (offset & 0xfffff000) == 0 ); // Make sure we stay in offsetx field.
++		*cmds++ = addr & 0xfffff000;   // RB_COPY_DEST_BASE
++		*cmds++ = shadow->pitch >> 5;  // RB_COPY_DEST_PITCH
++		*cmds++ = 0x0003c008 | (shadow->format << RB_COPY_DEST_INFO__COPY_DEST_FORMAT__SHIFT); // Endian=none, Linear, Format=RGBA8888,Swap=0,!Dither,MaskWrite:R=G=B=A=1
+ 
+-        *cmds++ = offset;
++        KOS_ASSERT( (offset & 0xfffff000) == 0 ); // Make sure we stay in offsetx field.
++		*cmds++ = offset;
+     }
+ 
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 2);
+@@ -851,7 +902,6 @@ build_sys2gmem_cmds(gsl_drawctxt_t *drawctxt, ctx_t* ctx, gmem_shadow_t *shadow)
+ 
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 2);
+     *cmds++ = PM4_REG(mmSQ_INTERPOLATOR_CNTL);
+-    //*cmds++ = 0x0000ffff; //mmSQ_INTERPOLATOR_CNTL
+     *cmds++ = 0xffffffff; //mmSQ_INTERPOLATOR_CNTL
+ 
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 2);
+@@ -872,38 +922,40 @@ build_sys2gmem_cmds(gsl_drawctxt_t *drawctxt, ctx_t* ctx, gmem_shadow_t *shadow)
+     *cmds++ = (0x1 << 16) | (0 * 6);
+     kos_memcpy(cmds, sys2gmem_tex_const, SYS2GMEM_TEX_CONST_LEN<<2);
+     cmds[0] |= (shadow->pitch >> 5) << 22;
+-    cmds[1] |= shadow->gmemshadow.gpuaddr;
++    cmds[1] |= shadow->gmemshadow.gpuaddr | surface_format_table[shadow->format];
+     cmds[2] |= (shadow->width+shadow->offset_x-1) | (shadow->height+shadow->offset_y-1) << 13;
+     cmds += SYS2GMEM_TEX_CONST_LEN;
+ 
+     // change colour buffer to RGBA8888, MSAA = 1, and matching pitch
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+     *cmds++ = PM4_REG(mmRB_SURFACE_INFO);
+-    *cmds++ = drawctxt->context_gmem_shadow.pitch; // GMEM pitch is equal to context GMEM shadow pitch
+-
++    *cmds++ = shadow->gmem_pitch; // GMEM pitch is equal to context GMEM shadow pitch
+ 
+     // RB_COLOR_INFO        Endian=none, Linear, Format=RGBA8888, Swap=0, Base=gmem_base
+     if( ctx )
+-        *cmds++ = (COLORX_8_8_8_8 << RB_COLOR_INFO__COLOR_FORMAT__SHIFT) | ctx->gmem_base;
++	{
++        *cmds++ = (shadow->format << RB_COLOR_INFO__COLOR_FORMAT__SHIFT) | ctx->gmem_base;
++	}
+     else
+-        cmds++;
++	{
++		unsigned int temp = *cmds;
++		*cmds++ = (temp & ~RB_COLOR_INFO__COLOR_FORMAT_MASK) | (shadow->format << RB_COLOR_INFO__COLOR_FORMAT__SHIFT);
++	}
+ 
+     // RB_DEPTHCONTROL
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 2);
+     *cmds++ = PM4_REG(mmRB_DEPTHCONTROL);
+     *cmds++ = 0;                            // disable Z
+ 
+-
+     // set the scissor to the extents of the draw surface
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+     *cmds++ = PM4_REG(mmPA_SC_SCREEN_SCISSOR_TL);
+     *cmds++ = (0 << 16) | 0;
+-    *cmds++ = (drawctxt->context_gmem_shadow.height << 16) | drawctxt->context_gmem_shadow.width;
+-
++    *cmds++ = (shadow->height << 16) | shadow->width;
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 3);
+     *cmds++ = PM4_REG(mmPA_SC_WINDOW_SCISSOR_TL);
+-    *cmds++ = (unsigned int) ((1U << 31) | (shadow->gmem_offset_y << 16) | shadow->gmem_offset_x);
+-    *cmds++ = (drawctxt->context_gmem_shadow.height << 16) | drawctxt->context_gmem_shadow.width;
++    *cmds++ = (1U << 31) | (shadow->gmem_offset_y << 16) | shadow->gmem_offset_x;
++    *cmds++ = (shadow->gmem_height << 16) | shadow->gmem_width;
+ 
+     // PA_CL_VTE_CNTL
+     *cmds++ = pm4_type3_packet(PM4_SET_CONSTANT, 2);
+@@ -966,10 +1018,6 @@ build_regrestore_cmds(gsl_drawctxt_t *drawctxt, ctx_t *ctx)
+     unsigned int *start = ctx->cmd;
+     unsigned int *cmd = start;
+ 
+-
+-    //*cmd++ = pm4_type3_packet(PM4_WAIT_FOR_IDLE, 1);
+-    //*cmd++ = 0;
+-
+     // H/W Registers
+     cmd++; // deferred pm4_type3_packet(PM4_LOAD_CONSTANT_CONTEXT, ???);
+ #ifdef DISABLE_SHADOW_WRITES
+@@ -983,7 +1031,7 @@ build_regrestore_cmds(gsl_drawctxt_t *drawctxt, ctx_t *ctx)
+     cmd = reg_range(cmd, mmVGT_MAX_VTX_INDX,                mmPA_CL_VPORT_ZOFFSET);
+     cmd = reg_range(cmd, mmSQ_PROGRAM_CNTL,                 mmSQ_WRAPPING_1);
+     cmd = reg_range(cmd, mmRB_DEPTHCONTROL,                 mmRB_MODECONTROL);
+-    cmd = reg_range(cmd, mmPA_SU_POINT_SIZE,                mmPA_SC_VIZ_QUERY/*mmVGT_ENHANCE*/);
++    cmd = reg_range(cmd, mmPA_SU_POINT_SIZE,                mmPA_SC_VIZ_QUERY);
+     cmd = reg_range(cmd, mmPA_SC_LINE_CNTL,                 mmRB_COLOR_DEST_MASK);
+     cmd = reg_range(cmd, mmPA_SU_POLY_OFFSET_FRONT_SCALE,   mmPA_SU_POLY_OFFSET_BACK_OFFSET);
+ 
+@@ -1062,10 +1110,10 @@ static void set_gmem_copy_quad( gmem_shadow_t* shadow )
+ 
+     // set vertex buffer values
+ 
+-    gmem_copy_quad[1] = uint2float( shadow->height + shadow->gmem_offset_y );
+-    gmem_copy_quad[3] = uint2float( shadow->width + shadow->gmem_offset_x );
+-    gmem_copy_quad[4] = uint2float( shadow->height + shadow->gmem_offset_y );
+-    gmem_copy_quad[9] = uint2float( shadow->width + shadow->gmem_offset_x );
++    gmem_copy_quad[1] = uint2float( shadow->gmem_height + shadow->gmem_offset_y );
++    gmem_copy_quad[3] = uint2float( shadow->gmem_width + shadow->gmem_offset_x );
++    gmem_copy_quad[4] = uint2float( shadow->gmem_height + shadow->gmem_offset_y );
++    gmem_copy_quad[9] = uint2float( shadow->gmem_width + shadow->gmem_offset_x );
+ 
+     gmem_copy_quad[0] = uint2float( shadow->gmem_offset_x );
+     gmem_copy_quad[6] = uint2float( shadow->gmem_offset_x );
+@@ -1358,6 +1406,8 @@ create_gmem_shadow(gsl_device_t *device, gsl_drawctxt_t *drawctxt, ctx_t *ctx)
+ int
+ kgsl_drawctxt_init(gsl_device_t *device)
+ {
++    GSL_CONTEXT_MUTEX_CREATE();
++
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -1369,6 +1419,8 @@ kgsl_drawctxt_init(gsl_device_t *device)
+ int
+ kgsl_drawctxt_close(gsl_device_t *device)
+ {
++    GSL_CONTEXT_MUTEX_FREE();
++
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -1386,8 +1438,10 @@ kgsl_drawctxt_create(gsl_device_t* device, gsl_context_type_t type, unsigned int
+ 
+     kgsl_device_active(device);
+     
++    GSL_CONTEXT_MUTEX_LOCK();
+     if (device->drawctxt_count >= GSL_CONTEXT_MAX)
+     {
++        GSL_CONTEXT_MUTEX_UNLOCK();
+         return (GSL_FAILURE);
+     }
+ 
+@@ -1403,6 +1457,7 @@ kgsl_drawctxt_create(gsl_device_t* device, gsl_context_type_t type, unsigned int
+ 
+     if (index >= GSL_CONTEXT_MAX)
+     {
++        GSL_CONTEXT_MUTEX_UNLOCK();
+         return (GSL_FAILURE);
+     }
+ 
+@@ -1422,14 +1477,12 @@ kgsl_drawctxt_create(gsl_device_t* device, gsl_context_type_t type, unsigned int
+         if (create_gpustate_shadow(device, drawctxt, &ctx) != GSL_SUCCESS)
+         {
+             kgsl_drawctxt_destroy(device, index);
++            GSL_CONTEXT_MUTEX_UNLOCK();
+             return (GSL_FAILURE);
+         }
+ 
+-        // Save the shader instruction memory on context switching
+-        drawctxt->flags |= CTXT_FLAGS_SHADER_SAVE;
+-
+-        if(!(flags & GSL_CONTEXT_NO_GMEM_ALLOC))
+-            drawctxt->flags |= CTXT_FLAGS_GMEM_SHADOW;
++        // Save the shader instruction memory & GMEM on context switching
++        drawctxt->flags |= ( CTXT_FLAGS_SHADER_SAVE | CTXT_FLAGS_GMEM_SHADOW );
+ 
+         // Clear out user defined GMEM shadow buffer structs
+         kos_memset( drawctxt->user_gmem_shadow, 0, sizeof(gmem_shadow_t)*GSL_MAX_GMEM_SHADOW_BUFFERS );
+@@ -1438,15 +1491,16 @@ kgsl_drawctxt_create(gsl_device_t* device, gsl_context_type_t type, unsigned int
+         if (create_gmem_shadow(device, drawctxt, &ctx) != GSL_SUCCESS)
+         {
+             kgsl_drawctxt_destroy(device, index);
++            GSL_CONTEXT_MUTEX_UNLOCK();
+             return (GSL_FAILURE);
+         }
+ 
+-
+         KOS_ASSERT(ctx.cmd - ctx.start <= CMD_BUFFER_LEN);
+     }
+ 
+     *drawctxt_id = index;
+ 
++    GSL_CONTEXT_MUTEX_UNLOCK();
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -1460,6 +1514,8 @@ kgsl_drawctxt_destroy(gsl_device_t* device, unsigned int drawctxt_id)
+ {
+     gsl_drawctxt_t *drawctxt;
+ 
++    GSL_CONTEXT_MUTEX_LOCK();
++
+     drawctxt = &device->drawctxt[drawctxt_id];
+ 
+     if (drawctxt->flags != CTXT_FLAGS_NOT_IN_USE)
+@@ -1494,6 +1550,8 @@ kgsl_drawctxt_destroy(gsl_device_t* device, unsigned int drawctxt_id)
+         KOS_ASSERT(device->drawctxt_count >= 0);
+     }
+ 
++    GSL_CONTEXT_MUTEX_UNLOCK();
++
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -1521,88 +1579,57 @@ kgsl_drawctxt_destroy(gsl_device_t* device, unsigned int drawctxt_id)
+ //////////////////////////////////////////////////////////////////////////////
+ KGSL_API int kgsl_drawctxt_bind_gmem_shadow(gsl_deviceid_t device_id, unsigned int drawctxt_id, const gsl_rect_t* gmem_rect, unsigned int shadow_x, unsigned int shadow_y, const gsl_buffer_desc_t* shadow_buffer, unsigned int buffer_id)
+ {
+-    gsl_device_t   *device;
+-    gsl_drawctxt_t *drawctxt;
+-    gmem_shadow_t  *shadow; // Shadow struct being modified
++    gsl_device_t   *device = &gsl_driver.device[device_id-1];
++    gsl_drawctxt_t *drawctxt = &device->drawctxt[drawctxt_id];
++    gmem_shadow_t  *shadow = &drawctxt->user_gmem_shadow[buffer_id];
+     unsigned int    i;
+ 
+     GSL_API_MUTEX_LOCK();
++    GSL_CONTEXT_MUTEX_LOCK();
+ 
+-    device = &gsl_driver.device[device_id-1];       // device_id is 1 based
+-
+-    drawctxt = &device->drawctxt[drawctxt_id];
+-
+-    shadow = &drawctxt->user_gmem_shadow[buffer_id];
+-
+-    if( !shadow_buffer->enabled )
++	if( !shadow_buffer->enabled )
+     {
+         // Disable shadow
+         shadow->gmemshadow.size = 0;
+     }
+     else
+     {
+-        // Binding to a buffer
+-        unsigned int width, height, gmem_x, gmem_y, gmem_width, gmem_height, pixel_ratio;
++		// Sanity checks
++		KOS_ASSERT((gmem_rect->x % 2) == 0);      // Needs to be a multiple of 2
++		KOS_ASSERT((gmem_rect->y % 2) == 0);      // Needs to be a multiple of 2
++		KOS_ASSERT((gmem_rect->width % 2) == 0);  // Needs to be a multiple of 2
++		KOS_ASSERT((gmem_rect->height % 2) == 0); // Needs to be a multiple of 2
++		KOS_ASSERT((gmem_rect->pitch % 32) == 0); // Needs to be a multiple of 32
+ 
+-        KOS_ASSERT(shadow_buffer->stride_bytes%4 == 0);
++		KOS_ASSERT((shadow_x % 2) == 0);  // Needs to be a multiple of 2
++		KOS_ASSERT((shadow_y % 2) == 0);  // Needs to be a multiple of 2
+ 
+-        // Convert to 32bpp pixel units
+-        if( shadow_buffer->bpp <= 32 )
+-        {
+-            KOS_ASSERT(32%shadow_buffer->bpp==0);
+-            pixel_ratio = 32/shadow_buffer->bpp;
+-            KOS_ASSERT(gmem_rect->x%pixel_ratio==0); // Needs to be at 32bit boundary
+-            gmem_x = gmem_rect->x/pixel_ratio;
+-            KOS_ASSERT(gmem_x%8==0); // Needs to be a multiple of 8
+-            KOS_ASSERT(gmem_rect->y%pixel_ratio==0);  // Needs to be at 32bit boundary
+-            gmem_y = gmem_rect->y/pixel_ratio;
+-            KOS_ASSERT(gmem_y%8==0);  // Needs to be a multiple of 8
+-            KOS_ASSERT(gmem_rect->width%pixel_ratio==0);  // Needs to be at 32bit boundary
+-            gmem_width = gmem_rect->width/pixel_ratio;
+-            KOS_ASSERT(gmem_rect->height%pixel_ratio==0);  // Needs to be at 32bit boundary
+-            gmem_height = gmem_rect->height/pixel_ratio;
+-            KOS_ASSERT(shadow_x%pixel_ratio==0);  // Needs to be at 32bit boundary
+-            shadow_x = shadow_x/pixel_ratio;
+-            KOS_ASSERT(shadow_x%8==0);  // Needs to be a multiple of 8
+-            KOS_ASSERT(shadow_y%pixel_ratio==0);  // Needs to be at 32bit boundary
+-            shadow_y = shadow_y/pixel_ratio;
+-            KOS_ASSERT(shadow_y%8==0);  // Needs to be a multiple of 8
+-        }
+-        else
+-        {
+-            KOS_ASSERT(shadow_buffer->bpp==64 || shadow_buffer->bpp==128);
+-            pixel_ratio = shadow_buffer->bpp/32;
+-            gmem_x = gmem_rect->x*pixel_ratio;
+-            KOS_ASSERT(gmem_x%8==0); // Needs to be a multiple of 8
+-            gmem_y = gmem_rect->y*pixel_ratio;
+-            KOS_ASSERT(gmem_y%8==0);  // Needs to be a multiple of 8
+-            gmem_width = gmem_rect->width*pixel_ratio;
+-            gmem_height = gmem_rect->height*pixel_ratio;
+-            shadow_x = shadow_x*pixel_ratio;
+-            KOS_ASSERT(shadow_x%8==0);  // Needs to be a multiple of 8
+-            shadow_y = shadow_y*pixel_ratio;
+-            KOS_ASSERT(shadow_y%8==0);  // Needs to be a multiple of 8
+-        }
++		KOS_ASSERT(shadow_buffer->format >= COLORX_4_4_4_4);
++		KOS_ASSERT(shadow_buffer->format <= COLORX_32_32_32_32_FLOAT);
++		KOS_ASSERT((shadow_buffer->pitch % 32) == 0); // Needs to be a multiple of 32
++		KOS_ASSERT(buffer_id >= 0);
++		KOS_ASSERT(buffer_id < GSL_MAX_GMEM_SHADOW_BUFFERS);
+ 
+-        KOS_ASSERT( buffer_id >= 0 && buffer_id < GSL_MAX_GMEM_SHADOW_BUFFERS );
++		// Set up GMEM shadow regions
++        kos_memcpy( &shadow->gmemshadow, &shadow_buffer->data, sizeof( gsl_memdesc_t ) );
++        shadow->size = shadow->gmemshadow.size;
+ 
+-        width = gmem_width < drawctxt->context_gmem_shadow.width ? gmem_width : drawctxt->context_gmem_shadow.width;
+-        height = gmem_height < drawctxt->context_gmem_shadow.height ? gmem_height : drawctxt->context_gmem_shadow.height;
++		shadow->width = shadow_buffer->width;
++		shadow->height = shadow_buffer->height;
++		shadow->pitch = shadow_buffer->pitch;
++		shadow->format = shadow_buffer->format;
+ 
+-        drawctxt->user_gmem_shadow[buffer_id].width = width;
+-        drawctxt->user_gmem_shadow[buffer_id].height = height;
+-        drawctxt->user_gmem_shadow[buffer_id].pitch = shadow_buffer->stride_bytes/4;
++        shadow->offset = shadow->pitch * (shadow_y - gmem_rect->y) + shadow_x - gmem_rect->x;
+ 
+-        kos_memcpy( &drawctxt->user_gmem_shadow[buffer_id].gmemshadow, &shadow_buffer->data, sizeof( gsl_memdesc_t ) );
+-        // Calculate offset
+-        drawctxt->user_gmem_shadow[buffer_id].offset = (int)shadow_buffer->stride_bytes/4*((int)shadow_y-(int)gmem_y)+(int)shadow_x-(int)gmem_x;
++        shadow->offset_x = shadow_x;
++        shadow->offset_y = shadow_y;
+ 
+-        drawctxt->user_gmem_shadow[buffer_id].offset_x = shadow_x;
+-        drawctxt->user_gmem_shadow[buffer_id].offset_y = shadow_y;
+-        drawctxt->user_gmem_shadow[buffer_id].gmem_offset_x = gmem_x;
+-        drawctxt->user_gmem_shadow[buffer_id].gmem_offset_y = gmem_y;
++		shadow->gmem_width = gmem_rect->width;
++		shadow->gmem_height = gmem_rect->height;
++		shadow->gmem_pitch = gmem_rect->pitch;
+ 
+-        drawctxt->user_gmem_shadow[buffer_id].size = drawctxt->user_gmem_shadow[buffer_id].gmemshadow.size;
++        shadow->gmem_offset_x = gmem_rect->x;
++        shadow->gmem_offset_y = gmem_rect->y;
+ 
+         // Modify quad vertices
+         set_gmem_copy_quad(shadow);
+@@ -1629,6 +1656,7 @@ KGSL_API int kgsl_drawctxt_bind_gmem_shadow(gsl_deviceid_t device_id, unsigned i
+         }
+     }
+ 
++    GSL_CONTEXT_MUTEX_UNLOCK();
+     GSL_API_MUTEX_UNLOCK();
+ 
+     return (GSL_SUCCESS);
+@@ -1647,7 +1675,7 @@ kgsl_drawctxt_switch(gsl_device_t *device, gsl_drawctxt_t *drawctxt, gsl_flags_t
+ 
+ 	if (drawctxt != GSL_CONTEXT_NONE)
+ 	{
+-		if(0) // flags & GSL_CONTEXT_SAVE_GMEM )
++		if( flags & GSL_CONTEXT_SAVE_GMEM )
+ 		{
+ 			// Set the flag in context so that the save is done when this context is switched out.
+ 			drawctxt->flags |= CTXT_FLAGS_GMEM_SAVE;
+@@ -1766,6 +1794,8 @@ kgsl_drawctxt_destroyall(gsl_device_t *device)
+     int             i;
+     gsl_drawctxt_t  *drawctxt;
+ 
++    GSL_CONTEXT_MUTEX_LOCK();
++
+     for (i = 0; i < GSL_CONTEXT_MAX; i++)
+     {
+         drawctxt = &device->drawctxt[i];
+@@ -1790,6 +1820,8 @@ kgsl_drawctxt_destroyall(gsl_device_t *device)
+         }
+     }
+ 
++    GSL_CONTEXT_MUTEX_UNLOCK();
++
+     return (GSL_SUCCESS);
+ }
+ 
+diff --git a/drivers/mxc/amd-gpu/common/gsl_g12.c b/drivers/mxc/amd-gpu/common/gsl_g12.c
+index 14cfdb6..637e27c 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_g12.c
++++ b/drivers/mxc/amd-gpu/common/gsl_g12.c
+@@ -24,8 +24,11 @@
+ #include <linux/sched.h>
+ #endif
+ 
++#ifdef CONFIG_ARCH_MX35
++#define V3_SYNC
++#endif
++
+ #ifdef GSL_BLD_G12
+-#define GSL_TIMESTAMP_EPSILON   20000
+ #define GSL_IRQ_TIMEOUT         200
+ 
+ 
+@@ -230,6 +233,13 @@ static void kgsl_g12_updatetimestamp(gsl_device_t *device)
+ 	count >>= 8;
+ 	count &= 255;
+ 	device->timestamp += count;	
++#ifdef V3_SYNC
++	if (device->current_timestamp > device->timestamp)
++	{
++	    kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 2);
++	    kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 0);
++	}
++#endif
+ 	kgsl_sharedmem_write0(&device->memstore, GSL_DEVICE_MEMSTORE_OFFSET(eoptimestamp), &device->timestamp, 4, 0);
+ }
+ 
+@@ -353,7 +363,6 @@ kgsl_g12_close(gsl_device_t *device)
+ 
+         kgsl_hal_setpowerstate(device->id, GSL_PWRFLAGS_POWER_OFF, 0);
+ 
+-        device->ftbl.device_idle(device, GSL_TIMEOUT_NONE);
+         device->flags &= ~GSL_FLAGS_INITIALIZED;
+ 
+ #if defined(__SYMBIAN32__)
+@@ -782,12 +791,20 @@ kgsl_g12_issueibcmds(gsl_device_t* device, int drawctxt_index, gpuaddr_t ibaddr,
+     g_z1xx.curr = nextbuf;
+ 
+     /* increment mark counter */
+-    kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, flags);
+-    kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 0);
++#ifdef V3_SYNC
++    if (device->timestamp == device->current_timestamp)
++    {
++		kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, flags);
++		kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 0);
++    }
++#else
++	kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, flags);
++	kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 0);
++#endif
+ 
+     /* increment consumed timestamp */
+     device->current_timestamp++;
+-
++    kgsl_sharedmem_write0(&device->memstore, GSL_DEVICE_MEMSTORE_OFFSET(soptimestamp), &device->current_timestamp, 4, 0);
+     return (GSL_SUCCESS);
+ }
+ 
+@@ -947,12 +964,16 @@ static void irq_thread(void)
+             /* Increase the timestamp value */
+             timestamp += irq_count;
+ 
+-            KOS_ASSERT( timestamp <= device->current_timestamp );
+             /* Write the new timestamp value */
+-#ifdef VG_HDK
+             device->timestamp = timestamp;
+-#else
+             kgsl_sharedmem_write0(&device->memstore, GSL_DEVICE_MEMSTORE_OFFSET(eoptimestamp), &timestamp, 4, false);
++
++#ifdef V3_SYNC
++        	if (device->current_timestamp > device->timestamp)
++        	{
++        	    kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 2);
++        	    kgsl_cmdwindow_write0(2, GSL_CMDWINDOW_2D, ADDR_VGV3_CONTROL, 0);
++        	}
+ #endif
+ 
+             /* Notify timestamp event */
+diff --git a/drivers/mxc/amd-gpu/common/gsl_mmu.c b/drivers/mxc/amd-gpu/common/gsl_mmu.c
+index 310677d..1250cdb 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_mmu.c
++++ b/drivers/mxc/amd-gpu/common/gsl_mmu.c
+@@ -63,6 +63,18 @@ const unsigned int GSL_PT_PAGE_AP[4] = {(GSL_PT_PAGE_READ | GSL_PT_PAGE_WRITE),
+ /////////////////////////////////////////////////////////////////////////////
+ // macros
+ //////////////////////////////////////////////////////////////////////////////
++#ifdef GSL_LOCKING_FINEGRAIN
++#define GSL_MMU_MUTEX_CREATE()              mmu->mutex = kos_mutex_create("gsl_mmu"); \
++                                            if (!mmu->mutex) {return (GSL_FAILURE);}
++#define GSL_MMU_LOCK()                      kos_mutex_lock(mmu->mutex)
++#define GSL_MMU_UNLOCK()                    kos_mutex_unlock(mmu->mutex)
++#define GSL_MMU_MUTEX_FREE()                kos_mutex_free(mmu->mutex); mmu->mutex = 0;
++#else
++#define GSL_MMU_MUTEX_CREATE()
++#define GSL_MMU_LOCK()
++#define GSL_MMU_UNLOCK()
++#define GSL_MMU_MUTEX_FREE()
++#endif
+ 
+ #define GSL_PT_ENTRY_GET(va)                ((va - pagetable->va_base) >> GSL_PAGESIZE_SHIFT)
+ #define GSL_PT_VIRT_GET(pte)                (pagetable->va_base + (pte * GSL_PAGESIZE))
+@@ -385,6 +397,8 @@ kgsl_mmu_setpagetable(gsl_device_t *device, unsigned int pid)
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE,
+                     "--> gsl_pagetable_t* kgsl_mmu_setpagetable(gsl_device_t *device=0x%08x)\n", device );
+ 
++    GSL_MMU_LOCK();
++
+     if (mmu->flags & GSL_FLAGS_STARTED)
+     {
+ #ifdef GSL_MMU_PAGETABLE_PERPROCESS
+@@ -423,6 +437,8 @@ kgsl_mmu_setpagetable(gsl_device_t *device, unsigned int pid)
+ 		}
+ 	}
+ 
++    GSL_MMU_UNLOCK();
++
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_mmu_setpagetable. Return value %B\n", status );
+ 
+     return (status);
+@@ -508,6 +524,8 @@ kgsl_mmu_init(gsl_device_t *device)
+         // sub-client MMU lookups require address translation
+         if ((mmu->config & ~0x1) > 0)
+         {
++            GSL_MMU_MUTEX_CREATE();
++
+             // make sure virtual address range is a multiple of 64Kb
+             KOS_ASSERT((mmu->va_range & ((1 << 16)-1)) == 0);
+ 
+@@ -600,9 +618,12 @@ kgsl_mmu_map(gsl_mmu_t *mmu, gpuaddr_t gpubaseaddr, const gsl_scatterlist_t *sca
+     // get gpu access permissions
+     ap = GSL_PT_PAGE_AP[((flags & GSL_MEMFLAGS_GPUAP_MASK) >> GSL_MEMFLAGS_GPUAP_SHIFT)];
+ 
++    GSL_MMU_LOCK();
++
+     pagetable = kgsl_mmu_getpagetableobject(mmu, pid);
+     if (!pagetable)
+     {
++        GSL_MMU_UNLOCK();
+         return (GSL_FAILURE);
+     }
+ 
+@@ -677,6 +698,8 @@ kgsl_mmu_map(gsl_mmu_t *mmu, gpuaddr_t gpubaseaddr, const gsl_scatterlist_t *sca
+         status = GSL_FAILURE;
+     }
+ 
++    GSL_MMU_UNLOCK();
++
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_mmu_map. Return value %B\n", GSL_SUCCESS );
+ 
+     return (status);
+@@ -713,9 +736,12 @@ kgsl_mmu_unmap(gsl_mmu_t *mmu, gpuaddr_t gpubaseaddr, int range, unsigned int pi
+         numpages++;
+     }
+ 
++    GSL_MMU_LOCK();
++
+     pagetable = kgsl_mmu_getpagetableobject(mmu, pid);
+     if (!pagetable)
+     {
++        GSL_MMU_UNLOCK();
+         return (GSL_FAILURE);
+     }
+ 
+@@ -767,6 +793,8 @@ kgsl_mmu_unmap(gsl_mmu_t *mmu, gpuaddr_t gpubaseaddr, int range, unsigned int pi
+     // invalidate tlb, debug only
+ 	KGSL_DEBUG(GSL_DBGFLAGS_MMU, mmu->device->ftbl.mmu_tlbinvalidate(mmu->device, gsl_cfg_mmu_reg[mmu->device->id-1].INVALIDATE, pagetable->pid));
+ 
++    GSL_MMU_UNLOCK();
++
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_mmu_unmap. Return value %B\n", GSL_SUCCESS );
+ 
+     return (status);
+@@ -801,9 +829,12 @@ kgsl_mmu_getmap(gsl_mmu_t *mmu, gpuaddr_t gpubaseaddr, int range, gsl_scatterlis
+         return (GSL_FAILURE);
+     }
+ 
++    GSL_MMU_LOCK();
++
+     pagetable = kgsl_mmu_getpagetableobject(mmu, pid);
+     if (!pagetable)
+     {
++        GSL_MMU_UNLOCK();
+         return (GSL_FAILURE);
+     }
+ 
+@@ -837,6 +868,8 @@ kgsl_mmu_getmap(gsl_mmu_t *mmu, gpuaddr_t gpubaseaddr, int range, gsl_scatterlis
+         scatterlist->pages[0] = GSL_PT_MAP_GETADDR(ptefirst);
+     }
+ 
++    GSL_MMU_UNLOCK();
++
+     scatterlist->contiguous = contiguous;
+ 
+     return (GSL_SUCCESS);
+@@ -906,6 +939,8 @@ kgsl_mmu_close(gsl_device_t *device)
+                 kgsl_sharedmem_free0(&mmu->dummyspace, GSL_CALLER_PROCESSID_GET());
+             }
+ 
++            GSL_MMU_MUTEX_FREE();
++
+             mmu->flags &= ~GSL_FLAGS_STARTED;
+             mmu->flags &= ~GSL_FLAGS_INITIALIZED;
+             mmu->flags &= ~GSL_FLAGS_INITIALIZED0;
+@@ -932,6 +967,8 @@ kgsl_mmu_attachcallback(gsl_mmu_t *mmu, unsigned int pid)
+ 
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "--> int kgsl_mmu_attachcallback(gsl_mmu_t *mmu=0x%08x, unsigned int pid=0x%08x)\n", mmu, pid );
+ 
++    GSL_MMU_LOCK();
++
+     if (mmu->flags & GSL_FLAGS_INITIALIZED0)
+     {
+         // attach to current device mmu
+@@ -952,6 +989,8 @@ kgsl_mmu_attachcallback(gsl_mmu_t *mmu, unsigned int pid)
+         }
+     }
+ 
++    GSL_MMU_UNLOCK();
++
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_mmu_attachcallback. Return value %B\n", status );
+ 
+     return (status);
+@@ -970,6 +1009,8 @@ kgsl_mmu_detachcallback(gsl_mmu_t *mmu, unsigned int pid)
+ 
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "--> int kgsl_mmu_detachcallback(gsl_mmu_t *mmu=0x%08x, unsigned int pid=0x%08x)\n", mmu, pid );
+ 
++    GSL_MMU_LOCK();
++
+     if (mmu->flags & GSL_FLAGS_INITIALIZED0)
+     {
+         // detach from current device mmu
+@@ -990,6 +1031,8 @@ kgsl_mmu_detachcallback(gsl_mmu_t *mmu, unsigned int pid)
+         }
+     }
+ 
++    GSL_MMU_UNLOCK();
++
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_mmu_detachcallback. Return value %B\n", status );
+ 
+     return (status);
+@@ -1005,6 +1048,8 @@ kgsl_mmu_querystats(gsl_mmu_t *mmu, gsl_mmustats_t *stats)
+ 
+     KOS_ASSERT(stats);
+ 
++    GSL_MMU_LOCK();
++
+     if (mmu->flags & GSL_FLAGS_STARTED)
+     {
+ 		kos_memcpy(stats, &mmu->stats, sizeof(gsl_mmustats_t));
+@@ -1014,6 +1059,8 @@ kgsl_mmu_querystats(gsl_mmu_t *mmu, gsl_mmustats_t *stats)
+ 		kos_memset(stats, 0, sizeof(gsl_mmustats_t));
+     }
+ 
++    GSL_MMU_UNLOCK();
++
+     return (status);
+ #else
+     // unreferenced formal parameters
+diff --git a/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c b/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c
+index c4b62b0..ed922ef 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c
++++ b/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c
+@@ -120,6 +120,8 @@ kgsl_ringbuffer_watchdog()
+ 
+     if (rb->flags & GSL_FLAGS_STARTED)
+     {
++        GSL_RB_MUTEX_LOCK();
++
+         GSL_RB_GET_READPTR(rb, &rb->rptr);
+ 
+         // ringbuffer is currently not empty
+@@ -150,6 +152,7 @@ kgsl_ringbuffer_watchdog()
+             rb->watchdog.flags &= ~GSL_FLAGS_ACTIVE;
+         }
+ 
++        GSL_RB_MUTEX_UNLOCK();
+     }
+ 
+     kgsl_log_write( KGSL_LOG_GROUP_COMMAND | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_ringbuffer_watchdog.\n" );
+@@ -675,6 +678,8 @@ kgsl_ringbuffer_init(gsl_device_t *device)
+     rb->sizedwords       = (2 << gsl_cfg_rb_sizelog2quadwords);
+     rb->blksizequadwords = gsl_cfg_rb_blksizequadwords;
+ 
++    GSL_RB_MUTEX_CREATE();
++
+     // allocate memory for ringbuffer, needs to be double octword aligned
+     // align on page from contiguous physical memory
+     flags = (GSL_MEMFLAGS_ALIGNPAGE | GSL_MEMFLAGS_CONPHYS | GSL_MEMFLAGS_STRICTREQUEST);
+@@ -737,6 +742,8 @@ kgsl_ringbuffer_close(gsl_ringbuffer_t *rb)
+     kgsl_log_write( KGSL_LOG_GROUP_COMMAND | KGSL_LOG_LEVEL_TRACE,
+                     "--> int kgsl_ringbuffer_close(gsl_ringbuffer_t *rb=0x%08x)\n", rb );
+ 
++    GSL_RB_MUTEX_LOCK();
++
+     // stop ringbuffer
+     kgsl_ringbuffer_stop(rb);
+ 
+@@ -754,6 +761,10 @@ kgsl_ringbuffer_close(gsl_ringbuffer_t *rb)
+ 
+     rb->flags &= ~GSL_FLAGS_INITIALIZED;
+ 
++    GSL_RB_MUTEX_UNLOCK();
++
++    GSL_RB_MUTEX_FREE();
++
+     kos_memset(rb, 0, sizeof(gsl_ringbuffer_t));
+ 
+     kgsl_log_write( KGSL_LOG_GROUP_COMMAND | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_ringbuffer_close. Return value %B\n", GSL_SUCCESS );
+@@ -874,6 +885,8 @@ kgsl_ringbuffer_issueibcmds(gsl_device_t *device, int drawctxt_index, gpuaddr_t
+ 
+     KGSL_DEBUG(GSL_DBGFLAGS_DUMPX, dumpx_swap = kgsl_dumpx_parse_ibs(ibaddr, sizedwords));
+ 
++	GSL_RB_MUTEX_LOCK();
++
+ 	// context switch if needed
+ 	kgsl_drawctxt_switch(device, &device->drawctxt[drawctxt_index], flags);
+ 
+@@ -883,6 +896,8 @@ kgsl_ringbuffer_issueibcmds(gsl_device_t *device, int drawctxt_index, gpuaddr_t
+ 
+ 	*timestamp = kgsl_ringbuffer_issuecmds(device, 0, &link[0], 3, GSL_CALLER_PROCESSID_GET());
+ 
++	GSL_RB_MUTEX_UNLOCK();
++
+     // idle device when running in safe mode
+     if (device->flags & GSL_FLAGS_SAFEMODE)
+     {
+diff --git a/drivers/mxc/amd-gpu/common/gsl_yamato.c b/drivers/mxc/amd-gpu/common/gsl_yamato.c
+index e52d427..658cd80 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_yamato.c
++++ b/drivers/mxc/amd-gpu/common/gsl_yamato.c
+@@ -488,6 +488,13 @@ kgsl_yamato_start(gsl_device_t *device, gsl_flags_t flags)
+ int
+ kgsl_yamato_stop(gsl_device_t *device)
+ {
++	// HW WORKAROUND: Ringbuffer hangs during next start if it is stopped without any
++	// commands ever being submitted. To avoid this, submit a dummy wait packet.
++	unsigned int cmds[2];
++    cmds[0] = pm4_type3_packet(PM4_WAIT_FOR_IDLE, 1);
++    cmds[0] = 0;
++	kgsl_ringbuffer_issuecmds(device, 0, cmds, 2, GSL_CALLER_PROCESSID_GET());
++
+     // disable rbbm interrupts
+     kgsl_intr_detach(&device->intr, GSL_INTR_YDX_RBBM_READ_ERROR);
+     kgsl_intr_detach(&device->intr, GSL_INTR_YDX_RBBM_DISPLAY_UPDATE);
+@@ -732,6 +739,8 @@ kgsl_yamato_idle(gsl_device_t *device, unsigned int timeout)
+ 
+     KGSL_DEBUG(GSL_DBGFLAGS_DUMPX, KGSL_DEBUG_DUMPX(BB_DUMP_REGPOLL, device->id, mmRBBM_STATUS, 0x80000000, "kgsl_yamato_idle"));
+ 
++    GSL_RB_MUTEX_LOCK();
++
+     // first, wait until the CP has consumed all the commands in the ring buffer
+     if (rb->flags & GSL_FLAGS_STARTED)
+     {
+@@ -754,6 +763,8 @@ kgsl_yamato_idle(gsl_device_t *device, unsigned int timeout)
+         }
+ 
+     }
++	
++    GSL_RB_MUTEX_UNLOCK();
+ 
+     return (status);
+ }
+diff --git a/drivers/mxc/amd-gpu/include/api/gsl_klibapi.h b/drivers/mxc/amd-gpu/include/api/gsl_klibapi.h
+index 8476f5a..3c08545 100644
+--- a/drivers/mxc/amd-gpu/include/api/gsl_klibapi.h
++++ b/drivers/mxc/amd-gpu/include/api/gsl_klibapi.h
+@@ -74,6 +74,7 @@ KGSL_API int                kgsl_driver_destroy(unsigned int pid);
+ KGSL_API int                kgsl_device_start(gsl_deviceid_t device_id, gsl_flags_t flags);
+ KGSL_API int                kgsl_device_stop(gsl_deviceid_t device_id);
+ KGSL_API int                kgsl_device_idle(gsl_deviceid_t device_id, unsigned int timeout);
++KGSL_API int                kgsl_device_isidle(gsl_deviceid_t device_id);
+ KGSL_API int                kgsl_device_getproperty(gsl_deviceid_t device_id, gsl_property_type_t type, void *value, unsigned int sizebytes);
+ KGSL_API int                kgsl_device_setproperty(gsl_deviceid_t device_id, gsl_property_type_t type, void *value, unsigned int sizebytes);
+ KGSL_API int                kgsl_device_regread(gsl_deviceid_t device_id, unsigned int offsetwords, unsigned int *value);
+diff --git a/drivers/mxc/amd-gpu/include/api/gsl_libapi.h b/drivers/mxc/amd-gpu/include/api/gsl_libapi.h
+index 7a5be86..3d359e2 100644
+--- a/drivers/mxc/amd-gpu/include/api/gsl_libapi.h
++++ b/drivers/mxc/amd-gpu/include/api/gsl_libapi.h
+@@ -65,6 +65,7 @@ GSL_API int                     gsl_library_close(void);
+ GSL_API gsl_devhandle_t         gsl_device_open(gsl_deviceid_t device_id, gsl_flags_t flags);
+ GSL_API int                     gsl_device_close(gsl_devhandle_t devhandle);
+ GSL_API int                     gsl_device_idle(gsl_devhandle_t devhandle, unsigned int timeout);
++GSL_API int                     gsl_device_isidle(gsl_devhandle_t devhandle);
+ GSL_API int                     gsl_device_getcount(void);
+ GSL_API int                     gsl_device_getinfo(gsl_devhandle_t devhandle, gsl_devinfo_t *devinfo);
+ GSL_API int                     gsl_device_setpowerstate(gsl_devhandle_t devhandle, gsl_flags_t flags);
+diff --git a/drivers/mxc/amd-gpu/include/api/gsl_types.h b/drivers/mxc/amd-gpu/include/api/gsl_types.h
+index 310c1a9..99d9849 100644
+--- a/drivers/mxc/amd-gpu/include/api/gsl_types.h
++++ b/drivers/mxc/amd-gpu/include/api/gsl_types.h
+@@ -188,13 +188,10 @@
+ #define GSL_TIMEOUT_NONE                        0
+ #define GSL_TIMEOUT_DEFAULT                     0xFFFFFFFF
+ 
+-#ifdef _LINUX
+-#define GSL_PAGESIZE                            PAGE_SIZE
+-#define GSL_PAGESIZE_SHIFT                      PAGE_SHIFT
+-#else
+ #define GSL_PAGESIZE                            0x1000
+ #define GSL_PAGESIZE_SHIFT                      12
+-#endif
++
++#define GSL_TIMESTAMP_EPSILON           20000
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // types
+@@ -407,6 +404,7 @@ typedef struct _gsl_rect_t {
+     unsigned int y;
+     unsigned int width;
+     unsigned int height;
++	unsigned int pitch;
+ } gsl_rect_t;
+ 
+ // -----------------------
+@@ -414,8 +412,10 @@ typedef struct _gsl_rect_t {
+ // -----------------------
+ typedef struct _gsl_buffer_desc_t {
+     gsl_memdesc_t data;
+-    unsigned int stride_bytes;
+-    unsigned int bpp;
++	unsigned int width;
++	unsigned int height;
++	unsigned int pitch;
++	unsigned int format;
+     unsigned int enabled;
+ } gsl_buffer_desc_t;
+ 
+diff --git a/drivers/mxc/amd-gpu/include/gsl_buildconfig.h b/drivers/mxc/amd-gpu/include/gsl_buildconfig.h
+index 01ba14e..4e6be4d 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_buildconfig.h
++++ b/drivers/mxc/amd-gpu/include/gsl_buildconfig.h
+@@ -36,7 +36,7 @@
+ #define GSL_BLD_YAMATO
+ #define GSL_BLD_G12
+ 
+-#define GSL_LOCKING_COURSEGRAIN
++#define GSL_LOCKING_COARSEGRAIN
+ 
+ #define GSL_STATS_MEM
+ #define GSL_STATS_RINGBUFFER
+diff --git a/drivers/mxc/amd-gpu/include/gsl_device.h b/drivers/mxc/amd-gpu/include/gsl_device.h
+index 433dc69..087dcc1 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_device.h
++++ b/drivers/mxc/amd-gpu/include/gsl_device.h
+@@ -91,12 +91,18 @@ struct _gsl_device_t {
+ #ifdef GSL_BLD_YAMATO
+     gsl_memregion_t   gmemspace;
+     gsl_ringbuffer_t  ringbuffer;
++#ifdef GSL_LOCKING_FINEGRAIN
++    oshandle_t        drawctxt_mutex;
++#endif
+     unsigned int      drawctxt_count;
+     gsl_drawctxt_t    *drawctxt_active;
+     gsl_drawctxt_t    drawctxt[GSL_CONTEXT_MAX];
+ #endif // GSL_BLD_YAMATO
+ 
+ #ifdef GSL_BLD_G12
++#ifdef GSL_LOCKING_FINEGRAIN
++    oshandle_t        cmdwindow_mutex;
++#endif
+     unsigned int      intrcnt[GSL_G12_INTR_COUNT];
+     gsl_timestamp_t   current_timestamp;
+     gsl_timestamp_t   timestamp;
+@@ -108,6 +114,9 @@ struct _gsl_device_t {
+     oshandle_t        irqthread_event;
+ #endif
+ #endif // GSL_BLD_G12
++#ifdef GSL_LOCKING_FINEGRAIN
++    oshandle_t        cmdstream_mutex;
++#endif
+ #ifndef _LINUX	
+     oshandle_t        timestamp_event;
+ #else
+diff --git a/drivers/mxc/amd-gpu/include/gsl_drawctxt.h b/drivers/mxc/amd-gpu/include/gsl_drawctxt.h
+index 15b8097..f3bc8c3 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_drawctxt.h
++++ b/drivers/mxc/amd-gpu/include/gsl_drawctxt.h
+@@ -59,13 +59,21 @@ typedef struct _gmem_shadow_t
+ 
+     // 256 KB GMEM surface = 4 bytes-per-pixel x 256 pixels/row x 256 rows.
+     // width & height must be a multiples of 32, in case tiled textures are used.
+-    unsigned int    size;       // Size of surface used to store GMEM
++    unsigned int    size;           // Size of surface used to store GMEM
+     unsigned int    width;          // Width of surface used to store GMEM
+     unsigned int    height;         // Height of surface used to store GMEM
+     unsigned int    pitch;          // Pitch of surface used to store GMEM
++	unsigned int    format;         // Format of surface used to store GMEM
++
+     int             offset;
+-    unsigned int    offset_x;
+-    unsigned int    offset_y;
++
++    unsigned int    offset_x;    
++	unsigned int    offset_y;
++
++	unsigned int	gmem_width;     // GMEM width
++	unsigned int	gmem_height;    // GMEM height
++	unsigned int    gmem_pitch;     // GMEM pitch
++
+     unsigned int    gmem_offset_x;
+     unsigned int    gmem_offset_y;
+ 
+diff --git a/drivers/mxc/amd-gpu/include/gsl_driver.h b/drivers/mxc/amd-gpu/include/gsl_driver.h
+index 42dff45..9c908ce 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_driver.h
++++ b/drivers/mxc/amd-gpu/include/gsl_driver.h
+@@ -39,7 +39,7 @@
+ #define GSL_CALLER_PROCESSID_GET()      kos_process_getid()
+ #endif // GSL_DEDICATED_PROCESS
+ 
+-#ifdef GSL_LOCKING_COURSEGRAIN
++#ifdef GSL_LOCKING_COARSEGRAIN
+ #define GSL_API_MUTEX_CREATE()          gsl_driver.mutex = kos_mutex_create("gsl_global"); \
+                                         if (!gsl_driver.mutex) {return (GSL_FAILURE);}
+ #define GSL_API_MUTEX_LOCK()            kos_mutex_lock(gsl_driver.mutex)
+diff --git a/drivers/mxc/amd-gpu/include/gsl_ioctl.h b/drivers/mxc/amd-gpu/include/gsl_ioctl.h
+index 0f1983e..6a06f3e 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_ioctl.h
++++ b/drivers/mxc/amd-gpu/include/gsl_ioctl.h
+@@ -50,6 +50,10 @@ typedef struct _kgsl_device_idle_t {
+     unsigned int    timeout;
+ } kgsl_device_idle_t;
+ 
++typedef struct _kgsl_device_isidle_t {
++    gsl_deviceid_t  device_id;
++} kgsl_device_isidle_t;
++
+ typedef struct _kgsl_device_getproperty_t {
+     gsl_deviceid_t  device_id;
+     gsl_property_type_t type;
+@@ -209,29 +213,30 @@ typedef struct _kgsl_device_clock_t {
+ #define IOCTL_KGSL_DEVICE_START                 _IOW(GSL_MAGIC, 0x20, struct _kgsl_device_start_t)
+ #define IOCTL_KGSL_DEVICE_STOP                  _IOW(GSL_MAGIC, 0x21, struct _kgsl_device_stop_t)
+ #define IOCTL_KGSL_DEVICE_IDLE                  _IOW(GSL_MAGIC, 0x22, struct _kgsl_device_idle_t)
+-#define IOCTL_KGSL_DEVICE_GETPROPERTY           _IOWR(GSL_MAGIC, 0x23, struct _kgsl_device_getproperty_t)
+-#define IOCTL_KGSL_DEVICE_SETPROPERTY           _IOW(GSL_MAGIC, 0x24, struct _kgsl_device_setproperty_t)
+-#define IOCTL_KGSL_DEVICE_REGREAD               _IOWR(GSL_MAGIC, 0x25, struct _kgsl_device_regread_t)
+-#define IOCTL_KGSL_DEVICE_REGWRITE              _IOW(GSL_MAGIC, 0x26, struct _kgsl_device_regwrite_t)
+-#define IOCTL_KGSL_DEVICE_WAITIRQ               _IOWR(GSL_MAGIC, 0x27, struct _kgsl_device_waitirq_t)
+-#define IOCTL_KGSL_CMDSTREAM_ISSUEIBCMDS        _IOWR(GSL_MAGIC, 0x28, struct _kgsl_cmdstream_issueibcmds_t)
+-#define IOCTL_KGSL_CMDSTREAM_READTIMESTAMP      _IOWR(GSL_MAGIC, 0x29, struct _kgsl_cmdstream_readtimestamp_t)
+-#define IOCTL_KGSL_CMDSTREAM_FREEMEMONTIMESTAMP _IOW(GSL_MAGIC, 0x2A, struct _kgsl_cmdstream_freememontimestamp_t)
+-#define IOCTL_KGSL_CMDSTREAM_WAITTIMESTAMP      _IOW(GSL_MAGIC, 0x2B, struct _kgsl_cmdstream_waittimestamp_t)
+-#define IOCTL_KGSL_CMDWINDOW_WRITE              _IOW(GSL_MAGIC, 0x2C, struct _kgsl_cmdwindow_write_t)
+-#define IOCTL_KGSL_CONTEXT_CREATE               _IOWR(GSL_MAGIC, 0x2D, struct _kgsl_context_create_t)
+-#define IOCTL_KGSL_CONTEXT_DESTROY              _IOW(GSL_MAGIC, 0x2E, struct _kgsl_context_destroy_t)
+-#define IOCTL_KGSL_DRAWCTXT_BIND_GMEM_SHADOW    _IOW(GSL_MAGIC, 0x2F, struct _kgsl_drawctxt_bind_gmem_shadow_t)
+-#define IOCTL_KGSL_SHAREDMEM_ALLOC              _IOWR(GSL_MAGIC, 0x30, struct _kgsl_sharedmem_alloc_t)
+-#define IOCTL_KGSL_SHAREDMEM_FREE               _IOW(GSL_MAGIC, 0x31, struct _kgsl_sharedmem_free_t)
+-#define IOCTL_KGSL_SHAREDMEM_READ               _IOWR(GSL_MAGIC, 0x32, struct _kgsl_sharedmem_read_t)
+-#define IOCTL_KGSL_SHAREDMEM_WRITE              _IOW(GSL_MAGIC, 0x33, struct _kgsl_sharedmem_write_t)
+-#define IOCTL_KGSL_SHAREDMEM_SET                _IOW(GSL_MAGIC, 0x34, struct _kgsl_sharedmem_set_t)
+-#define IOCTL_KGSL_SHAREDMEM_LARGESTFREEBLOCK   _IOWR(GSL_MAGIC, 0x35, struct _kgsl_sharedmem_largestfreeblock_t)
+-#define IOCTL_KGSL_SHAREDMEM_CACHEOPERATION     _IOW(GSL_MAGIC, 0x36, struct _kgsl_sharedmem_cacheoperation_t)
+-#define IOCTL_KGSL_SHAREDMEM_FROMHOSTPOINTER    _IOW(GSL_MAGIC, 0x37, struct _kgsl_sharedmem_fromhostpointer_t)
+-#define IOCTL_KGSL_ADD_TIMESTAMP                _IOWR(GSL_MAGIC, 0x38, struct _kgsl_add_timestamp_t)
+-#define IOCTL_KGSL_DRIVER_EXIT		        _IOWR(GSL_MAGIC, 0x39, NULL)
++#define IOCTL_KGSL_DEVICE_ISIDLE                _IOR(GSL_MAGIC, 0x23, struct _kgsl_device_isidle_t)
++#define IOCTL_KGSL_DEVICE_GETPROPERTY           _IOWR(GSL_MAGIC, 0x24, struct _kgsl_device_getproperty_t)
++#define IOCTL_KGSL_DEVICE_SETPROPERTY           _IOW(GSL_MAGIC, 0x25, struct _kgsl_device_setproperty_t)
++#define IOCTL_KGSL_DEVICE_REGREAD               _IOWR(GSL_MAGIC, 0x26, struct _kgsl_device_regread_t)
++#define IOCTL_KGSL_DEVICE_REGWRITE              _IOW(GSL_MAGIC, 0x27, struct _kgsl_device_regwrite_t)
++#define IOCTL_KGSL_DEVICE_WAITIRQ               _IOWR(GSL_MAGIC, 0x28, struct _kgsl_device_waitirq_t)
++#define IOCTL_KGSL_CMDSTREAM_ISSUEIBCMDS        _IOWR(GSL_MAGIC, 0x29, struct _kgsl_cmdstream_issueibcmds_t)
++#define IOCTL_KGSL_CMDSTREAM_READTIMESTAMP      _IOWR(GSL_MAGIC, 0x2A, struct _kgsl_cmdstream_readtimestamp_t)
++#define IOCTL_KGSL_CMDSTREAM_FREEMEMONTIMESTAMP _IOW(GSL_MAGIC, 0x2B, struct _kgsl_cmdstream_freememontimestamp_t)
++#define IOCTL_KGSL_CMDSTREAM_WAITTIMESTAMP      _IOW(GSL_MAGIC, 0x2C, struct _kgsl_cmdstream_waittimestamp_t)
++#define IOCTL_KGSL_CMDWINDOW_WRITE              _IOW(GSL_MAGIC, 0x2D, struct _kgsl_cmdwindow_write_t)
++#define IOCTL_KGSL_CONTEXT_CREATE               _IOWR(GSL_MAGIC, 0x2E, struct _kgsl_context_create_t)
++#define IOCTL_KGSL_CONTEXT_DESTROY              _IOW(GSL_MAGIC, 0x2F, struct _kgsl_context_destroy_t)
++#define IOCTL_KGSL_DRAWCTXT_BIND_GMEM_SHADOW    _IOW(GSL_MAGIC, 0x30, struct _kgsl_drawctxt_bind_gmem_shadow_t)
++#define IOCTL_KGSL_SHAREDMEM_ALLOC              _IOWR(GSL_MAGIC, 0x31, struct _kgsl_sharedmem_alloc_t)
++#define IOCTL_KGSL_SHAREDMEM_FREE               _IOW(GSL_MAGIC, 0x32, struct _kgsl_sharedmem_free_t)
++#define IOCTL_KGSL_SHAREDMEM_READ               _IOWR(GSL_MAGIC, 0x33, struct _kgsl_sharedmem_read_t)
++#define IOCTL_KGSL_SHAREDMEM_WRITE              _IOW(GSL_MAGIC, 0x34, struct _kgsl_sharedmem_write_t)
++#define IOCTL_KGSL_SHAREDMEM_SET                _IOW(GSL_MAGIC, 0x35, struct _kgsl_sharedmem_set_t)
++#define IOCTL_KGSL_SHAREDMEM_LARGESTFREEBLOCK   _IOWR(GSL_MAGIC, 0x36, struct _kgsl_sharedmem_largestfreeblock_t)
++#define IOCTL_KGSL_SHAREDMEM_CACHEOPERATION     _IOW(GSL_MAGIC, 0x37, struct _kgsl_sharedmem_cacheoperation_t)
++#define IOCTL_KGSL_SHAREDMEM_FROMHOSTPOINTER    _IOW(GSL_MAGIC, 0x38, struct _kgsl_sharedmem_fromhostpointer_t)
++#define IOCTL_KGSL_ADD_TIMESTAMP                _IOWR(GSL_MAGIC, 0x39, struct _kgsl_add_timestamp_t)
++#define IOCTL_KGSL_DRIVER_EXIT		        _IOWR(GSL_MAGIC, 0x3A, NULL)
+ #define IOCTL_KGSL_DEVICE_CLOCK			_IOWR(GSL_MAGIC, 0x60, struct _kgsl_device_clock_t)
+ 
+ 
+diff --git a/drivers/mxc/amd-gpu/include/gsl_mmu.h b/drivers/mxc/amd-gpu/include/gsl_mmu.h
+index 868c515..ddb2243 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_mmu.h
++++ b/drivers/mxc/amd-gpu/include/gsl_mmu.h
+@@ -135,6 +135,9 @@ typedef struct _gsl_tlbflushfilter_t {
+ // mmu object
+ // ----------
+ typedef struct _gsl_mmu_t {
++#ifdef GSL_LOCKING_FINEGRAIN
++    oshandle_t            mutex;
++#endif
+     unsigned int          refcnt;
+     gsl_flags_t           flags;
+     gsl_device_t          *device;
+diff --git a/drivers/mxc/amd-gpu/include/gsl_ringbuffer.h b/drivers/mxc/amd-gpu/include/gsl_ringbuffer.h
+index 6081c39..57f6297 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_ringbuffer.h
++++ b/drivers/mxc/amd-gpu/include/gsl_ringbuffer.h
+@@ -136,7 +136,9 @@ typedef struct _gsl_ringbuffer_t {
+ 
+     gsl_device_t      *device;
+     gsl_flags_t       flags;
+-
++#ifdef GSL_LOCKING_FINEGRAIN
++    oshandle_t        mutex;
++#endif
+     gsl_memdesc_t     buffer_desc;              // allocated memory descriptor
+     gsl_memdesc_t     memptrs_desc;
+ 
+@@ -163,6 +165,19 @@ typedef struct _gsl_ringbuffer_t {
+ // macros
+ //////////////////////////////////////////////////////////////////////////////
+ 
++#ifdef GSL_LOCKING_FINEGRAIN
++#define GSL_RB_MUTEX_CREATE()               rb->mutex = kos_mutex_create("gsl_ringbuffer"); \
++                                            if (!rb->mutex) {return (GSL_FAILURE);}
++#define GSL_RB_MUTEX_LOCK()                 kos_mutex_lock(rb->mutex)
++#define GSL_RB_MUTEX_UNLOCK()               kos_mutex_unlock(rb->mutex)
++#define GSL_RB_MUTEX_FREE()                 kos_mutex_free(rb->mutex); rb->mutex = 0;
++#else
++#define GSL_RB_MUTEX_CREATE()
++#define GSL_RB_MUTEX_LOCK()
++#define GSL_RB_MUTEX_UNLOCK()
++#define GSL_RB_MUTEX_FREE()
++#endif
++
+ // ----------
+ // ring write
+ // ----------
+diff --git a/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_mask.h b/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_mask.h
+index f31b2a7..c308790 100644
+--- a/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_mask.h
++++ b/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_mask.h
+@@ -28,20 +28,6 @@
+ 
+ #if !defined (_yamato_MASK_HEADER)
+ #define _yamato_MASK_HEADER
+-/*
+-*   yamato_mask.h
+-*
+-*   Register Spec Release:  Chip Spec 1.0
+-*
+-*
+-*    (c) 2000 ATI Technologies Inc.  (unpublished)
+-*
+-*    All rights reserved.  This notice is intended as a precaution against
+-*    inadvertent publication and does not imply publication or any waiver
+-*    of confidentiality.  The year included in the foregoing notice is the
+-*    year of creation of the work.
+-*
+-*/
+ 
+ // PA_CL_VPORT_XSCALE
+ #define PA_CL_VPORT_XSCALE__VPORT_XSCALE_MASK              0xffffffffL
+diff --git a/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_registers.h b/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_registers.h
+index 3cd315f..fc6b8b9 100644
+--- a/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_registers.h
++++ b/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_registers.h
+@@ -28,20 +28,6 @@
+ 
+ #if !defined (_yamato_REG_HEADER)
+ #define _yamato_REG_HEADER
+-/*
+-*   yamato_registers.h
+-*
+-*   Register Spec Release:  Chip Spec 1.0
+-*
+-*
+-*    (c) 2000 ATI Technologies Inc.  (unpublished)
+-*
+-*    All rights reserved.  This notice is intended as a precaution against
+-*    inadvertent publication and does not imply publication or any waiver
+-*    of confidentiality.  The year included in the foregoing notice is the
+-*    year of creation of the work.
+-*
+-*/
+ 
+     union PA_CL_VPORT_XSCALE {
+     struct {
+diff --git a/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_struct.h b/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_struct.h
+index 9e9c728..d6cc2fe 100644
+--- a/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_struct.h
++++ b/drivers/mxc/amd-gpu/include/reg/yamato/10/yamato_struct.h
+@@ -7847,21 +7847,6 @@ typedef union {
+ #if !defined (_RBBM_FIDDLE_H)
+ #define _RBBM_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  rbbm_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -10977,21 +10962,6 @@ typedef union {
+ #if !defined (_MH_FIDDLE_H)
+ #define _MH_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  mh_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -19932,21 +19902,6 @@ typedef union {
+ #if !defined (_PA_FIDDLE_H)
+ #define _PA_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  pa_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -27841,21 +27796,6 @@ typedef union {
+ #if !defined (_VGT_FIDDLE_H)
+ #define _VGT_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  vgt_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -32985,21 +32925,6 @@ typedef union {
+ #if !defined (_SQ_FIDDLE_H)
+ #define _SQ_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sq_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -42029,21 +41954,6 @@ typedef union {
+ #if !defined (_SX_FIDDLE_H)
+ #define _SX_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sx_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -42064,21 +41974,6 @@ typedef union {
+ #if !defined (_TP_FIDDLE_H)
+ #define _TP_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  tp_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -48231,21 +48126,6 @@ typedef union {
+ #if !defined (_TC_FIDDLE_H)
+ #define _TC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  tc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -48266,21 +48146,6 @@ typedef union {
+ #if !defined (_SC_FIDDLE_H)
+ #define _SC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -48301,21 +48166,6 @@ typedef union {
+ #if !defined (_BC_FIDDLE_H)
+ #define _BC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  bc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+diff --git a/drivers/mxc/amd-gpu/include/reg/yamato/14/yamato_struct.h b/drivers/mxc/amd-gpu/include/reg/yamato/14/yamato_struct.h
+index 80b9106..e8402cd 100644
+--- a/drivers/mxc/amd-gpu/include/reg/yamato/14/yamato_struct.h
++++ b/drivers/mxc/amd-gpu/include/reg/yamato/14/yamato_struct.h
+@@ -7826,21 +7826,6 @@ typedef union {
+ #if !defined (_RBBM_FIDDLE_H)
+ #define _RBBM_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  rbbm_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -10526,21 +10511,6 @@ typedef union {
+ #if !defined (_MH_FIDDLE_H)
+ #define _MH_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  mh_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -19151,21 +19121,6 @@ typedef union {
+ #if !defined (_PA_FIDDLE_H)
+ #define _PA_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  pa_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -26983,21 +26938,6 @@ typedef union {
+ #if !defined (_VGT_FIDDLE_H)
+ #define _VGT_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  vgt_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -32094,21 +32034,6 @@ typedef union {
+ #if !defined (_SQ_FIDDLE_H)
+ #define _SQ_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sq_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -40867,21 +40792,6 @@ typedef union {
+ #if !defined (_SX_FIDDLE_H)
+ #define _SX_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sx_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -40902,21 +40812,6 @@ typedef union {
+ #if !defined (_TP_FIDDLE_H)
+ #define _TP_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  tp_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -47069,21 +46964,6 @@ typedef union {
+ #if !defined (_TC_FIDDLE_H)
+ #define _TC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  tc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -47104,21 +46984,6 @@ typedef union {
+ #if !defined (_SC_FIDDLE_H)
+ #define _SC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -47139,21 +47004,6 @@ typedef union {
+ #if !defined (_BC_FIDDLE_H)
+ #define _BC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  bc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+diff --git a/drivers/mxc/amd-gpu/include/reg/yamato/22/yamato_struct.h b/drivers/mxc/amd-gpu/include/reg/yamato/22/yamato_struct.h
+index 78d4924..21de355 100644
+--- a/drivers/mxc/amd-gpu/include/reg/yamato/22/yamato_struct.h
++++ b/drivers/mxc/amd-gpu/include/reg/yamato/22/yamato_struct.h
+@@ -7848,21 +7848,6 @@ typedef union {
+ #if !defined (_RBBM_FIDDLE_H)
+ #define _RBBM_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  rbbm_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -10978,21 +10963,6 @@ typedef union {
+ #if !defined (_MH_FIDDLE_H)
+ #define _MH_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  mh_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -19933,21 +19903,6 @@ typedef union {
+ #if !defined (_PA_FIDDLE_H)
+ #define _PA_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  pa_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -27853,21 +27808,6 @@ typedef union {
+ #if !defined (_VGT_FIDDLE_H)
+ #define _VGT_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  vgt_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -32997,21 +32937,6 @@ typedef union {
+ #if !defined (_SQ_FIDDLE_H)
+ #define _SQ_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sq_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -42041,21 +41966,6 @@ typedef union {
+ #if !defined (_SX_FIDDLE_H)
+ #define _SX_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sx_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -42076,21 +41986,6 @@ typedef union {
+ #if !defined (_TP_FIDDLE_H)
+ #define _TP_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  tp_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -48243,21 +48138,6 @@ typedef union {
+ #if !defined (_TC_FIDDLE_H)
+ #define _TC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  tc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -48278,21 +48158,6 @@ typedef union {
+ #if !defined (_SC_FIDDLE_H)
+ #define _SC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  sc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+@@ -48313,21 +48178,6 @@ typedef union {
+ #if !defined (_BC_FIDDLE_H)
+ #define _BC_FIDDLE_H
+ 
+-/*****************************************************************************************************************
+- *
+- *  bc_reg.h
+- *
+- *  Register Spec Release:  Block Spec 1.0
+- *
+- *   (c) 2000 ATI Technologies Inc.  (unpublished)
+- *
+- *   All rights reserved.  This notice is intended as a precaution against
+- *   inadvertent publication and does not imply publication or any waiver
+- *   of confidentiality.  The year included in the foregoing notice is the
+- *   year of creation of the work.
+- *
+- *****************************************************************************************************************/
+-
+ /*******************************************************
+  * Enums
+  *******************************************************/
+diff --git a/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c b/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
+index b83706f..c2b26d3 100644
+--- a/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
++++ b/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
+@@ -131,6 +131,18 @@ static int gsl_kmod_ioctl(struct inode *inode, struct file *fd, unsigned int cmd
+             kgslStatus = kgsl_device_idle(param.device_id, param.timeout);
+             break;
+         }
++    case IOCTL_KGSL_DEVICE_ISIDLE:
++        {
++            kgsl_device_isidle_t param;
++            if (copy_from_user(&param, (void __user *)arg, sizeof(kgsl_device_isidle_t)))
++            {
++                printk(KERN_ERR "%s: copy_from_user error\n", __func__);
++                kgslStatus = GSL_FAILURE;
++                break;
++            }
++            kgslStatus = kgsl_device_isidle(param.device_id);
++            break;
++        }
+     case IOCTL_KGSL_DEVICE_GETPROPERTY:
+         {
+             kgsl_device_getproperty_t param;
+-- 
+1.5.4.4
+

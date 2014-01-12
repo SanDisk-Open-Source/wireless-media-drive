@@ -1,0 +1,56 @@
+From 55019fc8eebe6b9d8b0f4b52725289e616879d8a Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Sat, 25 Sep 2010 14:57:01 +0800
+Subject: [PATCH] ENGR00131924: using ext4 as default recovery filesystem
+
+using ext4 as default recovery filesystem.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx53_arm2_android.h      |    2 +-
+ include/configs/mx53_arm2_ddr3_android.h |    2 +-
+ include/configs/mx53_evk_android.h       |    2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/include/configs/mx53_arm2_android.h b/include/configs/mx53_arm2_android.h
+index 4eed270..84648fb 100644
+--- a/include/configs/mx53_arm2_android.h
++++ b/include/configs/mx53_arm2_android.h
+@@ -83,7 +83,7 @@
+ #define CONFIG_MTD_PARTITIONS
+ 
+ #define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
+-	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p7 rootfs=ext3"
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4 rootfs=ext4"
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+ 	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+diff --git a/include/configs/mx53_arm2_ddr3_android.h b/include/configs/mx53_arm2_ddr3_android.h
+index 6fd0dff..d2fcb77 100644
+--- a/include/configs/mx53_arm2_ddr3_android.h
++++ b/include/configs/mx53_arm2_ddr3_android.h
+@@ -83,7 +83,7 @@
+ #define CONFIG_MTD_PARTITIONS
+ 
+ #define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
+-	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p7 rootfs=ext3"
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4 rootfs=ext4"
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+ 	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index 6b6ee17..1fca679 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -83,7 +83,7 @@
+ 
+ 
+ #define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
+-	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p7 rootfs=ext3"
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4 rootfs=ext4"
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+ 	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+-- 
+1.5.4.4
+

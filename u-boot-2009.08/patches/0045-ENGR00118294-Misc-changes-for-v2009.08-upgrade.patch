@@ -1,0 +1,1636 @@
+From 20710100e480543d36b76845c52cdec382f2b43a Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 10 Nov 2009 22:29:11 +0800
+Subject: [PATCH] ENGR00118294: Misc changes for v2009.08 upgrade.
+
+Misc changes for v2009.08 upgrade.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx25_3stack/mx25_3stack.c |    5 +
+ board/freescale/mx35_3stack/mx35_3stack.c |    6 +
+ board/freescale/mx51_3stack/mx51_3stack.c |  284 +++++++++++++++++++++++--
+ board/freescale/mx51_bbg/mx51_bbg.c       |  343 +++++++++++++++++++++++------
+ common/env_mmc.c                          |  289 +++---------------------
+ disk/part.c                               |    5 +
+ drivers/mmc/imx_esdhc.c                   |   12 +-
+ drivers/mmc/mmc.c                         |   19 ++
+ include/asm-arm/arch-mx51/keypad.h        |    2 +-
+ include/asm-arm/arch-mx51/mx51.h          |   12 +
+ include/configs/mx25_3stack.h             |    1 -
+ include/configs/mx35_3stack_mmc.h         |    1 -
+ include/configs/mx51_3stack.h             |   15 --
+ include/configs/mx51_3stack_android.h     |   14 +-
+ include/configs/mx51_bbg.h                |    6 +-
+ include/configs/mx51_bbg_android.h        |   22 ++-
+ include/environment.h                     |    7 +-
+ 17 files changed, 657 insertions(+), 386 deletions(-)
+
+diff --git a/board/freescale/mx25_3stack/mx25_3stack.c b/board/freescale/mx25_3stack/mx25_3stack.c
+index f79b1b9..be1c571 100644
+--- a/board/freescale/mx25_3stack/mx25_3stack.c
++++ b/board/freescale/mx25_3stack/mx25_3stack.c
+@@ -32,6 +32,11 @@
+ #include <asm/arch/iomux.h>
+ #include <asm/arch/gpio.h>
+ 
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index cbd0756..bd6585b 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -31,6 +31,12 @@
+ #include <i2c.h>
+ #include <linux/types.h>
+ 
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#endif
++
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 8e315bd..067e653 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -34,11 +34,71 @@
+ #include "board-mx51_3stack.h"
+ #include <netdev.h>
+ 
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#endif
++
++#ifdef CONFIG_FSL_ANDROID
++#include <part.h>
++#include <ext2fs.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <ubi_uboot.h>
++#include <jffs2/load_kernel.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
++static enum boot_device boot_dev;
+ u32	mx51_io_base_addr;
+ 
++static inline void setup_boot_device(void)
++{
++	uint *fis_addr = (uint *)IRAM_BASE_ADDR;
++
++	switch (*fis_addr) {
++	case NAND_FLASH_BOOT:
++		boot_dev = NAND_BOOT;
++		break;
++	case SPI_NOR_FLASH_BOOT:
++		boot_dev = SPI_NOR_BOOT;
++		break;
++	case MMC_FLASH_BOOT:
++		boot_dev = MMC_BOOT;
++		break;
++	default:
++		{
++			uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++			uint bt_mem_ctl = soc_sbmr & 0x00000003;
++			uint bt_mem_type = (soc_sbmr & 0x000000C0) >> 7;
++
++			switch (bt_mem_ctl) {
++			case 0x3:
++				if (bt_mem_type == 0)
++					boot_dev = MMC_BOOT;
++				else if (bt_mem_type == 3)
++					boot_dev = SPI_NOR_BOOT;
++				else
++					boot_dev = UNKNOWN_BOOT;
++				break;
++			case 0x1:
++				boot_dev = NAND_BOOT;
++				break;
++			default:
++				boot_dev = UNKNOWN_BOOT;
++			}
++		}
++		break;
++	}
++}
++
++enum boot_device get_boot_device(void)
++{
++	return boot_dev;
++}
++
+ u32 get_board_rev(void)
+ {
+ 	return system_rev;
+@@ -160,7 +220,7 @@ static void setup_expio(void)
+ }
+ 
+ #if defined(CONFIG_MXC_ATA)
+-int setup_ata()
++int setup_ata(void)
+ {
+ 	u32 pad;
+ 
+@@ -455,6 +515,7 @@ void setup_core_voltages(void)
+ 
+ int board_init(void)
+ {
++	setup_boot_device();
+ 	setup_soc_rev();
+ 
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX51_3DS;	/* board id for linux */
+@@ -472,15 +533,14 @@ int board_init(void)
+ }
+ 
+ #ifdef BOARD_LATE_INIT
+-int board_late_init(void)
+-{
++
+ #if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++inline int waiting_for_func_key_pressing(void)
++{
+ 	struct kpp_key_info key_info = {0, 0};
+ 	int switch_delay = CONFIG_ANDROID_BOOTMOD_DELAY;
+ 	int state = 0, boot_mode_switch = 0;
+-#endif
+ 
+-#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
+ 	mxc_kpp_init();
+ 
+ 	puts("Press home + power to enter recovery mode ...\n");
+@@ -536,19 +596,197 @@ int board_late_init(void)
+ 					break;
+ 				}
+ 
+-				if (1 == boot_mode_switch) {
+-					printf("Boot mode switched to recovery mode!\n");
+-					/* Set env to recovery mode */
+-					setenv("bootargs_android", CONFIG_ANDROID_RECOVERY_BOOTARGS);
+-					setenv("bootcmd_android", CONFIG_ANDROID_RECOVERY_BOOTCMD);
+-					setenv("bootcmd", "run bootcmd_android");
+-					break;
+-				}
++				if (1 == boot_mode_switch)
++					return 1;
+ 			}
+ 		}
+ 		for (i = 0; i < 100; ++i)
+ 			udelay(10000);
+ 	}
++
++	return 0;
++}
++
++inline int switch_to_recovery_mode(void)
++{
++	printf("Boot mode switched to recovery mode!\n");
++
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++		/* Set env to recovery mode */
++		setenv("bootargs_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC);
++		setenv("bootcmd_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC);
++		setenv("bootcmd", "run bootcmd_android");
++		break;
++	case NAND_BOOT:
++		setenv("bootargs_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND);
++		setenv("bootcmd_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND);
++		setenv("bootcmd", "run bootcmd_android");
++		break;
++	case SPI_NOR_BOOT:
++		printf("Recovery mode not supported in SPI NOR boot\n");
++		return -1;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("Unknown boot device!\n");
++		return -1;
++		break;
++	}
++
++	return 0;
++}
++
++inline int check_recovery_cmd_file(void)
++{
++	disk_partition_t info;
++	ulong part_length;
++	int filelen;
++
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++		{
++			block_dev_desc_t *dev_desc = NULL;
++			struct mmc *mmc = find_mmc_device(0);
++
++			dev_desc = get_dev("mmc", 0);
++
++			if (NULL == dev_desc) {
++				puts("** Block device MMC 0 not supported\n");
++				return 0;
++			}
++
++			mmc_init(mmc);
++
++			if (get_partition_info(dev_desc,
++					CONFIG_ANDROID_CACHE_PARTITION_MMC,
++					&info)) {
++				printf("** Bad partition %d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				return 0;
++			}
++
++			part_length = ext2fs_set_blk_dev(dev_desc,
++								CONFIG_ANDROID_CACHE_PARTITION_MMC);
++			if (part_length == 0) {
++				printf("** Bad partition - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			if (!ext2fs_mount(part_length)) {
++				printf("** Bad ext2 partition or disk - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
++
++			ext2fs_close();
++		}
++		break;
++	case NAND_BOOT:
++		{
++			#if 0
++			struct mtd_device *dev_desc = NULL;
++			struct part_info *part = NULL;
++			struct mtd_partition mtd_part;
++			struct mtd_info *mtd_info;
++			char mtd_dev[16] = { 0 };
++			char mtd_buffer[80] = { 0 };
++			u8 pnum;
++			int err;
++			u8 read_test;
++
++			/* ========== ubi and mtd operations ========== */
++			if (mtdparts_init() != 0) {
++				printf("Error initializing mtdparts!\n");
++				return 0;
++			}
++
++			if (find_dev_and_part("nand", &dev_desc, &pnum, &part)) {
++				printf("Partition %s not found!\n", "nand");
++				return 0;
++			}
++			sprintf(mtd_dev, "%s%d",
++					MTD_DEV_TYPE(dev_desc->id->type),
++					dev_desc->id->num);
++			mtd_info = get_mtd_device_nm(mtd_dev);
++			if (IS_ERR(mtd_info)) {
++				printf("Partition %s not found on device %s!\n",
++					"nand", mtd_dev);
++				return 0;
++			}
++
++			sprintf(mtd_buffer, "mtd=%d", pnum);
++			memset(&mtd_part, 0, sizeof(mtd_part));
++			mtd_part.name = mtd_buffer;
++			mtd_part.size = part->size;
++			mtd_part.offset = part->offset;
++			add_mtd_partitions(&info, &mtd_part, 1);
++
++			err = ubi_mtd_param_parse(mtd_buffer, NULL);
++			if (err) {
++				del_mtd_partitions(&info);
++				return 0;
++			}
++
++			err = ubi_init();
++			if (err) {
++				del_mtd_partitions(&info);
++				return 0;
++			}
++
++			/* ========== ubifs operations ========== */
++			/* Init ubifs */
++			ubifs_init();
++
++			if (ubifs_mount(CONFIG_ANDROID_CACHE_PARTITION_NAND)) {
++				printf("Mount ubifs volume %s fail!\n",
++						CONFIG_ANDROID_CACHE_PARTITION_NAND);
++				return 0;
++			}
++
++			/* Try to read one byte for a read test. */
++			if (ubifs_load(CONFIG_ANDROID_RECOVERY_CMD_FILE,
++						&read_test, 1)) {
++				/* File not found */
++				filelen = 0;
++			} else
++				filelen = 1;
++		#endif
++		}
++		break;
++	case SPI_NOR_BOOT:
++		return 0;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		return 0;
++		break;
++	}
++
++	return (filelen > 0) ? 1 : 0;
++}
++#endif
++
++int board_late_init(void)
++{
++#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++	if (waiting_for_func_key_pressing())
++		switch_to_recovery_mode();
++	else {
++		if (check_recovery_cmd_file()) {
++			puts("Recovery command file founded!\n");
++			switch_to_recovery_mode();
++		}
++	}
+ #endif
+ 
+ 	return 0;
+@@ -582,6 +820,24 @@ int checkboard(void)
+ 		printf("unknown");
+ 	}
+ 	printf("]\n");
++
++	printf("Boot Device: ");
++	switch (get_boot_device()) {
++	case NAND_BOOT:
++		printf("NAND\n");
++		break;
++	case SPI_NOR_BOOT:
++		printf("SPI NOR\n");
++		break;
++	case MMC_BOOT:
++		printf("MMC\n");
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("UNKNOWN\n");
++		break;
++	}
++
+ 	return 0;
+ }
+ 
+@@ -687,7 +943,7 @@ int board_mmc_init(void)
+ #endif
+ 
+ #if defined(CONFIG_MXC_KPD)
+-int setup_mxc_kpd()
++int setup_mxc_kpd(void)
+ {
+ 	mxc_request_iomux(MX51_PIN_KEY_COL0, IOMUX_CONFIG_ALT0);
+ 	mxc_request_iomux(MX51_PIN_KEY_COL1, IOMUX_CONFIG_ALT0);
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 8ea4e2e..289e8c8 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -34,16 +34,74 @@
+ #include "board-imx51.h"
+ #include <asm/arch/imx_spi.h>
+ #include <asm/arch/imx_spi_pmic.h>
++
++#include <asm/errno.h>
++
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
+ #include <fsl_esdhc.h>
++#endif
+ 
++#ifdef CONFIG_FSL_ANDROID
+ #include <part.h>
+ #include <ext2fs.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <ubi_uboot.h>
++#include <jffs2/load_kernel.h>
++#endif
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
++static enum boot_device boot_dev;
+ u32	mx51_io_base_addr;
+ 
++static inline void setup_boot_device(void)
++{
++	uint *fis_addr = (uint *)IRAM_BASE_ADDR;
++
++	switch (*fis_addr) {
++	case NAND_FLASH_BOOT:
++		boot_dev = NAND_BOOT;
++		break;
++	case SPI_NOR_FLASH_BOOT:
++		boot_dev = SPI_NOR_BOOT;
++		break;
++	case MMC_FLASH_BOOT:
++		boot_dev = MMC_BOOT;
++		break;
++	default:
++		{
++			uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++			uint bt_mem_ctl = soc_sbmr & 0x00000003;
++			uint bt_mem_type = (soc_sbmr & 0x000000C0) >> 7;
++
++			switch (bt_mem_ctl) {
++			case 0x3:
++				if (bt_mem_type == 0)
++					boot_dev = MMC_BOOT;
++				else if (bt_mem_type == 3)
++					boot_dev = SPI_NOR_BOOT;
++				else
++					boot_dev = UNKNOWN_BOOT;
++				break;
++			case 0x1:
++				boot_dev = NAND_BOOT;
++				break;
++			default:
++				boot_dev = UNKNOWN_BOOT;
++			}
++		}
++		break;
++	}
++}
++
++enum boot_device get_boot_device(void)
++{
++	return boot_dev;
++}
++
+ u32 get_board_rev(void)
+ {
+ 	return system_rev;
+@@ -440,15 +498,14 @@ u32 *imx_esdhc_base_addr;
+ int esdhc_gpio_init(void)
+ {
+ 	u32 interface_esdhc = 0;
+-        s32 status = 0;
+-        u32 pad = 0;
++	s32 status = 0;
++	u32 pad = 0;
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
+ 
+-        interface_esdhc = (readl(SRC_BASE_ADDR + 0x4) & (0x00180000)) >> 19;
+-
+-	printf("interface_esdhc: %d\n", interface_esdhc);
++	interface_esdhc = (soc_sbmr & (0x00180000)) >> 19;
+ 
+ 	switch (interface_esdhc) {
+-        case 0:
++	case 0:
+ 		imx_esdhc_base_addr = (u32 *)MMC_SDHC1_BASE_ADDR;
+ 
+ 		pad = PAD_CTL_PUE_KEEPER | PAD_CTL_PKE_ENABLE | PAD_CTL_DRV_HIGH |
+@@ -524,7 +581,7 @@ int board_mmc_init(void)
+ #endif
+ 
+ #if defined(CONFIG_MXC_KPD)
+-int setup_mxc_kpd()
++int setup_mxc_kpd(void)
+ {
+ 	mxc_request_iomux(MX51_PIN_KEY_COL0, IOMUX_CONFIG_ALT0);
+ 	mxc_request_iomux(MX51_PIN_KEY_COL1, IOMUX_CONFIG_ALT0);
+@@ -543,6 +600,7 @@ int setup_mxc_kpd()
+ 
+ int board_init(void)
+ {
++	setup_boot_device();
+ 	setup_soc_rev();
+ 
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX51_BABBAGE;	/* board id for linux */
+@@ -557,17 +615,13 @@ int board_init(void)
+ }
+ 
+ #ifdef BOARD_LATE_INIT
+-int board_late_init(void)
+-{
+ #if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++inline int waiting_for_func_key_pressing(void)
++{
+ 	struct kpp_key_info key_info = {0, 0};
+ 	int switch_delay = CONFIG_ANDROID_BOOTMOD_DELAY;
+ 	int state = 0, boot_mode_switch = 0;
+-#endif
+-
+-	power_init();
+ 
+-#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
+ 	mxc_kpp_init();
+ 
+ 	puts("Press home + power to enter recovery mode ...\n");
+@@ -588,6 +642,7 @@ int board_late_init(void)
+ 						/* Press Home */
+ 						state = 1;
+ 					} else if (TEST_POWER_KEY_DEPRESS(key_info.val, key_info.evt)) {
++						/* Press Power */
+ 						state = 2;
+ 					} else {
+ 						state = 0;
+@@ -597,12 +652,14 @@ int board_late_init(void)
+ 					/* Home is already pressed, try to detect Power */
+ 					if (TEST_POWER_KEY_DEPRESS(key_info.val,
+ 						    key_info.evt)) {
++						/* Switch */
+ 						boot_mode_switch = 1;
+ 					} else {
+ 					    if (TEST_HOME_KEY_DEPRESS(key_info.val,
+-							key_info.evt))
+-						state = 1;
+-					    else
++							key_info.evt)) {
++						/* Not switch */
++						state = 2;
++					    } else
+ 						state = 0;
+ 					}
+ 					break;
+@@ -610,12 +667,14 @@ int board_late_init(void)
+ 					/* Power is already pressed, try to detect Home */
+ 					if (TEST_HOME_KEY_DEPRESS(key_info.val,
+ 						    key_info.evt)) {
++						/* Switch */
+ 						boot_mode_switch = 1;
+ 					} else {
+ 						if (TEST_POWER_KEY_DEPRESS(key_info.val,
+-							    key_info.evt))
+-							state = 2;
+-						else
++							    key_info.evt)) {
++							/* Not switch */
++							state = 1;
++						} else
+ 							state = 0;
+ 					}
+ 					break;
+@@ -623,79 +682,200 @@ int board_late_init(void)
+ 					break;
+ 				}
+ 
+-				if (1 == boot_mode_switch) {
+-					printf("Boot mode switched to recovery mode!\n");
+-					/* Set env to recovery mode */
+-					setenv("bootargs_android", CONFIG_ANDROID_RECOVERY_BOOTARGS);
+-					setenv("bootcmd_android", CONFIG_ANDROID_RECOVERY_BOOTCMD);
+-					setenv("bootcmd", "run bootcmd_android");
+-					break;
+-				}
++				if (1 == boot_mode_switch)
++					return 1;
+ 			}
+ 		}
+ 		for (i = 0; i < 100; ++i)
+ 			udelay(10000);
+ 	}
+ 
+-	/* Check CONFIG_ANDROID_RECOVERY_CMD_FILE to 
+-	judge if need to enter recovery mode */
+-	{
+-		char *cmd_file_patch;
+-		block_dev_desc_t *dev_desc = NULL;
+-		disk_partition_t info;
+-		ulong part_length;
+-		int filelen;
++	return 0;
++}
+ 
+-		cmd_file_patch = getenv("android_recovery_cmd_file");
+-		if (!cmd_file_patch)
+-			cmd_file_patch = CONFIG_ANDROID_RECOVERY_CMD_FILE;
++inline int switch_to_recovery_mode(void)
++{
++	printf("Boot mode switched to recovery mode!\n");
++
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++		/* Set env to recovery mode */
++		setenv("bootargs_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC);
++		setenv("bootcmd_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC);
++		setenv("bootcmd", "run bootcmd_android");
++		break;
++	case NAND_BOOT:
++		setenv("bootargs_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND);
++		setenv("bootcmd_android", \
++			CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND);
++		setenv("bootcmd", "run bootcmd_android");
++		break;
++	case SPI_NOR_BOOT:
++		printf("Recovery mode not supported in SPI NOR boot\n");
++		return -1;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("Unknown boot device!\n");
++		return -1;
++		break;
++	}
+ 
+-		dev_desc = get_dev("mmc", 0);
++	return 0;
++}
+ 
+-		if (dev_desc==NULL) {
+-			puts("** Block device MMC 0 not supported\n");
+-			return 1;
+-		}
++inline int check_recovery_cmd_file(void)
++{
++	disk_partition_t info;
++	ulong part_length;
++	int filelen;
+ 
+-		if (get_partition_info (dev_desc, 
+-				CONFIG_ANDROID_CACHE_PARTITION,
+-				&info)) {
+-			printf("** Bad partition %d **\n",
+-				CONFIG_ANDROID_CACHE_PARTITION);
+-			return 1;
+-		}
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++		{
++			block_dev_desc_t *dev_desc = NULL;
++			struct mmc *mmc = find_mmc_device(0);
+ 
+-		if ((part_length = \
+-			ext2fs_set_blk_dev(dev_desc, 
+-				CONFIG_ANDROID_CACHE_PARTITION)) == 0) {
+-			printf("** Bad partition - mmc 0:%d **\n",
+-				CONFIG_ANDROID_CACHE_PARTITION);
+-			ext2fs_close();
+-			return 1;
+-		}
++			dev_desc = get_dev("mmc", 0);
++
++			if (NULL == dev_desc) {
++				puts("** Block device MMC 0 not supported\n");
++				return 0;
++			}
++
++			mmc_init(mmc);
++
++			if (get_partition_info(dev_desc,
++					CONFIG_ANDROID_CACHE_PARTITION_MMC,
++					&info)) {
++				printf("** Bad partition %d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				return 0;
++			}
++
++			part_length = ext2fs_set_blk_dev(dev_desc,
++							CONFIG_ANDROID_CACHE_PARTITION_MMC);
++			if (part_length == 0) {
++				printf("** Bad partition - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			if (!ext2fs_mount(part_length)) {
++				printf("** Bad ext2 partition or disk - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
+ 
+-		if (!ext2fs_mount(part_length)) {
+-			printf ("** Bad ext2 partition or disk - mmc 0:%d **\n",
+-				CONFIG_ANDROID_CACHE_PARTITION);
+ 			ext2fs_close();
+-			return 1;
+ 		}
++		break;
++	case NAND_BOOT:
++		{
++			#if 0
++			struct mtd_device *dev_desc = NULL;
++			struct part_info *part = NULL;
++			struct mtd_partition mtd_part;
++			struct mtd_info *mtd_info;
++			char mtd_dev[16] = { 0 };
++			char mtd_buffer[80] = { 0 };
++			u8 pnum;
++			int err;
++			u8 read_test;
++
++			/* ========== ubi and mtd operations ========== */
++			if (mtdparts_init() != 0) {
++				printf("Error initializing mtdparts!\n");
++				return 0;
++			}
+ 
+-		filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
++			if (find_dev_and_part("nand", &dev_desc, &pnum, &part)) {
++				printf("Partition %s not found!\n", "nand");
++				return 0;
++			}
++			sprintf(mtd_dev, "%s%d",
++					MTD_DEV_TYPE(dev_desc->id->type),
++					dev_desc->id->num);
++			mtd_info = get_mtd_device_nm(mtd_dev);
++			if (IS_ERR(mtd_info)) {
++				printf("Partition %s not found on device %s!\n",
++					"nand", mtd_dev);
++				return 0;
++			}
+ 
+-		if (filelen > 0) {
+-			puts("Recovery command file founded, switch to recovery mode!\n");
+-			/* Set env to recovery mode */
+-			setenv("bootargs_android", CONFIG_ANDROID_RECOVERY_BOOTARGS);
+-			setenv("bootcmd_android", CONFIG_ANDROID_RECOVERY_BOOTCMD);
+-			setenv("bootcmd", "run bootcmd_android");
+-		} else {
+-			puts("Recovery command file not found, normal boot!\n");
++			sprintf(mtd_buffer, "mtd=%d", pnum);
++			memset(&mtd_part, 0, sizeof(mtd_part));
++			mtd_part.name = mtd_buffer;
++			mtd_part.size = part->size;
++			mtd_part.offset = part->offset;
++			add_mtd_partitions(&info, &mtd_part, 1);
++
++			err = ubi_mtd_param_parse(mtd_buffer, NULL);
++			if (err) {
++				del_mtd_partitions(&info);
++				return 0;
++			}
++
++			err = ubi_init();
++			if (err) {
++				del_mtd_partitions(&info);
++				return 0;
++			}
++
++			/* ========== ubifs operations ========== */
++			/* Init ubifs */
++			ubifs_init();
++
++			if (ubifs_mount(CONFIG_ANDROID_CACHE_PARTITION_NAND)) {
++				printf("Mount ubifs volume %s fail!\n",
++						CONFIG_ANDROID_CACHE_PARTITION_NAND);
++				return 0;
++			}
++
++			/* Try to read one byte for a read test. */
++			if (ubifs_load(CONFIG_ANDROID_RECOVERY_CMD_FILE,
++						&read_test, 1)) {
++				/* File not found */
++				filelen = 0;
++			} else
++				filelen = 1;
++		#endif
+ 		}
++		break;
++	case SPI_NOR_BOOT:
++		return 0;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		return 0;
++		break;
++	}
+ 
+-		ext2fs_close();
++	return (filelen > 0) ? 1 : 0;
++
++}
++#endif
++
++int board_late_init(void)
++{
++	power_init();
++
++#if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
++	if (waiting_for_func_key_pressing())
++		switch_to_recovery_mode();
++	else {
++		if (check_recovery_cmd_file()) {
++			puts("Recovery command file founded!\n");
++			switch_to_recovery_mode();
++		}
+ 	}
+-	
+ #endif
+ 
+ 	return 0;
+@@ -733,6 +913,23 @@ int checkboard(void)
+ 		printf("unknown");
+ 	}
+ 	printf("]\n");
++
++	printf("Boot Device: ");
++	switch (get_boot_device()) {
++	case NAND_BOOT:
++		printf("NAND\n");
++		break;
++	case SPI_NOR_BOOT:
++		printf("SPI NOR\n");
++		break;
++	case MMC_BOOT:
++		printf("MMC\n");
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("UNKNOWN\n");
++		break;
++	}
+ 	return 0;
+ }
+ 
+diff --git a/common/env_mmc.c b/common/env_mmc.c
+index 180f39c..5742db0 100644
+--- a/common/env_mmc.c
++++ b/common/env_mmc.c
+@@ -30,8 +30,6 @@
+ 
+ #include <common.h>
+ 
+-#if defined(CONFIG_ENV_IS_IN_MMC) /* Environment is in MMC Flash */
+-
+ #include <command.h>
+ #include <environment.h>
+ #include <linux/stddef.h>
+@@ -48,13 +46,8 @@
+ #error CONFIG_ENV_SIZE_REDUND should not be less then CONFIG_ENV_SIZE
+ #endif
+ 
+-#ifdef CONFIG_INFERNO
+-#error CONFIG_INFERNO not supported yet
+-#endif
+-
+ /* references to names in env_common.c */
+ extern uchar default_environment[];
+-extern int default_environment_size;
+ 
+ char *env_name_spec = "MMC";
+ 
+@@ -77,138 +70,54 @@ uchar env_get_char_spec(int index)
+ 	return *((uchar *)(gd->env_addr + index));
+ }
+ 
+-
+-/* this is called before nand_init()
+- * so we can't read Nand to validate env data.
+- * Mark it OK for now. env_relocate() in env_common.c
+- * will call our relocate function which will does
+- * the real validation.
+- *
+- * When using a NAND boot image (like sequoia_nand), the environment
+- * can be embedded or attached to the U-Boot image in NAND flash. This way
+- * the SPL loads not only the U-Boot image from NAND but also the
+- * environment.
+- */
+ int env_init(void)
+ {
+-#if defined(CONFIG_IS_EMBEDDED)
+-	size_t total;
+-	int crc1_ok = 0, crc2_ok = 0;
+-	env_t *tmp_env1, *tmp_env2;
+-
+-	total = CONFIG_ENV_SIZE;
+-
+-	tmp_env1 = env_ptr;
+-	tmp_env2 = (env_t *)((ulong)env_ptr + CONFIG_ENV_SIZE);
+-
+-	crc1_ok = (crc32(0, tmp_env1->data, ENV_SIZE) == tmp_env1->crc);
+-	crc2_ok = (crc32(0, tmp_env2->data, ENV_SIZE) == tmp_env2->crc);
+-
+-	if (!crc1_ok && !crc2_ok)
+-		gd->env_valid = 0;
+-	else if (crc1_ok && !crc2_ok)
+-		gd->env_valid = 1;
+-	else if (!crc1_ok && crc2_ok)
+-		gd->env_valid = 2;
+-	else {
+-		/* both ok - check serial */
+-		if (tmp_env1->flags == 255 && tmp_env2->flags == 0)
+-			gd->env_valid = 2;
+-		else if (tmp_env2->flags == 255 && tmp_env1->flags == 0)
+-			gd->env_valid = 1;
+-		else if (tmp_env1->flags > tmp_env2->flags)
+-			gd->env_valid = 1;
+-		else if (tmp_env2->flags > tmp_env1->flags)
+-			gd->env_valid = 2;
+-		else /* flags are equal - almost impossible */
+-			gd->env_valid = 1;
+-	}
+-
+-	if (gd->env_valid == 1)
+-		env_ptr = tmp_env1;
+-	else if (gd->env_valid == 2)
+-		env_ptr = tmp_env2;
+-
+-#else /* ENV_IS_EMBEDDED */
+-	gd->env_addr  = (ulong)&default_environment[0];
++	/* use default */
++	gd->env_addr = (ulong)&default_environment[0];
+ 	gd->env_valid = 1;
+ 
+-#endif /* ENV_IS_EMBEDDED */
+-
+ 	return 0;
+ }
+ 
+-#ifdef CMD_SAVEENV
+-/*
+- * The legacy NAND code saved the environment in the first NAND device i.e.,
+- * nand_dev_desc + 0. This is also the behaviour using the new NAND code.
+- */
+-#ifdef CONFIG_ENV_OFFSET_REDUND
+-int saveenv(void)
++inline int init_mmc_for_env(struct mmc *mmc)
+ {
+-	size_t total;
+-	uint blk_start = 0, blk_cnt = 0, n = 0;
+-	struct mmc *mmc = find_mmc_device(0);
+-
+-	env_ptr->flags++;
+-	total = CONFIG_ENV_SIZE;
+-
+ 	if (!mmc) {
+ 		puts("No MMC card found\n");
+-		return;
++		return -1;
+ 	}
+ 
+ 	if (mmc_init(mmc)) {
+ 		puts("MMC init failed\n");
+-		return 1;
++		return  -1;
+ 	}
+ 
+-	if (gd->env_valid == 1) {
+-		puts("Writing to redundant MMC... ");
+-		blk_start = (CONFIG_ENV_OFFSET_REDUND % 512) ? \
+-			((CONFIG_ENV_OFFSET_REDUND / 512) + 1) : (CONFIG_ENV_OFFSET_REDUND / 512);
+-		blk_cnt = (total % 512) ? ((total / 512) + 1) : (total / 512);
+-		n = mmc->block_dev.block_write(0, blk_start , blk_cnt, (u_char *)env_ptr);
+-	} else {
+-		puts("Writing to MMC... ");
+-		blk_start = (CONFIG_ENV_OFFSET % 512) ? \
+-			((CONFIG_ENV_OFFSET / 512) + 1) : (CONFIG_ENV_OFFSET / 512);
+-		blk_cnt = (total % 512) ? ((total / 512) + 1) : (total / 512);
+-		n = mmc->block_dev.block_write(0, blk_start , blk_cnt, (u_char *)env_ptr);
+-	}
+-	if ((n != blk_cnt) || (total != CONFIG_ENV_SIZE)) {
+-		puts("failed\n");
+-		return 1;
+-	}
+-
+-	puts("done\n");
+-	gd->env_valid = (gd->env_valid == 2 ? 1 : 2);
+ 	return 0;
+ }
+-#else /* ! CONFIG_ENV_OFFSET_REDUND */
+-int saveenv(void)
++
++#ifdef CMD_SAVEENV
++
++inline int write_env(struct mmc *mmc, unsigned long size,
++						unsigned long offset, const void *buffer)
+ {
+-	size_t total;
+ 	uint blk_start = 0, blk_cnt = 0, n = 0;
+-	struct mmc *mmc = find_mmc_device(0);
+ 
+-	if (!mmc) {
+-		puts("No MMC card found\n");
+-		return;
+-	}
++	blk_start = (offset % 512) ? ((offset / 512) + 1) : (offset / 512);
++	blk_cnt = (size % 512) ? ((size / 512) + 1) : (size / 512);
++	n = mmc->block_dev.block_write(0, blk_start , blk_cnt, (u_char *)buffer);
+ 
+-	if (mmc_init(mmc)) {
+-		puts("MMC init failed\n");
++	return (n == blk_cnt) ? 0 : -1;
++}
++
++int saveenv(void)
++{
++	struct mmc *mmc = find_mmc_device(0);
++
++	if (init_mmc_for_env(mmc))
+ 		return 1;
+-	}
+ 
+ 	puts("Writing to MMC... ");
+-	total = CONFIG_ENV_SIZE;
+-	blk_start = (CONFIG_ENV_OFFSET % 512) ? \
+-			((CONFIG_ENV_OFFSET / 512) + 1) : (CONFIG_ENV_OFFSET / 512);
+-	blk_cnt = (total % 512) ? ((total / 512) + 1) : (total / 512);
+-	n = mmc->block_dev.block_write(0, blk_start , blk_cnt, (u_char *)env_ptr);
+-	if ((n != blk_cnt) || (total != CONFIG_ENV_SIZE)) {
++	if (write_env(mmc, CONFIG_ENV_SIZE, \
++				CONFIG_ENV_OFFSET, env_ptr)) {
+ 		puts("failed\n");
+ 		return 1;
+ 	}
+@@ -216,172 +125,42 @@ int saveenv(void)
+ 	puts("done\n");
+ 	return 0;
+ }
+-#endif /* CONFIG_ENV_OFFSET_REDUND */
+ #endif /* CMD_SAVEENV */
+ 
+-#ifdef CONFIG_ENV_OFFSET_REDUND
+-void env_relocate_spec(void)
++inline int read_env(struct mmc *mmc, unsigned long size,
++						unsigned long offset, const void *buffer)
+ {
+-#if !defined(ENV_IS_EMBEDDED)
+-	size_t total;
+-	int crc1_ok = 0, crc2_ok = 0;
+-	env_t *tmp_env1 = NULL, *tmp_env2 = NULL;
+ 	uint blk_start = 0, blk_cnt = 0, n = 0;
+-	struct mmc *mmc = find_mmc_device(0);
+-
+-	if (!mmc) {
+-		puts("No MMC card found\n");
+-		return;
+-	}
+-
+-	if (mmc_init(mmc)) {
+-		puts("MMC init failed\n");
+-		goto use_default;
+-	}
+-
+-	total = CONFIG_ENV_SIZE;
+-
+-	tmp_env1 = (env_t *)malloc(CONFIG_ENV_SIZE);
+-	if (!tmp_env1) {
+-		puts("Not enough memory!\n");
+-		goto use_default;
+-	}
+-	memset(tmp_env1, 0, CONFIG_ENV_SIZE);
+-
+-	tmp_env2 = (env_t *)malloc(CONFIG_ENV_SIZE);
+-	if (!tmp_env2) {
+-		puts("Not enough memory!\n");
+-		goto use_default;
+-	}
+-	memset(tmp_env2, 0, CONFIG_ENV_SIZE);
+ 
+-	puts("Loading environment from mmc... ");
++	blk_start = (offset % 512) ? ((offset / 512) + 1) : (offset / 512);
++	blk_cnt = (size % 512) ? ((size / 512) + 1) : (size / 512);
+ 
+-	blk_start = (CONFIG_ENV_OFFSET % 512) ? \
+-			((CONFIG_ENV_OFFSET / 512) + 1) : (CONFIG_ENV_OFFSET / 512);
+-	blk_cnt = (total % 512) ? ((total / 512) + 1) : (total / 512);
++	n = mmc->block_dev.block_read(0, blk_start, blk_cnt, (uchar *)buffer);
+ 
+-	n = mmc->block_dev.block_read(0, blk_start, blk_cnt, (uchar *)tmp_env1);
+-	
+-	if (n != blk_cnt) {
+-		puts("failed\n");
+-		goto use_default;
+-	}
+-	puts("done\n");
+-
+-	puts("Loading redundant environment from mmc... ");
+-
+-	blk_start = (CONFIG_ENV_OFFSET_REDUND % 512) ? \
+-			((CONFIG_ENV_OFFSET_REDUND / 512) + 1) : (CONFIG_ENV_OFFSET_REDUND / 512);
+-	blk_cnt = (total % 512) ? ((total / 512) + 1) : (total / 512);
+-
+-	n = mmc->block_dev.block_read(0, blk_start, blk_cnt, (uchar *)tmp_env2);
+-
+-	if (n != blk_cnt) {
+-		puts("failed\n");
+-		goto use_default;
+-	}
+-	puts("done\n");
+-
+-	crc1_ok = (crc32(0, tmp_env1->data, ENV_SIZE) == tmp_env1->crc);
+-	crc2_ok = (crc32(0, tmp_env2->data, ENV_SIZE) == tmp_env2->crc);
+-
+-	if (!crc1_ok && !crc2_ok)
+-		goto use_default;
+-	else if (crc1_ok && !crc2_ok)
+-		gd->env_valid = 1;
+-	else if (!crc1_ok && crc2_ok)
+-		gd->env_valid = 2;
+-	else {
+-		/* both ok - check serial */
+-		if (tmp_env1->flags == 255 && tmp_env2->flags == 0)
+-			gd->env_valid = 2;
+-		else if (tmp_env2->flags == 255 && tmp_env1->flags == 0)
+-			gd->env_valid = 1;
+-		else if (tmp_env1->flags > tmp_env2->flags)
+-			gd->env_valid = 1;
+-		else if (tmp_env2->flags > tmp_env1->flags)
+-			gd->env_valid = 2;
+-		else /* flags are equal - almost impossible */
+-			gd->env_valid = 1;
+-	}
+-
+-	free(env_ptr);
+-	if (gd->env_valid == 1) {
+-		env_ptr = tmp_env1;
+-		free(tmp_env2);
+-	} else {
+-		env_ptr = tmp_env2;
+-		free(tmp_env1);
+-	}
+-
+-	return;
+-
+-use_default:
+-	if (tmp_env1)
+-		free(tmp_env1);
+-	if (tmp_env2)
+-		free(tmp_env2);
+-	return use_default();
+-
+-#endif /* ! ENV_IS_EMBEDDED */
++	return (n == blk_cnt) ? 0 : -1;
+ }
+-#else /* ! CONFIG_ENV_OFFSET_REDUND */
+-/*
+- * The legacy NAND code saved the environment in the first NAND device i.e.,
+- * nand_dev_desc + 0. This is also the behaviour using the new NAND code.
+- */
++
+ void env_relocate_spec(void)
+ {
+ #if !defined(ENV_IS_EMBEDDED)
+-	size_t total;
+-	uint blk_start = 0, blk_cnt = 0, n = 0;
+ 	struct mmc *mmc = find_mmc_device(0);
+ 
+-	if (!mmc) {
+-		puts("No MMC card found\n");
+-		return;	
+-	}
+-
+-	if (mmc_init(mmc)) {
+-		puts("MMC init failed\n");
++	if (init_mmc_for_env(mmc))
+ 		return;
+-	}
+-
+-	total = CONFIG_ENV_SIZE;
+ 
+-	blk_start = (CONFIG_ENV_OFFSET % 512) ? \
+-			((CONFIG_ENV_OFFSET / 512) + 1) : (CONFIG_ENV_OFFSET / 512);
+-	blk_cnt = (total % 512) ? ((total / 512) + 1) : (total / 512);
+-
+-	n = mmc->block_dev.block_read(0, blk_start, blk_cnt, (uchar *)env_ptr);
+-	
+-	if ((n != blk_cnt) || (total != CONFIG_ENV_SIZE))
++	if (read_env(mmc, CONFIG_ENV_SIZE, CONFIG_ENV_OFFSET, env_ptr))
+ 		return use_default();
+ 
+ 	if (crc32(0, env_ptr->data, ENV_SIZE) != env_ptr->crc)
+ 		return use_default();
+ #endif /* ! ENV_IS_EMBEDDED */
+ }
+-#endif /* CONFIG_ENV_OFFSET_REDUND */
+ 
+ #if !defined(ENV_IS_EMBEDDED)
+ static void use_default()
+ {
+-	puts("*** Warning - bad CRC or MMC Card, using default environment\n\n");
+-
+-	if (default_environment_size > CONFIG_ENV_SIZE) {
+-		puts("*** Error - default environment is too large\n\n");
+-		return;
+-	}
+-
+-	memset(env_ptr, 0, sizeof(env_t));
+-	memcpy(env_ptr->data,
+-		default_environment,
+-		default_environment_size);
+-	env_ptr->crc = crc32(0, env_ptr->data, ENV_SIZE);
+-	gd->env_valid = 1;
++	puts ("*** Warning - bad CRC or MMC, using default environment\n\n");
++	set_default_env();
+ }
+ #endif
+ 
+-#endif /* CONFIG_ENV_IS_IN_MMC */
+diff --git a/disk/part.c b/disk/part.c
+index b92fb45..139a923 100644
+--- a/disk/part.c
++++ b/disk/part.c
+@@ -51,6 +51,9 @@ static const struct block_drvr block_drvr[] = {
+ #if defined(CONFIG_CMD_IDE)
+ 	{ .name = "ide", .get_dev = ide_get_dev, },
+ #endif
++#if defined(CONFIG_CMD_PATA)
++	{ .name = "pata", .get_dev = pata_get_dev, },
++#endif
+ #if defined(CONFIG_CMD_SATA)
+ 	{.name = "sata", .get_dev = sata_get_dev, },
+ #endif
+@@ -95,6 +98,7 @@ block_dev_desc_t *get_dev(char* ifname, int dev)
+ #endif
+ 
+ #if (defined(CONFIG_CMD_IDE) || \
++	defined(CONFIG_CMD_PATA) || \
+      defined(CONFIG_CMD_MG_DISK) || \
+      defined(CONFIG_CMD_SATA) || \
+      defined(CONFIG_CMD_SCSI) || \
+@@ -213,6 +217,7 @@ void dev_print (block_dev_desc_t *dev_desc)
+ #endif
+ 
+ #if (defined(CONFIG_CMD_IDE) || \
++	defined(CONFIG_CMD_PATA) || \
+      defined(CONFIG_CMD_MG_DISK) || \
+      defined(CONFIG_CMD_SATA) || \
+      defined(CONFIG_CMD_SCSI) || \
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index 776bb1f..6181fca 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -1,4 +1,7 @@
+ /*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * Terry Lv
++ *
+  * Copyright 2007, Freescale Semiconductor, Inc
+  * Andy Fleming
+  *
+@@ -28,13 +31,10 @@
+ #include <config.h>
+ #include <common.h>
+ #include <command.h>
+-#include <hwconfig.h>
+ #include <mmc.h>
+-#include <part.h>
+ #include <malloc.h>
+ #include <mmc.h>
+ #include <fsl_esdhc.h>
+-#include <fdt_support.h>
+ #include <asm/io.h>
+ 
+ 
+@@ -367,10 +367,10 @@ static int esdhc_init(struct mmc *mmc)
+ 	set_sysctl(mmc, 400000);
+ 
+ 	/* Put the PROCTL reg back to the default */
+-	writel(PROCTL_INIT | PROCTL_D3CD, &regs->proctl);
++	writel(PROCTL_INIT, &regs->proctl);
+ 
+ 	/* FIXME: For our CINS bit doesn't work. So this section is disabled. */
+-
++	/*
+ 	while (!(readl(&regs->prsstat) & PRSSTAT_CINS) && --timeout)
+ 		mdelay(1);
+ 
+@@ -378,7 +378,7 @@ static int esdhc_init(struct mmc *mmc)
+ 		printf("No MMC card detected!\n");
+ 		return NO_CARD_ERR;
+ 	}
+-
++	*/
+ 
+ 	set_sysctl(mmc, 400000);
+ 
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index dcc9548..f8510b2 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1,4 +1,7 @@
+ /*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * Terry Lv
++ *
+  * Copyright 2008, Freescale Semiconductor, Inc
+  * Andy Fleming
+  *
+@@ -864,6 +867,22 @@ int mmc_register(struct mmc *mmc)
+ 	mmc->block_dev.removable = 1;
+ 	mmc->block_dev.block_read = mmc_bread;
+ 	mmc->block_dev.block_write = mmc_bwrite;
++#if defined(CONFIG_DOS_PARTITION)
++	mmc->block_dev.part_type = PART_TYPE_DOS;
++	mmc->block_dev.type = DEV_TYPE_HARDDISK;
++#elif defined(CONFIG_MAC_PARTITION)
++	mmc->block_dev.part_type = PART_TYPE_MAC;
++	mmc->block_dev.type = DEV_TYPE_HARDDISK;
++#elif defined(CONFIG_ISO_PARTITION)
++	mmc->block_dev.part_type = PART_TYPE_ISO;
++	mmc->block_dev.type = DEV_TYPE_HARDDISK;
++#elif defined(CONFIG_AMIGA_PARTITION)
++	mmc->block_dev.part_type = PART_TYPE_AMIGA;
++	mmc->block_dev.type = DEV_TYPE_HARDDISK;
++#elif defined(CONFIG_EFI_PARTITION)
++	mmc->block_dev.part_type = PART_TYPE_EFI;
++	mmc->block_dev.type = DEV_TYPE_HARDDISK;
++#endif
+ 
+ 	INIT_LIST_HEAD (&mmc->link);
+ 
+diff --git a/include/asm-arm/arch-mx51/keypad.h b/include/asm-arm/arch-mx51/keypad.h
+index 23ae4fe..40bd908 100644
+--- a/include/asm-arm/arch-mx51/keypad.h
++++ b/include/asm-arm/arch-mx51/keypad.h
+@@ -54,7 +54,7 @@
+ 
+ #if defined(CONFIG_MX51_BBG)
+ #define TEST_HOME_KEY_DEPRESS(k, e)  (((k) == (KEY_F1)) && (((e) == (KDepress))))
+-#define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_RIGHT)) && (((e) == (KDepress))))
++#define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_ENTER)) && (((e) == (KDepress))))
+ #elif defined(CONFIG_MX51_3DS)
+ #define TEST_HOME_KEY_DEPRESS(k, e)  (((k) == (KEY_MENU)) && (((e) == (KDepress))))
+ #define TEST_POWER_KEY_DEPRESS(k, e) (((k) == (KEY_F2)) && (((e) == (KDepress))))
+diff --git a/include/asm-arm/arch-mx51/mx51.h b/include/asm-arm/arch-mx51/mx51.h
+index ec6e60c..19097b9 100644
+--- a/include/asm-arm/arch-mx51/mx51.h
++++ b/include/asm-arm/arch-mx51/mx51.h
+@@ -399,8 +399,19 @@
+ #define BOARD_REV_1_0           0x0
+ #define BOARD_REV_2_0           0x1
+ 
++#define NAND_FLASH_BOOT		0x10000000
++#define SPI_NOR_FLASH_BOOT	0x80000000
++#define MMC_FLASH_BOOT		0x40000000
++
+ #ifndef __ASSEMBLER__
+ 
++enum boot_device {
++	UNKNOWN_BOOT,
++	NAND_BOOT,
++	SPI_NOR_BOOT,
++	MMC_BOOT,
++};
++
+ enum mxc_clock {
+ MXC_ARM_CLK = 0,
+ MXC_AHB_CLK,
+@@ -440,6 +451,7 @@ enum mxc_peri_clocks {
+ extern unsigned int mxc_get_clock(enum mxc_clock clk);
+ extern unsigned int get_board_rev(void);
+ extern int is_soc_rev(int rev);
++extern enum boot_device get_boot_device();
+ 
+ #endif /* __ASSEMBLER__*/
+ 
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index 2943479..8272cbe 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -104,7 +104,6 @@
+ /*
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+-	#define CONFIG_MMC_BASE		0x0
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+ 	#define CONFIG_DOS_PARTITION	1
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index e1d5d75..27b45c8 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -185,7 +185,6 @@
+  * */
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+-	#define CONFIG_MMC_BASE		0x0
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+ 	#define CONFIG_DOS_PARTITION	1
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 2714857..794ae83 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -83,10 +83,8 @@
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
+ /* Enable below configure when supporting nand */
+-/*
+ #define CONFIG_CMD_NAND
+ #define CONFIG_MXC_NAND
+-*/
+ #define CONFIG_CMD_ENV
+ #define CMD_SAVEENV
+ #undef CONFIG_CMD_IMLS
+@@ -100,7 +98,6 @@
+  */
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+-	#define CONFIG_MMC_BASE		0x0
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+ 	#define CONFIG_DOS_PARTITION	1
+@@ -117,17 +114,6 @@
+ #define CONFIG_SYS_I2C_SPEED            400000
+ #define CONFIG_SYS_I2C_SLAVE            0xfe
+ 
+-/*
+- * PATA Configs
+- */
+-#define CONFIG_CMD_PATA
+-#define CONFIG_CMD_EXT2
+-#define CONFIG_MXC_ATA
+-#define CONFIG_LIBATA
+-#define CONFIG_LBA48
+-#define CONFIG_SYS_ATA_MAX_DEVICE	1
+-#define CONFIG_SYS_ATA_BASE_ADDR	ATA_BASE_ADDR
+-
+ #define CONFIG_BOOTDELAY	3
+ 
+ #define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
+@@ -223,7 +209,6 @@
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_NAND
+ /* #define CONFIG_FSL_ENV_IN_NAND */
+-/* #define CONFIG_FSL_ENV_IN_MMC */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE		CONFIG_ENV_SECT_SIZE
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index a4c1004..a875dcb 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -89,6 +89,7 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++/* #define CONFIG_CMD_UBIFS */
+ 
+ /*
+  * Android support Configs
+@@ -108,11 +109,14 @@
+ #define CONFIG_MXC_KPD_COLMAX 6
+ #define CONFIG_MXC_KPD_ROWMAX 4
+ #define CONFIG_ANDROID_NORMAL_BOOTARGS "ip=dhcp mem=480M init=/init wvga calibration"
+-#define CONFIG_ANDROID_RECOVERY_BOOTARGS "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
+-#define CONFIG_ANDROID_RECOVERY_BOOTCMD  "run bootargs_base bootargs_android;mmcinit;cp.b 0x100000 ${loadaddr} 0x250000;bootm"
+-#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/cache/recovery/command"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  "run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND "setenv bootargs ${bootargs} root=/dev/mtdblock2 ip=dhcp init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND  "run bootargs_base bootargs_android;nand read ${loadaddr} 0x300000 0x250000;bootm"
++#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ #define CONFIG_ANDROID_BOOTMOD_DELAY 3
+-#define CONFIG_ANDROID_CACHE_PARTITION 4
++#define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
++#define CONFIG_ANDROID_CACHE_PARTITION_NAND 2
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+@@ -178,11 +182,11 @@
+  * */
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+-	#define CONFIG_MMC_BASE		0x0
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index dd4727d..1634e0e 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -136,7 +136,6 @@
+  * */
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+-	#define CONFIG_MMC_BASE		0x0
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+ 	#define CONFIG_DOS_PARTITION	1
+@@ -247,8 +246,8 @@
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ 
+ /* Monitor at beginning of flash */
+-/* #define CONFIG_FSL_ENV_IN_SF */
+-#define CONFIG_FSL_ENV_IN_MMC
++#define CONFIG_FSL_ENV_IN_SF
++/* #define CONFIG_FSL_ENV_IN_MMC */
+ /* #define CONFIG_FSL_ENV_IN_NAND */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+@@ -262,7 +261,6 @@
+ 	#define CONFIG_ENV_OFFSET	(768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+-	#define CONFIG_ENV_IS_EMBEDDED	1
+ 	#define CONFIG_ENV_SPI_CS		1
+ 	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #else
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index d49e039..14a9ce3 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -73,6 +73,10 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++/*
++#define CONFIG_CMD_UBI
++#define CONFIG_CMD_UBIFS
++*/
+ 
+ /*
+  * Android support Configs
+@@ -81,6 +85,10 @@
+ 
+ #define CONFIG_FSL_ANDROID
+ 
++#define CONFIG_MTD_DEVICE
++#define CONFIG_MTD_PARTITIONS
++
++
+ #define CONFIG_MXC_KPD
+ #define CONFIG_MXC_KEYMAPPING \
+ 	{	\
+@@ -96,14 +104,17 @@
+ 		KEY_LEFT,      KEY_1,        KEY_ , KEY_8,  KEY_9,   KEY_RIGHT,
+ 	}
+ 	*/
+-#define CONFIG_MXC_KPD_COLMAX 4
++#define CONFIG_MXC_KPD_COLMAX 6
+ #define CONFIG_MXC_KPD_ROWMAX 4
+ #define CONFIG_ANDROID_NORMAL_BOOTARGS "ip=dhcp mem=480M init=/init wvga calibration"
+-#define CONFIG_ANDROID_RECOVERY_BOOTARGS "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
+-#define CONFIG_ANDROID_RECOVERY_BOOTCMD  "run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
+-#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/cache/recovery/command"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  "run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND "setenv bootargs ${bootargs} root=/dev/mtdblock2 ip=dhcp init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND  "run bootargs_base bootargs_android;nand read ${loadaddr} 0x300000 0x250000;bootm"
++#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ #define CONFIG_ANDROID_BOOTMOD_DELAY 3
+-#define CONFIG_ANDROID_CACHE_PARTITION 4
++#define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
++#define CONFIG_ANDROID_CACHE_PARTITION_NAND "cache"
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+@@ -233,7 +244,6 @@
+  * */
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+-	#define CONFIG_MMC_BASE		0x0
+ 	#define CONFIG_GENERIC_MMC
+ 	#define CONFIG_IMX_MMC
+ 	#define CONFIG_DOS_PARTITION	1
+diff --git a/include/environment.h b/include/environment.h
+index 4d13437..e0759ae 100644
+--- a/include/environment.h
++++ b/include/environment.h
+@@ -97,17 +97,14 @@
+ #endif /* CONFIG_ENV_IS_IN_MG_DISK */
+ 
+ #if defined(CONFIG_ENV_IS_IN_MMC)
+-#ifndef CONFIG_MMC_BASE
+-# error "Need to define CONFIG_MMC_BASE when using CONFIG_ENV_IS_IN_MMC"
+-#endif
+ # ifndef CONFIG_ENV_OFFSET
+ #  error "Need to define CONFIG_ENV_OFFSET when using CONFIG_ENV_IS_IN_MMC"
+ # endif
+ # ifndef CONFIG_ENV_ADDR
+-#  define CONFIG_ENV_ADDR	(CONFIG_MMC_BASE + CONFIG_ENV_OFFSET)
++#  define CONFIG_ENV_ADDR	(CONFIG_ENV_OFFSET)
+ # endif
+ # ifndef CONFIG_ENV_OFFSET
+-#  define CONFIG_ENV_OFFSET (CONFIG_ENV_ADDR - CONFIG_MMC_BASE)
++#  define CONFIG_ENV_OFFSET (CONFIG_ENV_ADDR)
+ # endif
+ # ifdef CONFIG_ENV_OFFSET_REDUND
+ #  define CONFIG_SYS_REDUNDAND_ENVIRONMENT
+-- 
+1.5.4.4
+

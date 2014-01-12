@@ -1,0 +1,132 @@
+From 40dfcef2efa17bebbd70a511530e19f3625860d1 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 21 Dec 2010 16:22:47 +0800
+Subject: [PATCH] ENGR00137221 MXC V4L2:Show streaming/overlay status via sys fs
+
+1)Capture: show streaming and overlay status via sys fs.
+2)Output: show streaming status via sys fs.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.c |   43 ++++++++++++++++++++
+ drivers/media/video/mxc/output/mxc_v4l2_output.c   |   22 ++++++++++
+ 2 files changed, 65 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+index 8133d20..e2f82a9 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+@@ -2483,6 +2483,34 @@ static u8 camera_power(cam_data *cam, bool cameraOn)
+ 	return 0;
+ }
+ 
++static ssize_t show_streaming(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct video_device *video_dev = container_of(dev,
++						struct video_device, dev);
++	cam_data *g_cam = video_get_drvdata(video_dev);
++
++	if (g_cam->capture_on)
++		return sprintf(buf, "stream on\n");
++	else
++		return sprintf(buf, "stream off\n");
++}
++static DEVICE_ATTR(fsl_v4l2_capture_property, S_IRUGO, show_streaming, NULL);
++
++static ssize_t show_overlay(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct video_device *video_dev = container_of(dev,
++						struct video_device, dev);
++	cam_data *g_cam = video_get_drvdata(video_dev);
++
++	if (g_cam->overlay_on)
++		return sprintf(buf, "overlay on\n");
++	else
++		return sprintf(buf, "overlay off\n");
++}
++static DEVICE_ATTR(fsl_v4l2_overlay_property, S_IRUGO, show_overlay, NULL);
++
+ /*!
+  * This function is called to probe the devices if registered.
+  *
+@@ -2518,6 +2546,16 @@ static int mxc_v4l2_probe(struct platform_device *pdev)
+ 	pr_debug("   Video device registered: %s #%d\n",
+ 		 g_cam->video_dev->name, g_cam->video_dev->minor);
+ 
++	if (device_create_file(&g_cam->video_dev->dev,
++			&dev_attr_fsl_v4l2_capture_property))
++		dev_err(&pdev->dev, "Error on creating sysfs file"
++			" for capture\n");
++
++	if (device_create_file(&g_cam->video_dev->dev,
++			&dev_attr_fsl_v4l2_overlay_property))
++		dev_err(&pdev->dev, "Error on creating sysfs file"
++			" for overlay\n");
++
+ 	return 0;
+ }
+ 
+@@ -2537,6 +2575,11 @@ static int mxc_v4l2_remove(struct platform_device *pdev)
+ 			"-- setting ops to NULL\n");
+ 		return -EBUSY;
+ 	} else {
++		device_remove_file(&g_cam->video_dev->dev,
++			&dev_attr_fsl_v4l2_capture_property);
++		device_remove_file(&g_cam->video_dev->dev,
++			&dev_attr_fsl_v4l2_overlay_property);
++
+ 		pr_info("V4L2 freeing image input device\n");
+ 		v4l2_int_device_unregister(&mxc_v4l2_int_device);
+ 		video_unregister_device(g_cam->video_dev);
+diff --git a/drivers/media/video/mxc/output/mxc_v4l2_output.c b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+index fa2b2d7..e4f788b 100644
+--- a/drivers/media/video/mxc/output/mxc_v4l2_output.c
++++ b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+@@ -2630,6 +2630,22 @@ static struct video_device mxc_v4l2out_template = {
+ 	.release = video_device_release,
+ };
+ 
++static ssize_t show_streaming(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct video_device *video_dev = container_of(dev,
++						struct video_device, dev);
++	vout_data *vout = video_get_drvdata(video_dev);
++
++	if (vout->state == STATE_STREAM_OFF)
++		return sprintf(buf, "stream off\n");
++	else if (vout->state == STATE_STREAM_PAUSED)
++		return sprintf(buf, "stream paused\n");
++	else
++		return sprintf(buf, "stream on\n");
++}
++static DEVICE_ATTR(fsl_v4l2_output_property, S_IRUGO, show_streaming, NULL);
++
+ /*!
+  * Probe routine for the framebuffer driver. It is called during the
+  * driver binding process.      The following functions are performed in
+@@ -2705,6 +2721,10 @@ static int mxc_v4l2out_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, vout);
+ 
++	if (device_create_file(&vout->video_dev->dev,
++			&dev_attr_fsl_v4l2_output_property))
++		dev_err(&pdev->dev, "Error on creating file\n");
++
+ 	return 0;
+ }
+ 
+@@ -2713,6 +2733,8 @@ static int mxc_v4l2out_remove(struct platform_device *pdev)
+ 	vout_data *vout = platform_get_drvdata(pdev);
+ 
+ 	if (vout->video_dev) {
++		device_remove_file(&vout->video_dev->dev,
++			&dev_attr_fsl_v4l2_output_property);
+ 		video_unregister_device(vout->video_dev);
+ 		vout->video_dev = NULL;
+ 	}
+-- 
+1.5.4.4
+

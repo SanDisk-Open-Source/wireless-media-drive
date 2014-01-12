@@ -1,0 +1,70 @@
+From 2d6150b0d95259c12877d82ac7f18d4d35b6b371 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 29 Dec 2009 15:26:47 +0800
+Subject: [PATCH] ENGR00119715: Add multi network support for mx35
+
+mx35 need to enable both smc911x and FEC.
+So add CONFIG_ETHPRIME for it.
+Also, change CONFIG_ETH_PRIME to CONFIG_ETHPRIME.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx25_3stack.h     |    2 +-
+ include/configs/mx35_3stack.h     |    1 +
+ include/configs/mx35_3stack_mmc.h |    1 +
+ net/eth.c                         |    2 +-
+ 4 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index 5084fd8..e1a35f6 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -147,7 +147,7 @@
+ #define CONFIG_NET_RETRY_COUNT	100
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_NET_MULTI
+-#define CONFIG_ETH_PRIME
++#define CONFIG_ETHPRIME
+ 
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index b2fb714..21e5acf 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -122,6 +122,7 @@
+ 
+ #define CONFIG_HAS_ETH1
+ #define CONFIG_NET_MULTI 1
++#define CONFIG_ETHPRIME
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_DISCOVER_PHY
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index 948bc91..9a1dd70 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -123,6 +123,7 @@
+ 
+ #define CONFIG_HAS_ETH1
+ #define CONFIG_NET_MULTI 1
++#define CONFIG_ETHPRIME
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_DISCOVER_PHY
+diff --git a/net/eth.c b/net/eth.c
+index b72a4e8..7e4b187 100644
+--- a/net/eth.c
++++ b/net/eth.c
+@@ -201,7 +201,7 @@ int eth_initialize(bd_t *bis)
+ #endif
+ 	/* Try board-specific initialization first.  If it fails or isn't
+ 	 * present, try the cpu-specific initialization */
+-#ifdef CONFIG_ETH_PRIME
++#ifdef CONFIG_ETHPRIME
+ 	board_eth_init(bis);
+ 	cpu_eth_init(bis);
+ #else
+-- 
+1.5.4.4
+

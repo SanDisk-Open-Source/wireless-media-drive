@@ -1,0 +1,354 @@
+From b9a364b4e54d255cf5e4f9e6a98dcbf980aad2bf Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 16 Dec 2010 12:47:09 +0800
+Subject: [PATCH] ENGR00137628 MX5: add busfreq platform data
+
+Add platform data for MX5 bus frequency driver.
+Update regulator name for DA9053 PMIC. Otherwise,
+the system is broken to enter suspend
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c              |   13 +++++++++----
+ arch/arm/mach-mx5/mx50_arm2.c             |    9 +++++++--
+ arch/arm/mach-mx5/mx50_rdp.c              |    9 +++++++--
+ arch/arm/mach-mx5/mx51_3stack.c           |    9 +++++++--
+ arch/arm/mach-mx5/mx51_babbage.c          |    9 +++++++--
+ arch/arm/mach-mx5/mx53_ard.c              |    7 ++++++-
+ arch/arm/mach-mx5/mx53_evk.c              |    8 ++++++--
+ arch/arm/mach-mx5/mx53_loco.c             |   11 ++++++++---
+ arch/arm/mach-mx5/mx53_smd.c              |   11 ++++++++---
+ arch/arm/plat-mxc/include/mach/mxc_dvfs.h |   13 ++++++++++++-
+ 10 files changed, 77 insertions(+), 22 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index a2ef479..0358c86 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -95,8 +95,8 @@ int high_bus_freq_mode;
+ int med_bus_freq_mode;
+ 
+ int bus_freq_scaling_initialized;
+-char *gp_reg_id = "SW1";
+-char *lp_reg_id = "SW2";
++char *gp_reg_id;
++char *lp_reg_id;
+ 
+ static struct cpu_wp *cpu_wp_tbl;
+ static struct device *busfreq_dev;
+@@ -811,6 +811,11 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 	int err = 0;
+ 	unsigned long pll2_rate, pll1_rate;
+ 	unsigned long iram_paddr;
++	struct mxc_bus_freq_platform_data *p_bus_freq_data;
++
++	p_bus_freq_data = pdev->dev.platform_data;
++	gp_reg_id = p_bus_freq_data->gp_reg_id;
++	lp_reg_id = p_bus_freq_data->lp_reg_id;
+ 
+ 	pll1_base = ioremap(MX53_BASE_ADDR(PLL1_BASE_ADDR), SZ_4K);
+ 	if (cpu_is_mx53())
+@@ -983,7 +988,7 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 		change_ddr_freq = (void *)ddr_freq_change_iram_base;
+ 		cur_ddr_rate = ddr_normal_rate;
+ 
+-		lp_regulator = regulator_get(NULL, "SW2");
++		lp_regulator = regulator_get(NULL, lp_reg_id);
+ 		if (IS_ERR(lp_regulator)) {
+ 			printk(KERN_DEBUG
+ 			"%s: failed to get lp regulator\n", __func__);
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index e673838..f5540b2 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -301,6 +301,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 2,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "SW1",
++	.lp_reg_id = "SW2",
++};
++
+ /* working point(wp): 0 - 800MHz; 1 - 166.25MHz; */
+ static struct cpu_wp cpu_wp_auto[] = {
+ 	{
+@@ -1184,7 +1189,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
+ 	mxc_register_device(&mxc_pxp_v4l2, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 
+ 	/*
+ 	mxc_register_device(&mx53_lpmode_device, NULL);
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 4d7eaab..4d23841 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -375,6 +375,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 2,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "SW1",
++	.lp_reg_id = "SW2",
++};
++
+ /* working point(wp): 0 - 800MHz; 1 - 166.25MHz; */
+ static struct cpu_wp cpu_wp_auto[] = {
+ 	{
+@@ -1397,7 +1402,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
+ 	mxc_register_device(&mxc_pxp_v4l2, NULL);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 	mxc_register_device(&pm_device, &mx50_pm_data);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index afc5cce..f14b79e 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -301,6 +301,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 3,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "SW1",
++	.lp_reg_id = "SW2",
++};
++
+ static struct mxc_dvfsper_data dvfs_per_data = {
+ 	.reg_id = "SW2",
+ 	.clk_id = "gpc_dvfs_clk",
+@@ -975,7 +980,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpu_device, NULL);
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 	mxc_register_device(&mx51_lpmode_device, NULL);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 	mxc_register_device(&sdram_autogating_device, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index a645716..64506a3 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -471,6 +471,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 3,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "SW1",
++	.lp_reg_id = "SW2",
++};
++
+ static struct mxc_dvfsper_data dvfs_per_data = {
+ 	.reg_id = "SW2",
+ 	.clk_id = "gpc_dvfs_clk",
+@@ -1236,7 +1241,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpu_device, NULL);
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 	mxc_register_device(&mx51_lpmode_device, NULL);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 	mxc_register_device(&sdram_autogating_device, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index eaf0f4d..f869006 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -625,6 +625,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 3,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "SW1",
++	.lp_reg_id = "SW2",
++};
++
+ static struct ldb_platform_data ldb_data = {
+ 	.ext_ref = 1,
+ };
+@@ -1312,7 +1317,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 
+ 	mxc_register_device(&mxc_iim_device, &iim_data);
+ 
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index f9d7440..81b4221 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -762,6 +762,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 3,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "SW1",
++	.lp_reg_id = "SW2",
++};
++
+ static struct tve_platform_data tve_data = {
+ 	.dac_reg = "VVIDEO",
+ };
+@@ -1590,11 +1595,10 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 	/*
+ 	mxc_register_device(&mx53_lpmode_device, NULL);
+-	mxc_register_device(&busfreq_device, NULL);
+ 	mxc_register_device(&sdram_autogating_device, NULL);
+ 	*/
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 
+ 	/*
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 673b88f..deff9bb 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -438,7 +438,7 @@ static struct mxc_srtc_platform_data srtc_data = {
+ };
+ 
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+-	.reg_id = "SW1",
++	.reg_id = "DA9052_BUCK_CORE",
+ 	.clk1_id = "cpu_clk",
+ 	.clk2_id = "gpc_dvfs_clk",
+ 	.gpc_cntr_offset = MXC_GPC_CNTR_OFFSET,
+@@ -462,8 +462,13 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 3,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "DA9052_BUCK_CORE",
++	.lp_reg_id = "DA9052_BUCK_PRO",
++};
++
+ static struct tve_platform_data tve_data = {
+-	.dac_reg = "VVIDEO",
++	.dac_reg = "DA9052_LDO7",
+ };
+ 
+ static struct ldb_platform_data ldb_data = {
+@@ -855,7 +860,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 	mxc_register_device(&mxc_iim_device, &iim_data);
+ 	mxc_register_device(&mxc_pwm2_device, NULL);
+ 	mxc_register_device(&mxc_pwm1_backlight_device, &mxc_pwm_backlight_data);
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 9d5ed6c..8e518ef 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -619,7 +619,7 @@ static struct mxc_srtc_platform_data srtc_data = {
+ };
+ 
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+-	.reg_id = "SW1",
++	.reg_id = "DA9052_BUCK_CORE",
+ 	.clk1_id = "cpu_clk",
+ 	.clk2_id = "gpc_dvfs_clk",
+ 	.gpc_cntr_offset = MXC_GPC_CNTR_OFFSET,
+@@ -643,8 +643,13 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.num_wp = 3,
+ };
+ 
++static struct mxc_bus_freq_platform_data bus_freq_data = {
++	.gp_reg_id = "DA9052_BUCK_CORE",
++	.lp_reg_id = "DA9052_BUCK_PRO",
++};
++
+ static struct tve_platform_data tve_data = {
+-	.dac_reg = "VVIDEO",
++	.dac_reg = "",
+ };
+ 
+ static struct ldb_platform_data ldb_data = {
+@@ -1116,7 +1121,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxcscc_device, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+-	mxc_register_device(&busfreq_device, NULL);
++	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 	mxc_register_device(&mxc_iim_device, &iim_data);
+ 	mxc_register_device(&mxc_pwm2_device, NULL);
+ 	mxc_register_device(&mxc_pwm1_backlight_device, &mxc_pwm_backlight_data);
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_dvfs.h b/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
+index 05c6ea4..35aefaa 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
++++ b/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -226,6 +226,17 @@ struct mxc_dvfsper_data {
+ 	u32 lp_low;
+ };
+ 
++/*!
++ * This structure is used to define the platform data of bus freq
++ * driver. It includes the regulator name strings.
++ */
++
++struct mxc_bus_freq_platform_data {
++	/* VDDGP regulator name */
++	char *gp_reg_id;
++	/* VCC regulator name */
++	char *lp_reg_id;
++};
+ 
+ #if defined(CONFIG_MXC_DVFS_PER)
+ extern int start_dvfs_per(void);
+-- 
+1.5.4.4
+

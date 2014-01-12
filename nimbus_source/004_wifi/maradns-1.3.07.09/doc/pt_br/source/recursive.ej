@@ -1,0 +1,404 @@
+<HEAD><TITLE>Servindo DNS recursivo</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Usando MaraDNS como um servidor de DNS recursivo</H1>
+
+Este documento é um guia passo a passo para configurar MaraDNS
+como um servidor de DNS recursivo. É assumido que o MaraDNS já esteja<A 
+href=compile.html>compilado e installado</A>.
+
+<A name=toc>
+<H2>Índice</H2>
+</A>
+
+<ul>
+<li><A href=#basic>Configuração básica</A>
+<li><A href=#slow>Usando MaraDNS em uma rede lenta</A>
+<li><A href=#upstream>Usando outros servidores de DNS recursivo</A>
+<li><A href=#otherroot>Usando diferentes servidores raizes</A>
+<li><A href=#private>Tendo nomes de host privado</A>
+<li><A href=#custom>Customizando a resolução de alguns nomes<A>
+</ul>
+
+<A name=basic>
+<H2>Configuração básica</H2>
+</A>
+
+Uma vez com o MaraDNS instalado, o arquivo <tt>mararc</tt> precisa ser configurado
+antes do MaraDNS funcionar como um servidor recursivo. Este arquivo precisa somente 
+destas três linhas:
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1"
+</pre>
+
+<p>
+Este arquivo de três linhas precisa ser chamado de <tt>/etc/mararc</tt>.
+
+<p>
+A primeira linha é o endereço IP ou o endereço que MaraDNS usará. 
+Aqui, tem o endereço 127.0.0.1, e significa que somente a máquina que 
+executa o MaraDNS poderá ter acesso ao servidor MaraDNS -- outras 
+máquinas não poderão vê-lo. 
+
+
+<p>
+Se a máquina que executar MaraDNS for acessada por outras máquinas, 
+este IP necessita ser mudado para um IP que as outras enxerguem. 
+
+<p>
+É possível ter o MaraDNS rodando em múltiplos endereços IP:
+
+<pre>
+ipv4_bind_addresses = "10.1.3.2, 192.168.0.1, 127.0.0.1"
+</pre>
+
+A secunda linha, <tt>chroot_dir</tt> é o diretório da onde MaraDNS será 
+executado.  Quando MaraDNS está sendo usado como um servidor recursivo,
+este apenas precisa ser um diretório vazio, idealmente com permissões do 
+usuário root. 
+
+<p>
+
+A terceira linha, <tt>recursive_acl</tt>, determina a faixa
+de IPs que podem acessar o servidor recursivo.  Este é um 
+formato IP/netmask. Por exemplo, se alguem tem um escritório
+no qual utiliza os IPs na forma 192.168.1.1, 192.168.1.2, etc.,
+e deseja ter somente <i>qualquer</i> 192.168.1. em ser
+permitido fazer consultas recursivas:
+
+<pre>
+recursive_acl = "<b>192.168.1.0/24</b>"</tt>
+</pre>
+
+Aqui o "/24" indica que vamos ignorar o quarto número do IP
+quando determiamos quem contata o MaraDNS.
+
+<p>
+Uma vez feito isso, outras máquinas podem contatar o servidor MaraDNS
+para realizar consultas DNS.  Por exemplo, MaraDNS é agora o servidor de DNS
+que o Windows 98 pode usar no "painel controle - > rede - > TCP/IP - > 
+Configuração DNS", ou um sistema UNIX podem apontar em 
+<tt>/etc/resolv.conf</tt >. 
+
+
+<A name=slow>
+<h2>Usando MaraDNS em uma rede lenta</h2></A>
+
+Quando o MaraDNS encontra-se em um rede lenta, ele pode 
+expirar o tempo. MaraDNS normalmente espera somente dois
+segundos para responder a um servidor remoto. Isto não é um
+tempo suficiente para procesar consultas em algumas redes lentas.
+Pode-se mudar isso elevando o valor de <tt>timeout_seconds</tt>.
+
+<p>
+
+Aqui está um arquivo mararc que espera seis segundos (invés dos dois
+segundos padrão) para responder um servidor remoto:
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1"
+timeout_seconds = 6
+</pre>
+
+<!-- Guess what?  All of the supported OSes that MaraDNS compiles on,
+     with the exception of the mingw32 semi-port (which has its own
+     workaround), have /dev/urandom support.  So we don't need to tell
+     people how to set up a random_seed_file in the tutorial. -->
+
+<A name=upstream>
+<h2>Usando outros servidores de DNS recursivo</h2> 
+</A>
+
+É possível ter o MaraDNS contatando outros servidores recursivos, em vez
+de contatar os servidores raizes para processar as consultas recursivas. Para
+essa situação usamos a variável  <tt>upstream_servers</tt> do arquivo
+mararc. 
+
+<p>
+Ou seja, um usa o outro, digo, o servidor do provedor realiza as traduções e
+o MaraDNS age como cache dessas traduções. Supondo que os servidores do 
+provedor tenham os IPs 10.66.77.88 e 10.99.11.22, o arquivo mararc ficará 
+assim: 
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1"
+upstream_servers = {}
+upstream_servers = "10.66.77.88, 10.99.11.22"
+</pre>
+
+<A name=otherroot>
+<h2>Usando diferentes servidores raizes</h2></A>
+
+MaraDNS, por padrão, usas os servidore de nomes ICANN como os 
+servidores raizes. A razão por este padrão é prático: Em minha 
+experiência, os servidores de nomes raiz da ICANN são os que 
+menos freqüentemente mudam seus endereços de IP. 
+São os melhores servidores de nomes para simplesmente 
+"configurar e esquecer" para ambientes recursivos. 
+
+<!--
+There are a lot of legitimate objections to the ICANN name servers.  I am
+not happy that they blocked the existence of the <tt>.xxx</tt> top-level
+domain.  I also feel that they are too US-centric.  We're commenting this
+out because religious issues don't belong in a technical document. 
+ -->
+
+<p>
+É possível, entretanto, mudar os servidores raizes usados ajustando a 
+variável <tt>root_servers</tt > no arquivo mararc.  Aqui é como uma 
+configuração recursiva (este exemplo usa os servidores raizes da
+ICANN;  mude este exemplo para usar um outro conjunto de servidores
+raizes como desejado) parece: 
+
+
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1"
+ipv4_alias = {}
+ipv4_alias["icann"]  = "198.41.0.4,"     
+ipv4_alias["icann"] += "192.228.79.201,"
+ipv4_alias["icann"] += "192.33.4.12,"
+ipv4_alias["icann"] += "128.8.10.90,"
+ipv4_alias["icann"] += "192.203.230.10,"
+ipv4_alias["icann"] += "192.5.5.241,"
+ipv4_alias["icann"] += "192.112.36.4,"
+ipv4_alias["icann"] += "128.63.2.53,"
+ipv4_alias["icann"] += "192.36.148.17,"
+ipv4_alias["icann"] += "192.58.128.30,"
+ipv4_alias["icann"] += "193.0.14.129,"
+ipv4_alias["icann"] += "198.32.64.12,"
+ipv4_alias["icann"] += "202.12.27.33"
+root_servers["."] = "icann"
+</pre>
+
+Este arquivo irá fazer exatamente a mesma coisa que o arquivo
+<tt>mararc</tt> abaixo:
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1"
+</pre>
+
+Os servidores ICANN listados abaixo são os que MaraDNS usa quando servidores
+raizes não são especificados.
+
+<p>
+Como a parte, a variável <tt>ipv4_alias</tt > é uma maneira geral de dar 
+nomes a qualquer conjunto de IPs em um arquivo <tt>mararc</tt >.  
+Nós podemos usar atalhos como este: 
+
+<pre>
+ipv4_alias = {}
+ipv4_alias["localhost"] = "127.0.0.1"
+ipv4_bind_addresses = "localhost"
+chroot_dir = "/etc/maradns"
+recursive_acl = "localhost"
+ipv4_alias["icann-a"] = "198.41.0.4,"
+ipv4_alias["icann-b"] = "192.228.79.201"
+ipv4_alias["icann-c"] = "192.33.4.12"
+ipv4_alias["icann-d"] = "128.8.10.90"
+ipv4_alias["icann-e"] = "192.203.230.10"
+ipv4_alias["icann-f"] = "192.5.5.241"
+ipv4_alias["icann-g"] = "192.112.36.4"
+ipv4_alias["icann-h"] = "128.63.2.53"
+ipv4_alias["icann-i"] = "192.36.148.17"
+ipv4_alias["icann-j"] = "192.58.128.30"
+ipv4_alias["icann-k"] = "193.0.14.129"
+ipv4_alias["icann-l"] = "198.32.64.12"
+ipv4_alias["icann-m"] = "202.12.27.33"
+ipv4_alias["icann"] = "icann-a,icann-b,icann-c,icann-d,icann-e,icann-f,"
+ipv4_alias["icann"] += "icann-g,icann-h,icann-i,icann-j,icann-k,icann-l,"
+ipv4_alias["icann"] += "icann-m"
+root_servers["."] = "icann"
+</pre>
+
+Isto trabalha do mesmo jeito que os dois exemplos acima.  A razão porque nós 
+não temos vírgulas em qualquer um  dos pseudônimos além do icann é porque a 
+vírgula antes das aspas é somente necessárias em uma linha antes da linha que 
+usa o operador <tt>+=</tt >. 
+
+<p>
+Aqui é o que um arquivo de configuração que usa servidores raizes da
+colagem OpenNIC como os servidores raizes. Esta lista é de 3 dezembro
+de 2005;  anote que OpenNIC muda freqüentemente estes IPs e você 
+necessita verificar que estes IPs estão atuais 
+<em um href=http://www.opennic.unrated.net/>http://www.opennic.unrated.net/</A >.  
+Um número alternativo de organizações de servidores raizes não existem mais;  
+certificam-se por favor que este povo ainda existe antes de usar esta lista. 
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1"
+ipv4_alias = {}
+# This ends with a comma because the next line is a += line
+ipv4_alias["opennic"]  = "131.161.247.232,"
+ipv4_alias["opennic"] += "208.185.249.250,"
+ipv4_alias["opennic"] += "66.227.42.140,"
+ipv4_alias["opennic"] += "66.227.42.149,"
+ipv4_alias["opennic"] += "64.81.44.251,"
+ipv4_alias["opennic"] += "208.185.249.251,"
+# This is the last line, so no comma at the end
+ipv4_alias["opennic"] += "65.243.92.254"
+# Considering how often alternate root DNS server lists change or disappear,
+# we will have the ICANN list on hand as a backup.
+ipv4_alias["icann"]  = "198.41.0.4,"     
+ipv4_alias["icann"] += "192.228.79.201,"
+ipv4_alias["icann"] += "192.33.4.12,"
+ipv4_alias["icann"] += "128.8.10.90,"
+ipv4_alias["icann"] += "192.203.230.10,"
+ipv4_alias["icann"] += "192.5.5.241,"
+ipv4_alias["icann"] += "192.112.36.4,"
+ipv4_alias["icann"] += "128.63.2.53,"
+ipv4_alias["icann"] += "192.36.148.17,"
+ipv4_alias["icann"] += "192.58.128.30,"
+ipv4_alias["icann"] += "193.0.14.129,"
+ipv4_alias["icann"] += "198.32.64.12,"
+ipv4_alias["icann"] += "202.12.27.33"
+# Now, set the root servers; chance this to icann if you want to use the
+# icann servers instead.
+root_servers["."] = "opennic"
+</pre>
+
+<A name=private>
+<h2>Tendo nomes de host privado</h2>
+</A>
+
+Alguem pode desejar ter nomes de hosts privados ao executar MaraDNS como um
+servidor recursivo.  Estes são os nomes que não são unidos aos servidores raizes,
+mas serão resolvidos no servidor recursivo.  Por exemplo, pôde fazer sentido 
+em ter "router.example.com."  para resolve o IP de um router em um escritório. 
+
+
+<p>
+Isto é feito tendo vantagem do fato que MaraDNS pode agir como 
+um servidor de nomes recursivo e autoritativo no mesmo IP. 
+
+
+<p>
+Os procedimentos para fazer isso são:
+
+<ul>
+<li>Ter um servidor de DNS autoritativo e recursivo no mesmo IP.  
+Certifique-se que este servidor DNS não é acessível a Internet pública. 
+<li>Para este servidor autoritativo, ter arquivos de zona para as zonas
+que querem ter informação não-publica.  Consultas recursivas serão 
+resolvidas como de costume (desde que o servidor autoritativo também
+seja um servidor recursivo); consultas autoritativas para zonas especiais
+obterão os dados especiais.
+<li>O <A href=man.maradns.html>maradns man page</A> tem uma seção
+na configuração de firewall no qual descreve como configurar um IP filter (regras
+de firewall) para permitir que MaraDNS envie pacotes.
+Bàsicamente, não permite que IPs externos  bater neste servidor 
+combinado na porta 53 (UDP); invés disso, permita a conexões UDP
+nas portas 15000-19095.
+</ul>
+
+Aqui está como a configuração se parece:
+
+<pre>
+ipv4_bind_addresses = "192.168.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "192.168.0.0/24"
+csv2 = {}
+csv2["example.com."] = "db.example.com"
+</pre>
+
+Substitua 192.168.0.1 com o IP da máquina que funciona o MaraDNS recursivo; 
+substitua 192.168.0.0/24 (isto significa "qualquer coisa que começa com
+192.168.0") com a faixa de IP permitida em acessar o servidor recursivo DNS. 
+
+<p>
+
+O arquivo "db.example.com."  será um arquivo de zona csv2 com registros
+bogus para o domínio example.com, tal como router.example.com. 
+
+<p>
+Se você quiser mandar alguns destes nomes privados ser CNAMES para 
+host names na Internet (por exemplo "google.example.com.  CNAME
+www.google.com."), leia por favor <o href=dangling.html>
+dangling CNAME document</A >. 
+
+<p>
+Mais informações em ter host nomes para uma rede interna está disponível
+ na seção <A href=authoritative.html#network>seção de rede do documento
+autoritativo</A>.
+
+<A name=custom>
+<h2>Customizando a resolução de alguns nomes</h2>
+</A>
+Alguem pode desejar customizar a resolução de determinados nomes ao 
+usar MaraDNS tanto como um servidor autoritativo como recursivo.  Por 
+exemplo, se um grande domínio é sequestrado (como o que 
+aconteceu com panix.com em janeiro de 2005), pode ser desejável ter
+o correto nome para o domínio configurado temporariamente localmente.  
+Isto também é útil para uma lista de sites bloqueados (assim o usuário 
+obtem uma amigável página "este site está bloqueado" em vez de apenas
+ser incapaz de conectar-se ao site em questão), e para as instalações 
+onde algumas máquinas necessitam uma resolução especial de DNS para 
+nomes que outras máquinas não precisam de uma resolução de DNS. 
+
+<p>
+O procedimento para fazer isto é quase indêntico ao procedimento para
+ter nomes de host privados como descrito acima. Aqui está um relevante
+exemplo no arquivo <tt>mararc</tt>:
+
+<pre>
+ipv4_bind_addresses = "192.168.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "192.168.0.0/24"
+csv2 = {}
+csv2["example.com."] = "db.example.com"
+</pre>
+
+As únicas coisas que precisam ser mudadas no arquivo mararc são os 
+parâmetros <tt>ipv4_bind_addresses</tt> e <tt>recursive_acl</tt>.
+O parâmetro <tt>csv2["example.com."]</tt> <i>não</i> é mudado.
+
+<p>
+
+Agora, vamos supor que queremos ter os registros A para "www.phishsite.foo" 
+e "phishsite.foo" resolvendo para um endereço IP que controla o web site. 
+Iremos adicionar os seguintes registros (linhas) ao arquivo
+<tt>/etc/maradns/db.example.com</tt>
+
+<pre>
+www.phishsite.foo. 192.168.0.2
+phishsite.foo. 192.168.0.2
+</pre>
+
+Também podemos adicionar um registro estrela (star):
+
+<pre>
+*.phishsite.foo. 192.168.0.2
+</pre>
+
+</BODY>

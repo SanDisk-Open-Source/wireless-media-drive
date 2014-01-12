@@ -1,0 +1,29 @@
+From b942fdaace1ee13c88a6465be2bd14ce0e6b133f Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Mon, 25 Oct 2010 17:30:29 +0800
+Subject: [PATCH] ENGR00132935-1 fsl dev:Add pwm enable/disable pad functions
+
+This patch adds pwm enable/disable pad functions declaration
+to pwm platform data in fsl_device.h.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ include/linux/fsl_devices.h |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index 268aae9..d145540 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -481,6 +481,8 @@ struct mxc_esai_platform_data {
+ 
+ struct mxc_pwm_platform_data {
+ 	int pwmo_invert;
++	void (*enable_pwm_pad) (void);
++	void (*disable_pwm_pad) (void);
+ };
+ 
+ /* The name that links the i.MX NAND Flash Controller driver to its devices. */
+-- 
+1.5.4.4
+

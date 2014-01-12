@@ -1,0 +1,161 @@
+<HEAD><TITLE>Sendo um servidor de DNS escravo</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Usando o MaraDNS como um servidor de DNS escravo</H1>
+
+MaraDNS não tem suporte direto para ser um servidor de DNS escravo.
+Porém, MaraDNS pode transferir arquivos de zona de outros servidores
+usando o programa <tt>fetchzone</tt>.    
+
+<p>
+
+<tt>fetchzone</tt> é um programa que pode transferir uma zona de outro
+servidor DNS;  a zona transferida está no formato csv2 que poderá ser 
+então carregado pelo MaraDNS.
+
+<p>
+Aqui é um exemplo de uso do <tt>fetchzone</tt> para transferir
+a zona example.com do servidor com IP 10.5.6.7, colocando a saída 
+no arquivo "db.example.com":  
+
+<pre>
+fetchzone example.com 10.5.6.7 > db.example.com
+</pre>
+
+<h2>Automatizando isto com um shell script</h2>
+
+Se a pessoa deseja usar um fetchzone para obter várias zonas, 
+isto pode ser automatizado com um shell script:  
+
+<pre>
+#!/bin/bash
+
+cd /etc/maradns
+fetchzone example.com 10.5.6.7 > db.example.com
+fetchzone example.org 192.168.5.67 > db.example.org
+fetchzone example.net 172.19.2.83 > db.example.net
+</pre>
+
+Porém, este shell script tem um problema.  Há um problema em 
+obter um arquivo de zona de um sistema remoto, o arquivo de zona
+em questão será  destruído.  Isto pode ser evitado conferindo o estado
+de saída do <tt>fetchzone</tt> no shell script, tendo certeza que
+a zona normalmente foi obtido antes de escrever sobre 
+o arquivo de zona:  
+
+<pre>
+#!/bin/bash
+
+# For security reasons, put this file in a directory that only root
+# may write to.  
+TEMP=/root/tmp/foo
+
+cd /etc/maradns
+fetchzone example.com 10.5.6.7 > $TEMP
+if [ $? -eq 0 ] ; then
+	mv $TEMP db.example.com
+fi
+fetchzone example.org 192.168.5.67 > $TEMP
+if [ $? -eq 0 ] ; then
+	mv $TEMP db.example.org
+fi
+fetchzone example.net 172.19.2.83 > $TEMP
+if [ $? -eq 0 ] ; then
+	mv $TEMP db.example.net
+fi
+</pre>
+
+Note que este shell script precisa de um diretório que só o root possa escrever,
+chamado <tt>/root/tmp</tt> (Linux tem uma longa tradição fazendo o diretório
+home do root /root; ponha este arquivo em outro lugar em um sistema  
+com um diretório de root diferente).  
+
+<p>
+Enquanto este script é funcional para um número pequeno de zonas, este script
+vai rapidamente ficar de difícil controle para um número grande de zonas.  Se a
+pessoa quer obter um grande número de zonas, faz mais sentido ter a lista
+de zonas em um arquivo separado.  Nós temos o shell script então para ler este 
+arquivo (lista de zonas e IPs), e fazer os arquivos de zona vivos se as zonas  
+foram buscadas com sucesso.
+
+<p>
+
+Aqui é como o shell script se parece:
+
+<pre>
+#!/bin/bash
+
+ZONELIST=/etc/maradns.zonelist
+# For security reasons, put this file in a directory that only root
+# may write to.  
+TEMP=/root/tmp/foo
+
+cd /etc/maradns
+
+cat $ZONELIST | awk '{print "fetchzone "$1" "$2" > '$TEMP'"
+                      print "if [ $? -eq 0 ] ; then"
+		      print "    mv '$TEMP' db."$1
+		      print "fi";}' | sh
+</pre>
+
+A lista de zonas, que estão no arquivo <tt>/etc/maradns.zonelist</tt> do 
+exemplo anterior, se parecerá com:
+
+<pre>
+example.com 10.5.6.7 
+example.org 192.168.5.67 
+example.net 172.19.2.83 
+</pre>
+
+Nota que a presença de um determinado arquivo db.<i>name</i> no diretório
+/etc/maradns não é suficiente para MaraDNS carregar um determinado arquivo de zona; o  
+arquivo de zona em questão deve ser apontado para dentro o do arquivo <tt>mararc</tt>.  
+Também note que <tt>maradns</tt> deve ser reiniciado para recarregar o arquivos 
+de zona atualizado.  
+
+<p>
+
+Um script mais complicado, como conferir o número de série antes de 
+carregar uma determinada zona, é deixado como um exercício para o leitor.
+
+<h2>Bailiwick</h2>
+
+Por razões de segurança, o cliente <tt>fetchzone</tt> somente permitirá registros
+que terminam no nome da zona para uma dada zona. Em outras palavras, vamos supor
+que nós temo a zona example.com que se parece assim:
+
+<pre>
+example.com.      10.1.2.3
+www.example.com.  10.99.88.76
+www.google.com.   10.99.88.76
+</pre>
+
+quando estiver obtendo essa zona, <tt>fetchzone</tt>, irá desabilitar 
+o registro "www.google.com" porque ele não termina com "example.com". 
+A desabilitação será parecida como essa:
+
+<pre>
+example.com. 10.1.2.3
+www.example.com. 10.99.88.76
+# Disabled out-of-bailiwick record follows
+#www.google.com. 10.99.88.76
+</pre>
+
+</BODY></HTML>

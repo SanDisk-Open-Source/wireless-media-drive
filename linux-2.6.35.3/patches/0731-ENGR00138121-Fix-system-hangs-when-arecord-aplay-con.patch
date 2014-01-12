@@ -1,0 +1,114 @@
+From 1ae03e565218b4b9e03197c4d66960efbe6c9fde Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Wed, 26 Jan 2011 10:35:15 +0800
+Subject: [PATCH] ENGR00138121 Fix system hangs when arecord/aplay continuously
+
+Sdma iapi start loading sdma script by write HSTART register as
+memory. When instruction reorder and IRQ delay may let the next
+synchronize operation wait forever.
+
+We change it by using writel() to access sdma registers,
+and introduce timeout to show this error.
+
+HSTART and STOP_STAT contain bits that are reset by hardware.
+So if we read-modify-write, we are in danger of setting a bit
+after SDMA has cleared it.
+
+The spec calls these registers "write-ones" register.  So the
+ARM can write a 1 to any bit, but does not need to worry about
+clearing any bits that were previously set.  SDMA hardware
+keeps track of all bits that were set.
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+---
+ arch/arm/plat-mxc/sdma/iapi/include/epm.h    |    5 ++++-
+ arch/arm/plat-mxc/sdma/iapi/src/iapiLowMcu.c |    9 ++++++---
+ arch/arm/plat-mxc/sdma/sdma.c                |   10 +++++++---
+ 3 files changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/sdma/iapi/include/epm.h b/arch/arm/plat-mxc/sdma/iapi/include/epm.h
+index 8a8be22..8d190e2 100644
+--- a/arch/arm/plat-mxc/sdma/iapi/include/epm.h
++++ b/arch/arm/plat-mxc/sdma/iapi/include/epm.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2007-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2007-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -20,6 +20,9 @@
+ extern void __iomem *sdma_base;
+ #define SDMA_BASE_IO_ADDR (sdma_base)
+ 
++#define SDMA_H_STATSTOP_ADDR    (SDMA_BASE_IO_ADDR + 0x008)
++#define SDMA_H_START_ADDR       (SDMA_BASE_IO_ADDR + 0x00C)
++
+ #define SDMA_H_C0PTR            (*((volatile unsigned long *)(SDMA_BASE_IO_ADDR + 0x000)))
+ #define SDMA_H_INTR             (*((volatile unsigned long *)(SDMA_BASE_IO_ADDR + 0x004)))
+ #define SDMA_H_STATSTOP         (*((volatile unsigned long *)(SDMA_BASE_IO_ADDR + 0x008)))
+diff --git a/arch/arm/plat-mxc/sdma/iapi/src/iapiLowMcu.c b/arch/arm/plat-mxc/sdma/iapi/src/iapiLowMcu.c
+index b72234f..345d364 100644
+--- a/arch/arm/plat-mxc/sdma/iapi/src/iapiLowMcu.c
++++ b/arch/arm/plat-mxc/sdma/iapi/src/iapiLowMcu.c
+@@ -1,6 +1,6 @@
+ /******************************************************************************
+  *
+- * Copyright 2007-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2007-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  *
+  * The code contained herein is licensed under the GNU General Public
+@@ -34,6 +34,7 @@
+  * Include File Section
+  *****************************************************************************/
+ #include <string.h>
++#include <io.h>
+ 
+ #include "epm.h"
+ #include "iapiLow.h"
+@@ -132,7 +133,8 @@ iapi_Channel0Command(channelDescriptor *cd_p, void *buf,
+  */
+ void iapi_lowStartChannel(unsigned char channel)
+ {
+-	SDMA_H_START |= 1 << channel;
++	/* HSTART is a 'write-ones' register */
++	writel(1UL << channel, SDMA_H_START_ADDR);
+ }
+ 
+ /* ***************************************************************************/
+@@ -150,7 +152,8 @@ void iapi_lowStartChannel(unsigned char channel)
+  */
+ void iapi_lowStopChannel(unsigned char channel)
+ {
+-	SDMA_H_STATSTOP &= 1 << channel;
++	/* Another 'write-ones' register */
++	writel(1UL << channel, SDMA_H_STATSTOP_ADDR);
+ }
+ 
+ /* ***************************************************************************/
+diff --git a/arch/arm/plat-mxc/sdma/sdma.c b/arch/arm/plat-mxc/sdma/sdma.c
+index 8a9e8e7..7b3d7ae 100644
+--- a/arch/arm/plat-mxc/sdma/sdma.c
++++ b/arch/arm/plat-mxc/sdma/sdma.c
+@@ -134,9 +134,13 @@ static void sdma_init_sleep(int channel)
+ static void sdma_sleep_channel(int channel)
+ {
+ 	while ((iapi_SDMAIntr & (1 << channel)) == 0) {
+-		wait_event_interruptible(sdma_sleep_queue[channel],
+-					 ((iapi_SDMAIntr & (1 << channel)) !=
+-					  0));
++		int timeout = 10; /* timeout 10ms */
++		timeout = wait_event_interruptible_timeout(
++				sdma_sleep_queue[channel],
++				((iapi_SDMAIntr & (1 << channel)) !=
++				0), timeout);
++		if (!timeout)
++			printk(KERN_WARNING "sdma channel timeout\n");
+ 	}
+ }
+ 
+-- 
+1.5.4.4
+

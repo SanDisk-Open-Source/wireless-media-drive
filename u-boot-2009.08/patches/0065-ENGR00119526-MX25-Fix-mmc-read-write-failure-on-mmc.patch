@@ -1,0 +1,77 @@
+From 750f168825cb80df2c296d69ec671f117d345c02 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Mon, 21 Dec 2009 17:09:24 +0800
+Subject: [PATCH] ENGR00119526 MX25: Fix mmc read/write failure on mmc uboot
+
+Fix MMC read/write failure due to eSDHC register definition wrong
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ drivers/mmc/imx_esdhc.c               |   11 +++++++++++
+ include/asm-arm/arch-mx25/mx25-regs.h |    2 +-
+ 2 files changed, 12 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index 5ee0efd..025be87 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -315,7 +315,11 @@ void set_sysctl(struct mmc *mmc, uint clock)
+ 
+ 	clk = (pre_div << 8) | (div << 4);
+ 
++#ifdef CONFIG_MX25
++	tmp = readl(&regs->sysctl) | (SYSCTL_HCKEN | SYSCTL_IPGEN);
++#else
+ 	tmp = readl(&regs->sysctl) & (~SYSCTL_SDCLKEN);
++#endif
+ 	writel(tmp, &regs->sysctl);
+ 
+ 	tmp = (readl(&regs->sysctl) & (~SYSCTL_CLOCK_MASK)) | clk;
+@@ -323,10 +327,15 @@ void set_sysctl(struct mmc *mmc, uint clock)
+ 
+ 	mdelay(100);
+ 
++#ifdef CONFIG_MX25
++	tmp = readl(&regs->sysctl) | SYSCTL_PEREN;
++	writel(tmp, &regs->sysctl);
++#else
+ 	while (!(readl(&regs->prsstat) & PRSSTAT_SDSTB)) ;
+ 
+ 	tmp = readl(&regs->sysctl) | (SYSCTL_SDCLKEN);
+ 	writel(tmp, &regs->sysctl);
++#endif
+ }
+ 
+ static void esdhc_set_ios(struct mmc *mmc)
+@@ -380,6 +389,7 @@ static int esdhc_init(struct mmc *mmc)
+ 	}
+ 	*/
+ 
++#ifndef CONFIG_MX25
+ 	set_sysctl(mmc, 400000);
+ 
+ 	tmp = readl(&regs->sysctl) | SYSCTL_INITA;
+@@ -387,6 +397,7 @@ static int esdhc_init(struct mmc *mmc)
+ 
+ 	while (readl(&regs->sysctl) & SYSCTL_INITA)
+ 		mdelay(1);
++#endif
+ 
+ 	return 0;
+ }
+diff --git a/include/asm-arm/arch-mx25/mx25-regs.h b/include/asm-arm/arch-mx25/mx25-regs.h
+index 26f3031..77fb4f5 100644
+--- a/include/asm-arm/arch-mx25/mx25-regs.h
++++ b/include/asm-arm/arch-mx25/mx25-regs.h
+@@ -372,7 +372,7 @@
+ /*!
+  *  * NFMS bit in RCSR register for pagesize of nandflash
+  *   */
+-#define NFMS		(*((volatile u32 *)(CCM_BASE+0x18)))
++#define NFMS		(*((volatile u32 *)(CCM_BASE+0x28)))
+ #define NFMS_BIT	8
+ #define NFMS_NF_DWIDTH	14
+ #define NFMS_NF_PG_SZ	8
+-- 
+1.5.4.4
+

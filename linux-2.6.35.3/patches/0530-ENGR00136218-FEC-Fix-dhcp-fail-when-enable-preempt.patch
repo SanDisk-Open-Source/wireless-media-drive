@@ -1,0 +1,45 @@
+From cbafbe46aac8d08355546e7eaf53cdf1066f4a65 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Fri, 10 Dec 2010 18:59:07 +0800
+Subject: [PATCH] ENGR00136218 FEC: Fix dhcp fail when enable preempt at mx28
+
+DHCP fail when enable NO_HZ and preempt at mx28evk
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/net/fec.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/fec.c b/drivers/net/fec.c
+index e3ce064..f581960 100644
+--- a/drivers/net/fec.c
++++ b/drivers/net/fec.c
+@@ -253,6 +253,7 @@ fec_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ 	if (!fep->link) {
+ 		/* Link is down or autonegotiation is in progress. */
++		netif_stop_queue(dev);
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 
+@@ -681,6 +682,7 @@ static void fec_enet_adjust_link(struct net_device *dev)
+ 	if (phy_dev->link) {
+ 		if (fep->full_duplex != phy_dev->duplex) {
+ 			fec_restart(dev, phy_dev->duplex);
++			netif_wake_queue(dev);
+ 			status_change = 1;
+ 		}
+ 	}
+@@ -1418,6 +1420,8 @@ fec_stop(struct net_device *dev)
+ 	if (fep->ptimer_present)
+ 		fec_ptp_stop(fep->ptp_priv);
+ 	writel(FEC_DEFAULT_IMASK, fep->hwp + FEC_IMASK);
++
++	fep->link = 0;
+ }
+ 
+ static int __devinit
+-- 
+1.5.4.4
+

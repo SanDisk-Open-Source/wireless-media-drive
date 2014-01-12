@@ -1,0 +1,142 @@
+From aedf3fdbc078531248cbc4e93a1359bec5d5e613 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Sun, 20 Mar 2011 14:34:08 +0800
+Subject: [PATCH] ENGR00140274: SPI_NOR: Add m25p32 spi flash support
+
+SPI_NOR: Add m25p32 spi flash support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c    |   24 +++++++++++++++++++++++
+ arch/arm/mach-mx5/crm_regs.h |    6 ++++-
+ arch/arm/mach-mx5/mx53_smd.c |   43 ++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 72 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index bb55290..4b4750b 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -2362,6 +2362,29 @@ static unsigned long _clk_cspi_get_rate(struct clk *clk)
+ 	return clk_get_rate(clk->parent) / (prediv * podf);
+ }
+ 
++static int _clk_cspi_set_rate(struct clk *clk, unsigned long rate)
++{
++	u32 reg, div, pre, post;
++	u32 parent_rate = clk_get_rate(clk->parent);
++
++	div = parent_rate / rate;
++	if (div == 0)
++		div++;
++	if (((parent_rate / div) != rate))
++		return -EINVAL;
++
++	__calc_pre_post_dividers(div, &pre, &post);
++
++	reg = __raw_readl(MXC_CCM_CSCDR2) &
++		~(MXC_CCM_CSCDR2_ECSPI_CLK_PODF_MASK |
++		MXC_CCM_CSCDR2_ECSPI_CLK_PRED_MASK);
++	reg |= (post - 1) << MXC_CCM_CSCDR2_ECSPI_CLK_PODF_OFFSET;
++	reg |= (pre - 1) << MXC_CCM_CSCDR2_ECSPI_CLK_PRED_OFFSET;
++	__raw_writel(reg, MXC_CCM_CSCDR2);
++
++	return 0;
++}
++
+ static int _clk_cspi_set_parent(struct clk *clk, struct clk *parent)
+ {
+ 	u32 reg, mux;
+@@ -2378,6 +2401,7 @@ static int _clk_cspi_set_parent(struct clk *clk, struct clk *parent)
+ static struct clk cspi_main_clk = {
+ 	.parent = &pll3_sw_clk,
+ 	.get_rate = _clk_cspi_get_rate,
++	.set_rate = _clk_cspi_set_rate,
+ 	.set_parent = _clk_cspi_set_parent,
+ 	.flags = RATE_PROPAGATES,
+ };
+diff --git a/arch/arm/mach-mx5/crm_regs.h b/arch/arm/mach-mx5/crm_regs.h
+index 45db5f6..ee86202 100644
+--- a/arch/arm/mach-mx5/crm_regs.h
++++ b/arch/arm/mach-mx5/crm_regs.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * The code contained herein is licensed under the GNU General Public
+  * License. You may obtain a copy of the GNU General Public License
+@@ -474,6 +474,10 @@
+ /* MX53 */
+ #define MXC_CCM_CSCDR2_ASRC_CLK_PODF_OFFSET	(9)
+ #define MXC_CCM_CSCDR2_ASRC_CLK_PODF_MASK		(0x3F << 9)
++#define MXC_CCM_CSCDR2_ECSPI_CLK_PODF_OFFSET            (19)
++#define MXC_CCM_CSCDR2_ECSPI_CLK_PODF_MASK              (0x3F << 19)
++#define MXC_CCM_CSCDR2_ECSPI_CLK_PRED_OFFSET            (25)
++#define MXC_CCM_CSCDR2_ECSPI_CLK_PRED_MASK              (0x7 << 25)
+ #define MXC_CCM_CSCDR2_IEEE_CLK_PRED_OFFSET		(6)
+ #define MXC_CCM_CSCDR2_IEEE_CLK_PRED_MASK		(0x7 << 6)
+ #define MXC_CCM_CSCDR2_IEEE_CLK_PODF_OFFSET	(0)
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 0307bb8..bcc3fe2 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -720,6 +720,47 @@ static struct i2c_board_info mxc_i2c2_board_info[] __initdata = {
+ 	},
+ };
+ 
++#if defined(CONFIG_MTD_MXC_M25P80) || defined(CONFIG_MTD_MXC_M25P80_MODULE)
++static struct mtd_partition m25p32_partitions[] = {
++	{
++	.name = "bootloader",
++	.offset = 0,
++	.size = 0x00040000,
++	},
++	{
++	.name = "kernel",
++	.offset = MTDPART_OFS_APPEND,
++	.size = MTDPART_SIZ_FULL,
++	},
++};
++
++static struct flash_platform_data m25p32_spi_flash_data = {
++	.name = "m25p80",
++	.parts = m25p32_partitions,
++	.nr_parts = ARRAY_SIZE(m25p32_partitions),
++	.type = "m25p32",
++};
++#endif
++
++static struct spi_board_info m25p32_spi1_board_info[] __initdata = {
++#if defined(CONFIG_MTD_MXC_M25P80) || defined(CONFIG_MTD_MXC_M25P80_MODULE)
++	{
++		/* the modalias must be the same as spi device driver name */
++		.modalias = "m25p80",           /* Name of spi_driver for this device */
++		.max_speed_hz = 20000000,       /* max spi SCK clock speed in HZ */
++		.bus_num = 1,                   /* Framework bus number */
++		.chip_select = 1,               /* Framework chip select. */
++		.platform_data = &m25p32_spi_flash_data,
++	}
++#endif
++};
++
++static void spi_device_init(void)
++{
++	spi_register_board_info(m25p32_spi1_board_info,
++				ARRAY_SIZE(m25p32_spi1_board_info));
++}
++
+ static void mx53_gpio_usbotg_driver_vbus(bool on)
+ {
+ 	if (on)
+@@ -1146,6 +1187,8 @@ static void __init mxc_board_init(void)
+ 		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
+ 	}
+ 
++	spi_device_init();
++
+ 	i2c_register_board_info(0, mxc_i2c0_board_info,
+ 				ARRAY_SIZE(mxc_i2c0_board_info));
+ 	i2c_register_board_info(1, mxc_i2c1_board_info,
+-- 
+1.5.4.4
+

@@ -1,0 +1,514 @@
+<h1>QUESTÃOS FREQUENTEMENTES PERGUNTADAS (FAQ)</h1>
+
+<h2>INDICE</h2>
+<BLOCKQUOTE>
+1. <A HREF=#version1>Eu ainda estou usando versão 1.0 do MaraDNS</A> <P>
+
+2. <A HREF=#tryout>Como eu experimento o MaraDNS?</A> <P>
+
+3. <A HREF=#license>Sob qual licença é liberado o MaraDNS?</A><P>
+
+4. <A HREF=#bugzilla>Como que relato bugs no MaraDNS?</A><P>
+
+5. <A HREF=#chatter>Alguns email da lista de email não falam sobre MaraDNS!</A><P>
+
+6. <A HREF=#unsub>Como faço para sair da lista de email?</A><P>
+
+7. <A HREF=#rdns>Como eu configuro um DNS reverso no MaraDNS?</A><P>
+
+8. <A HREF=#timeout>Eu estou em uma rede lenta, e MaraDNS não consegue processar  
+   consultas recursivas</A><P>
+
+9. <A HREF=#obtuse>Quando tento executa o MaraDNS, recebo uma mensagem de erro cryptic.</A><P>
+
+10. <A HREF=#netstat>Após inicializar o MaraDNS, não consigo ver o processo quando 
+executo netstat - na </A><P>
+
+11. <A HREF=#jsstr>Que biblioteca de string MaraDNS utiliza?</A><P>
+
+12. <A HREF=#whythreads>Por que MaraDNS utiliza um modelo de multi-threads?</A><P>
+
+13. <A HREF=#wishlist>Eu acho que aquela característica XXX deveria ser implantada no 
+MaraDNS</A><P>
+
+14. <A HREF=#docbook>Eu sinto que o MaraDNS deveria usar outro formato de 
+documentação</A><P>
+
+15. <A HREF=#patch>Existe algum processo que preciso seguir para adicionar um patch 
+no MaraDNS?</A><P>
+
+16. <A HREF=#primary>Pode MaraDNS agir com um servidor de nomes primário?</A><P>
+
+17. <A HREF=#secondary>Pode MaraDNS agir com um servidor de nomes segundário?</A><P>
+
+18. <A HREF=#auth>Qual a diferença entre um servidor de dns autoritavio e   
+um recursivo?</A><P>
+
+19. <A HREF=#bailiwick>O client getzone não está me permitindo adiconar certos 
+    hostnames à minha zona.</A><P>
+
+20. <A HREF=#portable>MaraDNS pode ser portado para outras plataformas?</A><P>
+
+21. <A HREF=#cygwin>Eu posso usar o MaraDNS no Windows?</A><P>
+
+22. <A HREF=#upstream>MaraDNS "congela" após ser usado por algum tempo</A><P>
+
+23. <A HREF=#python>Que tipo de integração com o Python MaraDNS tem?</A><P>
+
+24. <A HREF=#kvar>"kvar" não significa "four" em Esperanto?</A><p>
+
+25. <A href=#scability>O quanto escalável é MaraDNS?</A><p>
+
+26. <A href=#upstream_d>Estou tendo problemas em configurar <tt>upstream_servers</tt> </A><p> 
+
+</BLOCKQUOTE>
+<H2>RESPOSTAS</H2>
+
+<A NAME=version1>
+<H2>1. Eu ainda estou usando versão 1.0 do MaraDNS</H2>
+</A>
+
+MaraDNS 1.0 continuará sendo SUPORTADO completamente até 21 de 
+dezembro de 2007; isto significa que questões sobre MaraDNS 1.0 ainda serão
+respondidas e correções de bug serã aplicados. Depois de 21/12/2007, MaraDNS 1.0
+não será mais completamente suportado; as únicas atualizações a serem feitas serão as 
+mais graves de segurança. Nem mesmo estas atualizações serão aplicadas depois de
+21 de dezembro de 2010.    
+
+<p>
+
+Pessoas que desejam executar MaraDNS 1.0 sem suporte depois de 21/12/2010
+precisam ter em mente que o MaraDNS 1.0 <i>não</i> é Y2038 compatível, e terá   
+problemas em início de 2036 e adiante.  Por outro lado, MaraDNS 1.2 é completamente  
+Y2038 compatível.
+
+<p>
+
+Ainda há um FAQ para versão 1.0 do MaraDNS disponível
+<A href=http://www.maradns.org/faq-1.0.html>here</A>.
+
+<p>
+
+Atualizando do 1.0 para 1.2 requer um número mínimo de mudanças;
+com a maioria das configurações, MaraDNS 1.2 é completamente compatível
+com os arquivos de dados do MaraDNS 1.0.  Detalhes estão no tutorial <A 
+href=http://www.maradns.org/tutorial/1.2/update.html>updating</A>.
+
+<p>
+
+Enquanto os arquivos de zona csv1 são completamente suportados em 
+MaraDNS 1.2, há um script Perl para atualizar as zonas de arquivos de 
+CSV1 para CSV2  dentro do diretório <tt>/tools</tt> do MaraDNS 1.2.
+
+<A NAME=tryout>
+<H2>2.Como eu experimento o MaraDNS?</H2>
+</A>
+
+<p>Leia o  <A 
+href=http://www.maradns.org/tutorial/1.2/quick_start.html>guia 
+instantâneo </A>, que é o arquivo chamado 0QuickStart no pacote
+fonte do MaraDNS.
+<p>
+
+<A NAME=license>
+<H2>3. Sob qual licença é liberado o MaraDNS?</H2>
+</A>
+MaraDNS 1.2 foi liberado com as duas cláusula da seguinte licença de BSD:
+Licença tipo BSD:
+<BLOCKQUOTE>
+Copyright (c) 2002-2005 Sam Trenholme
+<p>
+TERMS
+<p>
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+<p>
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+<p>
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+<p>
+This software is provided 'as is' with no guarantees of correctness or
+fitness for purpose.
+</BLOCKQUOTE>
+
+<A NAME=bugzilla>
+<H2>4. Como que relato bugs no MaraDNS?</H2>
+</A>
+
+Favor <A href=http://www.maradns.org/contact.html>me contatar</A>.
+
+<A NAME=chatter>
+<H2>5. Alguns email da lista de email não falam sobre MaraDNS!</H2>
+</A>
+Em casos donde eu postar algo à lista de email que não fale diretamente  
+sobre MaraDNS, a linha de assunto não conterá a palavra [ MARA] nela, e sim 
+outra palavra qualquer.    
+<P>
+Deste modo, pessoas que não gostem disto podem montar filtros de email 
+para filtrar qualquer coisa que venha desta lista e não contenha a palavra 
+[MARA] no assunto ou simplesmente se desinscrever da lista e lei-a dos
+arquivos; se a pessoa precisar informar um bug, ela pode se inscrever na lista  
+novamente, postar o bug, então se desinscrever depois de uma semana.    
+<P>
+Outra opção é configurar as preferências do Freshmeat (http://freshmeat.net) 
+da pessoa a ser notificadas por e-mail toda a vez que atualizo o MaraDNS no 
+Freshmeat. Isto dará uma notificação de e-mail de qualquer conserto de bug 
+crítico sem precisar estar inscrito na lista de emails.  
+<P>
+No site <A href=http://www.maradns.org>http://www.maradns.org</A>
+tem um link para os arquivo da lista de email.
+
+<A NAME=unsub>
+<H2>6. Como faço para sair da lista de email?</H2>
+</A>
+Envie um email para a list-request@maradns.org com a palavra "unsubscribe"
+no campo assunto.
+
+<A NAME=rdns>
+<H2>7. Como eu configuro um DNS reverso no MaraDNS?</H2>
+</A>
+Usando o registro PTR (pointer). Por exemplo, o registro PTR no qual realiza
+o lookup de DNS reverso para o ip 1.2.3.4 aparece assim em uma zona CSV2 :
+<blockquote>
+<tt>
+4.3.2.1.in-addr.arpa. PTR www.example.com.
+</tt>
+</blockquote>
+Se você deseja ter um registro PTR (lookup de DNS reverso; obtendo um nome 
+DNS de um IP numérico) trabalhando na internet, não é uma simples  
+questão de apenas acrescentar um registro assim a um arquivo de zona do
+MaraDNS. Existe também a necessidade de um controle apropriado do domínio
+in-addr.arpa e a solicitação desse serviço no seu provedor ou empresa 
+que lhe fornece acesso á internet..  
+<p>
+Enquanto isso pode fazer sentido para contatar o IP 10.11.12.13 ao 
+tentar obter o lookup de DNS reverso (nome de domínio completamente
+qualificado) para um determinado IP, servidores de DNS não fazem isto. 
+Servidores de DNS, ao invés, contata os servidores DNS root para um 
+determinado nome in-addr.arpa para obter o lookup de DNS reverso,  
+assim como eles fazem com qualquer outro tipo de registro.  
+<p>
+Quando um provedor de internet é responsável por uma faixa de IPs, eles também são  
+responsáveis pelo controle do zonas DNS que lhes permite controlar DNS reverso  
+para esse IPs.  Enquanto é possível obter um domínio e executar um servidor
+de DNS sem o conhecimento ou intervenção de um provedor, ser  
+capaz de controlar lookups de DNS reverso para esse IPs requer a   
+intervenção do provedor.  
+
+<A NAME=timeout>
+<H2>8. Eu estou em uma rede lenta, e MaraDNS não consegue processar  
+consultas recursivas</H2>
+</A>
+
+MaraDNS, por padrão, somente espera dois segundos para uma resposta
+de um servidor de DNS remoto. Este padrão pode ser aumentado 
+adicioando uma linha assin no arquivo mararc:
+<blockquote>
+<pre>
+timeout_seconds = 5
+</pre>
+</blockquote>
+
+Nota que fazendo este número muito alto, irá reduzi a velocidade do
+MaraDNS quando servidores de DNS estiverem inoperando, o que, aliais é 
+muito comum na internet de hoje.
+
+
+<A NAME=obtuse>
+<H2>9. Quando tento executa o MaraDNS, recebo uma mensagem de erro cryptic.</H2>
+</A>
+Normalmente existe algum contexto donde há um erro de sintaxe dentro um  
+arquivo de dados antes da mensagem de erro cryptic.  Por exemplo, quando há  
+um erro de sintaxe em um arquivo de zona csv2, MaraDNS lhe dirá exatamente  
+em que ponto teve que finalisar a análise do arquivo de zona.  
+<p>
+
+Se MaraDNS retornar uma mensagem de erro cryptic sem mostrar o que está errado,
+<A href=http://www.maradns.org/contact.html>me contata</A> 
+para eu poder eliminar esse bug.  MaraDNS é projetado para ser fácil de usar; 
+mensages de erro cryptic vão contra esse espírito.
+
+<A NAME=netstat>
+<H2>10. Apois inicializar o MaraDNS, não consigo ver o processo quando 
+executo netstat - na
+</H2>
+</A>
+
+Serviços UDP não tem um proeminente "LISTEN" quando netstat é executado.
+<p>
+Quando MaraDNS está rodando, a linha pertinente no netstat produz a seguinte    
+saída:            
+<tt>
+udp        0      0 127.0.0.4:53            0.0.0.0:* 
+</tt>
+<p>
+Enquanto no tópico do netstat, se você executar <TT>netstat -nap</TT> 
+como root, você poderá ver os nomes dos processos que estão provendo
+serviços de internet.
+
+<A NAME=jsstr>
+<H2>11. Que biblioteca de string MaraDNS utiliza?</H2>
+</A>
+
+<p>MaraDNS utiliza sua própria bibiloteca de string, no qual é chamada de 
+biblioteca "js_string".  O Man pages para a maioria das funções na biblioteca
+js_string estão no diretório <tt>doc/man</tt> dos fontes do <A href=download.html>MaraDNS</A>
+
+<A name=whythreads>
+<H2>12. Por que MaraDNS utiliza um modelo de multi-threaded?</H2>
+</A>
+
+<p>O modelo multi-threaded é, plano e simples, sendo o modo mais simples para escrever  
+um servidor de DNS recursivo funcional. Existe uma razão por que MaraDNS, pdnsd, e  
+bind 9 utilizem o modelo multi-threaded. 
+
+<A NAME=wishlist>
+<H2>13. Eu acho que aquela característica XXX deveria ser implantada no 
+MaraDNS</H2>
+</A>
+<p>
+Não há nenhum plano para implementar novas características no MaraDNS
+atualmente.  A razão para isto é porque, MaraDNS não tem feito meu  
+currículo impressionante o bastante para eu arrumar um emprego no mercado
+de trabalho hoje em dia.  
+
+<p>
+Tanto os servidores de nomes Bind e NSD foram desenvolvidos tendo os programadores  
+pagos para trabalhar nos programas.  PowerDNS era um software originalmente comercial  
+com o autor só relutantemente liberado em GPL depois de ver que o mercado  
+para servidores de DNS comercial ser muito pequeno. Todos os outros servidores de DNS  
+foram desenvolvidos como projetos de hobby (Posadis, Pdnsd, e djbdns)   
+já que não estam mais sendo trabalhados ativamente pelos seus criadores.  
+
+<p>
+Se eu fosse trabalhar novamente no MaraDNS, ele seria completamente reescrito em C++;  
+se eu puder colocar C++ em meu currículo, talvez eu possa arrumar um emprego mais 
+facilmente. 
+<p>
+Como qualquer outra coisa, isto não é absoluto.  Por exemplo, se eu vejo 
+um grande comunidade do MaraDNS e uma demanda forte para características
+novas daquela comunidade, posso mudar minha opinião.  Se ipv6 começar a ficar
+dominante, eu atualizarei MaraDNS para ter suporte completo ao ipv6. Se uma 
+outra tecnologia aparecer e isso requer uma atualização para MaraDNS continuar
+funcionando como um servidor de DNS, eu posso atualizar MaraDNS para usar
+aquela tecnologia.  
+
+<A NAME=docbook>
+<H2>14. Eu sinto que o MaraDNS deveria usar outro formato de 
+documentação</H2>
+</A>
+<p>
+A razão que faz o MaraDNS usar seu próprio formato de documentação é satisfazer 
+tanto as necessidades de tradutores para ter um formato de documento unificado e
+minha própria necessidade de usar um formato de documentação que seja simples o
+bastante para ser prontamente entendida e o qual posso adicionar características 
+quando necessárias.
+<p>
+O formato de documentação é essencialmente um HTML simplificado com algumas  
+tag especiais adicionadas para satisfazer as necessidades especiais do MaraDNS.
+<p>
+Isto me dá mais flexibilidade de adaptar o formato da documentação para  
+necessidades variádas. Por exemplo, quando alguém mostrou que não é  
+uma boa idéia ter o man page com hi-bit carácter, foi uma simples questão  
+de adicionar uma nova tag HIBIT que permitisse man pages de serem 
+feitos sem  o carácter hi-bit, e outros formatos de documento para reter 
+hi-bit carácter.  
+<p>
+Um determinado programa ter seu próprio formato de documentação não é  
+sem precedente; Perl usa seu próprio formato de documentação o "pod."  
+
+<A NAME=patch>
+<H2>15. Existe algum processo para adicionar um patch no MaraDNS?</H2>
+</A>
+
+<p>Sim.  
+
+<p>Aqui está o procedimento para fazer um patch:
+
+<p>
+
+<ul>
+<li>Entre no diretório que o arquivo se encontra, por exemplo
+    <tt>maradns-1.2.00/server</tt>
+
+<li>Copie o arquivo que você deseja modificar para um outro 
+nome de arquivo. Exemplo: <tt>cp MaraDNS.c MaraDNS.c.orig</tt>
+
+<li>Edite o arquivo em questão, ex: <tt>vi MaraDNS.c</tt>
+
+<li>Após editar, faça algo como: <br><tt>
+    diff -u MaraDNS.c.orig MaraDNS.c > maradns.patch</tt>
+
+<li>Tenha certeza que a versão modificada compila corretamente.
+
+</ul>
+Envie o patch para mim via e-mail, junto com uma declaração de que você
+coloca, os conteúdos do patch sob licença de BSD do MaraDNS.  Se eu achar
+que o patch trabalha bem, eu integrarei isto no MaraDNS.
+
+
+<A NAME=primary>
+<H2>16. Pode MaraDNS agir com um servidor de nomes primário?</H2>
+</A>
+
+<p>Sim.
+
+<p>O programa <tt>zoneserver</tt> server zonas então, outros servidores
+de DNS podem ser secundários para as zonas que o MaraDNS server. Este é um
+programa separado do servidor <tt>maradns</tt>, no qual processa tanto 
+consultas de DNS UDP autoritativas e recursivas.
+
+<p>Veja o documento <A href=http://www.maradns.org/tutorial/1.2/dnsmaster.html>DNS
+master</A> nos tutoriais do MaraDNS.
+
+<A NAME=secondary>
+<H2>17. Pode MaraDNS agir com um servidor de nomes segundário?</H2>
+</A>
+
+<p>Sim.
+
+<p>Favor leia o documento <A href=http://www.maradns.org/tutorial/1.2/dnsslave.html>
+DNS slave</A>, no qual é parte do tutorial MaraDNS.
+
+
+<A NAME=auth>
+<H2>18. Qual a diferença entre um servidor de DNS autoritavio e um recursivo?</H2>
+</A>
+Um servidor recursivo é um servidor de DNS que pode contatar outros 
+servidores de DNS para solucionar um determinado nome de domínio.  
+Este é o tipo de servidor de DNS que a pessoa aponta para dentro de 
+/etc/resolve.conf (em sistemas Linux e Unix).
+
+<p>
+Um servidor de DNS autoritativo é um servidor de DNS que um servidor recursivo   
+contata para descobrir a resposta a uma determinada consulta de DNS.
+
+<A NAME=bailiwick>
+<H2>19. O client fetchzone não está me permitindo adiconar certos 
+hostnames à minha zona.</H2>
+</A>
+Por razões de segurança, o cliente fetchzone do MaraDNS não faz 
+adição de registros que não fazem parte da zona em questão. 
+Por exemplo, se alguém tem uma zona para example.com, e este
+registro na zona:  
+<p>
+<tt>
+1.1.1.10.in-addr.arpa. PTR dns.example.com.
+</tt>
+<p>
+
+MaraDNS não irá adicionar o registro, já que o registro está out-of-bailiwick. 
+Em outras palavras, é um nome de host que não termina em .example.com.  
+<p>                                     
+Há duas soluções para isto:
+<UL>
+<LI>Criar um arquivo zona para 1.1.10.in-addr.arpa., e colocar o registro 
+PTR lá.
+<LI>Use rcp, rsync, ou outro método para copiar os arquivos de zona em
+questão.
+</UL>
+
+<A name=portable>
+<H2>20. MaraDNS pode ser portado para outras plataformas?</H2>
+</A>
+
+<p>MaraDNS somente compilará no FreeBSD, Mac OS X, Cygwin, Linux, e
+parcialmente em sistemas MinGW32. Se você estiver interessado em 
+portar o MaraDNS para um outro sistema, favor <A 
+href=http://www.maradns.org/contact.html>me contatar</A>.
+
+<A NAME=cygwin>
+<H2>21. Eu posso usar o MaraDNS no Windows?</H2>
+</A>
+
+<p>
+Sim.  Há tanto uma versão mingw32 parcial (binário win32 nativo)
+e uma versão completa para Cygwin; ambos versões fazem parte 
+da construção nativa do MaraDNS.
+
+<A NAME=upstream>
+<H2>22. MaraDNS "congela" após ser usado por algum tempo</H2>
+</A>
+
+Se estiver usando o servidores de nome do seu provedor ou alguns
+outros servidores de nome que na realidade, não são servidores de 
+nome root, por favor tenha certeza que você esteja usando a variável 
+de dicionário upstream_servers em vez da variável de dicionário root_servers.  
+
+<p>
+Se o MaraDNS ainda gelar depois de fazer esta correção, por favor,  
+envie um relatório de bug à lista de email.
+
+
+<A NAME=python>
+<H2>23. Que tipo de integração com o Python MaraDNS tem?</H2>
+</A>
+O arquivo mararc usa a mesma sintaxe que o Python utiliza; na realidade,
+o Python pode analisar corretamente um arquivo mararc formatado.
+<p>
+Não há nenhuma outra integração atualmente com Python.
+
+<A NAME=kvar>
+<H2>24. "kvar" não significa "quatro" em Esperanto?</H2>
+</A>
+Realmente, sim.  Porém o uso de "kvar" no fonte do MaraDNS  
+é apenas uma coincidencia com palavra Esperanta.  "kvar" é abreviação de  
+"variável kiwi"; muito do código analisando gramaticalmente vem do código  
+usado no projeto de filtro para spam Kiwi.    
+
+<A NAME=scability>
+<H2>25. O quanto escalável é MaraDNS?</H2>
+</A>
+MaraDNS é otimizado para servir um número pequeno de domínios o mais 
+rápido possível.  Dito isso, MaraDNS é notavelmente eficiente em servir um  
+grande número de domínios, contanto que o servidor que roda o MaraDNS tenha   
+memória suficiente para ajustar todos os domínios, e que o tempo de
+inicialização para o carregameto de um grande número de domínios possam 
+ser trabalhados.  
+ 
+<P>
+O "grande-O" ou "theta" as taxas de crescimento para várias funções de MaraDNS
+são como segue,  onde N é o númeor de host autoritativos send servidos:
+<p>
+<pre>
+Startup time                            N
+Memory usage                            N
+Processing incoming DNS requests        1
+</pre>
+<p>
+Como pode ser visto, MaraDNS processará 1 ou 100000 domínios na mesma quantia  
+de tempo, uma vez que os nomes de domínio estiverem carregados na memória. 
+
+<A name=upstream_d>
+<h2>26. Estou tendo problemas em configurar <tt>upstream_servers</tt></h2>
+</A>
+A variável mararc <tt>upstream_servers</tt> é configurada desta maneira:
+
+<blockquote>
+<tt>upstream_servers["."] = "10.3.28.79, 10.2.19.83"</tt>
+</blockquote>
+
+Note o <tt>["."]</tt>.  A razão para isso é futuras versões do MaraDNS 
+podem ter mais controles fine-grained para os valores de 
+<tt>upstream_servers</tt> e <tt>root_servers</tt>.
+
+<p>
+Nota que a variável <tt>upstream_servers</tt> precisa ser inicializada
+antes de ser usada via <tt>upstream_servers = {}</tt> (a razão para isto
+é que deste modo o arquivo mararc tem 100% de compatibilidade
+com a sintaxe Python). Um arquivo completo do mararc que usa 
+<tt>upstream_servers</tt > pode ser como este: 
+
+<pre>
+ipv4_bind_addresses = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+recursive_acl = "127.0.0.1/8"
+upstream_servers = {}
+upstream_servers["."] = "10.1.2.3, 10.2.4.6"
+</pre>
+
+

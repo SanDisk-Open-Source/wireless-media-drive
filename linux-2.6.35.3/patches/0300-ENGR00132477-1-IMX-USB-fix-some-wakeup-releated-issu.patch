@@ -1,0 +1,29 @@
+From 0ec621f2740d83c9fddabda7faede731af0946fd Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Tue, 12 Oct 2010 14:03:14 +0800
+Subject: [PATCH] ENGR00132477-1 IMX USB:fix some wakeup releated issues
+
+MSL Part
+when usb otg is enabled, we do debounce in the otg isr with the wakeup
+event detected, so we drop the debounce in usb_host_wakeup_irq
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ arch/arm/plat-mxc/usb_common.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index 2d5dc71..76c1fcd 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -909,7 +909,6 @@ int usb_host_wakeup_irq(struct device *wkup_dev)
+ 		/*if only host mode is enabled, the wakeup event
+ 		 * must be host wakeup event */
+ #ifdef CONFIG_USB_OTG
+-		usb_debounce_id_pin();
+ 		if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID))
+ 			wakeup_req = 0;
+ #endif
+-- 
+1.5.4.4
+

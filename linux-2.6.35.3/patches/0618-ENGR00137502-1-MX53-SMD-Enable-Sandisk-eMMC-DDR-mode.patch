@@ -1,0 +1,30 @@
+From 2b4ea702e7964f2556150c8f56508c4f5425381f Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Wed, 5 Jan 2011 14:14:55 +0800
+Subject: [PATCH] ENGR00137502-1 MX53 SMD Enable Sandisk eMMC DDR mode
+
+A while delay is mandatory required by Sandisk eMMC44 card when
+enable the DDR mode, since this eMMC44 chip is not abide to the
+eMMC spec.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 690e348..c10efa1 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -888,7 +888,7 @@ static struct mxc_mmc_platform_data mmc2_data = {
+ static struct mxc_mmc_platform_data mmc3_data = {
+ 	.ocr_mask = MMC_VDD_27_28 | MMC_VDD_28_29 | MMC_VDD_29_30
+ 		| MMC_VDD_31_32,
+-	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
++	.caps = MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA | MMC_CAP_DATA_DDR,
+ 	.min_clk = 400000,
+ 	.max_clk = 50000000,
+ 	.card_inserted_state = 1,
+-- 
+1.5.4.4
+

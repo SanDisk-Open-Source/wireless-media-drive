@@ -1,0 +1,72 @@
+<HEAD><TITLE>Tutorial MaraDNS</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Tutoriais MaraDNS e guias de uso</H1>
+
+MaraDNS inclui um número de tutoriais e guias de uso no quais 
+cobrem desde ensinar os princípios do DNS para alguém que nunca administrou
+um servidor DNS antes, a guias do uso para coisas exotica como usar registros 
+privados CNAME que aponta às consultas de DNS públicas. 
+<p>
+
+Para pessoas que nunca usaram DNS antes, O <A href=dnsintro.html>guia de
+introdução ao DNS </A> é um bom lugar para começar. Para pessoas que 
+tem alguma experiência com servidores DNS, o guia <A href=quick_start.html>
+começo instantâneo </A> é um bom lugar para começar.
+
+<h2>Tutoriais e guias de uso</h2>
+
+<UL>
+<LI><A href=dnsintro.html>Uma introdução ao DNS</A>
+<LI><A href=recursive.html>Usando MaraDNS como servidor de DNS recursivo</A>
+<LI><A href=authoritative.html>Usando MaraDNS como servidor de DNS autoritativo</A>
+<LI><A href=compile.html>Um guia de como compilar e instalar MaraDNS</A>
+<LI><A href=update.html>Como atualizar MaraDNS 1.0 para MaraDNS 1.2</A>
+<LI><A href=default_zonefile.html>Arquivo de zona padrão do MaraDNS permite 
+		que você tenham um grande número zonas servidas por MaraDNS, com 
+		um mínimo uso da memória, e uma inicialização rápida</A>
+<LI><A href=dnsmaster.html>Como permitir que outros servidores DNS transfiram zonas
+    sobre DNS</A>
+<LI><A href=dnsslave.html>Como transferir zonas de outros servidores de DNS para o
+    MaraDNS</A>
+<LI><A href=dnstcp.html>Como servir registros DNS sobre TCP</A>
+<LI><A href=glossary.html>Um glossario</A>
+<LI><A href=quick_start.html>Um guia de começo instantâneo para experientes administradores
+UNIX e Linux</A>
+<LI><A href=recordtypes.html>Um resumo de alguns tipos de registros suportados por MaraDNS.
+Também descreve como delegar sub-zonas</A>
+<LI><A href=dangling.html>Como resolver registros CNAME "dangling"  </A>
+</UL>
+
+<h2>Man pages</h2>
+
+<UL>
+<LI><A href=man.askmara.html>Man page do askmara (Cliente de requisição do DNS )</A>
+<LI><A href=man.csv2.html>Man page do formato de arquivo de zona csv2</A>
+<LI><A href=man.csv2_txt.html>Man page para registros txt e raw em csv2</A>
+<LI><A href=man.duende.html>Man page do duende (MaraDNS daemonizer)</A>
+<LI><A href=man.fetchzone.html>Man page do fetchzone (cliente de transfiridor de zona) </A>
+<LI><A href=man.maradns.html>Man page do daemon do maradns (UDP DNS server)</A>
+<LI><A href=man.mararc.html>Man page do arquivo de configuração mararc</A>
+<LI><A href=man.zoneserver.html>Man page do zoneserver (TCP DNS server)</A>
+</UL>
+
+</body>

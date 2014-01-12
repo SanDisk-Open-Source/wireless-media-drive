@@ -1,0 +1,193 @@
+From 788936a479a78af83bdec911545e27f0a30b3e29 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Tue, 14 Sep 2010 19:25:22 +0800
+Subject: [PATCH] ENGR00131479-1 CS42888: Playback and record support on 35kernel
+
+CS42888 codec support on 2.6.35 Kernel
+
+Signed-off-by: William Lai <b04597@freescale.com>
+---
+ sound/soc/codecs/Kconfig           |    2 ++
+ sound/soc/codecs/cs42888.c         |   15 ++++-----------
+ sound/soc/imx/imx-3stack-cs42888.c |    7 +++++--
+ sound/soc/imx/imx-esai.c           |   20 +++++++++++---------
+ 4 files changed, 22 insertions(+), 22 deletions(-)
+
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index bf8151a..5b8b951 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -279,9 +279,11 @@ config SND_SOC_WM9713
+ 
+ config SND_SOC_SGTL5000
+ 	tristate
++	depends on I2C
+ 
+ config SND_SOC_AK4647
+         tristate
++        depends on I2C
+ 
+ config SND_SOC_MXS_ADC_CODEC
+ 	tristate
+diff --git a/sound/soc/codecs/cs42888.c b/sound/soc/codecs/cs42888.c
+index e9288cc..7b92331 100644
+--- a/sound/soc/codecs/cs42888.c
++++ b/sound/soc/codecs/cs42888.c
+@@ -610,7 +610,7 @@ static int cs42888_set_dai_sysclk(struct snd_soc_dai *codec_dai,
+ 				 int clk_id, unsigned int freq, int dir)
+ {
+ 	struct snd_soc_codec *codec = codec_dai->codec;
+-	struct cs42888_private *cs42888 = codec->private_data;
++	struct cs42888_private *cs42888 = codec->drvdata;
+ 
+ 	cs42888->mclk = freq;
+ 
+@@ -634,7 +634,7 @@ static int cs42888_set_dai_fmt(struct snd_soc_dai *codec_dai,
+ 			      unsigned int format)
+ {
+ 	struct snd_soc_codec *codec = codec_dai->codec;
+-	struct cs42888_private *cs42888 = codec->private_data;
++	struct cs42888_private *cs42888 = codec->drvdata;
+ 	int ret = 0;
+ 	u8 val;
+ 	val = cs42888_read_reg_cache(codec, CS42888_FORMAT);
+@@ -714,7 +714,7 @@ static int cs42888_hw_params(struct snd_pcm_substream *substream,
+ 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+ 	struct snd_soc_device *socdev = rtd->socdev;
+ 	struct snd_soc_codec *codec = socdev->card->codec;
+-	struct cs42888_private *cs42888 = codec->private_data;
++	struct cs42888_private *cs42888 = codec->drvdata;
+ 	int ret;
+ 	unsigned int i;
+ 	unsigned int rate;
+@@ -889,13 +889,6 @@ static int cs42888_probe(struct platform_device *pdev)
+ 	/* Add DAPM controls */
+ 	ca42888_add_widgets(codec);
+ 
+-	/* And finally, register the socdev */
+-	ret = snd_soc_init_card(socdev);
+-	if (ret < 0) {
+-		dev_err(codec->dev, "failed to register card\n");
+-		goto error_free_pcms;
+-	}
+-
+ 	return 0;
+ 
+ error_free_pcms:
+@@ -1005,7 +998,7 @@ static int cs42888_i2c_probe(struct i2c_client *i2c_client,
+ 	INIT_LIST_HEAD(&codec->dapm_widgets);
+ 	INIT_LIST_HEAD(&codec->dapm_paths);
+ 
+-	codec->private_data = cs42888;
++	codec->drvdata = cs42888;
+ 	codec->name = "CS42888";
+ 	codec->owner = THIS_MODULE;
+ 	codec->read = cs42888_read_reg_cache;
+diff --git a/sound/soc/imx/imx-3stack-cs42888.c b/sound/soc/imx/imx-3stack-cs42888.c
+index 726bdfb..5f4af68 100644
+--- a/sound/soc/imx/imx-3stack-cs42888.c
++++ b/sound/soc/imx/imx-3stack-cs42888.c
+@@ -13,6 +13,7 @@
+ 
+ #include <linux/module.h>
+ #include <linux/moduleparam.h>
++#include <linux/slab.h>
+ #include <linux/device.h>
+ #include <linux/i2c.h>
+ #include <linux/clk.h>
+@@ -93,10 +94,10 @@ static int imx_3stack_startup(struct snd_pcm_substream *substream)
+ 
+ static void imx_3stack_shutdown(struct snd_pcm_substream *substream)
+ {
++#if defined(CONFIG_MXC_ASRC) || defined(CONFIG_MXC_ASRC_MODULE)
+ 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+ 	struct snd_soc_dai_link *pcm_link = rtd->dai;
+ 
+-#if defined(CONFIG_MXC_ASRC) || defined(CONFIG_MXC_ASRC_MODULE)
+ 	if (asrc_esai_data.output_sample_rate >= 32000) {
+ 		struct snd_soc_dai *cpu_dai = pcm_link->cpu_dai;
+ 		codec_dai->playback.rates = asrc_esai_data.codec_dai_rates;
+@@ -118,7 +119,9 @@ static int imx_3stack_surround_hw_params(struct snd_pcm_substream *substream,
+ 	unsigned int rate = params_rate(params);
+ 	u32 dai_format;
+ 	unsigned int mclk_freq = 0, lrclk_ratio = 0;
++#if defined(CONFIG_MXC_ASRC) || defined(CONFIG_MXC_ASRC_MODULE)
+ 	unsigned int channel = params_channels(params);
++#endif
+ 	struct imx_esai *esai_mode = (struct imx_esai *)cpu_dai->private_data;
+ 	if (clk_state.lr_clk_active > 1)
+ 		return 0;
+@@ -207,7 +210,7 @@ static int imx_3stack_surround_hw_params(struct snd_pcm_substream *substream,
+ 	/* set cpu DAI configuration */
+ 	snd_soc_dai_set_fmt(cpu_dai, dai_format);
+ 	/* set i.MX active slot mask */
+-	snd_soc_dai_set_tdm_slot(cpu_dai, channel == 1 ? 0x1 : 0x3, 2);
++	snd_soc_dai_set_tdm_slot(cpu_dai, 0x3, 0x3, 2, 32);
+ 	/* set the ESAI system clock as output */
+ 	snd_soc_dai_set_sysclk(cpu_dai, ESAI_CLK_EXTAL,
+ 		mclk_freq, SND_SOC_CLOCK_OUT);
+diff --git a/sound/soc/imx/imx-esai.c b/sound/soc/imx/imx-esai.c
+index 0c6b234..cd9131e 100644
+--- a/sound/soc/imx/imx-esai.c
++++ b/sound/soc/imx/imx-esai.c
+@@ -20,6 +20,7 @@
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/platform_device.h>
++#include <linux/fsl_devices.h>
+ #include <linux/slab.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/clk.h>
+@@ -137,31 +138,31 @@ static int imx_esai_set_dai_clkdiv(struct snd_soc_dai *cpu_dai,
+ /*
+  * ESAI Network Mode or TDM slots configuration.
+  */
+-static int imx_esai_set_dai_tdm_slot(struct snd_soc_dai *cpu_dai,
+-				     unsigned int mask, int slots)
++static int imx_esai_set_dai_tdm_slot(struct snd_soc_dai *dai,
++	unsigned int tx_mask, unsigned int rx_mask, int slots, int slot_width)
+ {
+ 	u32 tccr, rccr;
+ 
+-	if (cpu_dai->id & IMX_DAI_ESAI_TX) {
++	if (dai->id & IMX_DAI_ESAI_TX) {
+ 		tccr = __raw_readl(ESAI_TCCR);
+ 
+ 		tccr &= ESAI_TCCR_TDC_MASK;
+ 		tccr |= ESAI_TCCR_TDC(slots - 1);
+ 
+ 		__raw_writel(tccr, ESAI_TCCR);
+-		__raw_writel((mask & 0xffff), ESAI_TSMA);
+-		__raw_writel(((mask >> 16) & 0xffff), ESAI_TSMB);
++		__raw_writel((tx_mask & 0xffff), ESAI_TSMA);
++		__raw_writel(((tx_mask >> 16) & 0xffff), ESAI_TSMB);
+ 	}
+ 
+-	if (cpu_dai->id & IMX_DAI_ESAI_RX) {
++	if (dai->id & IMX_DAI_ESAI_RX) {
+ 		rccr = __raw_readl(ESAI_RCCR);
+ 
+ 		rccr &= ESAI_RCCR_RDC_MASK;
+ 		rccr |= ESAI_RCCR_RDC(slots - 1);
+ 
+ 		__raw_writel(rccr, ESAI_RCCR);
+-		__raw_writel((mask & 0xffff), ESAI_RSMA);
+-		__raw_writel(((mask >> 16) & 0xffff), ESAI_RSMB);
++		__raw_writel((rx_mask & 0xffff), ESAI_RSMA);
++		__raw_writel(((rx_mask >> 16) & 0xffff), ESAI_RSMB);
+ 	}
+ 
+ 	ESAI_DUMP();
+@@ -552,7 +553,8 @@ static int imx_esai_probe(struct platform_device *pdev, struct snd_soc_dai *dai)
+ 	imx_esai_txrx_state = 0;
+ 
+ 	esai_clk = clk_get(NULL, "esai_clk");
+-
++	if (!esai_clk)
++		printk(KERN_WARNING "Can't get the clock esai_clk \n");
+ 	return 0;
+ }
+ 
+-- 
+1.5.4.4
+

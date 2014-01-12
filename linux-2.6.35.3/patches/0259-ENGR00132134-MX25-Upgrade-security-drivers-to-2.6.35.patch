@@ -1,0 +1,123 @@
+From 5a22ffcd654513937af529d635f1c128b5a82551 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Wed, 29 Sep 2010 10:34:06 -0500
+Subject: [PATCH] ENGR00132134 MX25 Upgrade security drivers to 2.6.35 kernel
+
+Machine layer changes to support security drivers:
+1) clock register changes for SCC and DryIce modules
+2) register DryIce RTC in 3Stack board init function
+3) Define SCC, RNG, and DryIce base addrs and interrupts
+for MX25.
+4) removed keypad device from devices.c since it is also
+ defined in mx25_3stack.c
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ arch/arm/mach-mx25/clock.c            |    4 ++--
+ arch/arm/mach-mx25/devices.c          |   19 -------------------
+ arch/arm/mach-mx25/mx25_3stack.c      |    4 +++-
+ arch/arm/plat-mxc/include/mach/mx25.h |    8 ++++++++
+ 4 files changed, 13 insertions(+), 22 deletions(-)
+
+diff --git a/arch/arm/mach-mx25/clock.c b/arch/arm/mach-mx25/clock.c
+index 5a52e30..6c287a9 100644
+--- a/arch/arm/mach-mx25/clock.c
++++ b/arch/arm/mach-mx25/clock.c
+@@ -1775,7 +1775,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("imx-i2c.1", NULL, i2c_clk[1])
+ 	_REGISTER_CLOCK("imx-i2c.2", NULL, i2c_clk[2])
+ 	_REGISTER_CLOCK("fec.0", NULL, fec_clk[0])
+-	_REGISTER_CLOCK("imxdi_rtc.0", NULL, dryice_clk)
++	_REGISTER_CLOCK(NULL, "dryice_clk", dryice_clk)
+ 	_REGISTER_CLOCK("imx-fb.0", NULL, lcdc_clk[0])
+ 	_REGISTER_CLOCK("mxc_sdma.0", "sdma_ipg_clk", sdma_clk[0])
+ 	_REGISTER_CLOCK("mxc_sdma.0", "sdma_ahb_clk", sdma_clk[1])
+@@ -1791,7 +1791,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("mxc_esai.0", NULL, esai_clk[0])
+ 	_REGISTER_CLOCK("mxc_iim.0", NULL, iim_clk)
+ 	_REGISTER_CLOCK("mxc_w1.0", NULL, owire_clk[0])
+-	_REGISTER_CLOCK("mxc_scc.0", NULL, scc_clk)
++	_REGISTER_CLOCK(NULL, "scc_clk", scc_clk)
+ 	_REGISTER_CLOCK("mxc_sim.0", NULL, sim1_clk[0])
+ 	_REGISTER_CLOCK("mxc_sim.0", NULL, sim2_clk[0])
+ 	_REGISTER_CLOCK("mxc_ssi.0", NULL, ssi1_clk[0])
+diff --git a/arch/arm/mach-mx25/devices.c b/arch/arm/mach-mx25/devices.c
+index 70a681e..e05f842 100644
+--- a/arch/arm/mach-mx25/devices.c
++++ b/arch/arm/mach-mx25/devices.c
+@@ -387,25 +387,6 @@ struct platform_device mxc_pwm_device2 = {
+ 	.resource = mxc_pwm_resources2,
+ };
+ 
+-static struct resource mxc_keypad_resources[] = {
+-	{
+-		.start	= 0x43fa8000,
+-		.end	= 0x43fabfff,
+-		.flags	= IORESOURCE_MEM,
+-	}, {
+-		.start   = 24,
+-		.end     = 24,
+-		.flags   = IORESOURCE_IRQ,
+-	}
+-};
+-
+-struct platform_device mxc_keypad_device = {
+-	.name = "mxc-keypad",
+-	.id = -1,
+-	.num_resources = ARRAY_SIZE(mxc_keypad_resources),
+-	.resource = mxc_keypad_resources,
+-};
+-
+ static struct resource mxc_pwm_resources3[] = {
+ 	{
+ 		.start	= 0x53fc8000,
+diff --git a/arch/arm/mach-mx25/mx25_3stack.c b/arch/arm/mach-mx25/mx25_3stack.c
+index 12b86c8..dc528dd 100644
+--- a/arch/arm/mach-mx25/mx25_3stack.c
++++ b/arch/arm/mach-mx25/mx25_3stack.c
+@@ -47,6 +47,7 @@
+ #include "board-mx25_3stack.h"
+ #include "crm_regs.h"
+ #include "iomux.h"
++#include "devices.h"
+ 
+ /*!
+  * @file mach-mx25/mx25_3stack.c
+@@ -118,7 +119,7 @@ static struct keypad_data keypad_plat_data = {
+ };
+ 
+ /* mxc keypad driver */
+-static struct platform_device mxc_keypad_device = {
++struct platform_device mxc_keypad_device = {
+ 	.name = "mxc_keypad",
+ 	.id = 0,
+ 	.num_resources = ARRAY_SIZE(mxc_kpp_resources),
+@@ -826,6 +827,7 @@ static void __init mxc_board_init(void)
+ 	mxc_init_sim();
+ 	mxc_init_fec();
+ 	mxc_init_flexcan();
++	mxc_register_device(&mx25_rtc_device, NULL);
+ }
+ 
+ /*
+diff --git a/arch/arm/plat-mxc/include/mach/mx25.h b/arch/arm/plat-mxc/include/mach/mx25.h
+index f142508..4c783a3 100644
+--- a/arch/arm/plat-mxc/include/mach/mx25.h
++++ b/arch/arm/plat-mxc/include/mach/mx25.h
+@@ -289,5 +289,13 @@
+ #define AUDMUX_BASE_ADDR		MX25_AUDMUX_BASE_ADDR
+ #define MXC_INT_ESAI			MX25_INT_ESAI
+ #define SDMA_BASE_ADDR			MX25_SDMA_BASE_ADDR
++#define SCC_BASE_ADDR			MX25_SCC_BASE_ADDR
++#define MXC_INT_SCC_SCM		MX25_INT_SCC_SCM
++#define MXC_INT_SCC_SMN		MX25_INT_SCC_SMN
++#define DRYICE_BASE_ADDR		MX25_DRYICE_BASE_ADDR
++#define MXC_INT_DRYICE_NORM	MX25_INT_DRYICE
++#define MXC_INT_DRYICE_SEC		MX25_INT_DRYICE_SEC
++#define RNGB_BASE_ADDR			MX25_RNGB_BASE_ADDR
++#define MXC_INT_RNG				MX25_INT_RNG
+ 
+ #endif /* ifndef __MACH_MX25_H__ */
+-- 
+1.5.4.4
+

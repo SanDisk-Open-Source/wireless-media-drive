@@ -1,0 +1,218 @@
+From 77d931aab97fdb48702b057f7cbfb4f34b921d3a Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Wed, 17 Nov 2010 17:29:12 +0800
+Subject: [PATCH] ENGR00122167-1 ipuv3: adding VGA support.
+
+Add VGA support for ipu basic driver and fb driver.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_common.c    |    1 +
+ drivers/mxc/ipu3/ipu_disp.c      |   58 +++++++++++++++++++++++++++++++++++++-
+ drivers/mxc/ipu3/ipu_regs.h      |    1 +
+ drivers/video/mxc/mxc_ipuv3_fb.c |   14 +++++++++
+ include/linux/ipu.h              |    8 +++++
+ include/linux/mxcfb.h            |    1 +
+ 6 files changed, 82 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index 73e22cd..620d17f 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -2459,6 +2459,7 @@ ipu_color_space_t format_to_colorspace(uint32_t fmt)
+ 	case IPU_PIX_FMT_RGB565:
+ 	case IPU_PIX_FMT_BGR24:
+ 	case IPU_PIX_FMT_RGB24:
++	case IPU_PIX_FMT_GBR24:
+ 	case IPU_PIX_FMT_BGR32:
+ 	case IPU_PIX_FMT_BGRA32:
+ 	case IPU_PIX_FMT_RGB32:
+diff --git a/drivers/mxc/ipu3/ipu_disp.c b/drivers/mxc/ipu3/ipu_disp.c
+index 77f2fb9..f87ad9b 100644
+--- a/drivers/mxc/ipu3/ipu_disp.c
++++ b/drivers/mxc/ipu3/ipu_disp.c
+@@ -880,6 +880,10 @@ void _ipu_init_dc_mappings(void)
+ 	_ipu_dc_map_link(11, 5, 1, 5, 2, 5, 0);
+ 	_ipu_dc_map_clear(12);
+ 	_ipu_dc_map_link(12, 5, 2, 5, 1, 5, 0);
++
++	/* IPU_PIX_FMT_GBR24 */
++	_ipu_dc_map_clear(13);
++	_ipu_dc_map_link(13, 0, 2, 0, 0, 0, 1);
+ }
+ 
+ int _ipu_pixfmt_to_map(uint32_t fmt)
+@@ -904,6 +908,8 @@ int _ipu_pixfmt_to_map(uint32_t fmt)
+ 		return 10;
+ 	case IPU_PIX_FMT_YVYU:
+ 		return 12;
++	case IPU_PIX_FMT_GBR24:
++		return 13;
+ 	}
+ 
+ 	return -1;
+@@ -962,6 +968,48 @@ void adapt_panel_to_ipu_restricitions(uint32_t *pixel_clk,
+ }
+ 
+ /*!
++ * This function is called to set delayed hsync/vsync for TVE-VGA mode.
++ *
++ */
++void ipu_set_vga_delayed_hsync_vsync(uint32_t width, uint32_t height,
++		uint32_t h_start_width, uint32_t h_sync_width,
++		uint32_t h_end_width, uint32_t v_start_width,
++		uint32_t v_sync_width, uint32_t v_end_width,
++		uint32_t hsync_delay, uint32_t vsync_delay,
++		uint32_t hsync_polarity, uint32_t vsync_polarity)
++{
++	int h_total, v_total;
++	uint32_t di_gen, disp = 1;
++
++	h_total = width + h_start_width + h_sync_width + h_end_width;
++	v_total = height + v_start_width + v_sync_width + v_end_width;
++
++	/* couter 7 for delay HSYNC */
++	_ipu_di_sync_config(disp, 7, h_total - 1,
++			DI_SYNC_CLK, hsync_delay, DI_SYNC_CLK,
++			0, DI_SYNC_NONE, 1, DI_SYNC_NONE,
++			DI_SYNC_CLK, 0, h_sync_width * 2);
++
++	/* couter 8 for delay VSYNC */
++	_ipu_di_sync_config(disp, 8, v_total - 1,
++			DI_SYNC_INT_HSYNC, vsync_delay, DI_SYNC_INT_HSYNC, 0,
++			DI_SYNC_NONE, 1, DI_SYNC_NONE,
++			DI_SYNC_INT_HSYNC, 0, v_sync_width * 2);
++
++	di_gen = __raw_readl(DI_GENERAL(disp));
++	di_gen &= ~DI_GEN_POLARITY_2;
++	di_gen &= ~DI_GEN_POLARITY_3;
++	di_gen &= ~DI_GEN_POLARITY_7;
++	di_gen &= ~DI_GEN_POLARITY_8;
++	if (hsync_polarity)
++		di_gen |= DI_GEN_POLARITY_7;
++	if (vsync_polarity)
++		di_gen |= DI_GEN_POLARITY_8;
++	__raw_writel(di_gen, DI_GENERAL(disp));
++}
++EXPORT_SYMBOL(ipu_set_vga_delayed_hsync_vsync);
++
++/*!
+  * This function is called to initialize a synchronous LCD panel.
+  *
+  * @param       disp            The DI the panel is attached to.
+@@ -1030,6 +1078,9 @@ int32_t ipu_init_sync_panel(int disp, uint32_t pixel_clk,
+ 	/* Init clocking */
+ 	dev_dbg(g_ipu_dev, "pixel clk = %d\n", pixel_clk);
+ 
++	/*clear DI*/
++	__raw_writel((1 << 21), DI_GENERAL(disp));
++
+ 	if (sig.ext_clk) {
+ 		/*
+ 		 * Set the  PLL to be an even multiple of the pixel clock.
+@@ -1046,7 +1097,9 @@ int32_t ipu_init_sync_panel(int disp, uint32_t pixel_clk,
+ 				while (rounded_pixel_clk < 150000000)
+ 					rounded_pixel_clk += pixel_clk * 2;
+ 				clk_set_rate(di_parent, rounded_pixel_clk);
+-				clk_set_rate(g_di_clk[disp], pixel_clk);
++				rounded_pixel_clk =
++					clk_round_rate(g_di_clk[disp], pixel_clk);
++				clk_set_rate(g_di_clk[disp], rounded_pixel_clk);
+ 			}
+ 		}
+ 		clk_set_parent(g_pixel_clk[disp], g_di_clk[disp]);
+@@ -1432,6 +1485,9 @@ int32_t ipu_init_sync_panel(int disp, uint32_t pixel_clk,
+ 		(pixel_fmt == IPU_PIX_FMT_VYUY))
+ 			di_gen |= 0x00020000;
+ 
++	if (!sig.clk_pol)
++		di_gen |= DI_GEN_POLARITY_DISP_CLK;
++
+ 	__raw_writel(di_gen, DI_GENERAL(disp));
+ 
+ 	if (!ipu_freq_scaling_enabled)
+diff --git a/drivers/mxc/ipu3/ipu_regs.h b/drivers/mxc/ipu3/ipu_regs.h
+index e8b067a..002bb96 100644
+--- a/drivers/mxc/ipu3/ipu_regs.h
++++ b/drivers/mxc/ipu3/ipu_regs.h
+@@ -576,6 +576,7 @@ enum {
+ 	DI_DW_GEN_COMPONENT_SIZE_OFFSET = 16,
+ 
+ 	DI_GEN_DI_CLK_EXT = 0x100000,
++	DI_GEN_POLARITY_DISP_CLK = 0x00020000,
+ 	DI_GEN_POLARITY_1 = 0x00000001,
+ 	DI_GEN_POLARITY_2 = 0x00000002,
+ 	DI_GEN_POLARITY_3 = 0x00000004,
+diff --git a/drivers/video/mxc/mxc_ipuv3_fb.c b/drivers/video/mxc/mxc_ipuv3_fb.c
+index 50c8b01..f288039 100644
+--- a/drivers/video/mxc/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc/mxc_ipuv3_fb.c
+@@ -1109,6 +1109,16 @@ static int mxcfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
+ 				return -EFAULT;
+ 			break;
+ 		}
++	case MXCFB_SET_DIFMT:
++		{
++			struct mxcfb_info *mxc_fbi =
++				(struct mxcfb_info *)fbi->par;
++
++			if (get_user(mxc_fbi->ipu_di_pix_fmt, argp))
++				return -EFAULT;
++
++			break;
++		}
+ 	default:
+ 		retval = -EINVAL;
+ 	}
+@@ -1804,6 +1814,10 @@ static int mxcfb_option_setup(struct fb_info *info, char *options)
+ 			mxcfbi->ipu_di_pix_fmt = IPU_PIX_FMT_BGR24;
+ 			continue;
+ 		}
++		if (!strncmp(opt, "GBR24", 5)) {
++			mxcfbi->ipu_di_pix_fmt = IPU_PIX_FMT_GBR24;
++			continue;
++		}
+ 		if (!strncmp(opt, "RGB565", 6)) {
+ 			mxcfbi->ipu_di_pix_fmt = IPU_PIX_FMT_RGB565;
+ 			continue;
+diff --git a/include/linux/ipu.h b/include/linux/ipu.h
+index 493a4ce..ab58677 100644
+--- a/include/linux/ipu.h
++++ b/include/linux/ipu.h
+@@ -111,6 +111,7 @@ typedef enum {
+ #define IPU_PIX_FMT_BGR666  fourcc('B', 'G', 'R', '6')	/*!< 18  BGR-6-6-6    */
+ #define IPU_PIX_FMT_BGR24   fourcc('B', 'G', 'R', '3')	/*!< 24  BGR-8-8-8    */
+ #define IPU_PIX_FMT_RGB24   fourcc('R', 'G', 'B', '3')	/*!< 24  RGB-8-8-8    */
++#define IPU_PIX_FMT_GBR24   fourcc('G', 'B', 'R', '3')	/*!< 24  GBR-8-8-8    */
+ #define IPU_PIX_FMT_BGR32   fourcc('B', 'G', 'R', '4')	/*!< 32  BGR-8-8-8-8  */
+ #define IPU_PIX_FMT_BGRA32  fourcc('B', 'G', 'R', 'A')	/*!< 32  BGR-8-8-8-8  */
+ #define IPU_PIX_FMT_RGB32   fourcc('R', 'G', 'B', '4')	/*!< 32  RGB-8-8-8-8  */
+@@ -971,6 +972,13 @@ int ipu_init_async_panel(int disp, int type, uint32_t cycle_time,
+ void ipu_disp_direct_write(ipu_channel_t channel, u32 value, u32 offset);
+ void ipu_reset_disp_panel(void);
+ 
++void ipu_set_vga_delayed_hsync_vsync(uint32_t width, uint32_t height,
++		uint32_t h_start_width, uint32_t h_sync_width,
++		uint32_t h_end_width, uint32_t v_start_width,
++		uint32_t v_sync_width, uint32_t v_end_width,
++		uint32_t hsync_delay, uint32_t vsync_delay,
++		uint32_t hsync_polarity, uint32_t vsync_polarity);
++
+ /* ADC API */
+ int32_t ipu_adc_write_template(display_port_t disp, uint32_t *pCmd,
+ 			       bool write);
+diff --git a/include/linux/mxcfb.h b/include/linux/mxcfb.h
+index babf3f2..1733f91 100644
+--- a/include/linux/mxcfb.h
++++ b/include/linux/mxcfb.h
+@@ -125,6 +125,7 @@ struct mxcfb_waveform_modes {
+ #define MXCFB_GET_FB_IPU_DI 	_IOR('F', 0x29, u_int32_t)
+ #define MXCFB_GET_DIFMT	       _IOR('F', 0x2A, u_int32_t)
+ #define MXCFB_GET_FB_BLANK     _IOR('F', 0x2B, u_int32_t)
++#define MXCFB_SET_DIFMT		_IOW('F', 0x2C, u_int32_t)
+ 
+ /* IOCTLs for E-ink panel updates */
+ #define MXCFB_SET_WAVEFORM_MODES	_IOW('F', 0x2B, struct mxcfb_waveform_modes)
+-- 
+1.5.4.4
+

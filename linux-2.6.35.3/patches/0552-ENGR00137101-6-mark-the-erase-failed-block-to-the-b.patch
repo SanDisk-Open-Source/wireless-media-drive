@@ -1,0 +1,33 @@
+From dea51bf8f75b32aecc8090fe3242c45ab2fd387f Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Fri, 17 Dec 2010 11:19:20 +0800
+Subject: [PATCH] ENGR00137101-6  mark the erase failed block to the bbt table.
+
+If it return failure in erasing a block, mark the block bad
+in the bbt table.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/nand_base.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 8bc3e7b..3a8216b 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -2586,6 +2586,12 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 			instr->state = MTD_ERASE_FAILED;
+ 			instr->fail_addr =
+ 				((loff_t)page << chip->page_shift);
++
++			if (chip->bbt) {
++				int i = (page / pages_per_block) << 1;
++				chip->bbt[i >> 3] |= 0x03 << (i & 0x6);
++				mtd->ecc_stats.badblocks++;
++			}
+ 			goto erase_exit;
+ 		}
+ 
+-- 
+1.5.4.4
+

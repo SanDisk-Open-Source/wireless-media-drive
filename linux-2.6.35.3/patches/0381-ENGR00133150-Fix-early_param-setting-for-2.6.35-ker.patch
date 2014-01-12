@@ -1,0 +1,47 @@
+From 3cb467a443f3b174db829702d0df3222080a5458 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Thu, 28 Oct 2010 16:39:31 -0500
+Subject: [PATCH] ENGR00133150: Fix early_param setting for 2.6.35 kernel
+
+The 2.6.35  kernel early_param tag no longer needs an "="
+in the first parameter.
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/plat-mxc/cpu_common.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/cpu_common.c b/arch/arm/plat-mxc/cpu_common.c
+index dba08ba..702489f 100644
+--- a/arch/arm/plat-mxc/cpu_common.c
++++ b/arch/arm/plat-mxc/cpu_common.c
+@@ -33,7 +33,7 @@ static int __init system_rev_setup(char *p)
+ 	system_rev = simple_strtoul(p, NULL, 16);
+ 	return 0;
+ }
+-early_param("system_rev=", system_rev_setup);
++early_param("system_rev", system_rev_setup);
+ 
+ int mxc_jtag_enabled;		/* OFF: 0 (default), ON: 1 */
+ int uart_at_24; 			/* OFF: 0 (default); ON: 1 */
+@@ -56,7 +56,7 @@ static int __init jtag_wfi_setup(char *p)
+ 	}
+ 	return 0;
+ }
+-early_param("jtag=", jtag_wfi_setup);
++early_param("jtag", jtag_wfi_setup);
+ 
+ static int __init uart_parent_setup(char *p)
+ {
+@@ -70,7 +70,7 @@ static int __init uart_parent_setup(char *p)
+ 	}
+ 	return 0;
+ }
+-early_param("debug_uart=", uart_parent_setup);
++early_param("debug_uart", uart_parent_setup);
+ 
+ void __init mxc_cpu_common_init(void)
+ {
+-- 
+1.5.4.4
+

@@ -1,0 +1,39 @@
+From 5db5144b1e551914183abfec5d41f28b789350c0 Mon Sep 17 00:00:00 2001
+From: Lionel Xu <Lionel.Xu@freescale.com>
+Date: Mon, 13 Sep 2010 17:34:54 +0800
+Subject: [PATCH] ENGR00131404 MXS DMA: Fix occasional system panic when playback finish
+
+System got panic sometimes when a playback stops, this patch is used to
+fix the problem.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ sound/soc/mxs/mxs-pcm.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/sound/soc/mxs/mxs-pcm.c b/sound/soc/mxs/mxs-pcm.c
+index 12c9030..198f1e5 100644
+--- a/sound/soc/mxs/mxs-pcm.c
++++ b/sound/soc/mxs/mxs-pcm.c
+@@ -170,12 +170,18 @@ static void mxs_pcm_stop(struct snd_pcm_substream *substream)
+ 	struct mxs_dma_info dma_info;
+ 	int desc;
+ 
++	int periods_num = prtd->dma_totsize / prtd->dma_period;
+ 	/* Freez DMA channel for a moment */
+ 	mxs_dma_freeze(prtd->dma_ch);
+ 	mxs_dma_get_info(prtd->dma_ch, &dma_info);
+ 
+ 	desc = (dma_info.buf_addr - runtime->dma_addr) / prtd->dma_period;
+ 
++	if (desc >= periods_num)
++		desc = 0;
++	else if (desc < 0)
++		desc = 0;
++
+ 	/* Set up the next descriptor to decrement DMA channel sempahore */
+ 	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.bytes = 0;
+ 	prtd->dma_desc_array[(desc + 1)%8]->cmd.cmd.bits.pio_words = 0;
+-- 
+1.5.4.4
+

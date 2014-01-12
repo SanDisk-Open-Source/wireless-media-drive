@@ -1,0 +1,50 @@
+From 67bac10c5a9bc9d625db4b962c83be3a43f59450 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Wed, 11 Aug 2010 10:55:48 +0800
+Subject: [PATCH] ENGR00125957-1 mx53-MSL: add sii9022 hdmi support
+
+Add MSL support for sii9022.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |   17 +++++++++++++++++
+ 1 files changed, 17 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 5c900e2..f9f4269 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -899,6 +899,18 @@ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
+ 	 },
+ };
+ 
++static void sii9022_hdmi_reset(void)
++{
++	gpio_set_value(MX53_DVI_RESET, 0);
++	msleep(10);
++	gpio_set_value(MX53_DVI_RESET, 1);
++	msleep(10);
++}
++
++static struct mxc_lcd_platform_data sii9022_hdmi_data = {
++	.reset = sii9022_hdmi_reset,
++};
++
+ /* TO DO add platform data */
+ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+@@ -922,6 +934,11 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	 .type = "eeprom",
+ 	 .addr = 0x50,
+ 	 },
++	{
++	.type = "sii9022",
++	.addr = 0x39,
++	.platform_data = &sii9022_hdmi_data,
++	},
+ };
+ 
+ static struct mtd_partition mxc_dataflash_partitions[] = {
+-- 
+1.5.4.4
+

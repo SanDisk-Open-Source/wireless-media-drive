@@ -1,0 +1,108 @@
+<HEAD><TITLE>Tutorial MaraDNS</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso88559-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Introdução ao DNS</H1>
+
+Este documento tem por intenção ser uma introdução ao DNS para alguém que  
+nunca tenha administrado um servidor de DNS ou registrado domínios antes. 
+Sendo parte do pacote MaraDNS, este tutorial assume que você esteja usando  
+o MaraDNS.  
+
+<H2>O que é DNS?</H2>
+
+DNS é o método que a internet usa para converter números difícis-de-se-lembrar  
+como '10.17.243.32', em nomes fácil-para-se lembrar, como 'www.yahoo.com'. 
+A razão para esta conversão é porque o protocólo por debaixo da internet, TCP/IP, 
+utiliza somente números difícis-de-se-lembrar para se comunicar com outros
+computadores.  
+
+<H2>O que é um servidor DNS</H2>
+
+Um <!-- This 'A' should be here -->
+<A href="glossary.html#dns_server">
+<i>Servidor DNS</i></A>
+é um programa que realiza a conversão DNS de nome para número.
+Existe três tipos de servidores de DNS:
+
+<UL>
+
+<LI>Servidores DNS no qual podem converter a maioria dos 
+<A href="glossary.html#dns_node"><i>Nodos DNS</i></A>
+em seus correspondentes número. Esses são chamados de 
+<A href="glossary.html#recursive">
+<i>servidores de DNS recursivo</i></A>.
+Este tipo de servidor não pode mudar o nome de nenhum
+<A href="glossary.html#dns_node">
+<i>nó DNS</i></A>.
+Ao invés, eles simplesmente perguntam para outros servidores de DNS o IP  
+para um determinado nó de DNS.  
+
+<p>
+Este tipo de servidor de DNS não depende do provedor para solucionar 
+um determinado nome, mas contata diretamente os servidores de DNS
+autoritativos pertinente em qualquer lugar na internet para solucionar 
+um determinado nó de DNS.  
+
+<LI>Servidor de DNS que somente pode converter 
+<A href="glossary.html#dns_node">
+<i>nós DNS </i></A>
+no qual um  
+<A href="glossary.html#dns_admin"> <i>administrador de servidor DNS</i></A>
+administra nós de DNS para IPs.  O administrador de DNS pode mudar o IPs que os 
+nós de DNS têm.  Esses tipos de servidores DNS são chamados
+<A href="glossary.html#authoritative">
+<i>servidores de DNS autoritativos</i></A>. Servidores recursivos contatam os 
+servidores autoritativos para aprender o IP para um determinado nó de DNS. 
+
+<LI>Servidores de DNS que simplesmente armazenam informações 
+obtidas de outro servidores de DNS recursivo.  Enquato, MaraDNS suporta
+este tipo de configuração via variável "upstream_servers" no arquivo
+    <A href=man.mararc.html>mararc</A>, MaraDNS também pode agir
+com um completo servidor de DNS recursivo fledged.
+
+</UL>
+
+MaraDNS é tanto um servidor de DNS recursivo como um autoritativo.  Entretando, 
+o uso de um ou outro depende da função que o servidor irá exercer:
+
+<UL>
+
+<LI>Se deseja apenas contatar outros sites na internet, então é apenas 
+necessário configurar um 
+    <A href="glossary.html#recursive">
+    <i>servidor de DNS recursivo</i></A>.
+    <A href=recursive.html>Tutorial para configurar o MaraDNS como um Servidor
+    de DNS recursivo.</A>
+
+<LI>Se deseja registrar domínios, e ter o próprio computador para servir o 
+domínio em questão, então precisa configurar um 
+    <A href="glossary.html#authoritative">
+    <i>servidor de dns autoritativo</i></A>.  
+    <A href=autoritativo.html>Tutorial para configurar o MaraDNS como um servidor
+    de dns autoritativo.</A>
+
+<LI>Se atualmente tem configurado um outro servidor de DNS, 
+    <A href=convert.html>este documento detalhe como migrar de um outro
+    servidor de DNS para MaraDNS</A>.
+
+</UL>
+
+</body>

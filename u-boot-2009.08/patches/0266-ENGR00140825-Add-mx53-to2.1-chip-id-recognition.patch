@@ -1,0 +1,102 @@
+From 32ab6b2785b763588644e766235e2ed21a853c2a Mon Sep 17 00:00:00 2001
+From: Terry <r65388@freescale.com>
+Date: Fri, 18 Mar 2011 13:45:20 +0800
+Subject: [PATCH] ENGR00140825: Add mx53 to2.1 chip id recognition
+
+Add mx53 to2.1 chip id recognition.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx53_ard/mx53_ard.c   |    6 +++++-
+ board/freescale/mx53_evk/mx53_evk.c   |    5 ++++-
+ board/freescale/mx53_loco/mx53_loco.c |    5 ++++-
+ board/freescale/mx53_smd/mx53_smd.c   |    5 ++++-
+ include/asm-arm/arch-mx53/mx53.h      |    2 ++
+ 5 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/board/freescale/mx53_ard/mx53_ard.c b/board/freescale/mx53_ard/mx53_ard.c
+index ad3f794..6803777 100755
+--- a/board/freescale/mx53_ard/mx53_ard.c
++++ b/board/freescale/mx53_ard/mx53_ard.c
+@@ -196,9 +196,13 @@ static inline void setup_soc_rev(void)
+ 	case 0x20:
+ 		system_rev = 0x53000 | CHIP_REV_2_0;
+ 		break;
++	case 0x21:
++		system_rev = 0x53000 | CHIP_REV_2_1;
++		break;
+ 	default:
+-		system_rev = 0x53000 | CHIP_REV_2_0;
++		system_rev = 0x53000 | CHIP_REV_UNKNOWN;
+ 	}
++
+ 	switch (board_rev) {
+ 	case 0x01:
+ 		system_rev |= BOARD_REV_1;
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 79472a7..d36c803 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -134,8 +134,11 @@ static inline void setup_soc_rev(void)
+ 	case 0x20:
+ 		system_rev = 0x53000 | CHIP_REV_2_0;
+ 		break;
++	case 0x21:
++		system_rev = 0x53000 | CHIP_REV_2_1;
++		break;
+ 	default:
+-		system_rev = 0x53000 | CHIP_REV_2_0;
++		system_rev = 0x53000 | CHIP_REV_UNKNOWN;
+ 	}
+ }
+ 
+diff --git a/board/freescale/mx53_loco/mx53_loco.c b/board/freescale/mx53_loco/mx53_loco.c
+index 83977de..ef90889 100644
+--- a/board/freescale/mx53_loco/mx53_loco.c
++++ b/board/freescale/mx53_loco/mx53_loco.c
+@@ -131,8 +131,11 @@ static inline void setup_soc_rev(void)
+ 	case 0x20:
+ 		system_rev = 0x53000 | CHIP_REV_2_0;
+ 		break;
++	case 0x21:
++		system_rev = 0x53000 | CHIP_REV_2_1;
++		break;
+ 	default:
+-		system_rev = 0x53000 | CHIP_REV_2_0;
++		system_rev = 0x53000 | CHIP_REV_UNKNOWN;
+ 	}
+ }
+ 
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index 1ef757c..5a9062f 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -193,8 +193,11 @@ static inline void setup_soc_rev(void)
+ 	case 0x20:
+ 		system_rev = 0x53000 | CHIP_REV_2_0;
+ 		break;
++	case 0x21:
++		system_rev = 0x53000 | CHIP_REV_2_1;
++		break;
+ 	default:
+-		system_rev = 0x53000 | CHIP_REV_2_0;
++		system_rev = 0x53000 | CHIP_REV_UNKNOWN;
+ 	}
+ 
+ 	switch (board_rev) {
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index bb5252c..6e02fc9 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -347,6 +347,8 @@
+ 
+ #define CHIP_REV_1_0            0x10
+ #define CHIP_REV_2_0            0x20
++#define CHIP_REV_2_1            0x21
++#define CHIP_REV_UNKNOWN        0xff
+ 
+ #define BOARD_REV_1             0x000
+ #define BOARD_REV_2             0x100
+-- 
+1.5.4.4
+

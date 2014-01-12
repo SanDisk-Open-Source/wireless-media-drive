@@ -1,0 +1,556 @@
+From 8916b65502796a48c3422c0e867fe6edfa67037a Mon Sep 17 00:00:00 2001
+From: Frank Li <frank.li@freescale.com>
+Date: Tue, 26 Oct 2010 16:54:19 +0800
+Subject: [PATCH] ENGR00133049 Support nand flash for MX28
+
+Support nand basic read/write in MX28 u-boot.
+
+Signed-off-by: Frank Li <frank.li@freescale.com>
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx28_evk/mx28_evk.c |   38 ++++++++++++++++-
+ cpu/arm926ejs/mx28/generic.c        |   44 +++++++++++++++++++-
+ drivers/dma/apbh_dma.c              |    7 +--
+ drivers/mtd/nand/gpmi_nfc_gpmi.h    |    2 +-
+ drivers/mtd/nand/gpmi_nfc_hal.c     |    8 ++--
+ include/asm-arm/apbh_dma.h          |   79 +++++++++++++++++++++++++++++++++++
+ include/asm-arm/arch-mx28/mx28.h    |    4 ++
+ include/configs/mx28_evk.h          |   73 ++++++++++++++++++++++++++------
+ include/configs/mx50_arm2.h         |    8 +++-
+ include/configs/mx50_arm2_lpddr2.h  |    6 ++-
+ 10 files changed, 242 insertions(+), 27 deletions(-)
+
+diff --git a/board/freescale/mx28_evk/mx28_evk.c b/board/freescale/mx28_evk/mx28_evk.c
+index 814c5b0..4aae4b2 100644
+--- a/board/freescale/mx28_evk/mx28_evk.c
++++ b/board/freescale/mx28_evk/mx28_evk.c
+@@ -96,10 +96,34 @@ static struct pin_desc enet_pins_desc[] = {
+ 	{ PINID_ENET_CLK, PIN_FUN1, PAD_8MA, PAD_3V3, 1 }
+ };
+ 
++/* Gpmi pins */
++static struct pin_desc gpmi_pins_desc[] = {
++	{ PINID_GPMI_D00, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D01, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D02, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D03, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D04, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D05, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D06, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_D07, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_RDN, PIN_FUN1, PAD_8MA, PAD_1V8, 1 },
++	{ PINID_GPMI_WRN, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_ALE, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_CLE, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_RDY0, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_RDY1, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_CE0N, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_CE1N, PIN_FUN1, PAD_4MA, PAD_3V3, 0 },
++	{ PINID_GPMI_RESETN, PIN_FUN1, PAD_4MA, PAD_3V3, 0 }
++};
+ static struct pin_group enet_pins = {
+ 	.pins		= enet_pins_desc,
+ 	.nr_pins	= ARRAY_SIZE(enet_pins_desc)
+ };
++static struct pin_group gpmi_pins = {
++	.pins		= gpmi_pins_desc,
++	.nr_pins	= ARRAY_SIZE(gpmi_pins_desc)
++};
+ 
+ /*
+  * Functions
+@@ -110,7 +134,9 @@ int board_init(void)
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX28EVK;
+ 	/* Adress of boot parameters */
+ 	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
+-
++#ifdef CONFIG_NAND_GPMI
++	setup_gpmi_nand();
++#endif
+ 	return 0;
+ }
+ 
+@@ -170,6 +196,7 @@ int ssp_mmc_gpio_init(bd_t *bis)
+ 
+ 			break;
+ 		case 1:
++#ifdef CONFIG_CMD_MMC
+ 			/* Set up MMC pins */
+ 			pin_set_group(&mmc1_pins);
+ 
+@@ -184,7 +211,7 @@ int ssp_mmc_gpio_init(bd_t *bis)
+ 			/* Set up SD1 WP pin */
+ 			pin_set_type(PINID_SSP1_GPIO_WP, PIN_GPIO);
+ 			pin_gpio_direction(PINID_SSP1_GPIO_WP, 0);
+-
++#endif
+ 			break;
+ 		default:
+ 			printf("Warning: you configured more ssp mmc controller"
+@@ -251,3 +278,10 @@ void enet_board_init(void)
+ 	udelay(200);
+ 	pin_gpio_set(PINID_ENET0_RX_CLK, 1);
+ }
++#ifdef CONFIG_NAND_GPMI
++void setup_gpmi_nand()
++{
++	/* Set up GPMI pins */
++	pin_set_group(&gpmi_pins);
++}
++#endif
+diff --git a/cpu/arm926ejs/mx28/generic.c b/cpu/arm926ejs/mx28/generic.c
+index eeeadfe..9bca80b 100644
+--- a/cpu/arm926ejs/mx28/generic.c
++++ b/cpu/arm926ejs/mx28/generic.c
+@@ -105,12 +105,54 @@ static u32 mx28_get_emiclk(void)
+ 
+ 	return emiclk;
+ }
++static inline void __enable_gpmi_clk(void)
++{
++	/* Clear bypass bit*/
++	REG_SET(REGS_CLKCTRL_BASE, HW_CLKCTRL_CLKSEQ,
++	       BM_CLKCTRL_CLKSEQ_BYPASS_GPMI);
++	/* Set gpmi clock to ref_gpmi/12 */
++	REG_WR(REGS_CLKCTRL_BASE, HW_CLKCTRL_GPMI,
++	      REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_GPMI) &
++	      (~(BM_CLKCTRL_GPMI_DIV)) &
++	      (~(BM_CLKCTRL_GPMI_CLKGATE)) |
++	      1);
++}
++static u32 mx28_get_gpmiclk(void)
++{
++	const u32 xtal = 24, ref = 480;
++	u32 clkfrac, clkseq, clkctrl;
++	u32 frac, div;
++	u32 gpmiclk;
++	/* Enable gpmi clock */
++	__enable_gpmi_clk();
++
++	clkfrac = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_FRAC1);
++	clkseq = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_CLKSEQ);
++	clkctrl = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_GPMI);
+ 
++	if (clkseq & BM_CLKCTRL_CLKSEQ_BYPASS_GPMI) {
++		/* xtal path */
++		div = (clkctrl & BM_CLKCTRL_GPMI_DIV) >>
++			BP_CLKCTRL_GPMI_DIV;
++		gpmiclk = xtal / div;
++	} else {
++		/* ref path */
++		frac = (clkfrac & BM_CLKCTRL_FRAC1_GPMIFRAC) >>
++			BP_CLKCTRL_FRAC1_GPMIFRAC;
++		div = (clkctrl & BM_CLKCTRL_GPMI_DIV) >>
++			BP_CLKCTRL_GPMI_DIV;
++		gpmiclk =  (ref * 18 / frac) / div;
++	}
++
++	return gpmiclk;
++}
+ u32 mxc_get_clock(enum mxc_clock clk)
+ {
+ 	switch (clk) {
+ 	case MXC_ARM_CLK:
+ 		return mx28_get_pclk() * 1000000;
++	case MXC_GPMI_CLK:
++		return mx28_get_gpmiclk() * 1000000;
+ 	case MXC_AHB_CLK:
+ 	case MXC_IPG_CLK:
+ 		return mx28_get_hclk() * 1000000;
+@@ -136,7 +178,7 @@ int print_cpuinfo(void)
+ 	printf("CPU:   %d MHz\n", mx28_get_pclk());
+ 	printf("BUS:   %d MHz\n", mx28_get_hclk());
+ 	printf("EMI:   %d MHz\n", mx28_get_emiclk());
+-
++	printf("GPMI:   %d MHz\n", mx28_get_gpmiclk());
+ 	return 0;
+ }
+ #endif
+diff --git a/drivers/dma/apbh_dma.c b/drivers/dma/apbh_dma.c
+index 296125a..71d9842 100644
+--- a/drivers/dma/apbh_dma.c
++++ b/drivers/dma/apbh_dma.c
+@@ -16,12 +16,11 @@
+  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+  */
+ 
+-#include <asm/apbh_dma.h>
+-
+ #include <linux/err.h>
+ #include <linux/list.h>
+ #include <malloc.h>
+ #include <common.h>
++#include <asm/apbh_dma.h>
+ #include <asm/io.h>
+ 
+ #ifdef CONFIG_ARCH_MMU
+@@ -268,7 +267,7 @@ static int mxs_dma_apbh_probe(void)
+ 		BM_APBH_CTRL0_APB_BURST_EN);
+ #endif
+ 
+-	mxs_dma_apbh.chan_base = MXS_DMA_CHANNEL_AHB_APBH_GPMI0;
++	mxs_dma_apbh.chan_base = MXS_DMA_CHANNEL_AHB_APBH;
+ 	mxs_dma_apbh.chan_num = MXS_MAX_DMA_CHANNELS;
+ 
+ 	return mxs_dma_device_register(&mxs_dma_apbh);
+@@ -566,7 +565,7 @@ struct mxs_dma_desc *mxs_dma_alloc_desc(void)
+ 	if (pdesc == NULL)
+ 		return NULL;
+ 	memset(pdesc, 0, sizeof(*pdesc));
+-	pdesc->address = pdesc;
++	pdesc->address = (dma_addr_t)pdesc;
+ #endif
+ 
+ 	return pdesc;
+diff --git a/drivers/mtd/nand/gpmi_nfc_gpmi.h b/drivers/mtd/nand/gpmi_nfc_gpmi.h
+index c82e215..bd56e4c 100644
+--- a/drivers/mtd/nand/gpmi_nfc_gpmi.h
++++ b/drivers/mtd/nand/gpmi_nfc_gpmi.h
+@@ -311,7 +311,7 @@
+ 
+ #define HW_GPMI_TIMING2	(0x00000090)
+ 
+-#if defined(CONFIG_GPMI_NFC_V0)
++#if !defined(CONFIG_GPMI_NFC_V2)
+ 
+ #define BP_GPMI_TIMING2_UDMA_TRP	24
+ #define BM_GPMI_TIMING2_UDMA_TRP	0xFF000000
+diff --git a/drivers/mtd/nand/gpmi_nfc_hal.c b/drivers/mtd/nand/gpmi_nfc_hal.c
+index ca8bd01..23ce265 100644
+--- a/drivers/mtd/nand/gpmi_nfc_hal.c
++++ b/drivers/mtd/nand/gpmi_nfc_hal.c
+@@ -1113,7 +1113,7 @@ static int read_data(struct mtd_info *mtd, unsigned chip,
+ 
+ 	(*d)->cmd.cmd.data                   = 0;
+ 	(*d)->cmd.cmd.bits.command           = DMA_WRITE;
+-#if defined(CONFIG_GPMI_NFC_V2)
++#if !defined(CONFIG_GPMI_NFC_V0)
+ 	(*d)->cmd.cmd.bits.chain             = 0;
+ 	(*d)->cmd.cmd.bits.irq               = 1;
+ #else
+@@ -1398,7 +1398,7 @@ static int read_page(struct mtd_info *mtd, unsigned chip,
+ 	(*d)->cmd.cmd.bits.irq               = 0;
+ 	(*d)->cmd.cmd.bits.nand_lock         = 0;
+ 	(*d)->cmd.cmd.bits.nand_wait_4_ready = 1;
+-#if defined(CONFIG_GPMI_NFC_V2)
++#if !defined(CONFIG_GPMI_NFC_V0)
+ 	(*d)->cmd.cmd.bits.dec_sem           = 0;
+ #else
+ 	(*d)->cmd.cmd.bits.dec_sem           = 1;
+@@ -1446,7 +1446,7 @@ static int read_page(struct mtd_info *mtd, unsigned chip,
+ 	(*d)->cmd.cmd.bits.irq               = 0;
+ 	(*d)->cmd.cmd.bits.nand_lock         = 0;
+ 	(*d)->cmd.cmd.bits.nand_wait_4_ready = 0;
+-#if defined(CONFIG_GPMI_NFC_V2)
++#if !defined(CONFIG_GPMI_NFC_V0)
+ 	(*d)->cmd.cmd.bits.dec_sem           = 0;
+ #else
+ 	(*d)->cmd.cmd.bits.dec_sem           = 1;
+@@ -1509,7 +1509,7 @@ static int read_page(struct mtd_info *mtd, unsigned chip,
+ 	(*d)->cmd.cmd.bits.irq               = 0;
+ 	(*d)->cmd.cmd.bits.nand_lock         = 0;
+ 	(*d)->cmd.cmd.bits.nand_wait_4_ready = 1;
+-#if defined(CONFIG_GPMI_NFC_V2)
++#if !defined(CONFIG_GPMI_NFC_V0)
+ 	(*d)->cmd.cmd.bits.dec_sem           = 0;
+ #else
+ 	(*d)->cmd.cmd.bits.dec_sem           = 1;
+diff --git a/include/asm-arm/apbh_dma.h b/include/asm-arm/apbh_dma.h
+index 5bb1f40..213f9f4 100644
+--- a/include/asm-arm/apbh_dma.h
++++ b/include/asm-arm/apbh_dma.h
+@@ -47,6 +47,22 @@
+ #define BM_APBH_CTRL0_CLKGATE_CHANNEL 0x0000FFFF
+ #define BF_APBH_CTRL0_CLKGATE_CHANNEL(v)  \
+ 	(((v) << 0) & BM_APBH_CTRL0_CLKGATE_CHANNEL)
++#if defined(CONFIG_APBH_DMA_V1)
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__SSP0  0x0001
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__SSP1  0x0002
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__SSP2  0x0004
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__SSP3  0x0008
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND0 0x0010
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND1 0x0020
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND2 0x0040
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND3 0x0080
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND4 0x0100
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND5 0x0200
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND6 0x0400
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND7 0x0800
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__HSADC 0x1000
++#define BV_APBH_CTRL0_CLKGATE_CHANNEL__LCDIF 0x2000
++#elif defined(CONFIG_APBH_DMA_V2)
+ #define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND0 0x0001
+ #define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND1 0x0002
+ #define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND2 0x0004
+@@ -56,6 +72,7 @@
+ #define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND6 0x0040
+ #define BV_APBH_CTRL0_CLKGATE_CHANNEL__NAND7 0x0080
+ #define BV_APBH_CTRL0_CLKGATE_CHANNEL__SSP   0x0100
++#endif
+ 
+ #define HW_APBH_CTRL1	(0x00000010)
+ #define HW_APBH_CTRL1_SET	(0x00000014)
+@@ -174,6 +191,43 @@
+ #define BM_APBH_CHANNEL_CTRL_RESET_CHANNEL 0xFFFF0000
+ #define BF_APBH_CHANNEL_CTRL_RESET_CHANNEL(v) \
+ 	(((v) << 16) & BM_APBH_CHANNEL_CTRL_RESET_CHANNEL)
++
++#if defined(CONFIG_APBH_DMA_V1)
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__SSP0  0x0001
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__SSP1  0x0002
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__SSP2  0x0004
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__SSP3  0x0008
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND0 0x0010
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND1 0x0020
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND2 0x0040
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND3 0x0080
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND4 0x0100
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND5 0x0200
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND6 0x0400
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND7 0x0800
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__HSADC 0x1000
++#define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__LCDIF 0x2000
++
++#define BP_APBH_CHANNEL_CTRL_FREEZE_CHANNEL      0
++#define BM_APBH_CHANNEL_CTRL_FREEZE_CHANNEL 0x0000FFFF
++#define BF_APBH_CHANNEL_CTRL_FREEZE_CHANNEL(v)  \
++	(((v) << 0) & BM_APBH_CHANNEL_CTRL_FREEZE_CHANNEL)
++
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__SSP0  0x0001
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__SSP1  0x0002
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__SSP2  0x0004
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__SSP3  0x0008
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND0 0x0010
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND1 0x0020
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND2 0x0040
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND3 0x0080
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND4 0x0100
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND5 0x0200
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND6 0x0400
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND7 0x0800
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__HSADC 0x1000
++#define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__LCDIF 0x2000
++#elif defined(CONFIG_APBH_DMA_V2)
+ #define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND0 0x0001
+ #define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND1 0x0002
+ #define BV_APBH_CHANNEL_CTRL_RESET_CHANNEL__NAND2 0x0004
+@@ -196,6 +250,7 @@
+ #define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND6 0x0040
+ #define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__NAND7 0x0080
+ #define BV_APBH_CHANNEL_CTRL_FREEZE_CHANNEL__SSP   0x0100
++#endif
+ 
+ #define HW_APBH_DEVSEL	(0x00000040)
+ 
+@@ -321,18 +376,32 @@
+ #define BM_APBH_DMA_BURST_SIZE_CH3 0x000000C0
+ #define BF_APBH_DMA_BURST_SIZE_CH3(v)  \
+ 	(((v) << 6) & BM_APBH_DMA_BURST_SIZE_CH3)
++#define BV_APBH_DMA_BURST_SIZE_CH3__BURST0 0x0
++#define BV_APBH_DMA_BURST_SIZE_CH3__BURST4 0x1
++#define BV_APBH_DMA_BURST_SIZE_CH3__BURST8 0x2
++
+ #define BP_APBH_DMA_BURST_SIZE_CH2      4
+ #define BM_APBH_DMA_BURST_SIZE_CH2 0x00000030
+ #define BF_APBH_DMA_BURST_SIZE_CH2(v)  \
+ 	(((v) << 4) & BM_APBH_DMA_BURST_SIZE_CH2)
++#define BV_APBH_DMA_BURST_SIZE_CH2__BURST0 0x0
++#define BV_APBH_DMA_BURST_SIZE_CH2__BURST4 0x1
++#define BV_APBH_DMA_BURST_SIZE_CH2__BURST8 0x2
+ #define BP_APBH_DMA_BURST_SIZE_CH1      2
+ #define BM_APBH_DMA_BURST_SIZE_CH1 0x0000000C
+ #define BF_APBH_DMA_BURST_SIZE_CH1(v)  \
+ 	(((v) << 2) & BM_APBH_DMA_BURST_SIZE_CH1)
++#define BV_APBH_DMA_BURST_SIZE_CH1__BURST0 0x0
++#define BV_APBH_DMA_BURST_SIZE_CH1__BURST4 0x1
++#define BV_APBH_DMA_BURST_SIZE_CH1__BURST8 0x2
++
+ #define BP_APBH_DMA_BURST_SIZE_CH0      0
+ #define BM_APBH_DMA_BURST_SIZE_CH0 0x00000003
+ #define BF_APBH_DMA_BURST_SIZE_CH0(v)  \
+ 	(((v) << 0) & BM_APBH_DMA_BURST_SIZE_CH0)
++#define BV_APBH_DMA_BURST_SIZE_CH0__BURST0 0x0
++#define BV_APBH_DMA_BURST_SIZE_CH0__BURST4 0x1
++#define BV_APBH_DMA_BURST_SIZE_CH0__BURST8 0x2
+ 
+ #define HW_APBH_DEBUG	(0x00000060)
+ 
+@@ -515,7 +584,17 @@
+ 
+ enum {
+ 	MXS_DMA_CHANNEL_AHB_APBH = 0,
++#if defined(CONFIG_APBH_DMA_V1)
++	MXS_DMA_CHANNEL_AHB_APBH_SSP0 = MXS_DMA_CHANNEL_AHB_APBH,
++	MXS_DMA_CHANNEL_AHB_APBH_SSP1,
++	MXS_DMA_CHANNEL_AHB_APBH_SSP2,
++	MXS_DMA_CHANNEL_AHB_APBH_SSP3,
++	MXS_DMA_CHANNEL_AHB_APBH_GPMI0,
++#elif defined(CONFIG_APBH_DMA_V2)
+ 	MXS_DMA_CHANNEL_AHB_APBH_GPMI0 = MXS_DMA_CHANNEL_AHB_APBH,
++#else
++#	error "Undefined apbh dma version!"
++#endif
+ 	MXS_DMA_CHANNEL_AHB_APBH_GPMI1,
+ 	MXS_DMA_CHANNEL_AHB_APBH_GPMI2,
+ 	MXS_DMA_CHANNEL_AHB_APBH_GPMI3,
+diff --git a/include/asm-arm/arch-mx28/mx28.h b/include/asm-arm/arch-mx28/mx28.h
+index fc671ae..a21a3cc 100644
+--- a/include/asm-arm/arch-mx28/mx28.h
++++ b/include/asm-arm/arch-mx28/mx28.h
+@@ -25,6 +25,7 @@ enum mxc_clock {
+ 	MXC_ARM_CLK = 0,
+ 	MXC_AHB_CLK,
+ 	MXC_IPG_CLK,
++	MXC_GPMI_CLK,
+ };
+ 
+ unsigned int mxc_get_clock(enum mxc_clock clk);
+@@ -116,4 +117,7 @@ void enet_board_init(void);
+ #define REGS_DRAM_BASE		(0x800E0000)
+ #define REGS_ENET_BASE		(0x800F0000)
+ 
++#define BCH_BASE_ADDR REGS_BCH_BASE
++#define GPMI_BASE_ADDR REGS_GPMI_BASE
++#define ABPHDMA_BASE_ADDR  REGS_APBH_BASE
+ #endif /* __MX28_H */
+diff --git a/include/configs/mx28_evk.h b/include/configs/mx28_evk.h
+index 3148fd2..557c24d 100644
+--- a/include/configs/mx28_evk.h
++++ b/include/configs/mx28_evk.h
+@@ -45,6 +45,7 @@
+ /*
+  * U-Boot general configurations
+  */
++#define CONFIG_SYS_LONGHELP
+ #define CONFIG_SYS_PROMPT	"MX28 U-Boot > "
+ #define CONFIG_SYS_CBSIZE	1024		/* Console I/O buffer size */
+ #define CONFIG_SYS_PBSIZE \
+@@ -125,24 +126,70 @@
+  * MMC Driver
+  */
+ #define CONFIG_CMD_MMC
+-#define CONFIG_MMC
+-#define CONFIG_IMX_SSP_MMC		/* MMC driver based on SSP */
+-#define CONFIG_GENERIC_MMC
+-#define CONFIG_SYS_MMC_ENV_DEV	0
+-#define CONFIG_DOS_PARTITION
+-#define CONFIG_CMD_FAT
+-#define CONFIG_SYS_SSP_MMC_NUM 2
++
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC
++	#define CONFIG_IMX_SSP_MMC		/* MMC driver based on SSP */
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++	#define CONFIG_DOS_PARTITION
++	#define CONFIG_CMD_FAT
++	#define CONFIG_SYS_SSP_MMC_NUM 2
++#endif
+ 
+ /*
+- * Environments on MMC
++ * GPMI Nand Configs
+  */
++#ifndef CONFIG_CMD_MMC	/* NAND conflict with MMC */
++
++#define CONFIG_CMD_NAND
++
++#ifdef CONFIG_CMD_NAND
++	#define CONFIG_NAND_GPMI
++	#define CONFIG_GPMI_NFC_SWAP_BLOCK_MARK
++	#define CONFIG_GPMI_NFC_V1
++
++	#define CONFIG_GPMI_REG_BASE	GPMI_BASE_ADDR
++	#define CONFIG_BCH_REG_BASE	BCH_BASE_ADDR
++
++	#define NAND_MAX_CHIPS		8
++	#define CONFIG_SYS_NAND_BASE		0x40000000
++	#define CONFIG_SYS_MAX_NAND_DEVICE	1
++#endif
++
++/*
++ * APBH DMA Configs
++ */
++#define CONFIG_APBH_DMA
++
++#ifdef CONFIG_APBH_DMA
++	#define CONFIG_APBH_DMA_V1
++	#define CONFIG_MXS_DMA_REG_BASE ABPHDMA_BASE_ADDR
++#endif
++
++#endif
++
++/*
++ * Environments
++ */
++#define CONFIG_FSL_ENV_IN_MMC
++
+ #define CONFIG_CMD_ENV
+ #define CONFIG_ENV_OVERWRITE
+-#define CONFIG_ENV_IS_IN_MMC
+-/* Assoiated with the MMC layout defined in mmcops.c */
+-#define CONFIG_ENV_OFFSET		(0x400) /* 1 KB */
+-#define CONFIG_ENV_SIZE			(0x20000 - 0x400) /* 127 KB */
+-#define CONFIG_DYNAMIC_MMC_DEVNO
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x1400000 /* Nand env, offset: 20M */
++	#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++	#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	/* Assoiated with the MMC layout defined in mmcops.c */
++	#define CONFIG_ENV_OFFSET               (0x400) /* 1 KB */
++	#define CONFIG_ENV_SIZE                 (0x20000 - 0x400) /* 127 KB */
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
+ 
+ /* The global boot mode will be detected by ROM code and
+  * a boot mode value will be stored at fixed address:
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+index 48bd307..421740c 100644
+--- a/include/configs/mx50_arm2.h
++++ b/include/configs/mx50_arm2.h
+@@ -265,13 +265,19 @@
+ 	#define NAND_MAX_CHIPS		8
+ 	#define CONFIG_SYS_NAND_BASE		0x40000000
+ 	#define CONFIG_SYS_MAX_NAND_DEVICE	1
++
++
+ #endif
+ 
+ /*
+  * APBH DMA Configs
+  */
+ #define CONFIG_APBH_DMA
+-#define CONFIG_MXS_DMA_REG_BASE	ABPHDMA_BASE_ADDR
++
++#ifdef CONFIG_APBH_DMA
++	#define CONFIG_APBH_DMA_V2
++	#define CONFIG_MXS_DMA_REG_BASE	ABPHDMA_BASE_ADDR
++#endif
+ 
+ /*-----------------------------------------------------------------------
+  * Stack sizes
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index 4504ed0..ea11c02 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -264,7 +264,11 @@
+  * APBH DMA Configs
+  */
+ #define CONFIG_APBH_DMA
+-#define CONFIG_MXS_DMA_REG_BASE ABPHDMA_BASE_ADDR
++
++#ifdef CONFIG_APBH_DMA
++	#define CONFIG_APBH_DMA_V2
++	#define CONFIG_MXS_DMA_REG_BASE ABPHDMA_BASE_ADDR
++#endif
+ 
+ /*-----------------------------------------------------------------------
+  * Stack sizes
+-- 
+1.5.4.4
+

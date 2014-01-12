@@ -1,0 +1,1343 @@
+From 359ec824c60dffdca80f42ca626fb5baf67ad20e Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 21 Sep 2010 15:24:04 +0800
+Subject: [PATCH] ENGR00131779: Use serial_mxc as uart driver for all platforms
+
+Use serial_mxc as uart driver for all platforms.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ Makefile                                 |    5 +
+ board/freescale/mx51_bbg/mx51_bbg.c      |    2 +
+ cpu/arm1136/mx31/generic.c               |   15 ++
+ cpu/arm1136/mx35/Makefile                |    2 +-
+ cpu/arm1136/mx35/serial.c                |  220 -----------------------------
+ cpu/arm_cortexa8/mx51/Makefile           |    2 +-
+ cpu/arm_cortexa8/mx51/serial.c           |  226 ------------------------------
+ cpu/arm_cortexa8/mx53/Makefile           |    2 +-
+ cpu/arm_cortexa8/mx53/serial.c           |  226 ------------------------------
+ include/asm-arm/arch-mx31/mx31.h         |   17 ++-
+ include/configs/mx31_3stack.h            |    6 +-
+ include/configs/mx35_3stack.h            |    3 +-
+ include/configs/mx35_3stack_mfg.h        |    3 +-
+ include/configs/mx35_3stack_mmc.h        |    3 +-
+ include/configs/mx51_3stack.h            |    4 +-
+ include/configs/mx51_3stack_android.h    |    4 +-
+ include/configs/mx51_bbg.h               |    4 +-
+ include/configs/mx51_bbg_android.h       |    8 +-
+ include/configs/mx51_bbg_iram.h          |  207 +++++++++++++++++++++++++++
+ include/configs/mx51_bbg_mfg.h           |    4 +-
+ include/configs/mx53_arm2.h              |    4 +-
+ include/configs/mx53_arm2_android.h      |    4 +-
+ include/configs/mx53_arm2_ddr3.h         |    4 +-
+ include/configs/mx53_arm2_ddr3_android.h |    4 +-
+ include/configs/mx53_evk.h               |    4 +-
+ include/configs/mx53_evk_android.h       |    4 +-
+ 26 files changed, 278 insertions(+), 709 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index d2dda8d..9a35b9d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3260,7 +3260,12 @@ mx50_arm2_mfg_config	: unconfig
+ 
+ mx51_bbg_android_config	\
+ mx51_bbg_mfg_config \
++mx51_bbg_iram_config \
+ mx51_bbg_config		: unconfig
++	@[ -z "$(findstring iram_,$@)" ] || \
++		{ echo "TEXT_BASE = 0x1FFE5000" >$(obj)board/freescale/mx51_bbg/config.tmp ; \
++		  echo "... with iram configuration" ; \
++		}
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx51_bbg freescale mx51
+ 
+ mx51_3stack_android_config	\
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index e90337b..e0fe6bd 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -341,6 +341,7 @@ s32 spi_get_cfg(struct imx_spi_dev_t *dev)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_IMX_ECSPI
+ void spi_io_init(struct imx_spi_dev_t *dev)
+ {
+ 	switch (dev->base) {
+@@ -383,6 +384,7 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ 	}
+ }
+ #endif
++#endif
+ 
+ #ifdef CONFIG_MXC_FEC
+ 
+diff --git a/cpu/arm1136/mx31/generic.c b/cpu/arm1136/mx31/generic.c
+index 67c0cc6..c9bbc9c 100644
+--- a/cpu/arm1136/mx31/generic.c
++++ b/cpu/arm1136/mx31/generic.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include <common.h>
++#include <asm/arch/mx31.h>
+ #include <asm/arch/mx31-regs.h>
+ 
+ static u32 mx31_decode_pll(u32 reg, u32 infreq)
+@@ -77,6 +78,20 @@ void mx31_dump_clocks(void)
+ 	printf("ipg clock     : %dHz\n", mx31_get_ipg_clk());
+ }
+ 
++int mxc_get_clock(enum mxc_clock clk)
++{
++	switch (clk) {
++	case MXC_ARM_CLK:
++		return mx31_get_mcu_main_clk();
++	case MXC_UART_CLK:
++		return mx31_get_ipg_clk();
++	default:
++		break;
++	}
++
++	return -1;
++}
++
+ void mx31_gpio_mux(unsigned long mode)
+ {
+ 	unsigned long reg, shift, tmp;
+diff --git a/cpu/arm1136/mx35/Makefile b/cpu/arm1136/mx35/Makefile
+index 996360f..2415ad5 100644
+--- a/cpu/arm1136/mx35/Makefile
++++ b/cpu/arm1136/mx35/Makefile
+@@ -27,7 +27,7 @@ include $(TOPDIR)/config.mk
+ 
+ LIB	= $(obj)lib$(SOC).a
+ 
+-COBJS	= timer.o serial.o generic.o iomux.o
++COBJS	= timer.o generic.o iomux.o
+ SOBJS = mxc_nand_load.o
+ 
+ SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
+diff --git a/cpu/arm1136/mx35/serial.c b/cpu/arm1136/mx35/serial.c
+deleted file mode 100644
+index f4f674a..0000000
+--- a/cpu/arm1136/mx35/serial.c
++++ /dev/null
+@@ -1,220 +0,0 @@
+-/*
+- * (c) 2007 Sascha Hauer <s.hauer@pengutronix.de>
+- *
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- *
+- */
+-
+-#include <common.h>
+-
+-#if defined CONFIG_MX35_UART
+-
+-#include <asm/arch/mx35.h>
+-
+-#define __REG(x)     (*((volatile u32 *)(x)))
+-
+-#define UART_PHYS CONFIG_MX35_UART
+-
+-/* Register definitions */
+-#define URXD  0x0		/* Receiver Register */
+-#define UTXD  0x40		/* Transmitter Register */
+-#define UCR1  0x80		/* Control Register 1 */
+-#define UCR2  0x84		/* Control Register 2 */
+-#define UCR3  0x88		/* Control Register 3 */
+-#define UCR4  0x8c		/* Control Register 4 */
+-#define UFCR  0x90		/* FIFO Control Register */
+-#define USR1  0x94		/* Status Register 1 */
+-#define USR2  0x98		/* Status Register 2 */
+-#define UESC  0x9c		/* Escape Character Register */
+-#define UTIM  0xa0		/* Escape Timer Register */
+-#define UBIR  0xa4		/* BRM Incremental Register */
+-#define UBMR  0xa8		/* BRM Modulator Register */
+-#define UBRC  0xac		/* Baud Rate Count Register */
+-#define UTS   0xb4		/* UART Test Register (mx31) */
+-
+-/* UART Control Register Bit Fields.*/
+-#define  URXD_CHARRDY    (1<<15)
+-#define  URXD_ERR        (1<<14)
+-#define  URXD_OVRRUN     (1<<13)
+-#define  URXD_FRMERR     (1<<12)
+-#define  URXD_BRK        (1<<11)
+-#define  URXD_PRERR      (1<<10)
+-#define  UCR1_ADEN       (1<<15)	/* Auto dectect interrupt */
+-#define  UCR1_ADBR       (1<<14)	/* Auto detect baud rate */
+-#define  UCR1_TRDYEN     (1<<13)	/* Transmitter ready interrupt enable */
+-#define  UCR1_IDEN       (1<<12)	/* Idle condition interrupt */
+-#define  UCR1_RRDYEN     (1<<9)	/* Recv ready interrupt enable */
+-#define  UCR1_RDMAEN     (1<<8)	/* Recv ready DMA enable */
+-#define  UCR1_IREN       (1<<7)	/* Infrared interface enable */
+-#define  UCR1_TXMPTYEN   (1<<6)	/* Transimitter empty interrupt enable */
+-#define  UCR1_RTSDEN     (1<<5)	/* RTS delta interrupt enable */
+-#define  UCR1_SNDBRK     (1<<4)	/* Send break */
+-#define  UCR1_TDMAEN     (1<<3)	/* Transmitter ready DMA enable */
+-#define  UCR1_UARTCLKEN  (1<<2)	/* UART clock enabled */
+-#define  UCR1_DOZE       (1<<1)	/* Doze */
+-#define  UCR1_UARTEN     (1<<0)	/* UART enabled */
+-#define  UCR2_ESCI     	 (1<<15)	/* Escape seq interrupt enable */
+-#define  UCR2_IRTS  	 (1<<14)	/* Ignore RTS pin */
+-#define  UCR2_CTSC  	 (1<<13)	/* CTS pin control */
+-#define  UCR2_CTS        (1<<12)	/* Clear to send */
+-#define  UCR2_ESCEN      (1<<11)	/* Escape enable */
+-#define  UCR2_PREN       (1<<8)	/* Parity enable */
+-#define  UCR2_PROE       (1<<7)	/* Parity odd/even */
+-#define  UCR2_STPB       (1<<6)	/* Stop */
+-#define  UCR2_WS         (1<<5)	/* Word size */
+-#define  UCR2_RTSEN      (1<<4)	/* Request to send interrupt enable */
+-#define  UCR2_TXEN       (1<<2)	/* Transmitter enabled */
+-#define  UCR2_RXEN       (1<<1)	/* Receiver enabled */
+-#define  UCR2_SRST 	 (1<<0)	/* SW reset */
+-#define  UCR3_DTREN 	 (1<<13)	/* DTR interrupt enable */
+-#define  UCR3_PARERREN   (1<<12)	/* Parity enable */
+-#define  UCR3_FRAERREN   (1<<11)	/* Frame error interrupt enable */
+-#define  UCR3_DSR        (1<<10)	/* Data set ready */
+-#define  UCR3_DCD        (1<<9)	/* Data carrier detect */
+-#define  UCR3_RI         (1<<8)	/* Ring indicator */
+-#define  UCR3_TIMEOUTEN  (1<<7)	/* Timeout interrupt enable */
+-#define  UCR3_RXDSEN	 (1<<6)	/* Receive status interrupt enable */
+-#define  UCR3_AIRINTEN   (1<<5)	/* Async IR wake interrupt enable */
+-#define  UCR3_AWAKEN	 (1<<4)	/* Async wake interrupt enable */
+-#define  UCR3_REF25 	 (1<<3)	/* Ref freq 25 MHz */
+-#define  UCR3_REF30 	 (1<<2)	/* Ref Freq 30 MHz */
+-#define  UCR3_INVT  	 (1<<1)	/* Inverted Infrared transmission */
+-#define  UCR3_BPEN  	 (1<<0)	/* Preset registers enable */
+-#define  UCR4_CTSTL_32   (32<<10)	/* CTS trigger level (32 chars) */
+-#define  UCR4_INVR  	 (1<<9)	/* Inverted infrared reception */
+-#define  UCR4_ENIRI 	 (1<<8)	/* Serial infrared interrupt enable */
+-#define  UCR4_WKEN  	 (1<<7)	/* Wake interrupt enable */
+-#define  UCR4_REF16 	 (1<<6)	/* Ref freq 16 MHz */
+-#define  UCR4_IRSC  	 (1<<5)	/* IR special case */
+-#define  UCR4_TCEN  	 (1<<3)	/* Transmit complete interrupt enable */
+-#define  UCR4_BKEN  	 (1<<2)	/* Break condition interrupt enable */
+-#define  UCR4_OREN  	 (1<<1)	/* Receiver overrun interrupt enable */
+-#define  UCR4_DREN  	 (1<<0)	/* Recv data ready interrupt enable */
+-#define  UFCR_RXTL_SHF   0	/* Receiver trigger level shift */
+-#define  UFCR_RFDIV      (7<<7)	/* Reference freq divider mask */
+-#define  UFCR_TXTL_SHF   10	/* Transmitter trigger level shift */
+-#define  USR1_PARITYERR  (1<<15)	/* Parity error interrupt flag */
+-#define  USR1_RTSS  	 (1<<14)	/* RTS pin status */
+-#define  USR1_TRDY  	 (1<<13)/* Transmitter ready interrupt/dma flag */
+-#define  USR1_RTSD  	 (1<<12)	/* RTS delta */
+-#define  USR1_ESCF  	 (1<<11)	/* Escape seq interrupt flag */
+-#define  USR1_FRAMERR    (1<<10)	/* Frame error interrupt flag */
+-#define  USR1_RRDY       (1<<9)	/* Receiver ready interrupt/dma flag */
+-#define  USR1_TIMEOUT    (1<<7)	/* Receive timeout interrupt status */
+-#define  USR1_RXDS  	 (1<<6)	/* Receiver idle interrupt flag */
+-#define  USR1_AIRINT	 (1<<5)	/* Async IR wake interrupt flag */
+-#define  USR1_AWAKE 	 (1<<4)	/* Aysnc wake interrupt flag */
+-#define  USR2_ADET  	 (1<<15)	/* Auto baud rate detect complete */
+-#define  USR2_TXFE  	 (1<<14)	/* Transmit buffer FIFO empty */
+-#define  USR2_DTRF  	 (1<<13)	/* DTR edge interrupt flag */
+-#define  USR2_IDLE  	 (1<<12)	/* Idle condition */
+-#define  USR2_IRINT 	 (1<<8)	/* Serial infrared interrupt flag */
+-#define  USR2_WAKE  	 (1<<7)	/* Wake */
+-#define  USR2_RTSF  	 (1<<4)	/* RTS edge interrupt flag */
+-#define  USR2_TXDC  	 (1<<3)	/* Transmitter complete */
+-#define  USR2_BRCD  	 (1<<2)	/* Break condition */
+-#define  USR2_ORE        (1<<1)	/* Overrun error */
+-#define  USR2_RDR        (1<<0)	/* Recv data ready */
+-#define  UTS_FRCPERR	 (1<<13)	/* Force parity error */
+-#define  UTS_LOOP        (1<<12)	/* Loop tx and rx */
+-#define  UTS_TXEMPTY	 (1<<6)	/* TxFIFO empty */
+-#define  UTS_RXEMPTY	 (1<<5)	/* RxFIFO empty */
+-#define  UTS_TXFULL 	 (1<<4)	/* TxFIFO full */
+-#define  UTS_RXFULL 	 (1<<3)	/* RxFIFO full */
+-#define  UTS_SOFTRST	 (1<<0)	/* Software reset */
+-
+-DECLARE_GLOBAL_DATA_PTR;
+-
+-void serial_setbrg(void)
+-{
+-	u32 clk = mxc_get_clock(MXC_UART_CLK);
+-
+-	if (!gd->baudrate)
+-		gd->baudrate = CONFIG_BAUDRATE;
+-	__REG(UART_PHYS + UFCR) = 0x4 << 7;	/* divide input clock by 2 */
+-	__REG(UART_PHYS + UBIR) = 0xf;
+-	__REG(UART_PHYS + UBMR) = clk / (2 * gd->baudrate);
+-}
+-
+-int serial_getc(void)
+-{
+-	while (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
+-		;
+-	return __REG(UART_PHYS + URXD);
+-}
+-
+-void serial_putc(const char c)
+-{
+-	__REG(UART_PHYS + UTXD) = c;
+-
+-	/* wait for transmitter to be ready */
+-	while (!(__REG(UART_PHYS + UTS) & UTS_TXEMPTY))
+-		;
+-
+-	/* If \n, also do \r */
+-	if (c == '\n')
+-		serial_putc('\r');
+-}
+-
+-/*
+- * Test whether a character is in the RX buffer
+- */
+-int serial_tstc(void)
+-{
+-	/* If receive fifo is empty, return false */
+-	if (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
+-		return 0;
+-	return 1;
+-}
+-
+-void serial_puts(const char *s)
+-{
+-	while (*s)
+-		serial_putc(*s++);
+-}
+-
+-/*
+- * Initialise the serial port with the given baudrate. The settings
+- * are always 8 data bits, no parity, 1 stop bit, no start bits.
+- *
+- */
+-int serial_init(void)
+-{
+-	__REG(UART_PHYS + UCR1) = 0x0;
+-	__REG(UART_PHYS + UCR2) = 0x0;
+-
+-	while (!(__REG(UART_PHYS + UCR2) & UCR2_SRST))
+-		;
+-
+-	__REG(UART_PHYS + UCR3) = 0x0704;
+-	__REG(UART_PHYS + UCR4) = 0x8000;
+-	__REG(UART_PHYS + UESC) = 0x002b;
+-	__REG(UART_PHYS + UTIM) = 0x0;
+-
+-	__REG(UART_PHYS + UTS) = 0x0;
+-
+-	serial_setbrg();
+-
+-	__REG(UART_PHYS + UCR2) =
+-	    UCR2_WS | UCR2_IRTS | UCR2_RXEN | UCR2_TXEN | UCR2_SRST;
+-
+-	__REG(UART_PHYS + UCR1) = UCR1_UARTEN;
+-
+-	return 0;
+-}
+-
+-#endif				/* CONFIG_MX35 */
+diff --git a/cpu/arm_cortexa8/mx51/Makefile b/cpu/arm_cortexa8/mx51/Makefile
+index 79f697d..63a58f9 100644
+--- a/cpu/arm_cortexa8/mx51/Makefile
++++ b/cpu/arm_cortexa8/mx51/Makefile
+@@ -27,7 +27,7 @@ include $(TOPDIR)/config.mk
+ 
+ LIB	= $(obj)lib$(SOC).a
+ 
+-COBJS	= interrupts.o serial.o generic.o iomux.o timer.o cache.o
++COBJS	= interrupts.o generic.o iomux.o timer.o cache.o
+ COBJS-$(CONFIG_CMD_FUSE) += cmd_fuse.o
+ COBJS-$(CONFIG_IMX_FUSE) += imx_fuse.o
+ COBJS += $(COBJS-y)
+diff --git a/cpu/arm_cortexa8/mx51/serial.c b/cpu/arm_cortexa8/mx51/serial.c
+deleted file mode 100644
+index 7fe74e5..0000000
+--- a/cpu/arm_cortexa8/mx51/serial.c
++++ /dev/null
+@@ -1,226 +0,0 @@
+-/*
+- * (c) 2007 Sascha Hauer <s.hauer@pengutronix.de>
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- *
+- */
+-
+-#include <common.h>
+-
+-#if defined CONFIG_MX51_UART
+-
+-#include <asm/arch/mx51.h>
+-
+-#ifdef CONFIG_MX51_UART1
+-#define UART_PHYS UART1_BASE_ADDR
+-#elif defined(CONFIG_MX51_UART2)
+-#define UART_PHYS UART2_BASE_ADDR
+-#elif defined(CONFIG_MX51_UART3)
+-#define UART_PHYS UART3_BASE_ADDR
+-#else
+-#error "define CFG_MX51_UARTx to use the mx51 UART driver"
+-#endif
+-
+-/* Register definitions */
+-#define URXD  0x0		/* Receiver Register */
+-#define UTXD  0x40		/* Transmitter Register */
+-#define UCR1  0x80		/* Control Register 1 */
+-#define UCR2  0x84		/* Control Register 2 */
+-#define UCR3  0x88		/* Control Register 3 */
+-#define UCR4  0x8c		/* Control Register 4 */
+-#define UFCR  0x90		/* FIFO Control Register */
+-#define USR1  0x94		/* Status Register 1 */
+-#define USR2  0x98		/* Status Register 2 */
+-#define UESC  0x9c		/* Escape Character Register */
+-#define UTIM  0xa0		/* Escape Timer Register */
+-#define UBIR  0xa4		/* BRM Incremental Register */
+-#define UBMR  0xa8		/* BRM Modulator Register */
+-#define UBRC  0xac		/* Baud Rate Count Register */
+-#define UTS   0xb4		/* UART Test Register (mx31) */
+-
+-/* UART Control Register Bit Fields.*/
+-#define  URXD_CHARRDY    (1<<15)
+-#define  URXD_ERR        (1<<14)
+-#define  URXD_OVRRUN     (1<<13)
+-#define  URXD_FRMERR     (1<<12)
+-#define  URXD_BRK        (1<<11)
+-#define  URXD_PRERR      (1<<10)
+-#define  UCR1_ADEN       (1<<15)	/* Auto dectect interrupt */
+-#define  UCR1_ADBR       (1<<14)	/* Auto detect baud rate */
+-#define  UCR1_TRDYEN     (1<<13)	/* Transmitter ready interrupt enable */
+-#define  UCR1_IDEN       (1<<12)	/* Idle condition interrupt */
+-#define  UCR1_RRDYEN     (1<<9)	/* Recv ready interrupt enable */
+-#define  UCR1_RDMAEN     (1<<8)	/* Recv ready DMA enable */
+-#define  UCR1_IREN       (1<<7)	/* Infrared interface enable */
+-#define  UCR1_TXMPTYEN   (1<<6)	/* Transimitter empty interrupt enable */
+-#define  UCR1_RTSDEN     (1<<5)	/* RTS delta interrupt enable */
+-#define  UCR1_SNDBRK     (1<<4)	/* Send break */
+-#define  UCR1_TDMAEN     (1<<3)	/* Transmitter ready DMA enable */
+-#define  UCR1_UARTCLKEN  (1<<2)	/* UART clock enabled */
+-#define  UCR1_DOZE       (1<<1)	/* Doze */
+-#define  UCR1_UARTEN     (1<<0)	/* UART enabled */
+-#define  UCR2_ESCI     	 (1<<15)	/* Escape seq interrupt enable */
+-#define  UCR2_IRTS  	 (1<<14)	/* Ignore RTS pin */
+-#define  UCR2_CTSC  	 (1<<13)	/* CTS pin control */
+-#define  UCR2_CTS        (1<<12)	/* Clear to send */
+-#define  UCR2_ESCEN      (1<<11)	/* Escape enable */
+-#define  UCR2_PREN       (1<<8)	/* Parity enable */
+-#define  UCR2_PROE       (1<<7)	/* Parity odd/even */
+-#define  UCR2_STPB       (1<<6)	/* Stop */
+-#define  UCR2_WS         (1<<5)	/* Word size */
+-#define  UCR2_RTSEN      (1<<4)	/* Request to send interrupt enable */
+-#define  UCR2_TXEN       (1<<2)	/* Transmitter enabled */
+-#define  UCR2_RXEN       (1<<1)	/* Receiver enabled */
+-#define  UCR2_SRST 	 (1<<0)	/* SW reset */
+-#define  UCR3_DTREN 	 (1<<13)	/* DTR interrupt enable */
+-#define  UCR3_PARERREN   (1<<12)	/* Parity enable */
+-#define  UCR3_FRAERREN   (1<<11)	/* Frame error interrupt enable */
+-#define  UCR3_DSR        (1<<10)	/* Data set ready */
+-#define  UCR3_DCD        (1<<9)	/* Data carrier detect */
+-#define  UCR3_RI         (1<<8)	/* Ring indicator */
+-#define  UCR3_TIMEOUTEN  (1<<7)	/* Timeout interrupt enable */
+-#define  UCR3_RXDSEN	 (1<<6)	/* Receive status interrupt enable */
+-#define  UCR3_AIRINTEN   (1<<5)	/* Async IR wake interrupt enable */
+-#define  UCR3_AWAKEN	 (1<<4)	/* Async wake interrupt enable */
+-#define  UCR3_REF25 	 (1<<3)	/* Ref freq 25 MHz */
+-#define  UCR3_REF30 	 (1<<2)	/* Ref Freq 30 MHz */
+-#define  UCR3_INVT  	 (1<<1)	/* Inverted Infrared transmission */
+-#define  UCR3_BPEN  	 (1<<0)	/* Preset registers enable */
+-#define  UCR4_CTSTL_32   (32<<10)	/* CTS trigger level (32 chars) */
+-#define  UCR4_INVR  	 (1<<9)	/* Inverted infrared reception */
+-#define  UCR4_ENIRI 	 (1<<8)	/* Serial infrared interrupt enable */
+-#define  UCR4_WKEN  	 (1<<7)	/* Wake interrupt enable */
+-#define  UCR4_REF16 	 (1<<6)	/* Ref freq 16 MHz */
+-#define  UCR4_IRSC  	 (1<<5)	/* IR special case */
+-#define  UCR4_TCEN  	 (1<<3)	/* Transmit complete interrupt enable */
+-#define  UCR4_BKEN  	 (1<<2)	/* Break condition interrupt enable */
+-#define  UCR4_OREN  	 (1<<1)	/* Receiver overrun interrupt enable */
+-#define  UCR4_DREN  	 (1<<0)	/* Recv data ready interrupt enable */
+-#define  UFCR_RXTL_SHF   0	/* Receiver trigger level shift */
+-#define  UFCR_RFDIV      (7<<7)	/* Reference freq divider mask */
+-#define  UFCR_TXTL_SHF   10	/* Transmitter trigger level shift */
+-#define  USR1_PARITYERR  (1<<15)	/* Parity error interrupt flag */
+-#define  USR1_RTSS  	 (1<<14)	/* RTS pin status */
+-#define  USR1_TRDY  	 (1<<13)/* Transmitter ready interrupt/dma flag */
+-#define  USR1_RTSD  	 (1<<12)	/* RTS delta */
+-#define  USR1_ESCF  	 (1<<11)	/* Escape seq interrupt flag */
+-#define  USR1_FRAMERR    (1<<10)	/* Frame error interrupt flag */
+-#define  USR1_RRDY       (1<<9)	/* Receiver ready interrupt/dma flag */
+-#define  USR1_TIMEOUT    (1<<7)	/* Receive timeout interrupt status */
+-#define  USR1_RXDS  	 (1<<6)	/* Receiver idle interrupt flag */
+-#define  USR1_AIRINT	 (1<<5)	/* Async IR wake interrupt flag */
+-#define  USR1_AWAKE 	 (1<<4)	/* Aysnc wake interrupt flag */
+-#define  USR2_ADET  	 (1<<15)	/* Auto baud rate detect complete */
+-#define  USR2_TXFE  	 (1<<14)	/* Transmit buffer FIFO empty */
+-#define  USR2_DTRF  	 (1<<13)	/* DTR edge interrupt flag */
+-#define  USR2_IDLE  	 (1<<12)	/* Idle condition */
+-#define  USR2_IRINT 	 (1<<8)	/* Serial infrared interrupt flag */
+-#define  USR2_WAKE  	 (1<<7)	/* Wake */
+-#define  USR2_RTSF  	 (1<<4)	/* RTS edge interrupt flag */
+-#define  USR2_TXDC  	 (1<<3)	/* Transmitter complete */
+-#define  USR2_BRCD  	 (1<<2)	/* Break condition */
+-#define  USR2_ORE        (1<<1)	/* Overrun error */
+-#define  USR2_RDR        (1<<0)	/* Recv data ready */
+-#define  UTS_FRCPERR	 (1<<13)	/* Force parity error */
+-#define  UTS_LOOP        (1<<12)	/* Loop tx and rx */
+-#define  UTS_TXEMPTY	 (1<<6)	/* TxFIFO empty */
+-#define  UTS_RXEMPTY	 (1<<5)	/* RxFIFO empty */
+-#define  UTS_TXFULL 	 (1<<4)	/* TxFIFO full */
+-#define  UTS_RXFULL 	 (1<<3)	/* RxFIFO full */
+-#define  UTS_SOFTRST	 (1<<0)	/* Software reset */
+-
+-DECLARE_GLOBAL_DATA_PTR;
+-
+-void serial_setbrg(void)
+-{
+-	u32 clk = mxc_get_clock(MXC_UART_CLK);
+-
+-	if (!gd->baudrate)
+-		gd->baudrate = CONFIG_BAUDRATE;
+-	__REG(UART_PHYS + UFCR) = 0x4 << 7;	/* divide input clock by 2 */
+-	__REG(UART_PHYS + UBIR) = 0xf;
+-	__REG(UART_PHYS + UBMR) = clk / (2 * gd->baudrate);
+-}
+-
+-int serial_getc(void)
+-{
+-	while (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
+-		;
+-	return __REG(UART_PHYS + URXD);
+-}
+-
+-void serial_putc(const char c)
+-{
+-	__REG(UART_PHYS + UTXD) = c;
+-
+-	/* wait for transmitter to be ready */
+-	while (!(__REG(UART_PHYS + UTS) & UTS_TXEMPTY))
+-		;
+-
+-	/* If \n, also do \r */
+-	if (c == '\n')
+-		serial_putc('\r');
+-}
+-
+-/*
+- * Test whether a character is in the RX buffer
+- */
+-int serial_tstc(void)
+-{
+-	/* If receive fifo is empty, return false */
+-	if (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
+-		return 0;
+-	return 1;
+-}
+-
+-void serial_puts(const char *s)
+-{
+-	while (*s)
+-		serial_putc(*s++);
+-}
+-
+-/*
+- * Initialise the serial port with the given baudrate. The settings
+- * are always 8 data bits, no parity, 1 stop bit, no start bits.
+- *
+- */
+-int serial_init(void)
+-{
+-	__REG(UART_PHYS + UCR1) = 0x0;
+-	__REG(UART_PHYS + UCR2) = 0x0;
+-
+-	while (!(__REG(UART_PHYS + UCR2) & UCR2_SRST))
+-		;
+-
+-	__REG(UART_PHYS + UCR3) = 0x0704;
+-	__REG(UART_PHYS + UCR4) = 0x8000;
+-	__REG(UART_PHYS + UESC) = 0x002b;
+-	__REG(UART_PHYS + UTIM) = 0x0;
+-
+-	__REG(UART_PHYS + UTS) = 0x0;
+-
+-	serial_setbrg();
+-
+-	__REG(UART_PHYS + UCR2) =
+-	    UCR2_WS | UCR2_IRTS | UCR2_RXEN | UCR2_TXEN | UCR2_SRST;
+-
+-	__REG(UART_PHYS + UCR1) = UCR1_UARTEN;
+-
+-	return 0;
+-}
+-
+-#endif				/* CONFIG_MX51_UART */
+diff --git a/cpu/arm_cortexa8/mx53/Makefile b/cpu/arm_cortexa8/mx53/Makefile
+index 460bdd9..dbd4ef3 100644
+--- a/cpu/arm_cortexa8/mx53/Makefile
++++ b/cpu/arm_cortexa8/mx53/Makefile
+@@ -27,7 +27,7 @@ include $(TOPDIR)/config.mk
+ 
+ LIB	= $(obj)lib$(SOC).a
+ 
+-COBJS	= interrupts.o serial.o generic.o iomux.o timer.o cache.o
++COBJS	= interrupts.o generic.o iomux.o timer.o cache.o
+ COBJS += $(COBJS-y)
+ 
+ SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
+diff --git a/cpu/arm_cortexa8/mx53/serial.c b/cpu/arm_cortexa8/mx53/serial.c
+deleted file mode 100644
+index ce8b5c0..0000000
+--- a/cpu/arm_cortexa8/mx53/serial.c
++++ /dev/null
+@@ -1,226 +0,0 @@
+-/*
+- * (c) 2007 Sascha Hauer <s.hauer@pengutronix.de>
+- *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- *
+- */
+-
+-#include <common.h>
+-
+-#if defined CONFIG_MX53_UART
+-
+-#include <asm/arch/mx53.h>
+-
+-#ifdef CONFIG_MX53_UART1
+-#define UART_PHYS UART1_BASE_ADDR
+-#elif defined(CONFIG_MX53_UART2)
+-#define UART_PHYS UART2_BASE_ADDR
+-#elif defined(CONFIG_MX53_UART3)
+-#define UART_PHYS UART3_BASE_ADDR
+-#else
+-#error "define CFG_MX53_UARTx to use the mx53 UART driver"
+-#endif
+-
+-/* Register definitions */
+-#define URXD  0x0		/* Receiver Register */
+-#define UTXD  0x40		/* Transmitter Register */
+-#define UCR1  0x80		/* Control Register 1 */
+-#define UCR2  0x84		/* Control Register 2 */
+-#define UCR3  0x88		/* Control Register 3 */
+-#define UCR4  0x8c		/* Control Register 4 */
+-#define UFCR  0x90		/* FIFO Control Register */
+-#define USR1  0x94		/* Status Register 1 */
+-#define USR2  0x98		/* Status Register 2 */
+-#define UESC  0x9c		/* Escape Character Register */
+-#define UTIM  0xa0		/* Escape Timer Register */
+-#define UBIR  0xa4		/* BRM Incremental Register */
+-#define UBMR  0xa8		/* BRM Modulator Register */
+-#define UBRC  0xac		/* Baud Rate Count Register */
+-#define UTS   0xb4		/* UART Test Register (mx31) */
+-
+-/* UART Control Register Bit Fields.*/
+-#define  URXD_CHARRDY    (1<<15)
+-#define  URXD_ERR        (1<<14)
+-#define  URXD_OVRRUN     (1<<13)
+-#define  URXD_FRMERR     (1<<12)
+-#define  URXD_BRK        (1<<11)
+-#define  URXD_PRERR      (1<<10)
+-#define  UCR1_ADEN       (1<<15)	/* Auto dectect interrupt */
+-#define  UCR1_ADBR       (1<<14)	/* Auto detect baud rate */
+-#define  UCR1_TRDYEN     (1<<13)	/* Transmitter ready interrupt enable */
+-#define  UCR1_IDEN       (1<<12)	/* Idle condition interrupt */
+-#define  UCR1_RRDYEN     (1<<9)	/* Recv ready interrupt enable */
+-#define  UCR1_RDMAEN     (1<<8)	/* Recv ready DMA enable */
+-#define  UCR1_IREN       (1<<7)	/* Infrared interface enable */
+-#define  UCR1_TXMPTYEN   (1<<6)	/* Transimitter empty interrupt enable */
+-#define  UCR1_RTSDEN     (1<<5)	/* RTS delta interrupt enable */
+-#define  UCR1_SNDBRK     (1<<4)	/* Send break */
+-#define  UCR1_TDMAEN     (1<<3)	/* Transmitter ready DMA enable */
+-#define  UCR1_UARTCLKEN  (1<<2)	/* UART clock enabled */
+-#define  UCR1_DOZE       (1<<1)	/* Doze */
+-#define  UCR1_UARTEN     (1<<0)	/* UART enabled */
+-#define  UCR2_ESCI     	 (1<<15)	/* Escape seq interrupt enable */
+-#define  UCR2_IRTS  	 (1<<14)	/* Ignore RTS pin */
+-#define  UCR2_CTSC  	 (1<<13)	/* CTS pin control */
+-#define  UCR2_CTS        (1<<12)	/* Clear to send */
+-#define  UCR2_ESCEN      (1<<11)	/* Escape enable */
+-#define  UCR2_PREN       (1<<8)	/* Parity enable */
+-#define  UCR2_PROE       (1<<7)	/* Parity odd/even */
+-#define  UCR2_STPB       (1<<6)	/* Stop */
+-#define  UCR2_WS         (1<<5)	/* Word size */
+-#define  UCR2_RTSEN      (1<<4)	/* Request to send interrupt enable */
+-#define  UCR2_TXEN       (1<<2)	/* Transmitter enabled */
+-#define  UCR2_RXEN       (1<<1)	/* Receiver enabled */
+-#define  UCR2_SRST 	 (1<<0)	/* SW reset */
+-#define  UCR3_DTREN 	 (1<<13)	/* DTR interrupt enable */
+-#define  UCR3_PARERREN   (1<<12)	/* Parity enable */
+-#define  UCR3_FRAERREN   (1<<11)	/* Frame error interrupt enable */
+-#define  UCR3_DSR        (1<<10)	/* Data set ready */
+-#define  UCR3_DCD        (1<<9)	/* Data carrier detect */
+-#define  UCR3_RI         (1<<8)	/* Ring indicator */
+-#define  UCR3_TIMEOUTEN  (1<<7)	/* Timeout interrupt enable */
+-#define  UCR3_RXDSEN	 (1<<6)	/* Receive status interrupt enable */
+-#define  UCR3_AIRINTEN   (1<<5)	/* Async IR wake interrupt enable */
+-#define  UCR3_AWAKEN	 (1<<4)	/* Async wake interrupt enable */
+-#define  UCR3_REF25 	 (1<<3)	/* Ref freq 25 MHz */
+-#define  UCR3_REF30 	 (1<<2)	/* Ref Freq 30 MHz */
+-#define  UCR3_INVT  	 (1<<1)	/* Inverted Infrared transmission */
+-#define  UCR3_BPEN  	 (1<<0)	/* Preset registers enable */
+-#define  UCR4_CTSTL_32   (32<<10)	/* CTS trigger level (32 chars) */
+-#define  UCR4_INVR  	 (1<<9)	/* Inverted infrared reception */
+-#define  UCR4_ENIRI 	 (1<<8)	/* Serial infrared interrupt enable */
+-#define  UCR4_WKEN  	 (1<<7)	/* Wake interrupt enable */
+-#define  UCR4_REF16 	 (1<<6)	/* Ref freq 16 MHz */
+-#define  UCR4_IRSC  	 (1<<5)	/* IR special case */
+-#define  UCR4_TCEN  	 (1<<3)	/* Transmit complete interrupt enable */
+-#define  UCR4_BKEN  	 (1<<2)	/* Break condition interrupt enable */
+-#define  UCR4_OREN  	 (1<<1)	/* Receiver overrun interrupt enable */
+-#define  UCR4_DREN  	 (1<<0)	/* Recv data ready interrupt enable */
+-#define  UFCR_RXTL_SHF   0	/* Receiver trigger level shift */
+-#define  UFCR_RFDIV      (7<<7)	/* Reference freq divider mask */
+-#define  UFCR_TXTL_SHF   10	/* Transmitter trigger level shift */
+-#define  USR1_PARITYERR  (1<<15)	/* Parity error interrupt flag */
+-#define  USR1_RTSS  	 (1<<14)	/* RTS pin status */
+-#define  USR1_TRDY  	 (1<<13)/* Transmitter ready interrupt/dma flag */
+-#define  USR1_RTSD  	 (1<<12)	/* RTS delta */
+-#define  USR1_ESCF  	 (1<<11)	/* Escape seq interrupt flag */
+-#define  USR1_FRAMERR    (1<<10)	/* Frame error interrupt flag */
+-#define  USR1_RRDY       (1<<9)	/* Receiver ready interrupt/dma flag */
+-#define  USR1_TIMEOUT    (1<<7)	/* Receive timeout interrupt status */
+-#define  USR1_RXDS  	 (1<<6)	/* Receiver idle interrupt flag */
+-#define  USR1_AIRINT	 (1<<5)	/* Async IR wake interrupt flag */
+-#define  USR1_AWAKE 	 (1<<4)	/* Aysnc wake interrupt flag */
+-#define  USR2_ADET  	 (1<<15)	/* Auto baud rate detect complete */
+-#define  USR2_TXFE  	 (1<<14)	/* Transmit buffer FIFO empty */
+-#define  USR2_DTRF  	 (1<<13)	/* DTR edge interrupt flag */
+-#define  USR2_IDLE  	 (1<<12)	/* Idle condition */
+-#define  USR2_IRINT 	 (1<<8)	/* Serial infrared interrupt flag */
+-#define  USR2_WAKE  	 (1<<7)	/* Wake */
+-#define  USR2_RTSF  	 (1<<4)	/* RTS edge interrupt flag */
+-#define  USR2_TXDC  	 (1<<3)	/* Transmitter complete */
+-#define  USR2_BRCD  	 (1<<2)	/* Break condition */
+-#define  USR2_ORE        (1<<1)	/* Overrun error */
+-#define  USR2_RDR        (1<<0)	/* Recv data ready */
+-#define  UTS_FRCPERR	 (1<<13)	/* Force parity error */
+-#define  UTS_LOOP        (1<<12)	/* Loop tx and rx */
+-#define  UTS_TXEMPTY	 (1<<6)	/* TxFIFO empty */
+-#define  UTS_RXEMPTY	 (1<<5)	/* RxFIFO empty */
+-#define  UTS_TXFULL 	 (1<<4)	/* TxFIFO full */
+-#define  UTS_RXFULL 	 (1<<3)	/* RxFIFO full */
+-#define  UTS_SOFTRST	 (1<<0)	/* Software reset */
+-
+-DECLARE_GLOBAL_DATA_PTR;
+-
+-void serial_setbrg(void)
+-{
+-	u32 clk = mxc_get_clock(MXC_UART_CLK);
+-
+-	if (!gd->baudrate)
+-		gd->baudrate = CONFIG_BAUDRATE;
+-	__REG(UART_PHYS + UFCR) = 0x4 << 7;	/* divide input clock by 2 */
+-	__REG(UART_PHYS + UBIR) = 0xf;
+-	__REG(UART_PHYS + UBMR) = clk / (2 * gd->baudrate);
+-}
+-
+-int serial_getc(void)
+-{
+-	while (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
+-		;
+-	return __REG(UART_PHYS + URXD);
+-}
+-
+-void serial_putc(const char c)
+-{
+-	__REG(UART_PHYS + UTXD) = c;
+-
+-	/* wait for transmitter to be ready */
+-	while (!(__REG(UART_PHYS + UTS) & UTS_TXEMPTY))
+-		;
+-
+-	/* If \n, also do \r */
+-	if (c == '\n')
+-		serial_putc('\r');
+-}
+-
+-/*
+- * Test whether a character is in the RX buffer
+- */
+-int serial_tstc(void)
+-{
+-	/* If receive fifo is empty, return false */
+-	if (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
+-		return 0;
+-	return 1;
+-}
+-
+-void serial_puts(const char *s)
+-{
+-	while (*s)
+-		serial_putc(*s++);
+-}
+-
+-/*
+- * Initialise the serial port with the given baudrate. The settings
+- * are always 8 data bits, no parity, 1 stop bit, no start bits.
+- *
+- */
+-int serial_init(void)
+-{
+-	__REG(UART_PHYS + UCR1) = 0x0;
+-	__REG(UART_PHYS + UCR2) = 0x0;
+-
+-	while (!(__REG(UART_PHYS + UCR2) & UCR2_SRST))
+-		;
+-
+-	__REG(UART_PHYS + UCR3) = 0x0704;
+-	__REG(UART_PHYS + UCR4) = 0x8000;
+-	__REG(UART_PHYS + UESC) = 0x002b;
+-	__REG(UART_PHYS + UTIM) = 0x0;
+-
+-	__REG(UART_PHYS + UTS) = 0x0;
+-
+-	serial_setbrg();
+-
+-	__REG(UART_PHYS + UCR2) =
+-	    UCR2_WS | UCR2_IRTS | UCR2_RXEN | UCR2_TXEN | UCR2_SRST;
+-
+-	__REG(UART_PHYS + UCR1) = UCR1_UARTEN;
+-
+-	return 0;
+-}
+-
+-#endif				/* CONFIG_MX53_UART */
+diff --git a/include/asm-arm/arch-mx31/mx31.h b/include/asm-arm/arch-mx31/mx31.h
+index 53b9f27..3f8e3ca 100644
+--- a/include/asm-arm/arch-mx31/mx31.h
++++ b/include/asm-arm/arch-mx31/mx31.h
+@@ -24,21 +24,28 @@
+ #ifndef __ASM_ARCH_MX31_H
+ #define __ASM_ARCH_MX31_H
+ 
+-extern u32 mx31_get_ipg_clk(void);
+-extern void mx31_gpio_mux(unsigned long mode);
++#ifndef __ASSEMBLER__
++
++enum mxc_clock {
++	MXC_ARM_CLK,
++	MXC_UART_CLK,
++};
+ 
+ enum mx31_gpio_direction {
+ 	MX31_GPIO_DIRECTION_IN,
+ 	MX31_GPIO_DIRECTION_OUT,
+ };
+ 
++extern int mxc_get_clock(enum mxc_clock clk);
++extern void mx31_gpio_mux(unsigned long mode);
++
+ #ifdef CONFIG_MX31_GPIO
+ extern int mx31_gpio_direction(unsigned int gpio,
+-			       enum mx31_gpio_direction direction);
++				enum mx31_gpio_direction direction);
+ extern void mx31_gpio_set(unsigned int gpio, unsigned int value);
+ #else
+ static inline int mx31_gpio_direction(unsigned int gpio,
+-				      enum mx31_gpio_direction direction)
++				enum mx31_gpio_direction direction)
+ {
+ 	return 1;
+ }
+@@ -50,4 +57,6 @@ static inline void mx31_gpio_set(unsigned int gpio, unsigned int value)
+ void mx31_uart1_hw_init(void);
+ void mx31_spi2_hw_init(void);
+ 
++#endif
++
+ #endif /* __ASM_ARCH_MX31_H */
+diff --git a/include/configs/mx31_3stack.h b/include/configs/mx31_3stack.h
+index d7629b2..6a09e0a 100644
+--- a/include/configs/mx31_3stack.h
++++ b/include/configs/mx31_3stack.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * Configuration settings for the MX31 3Stack Freescale board.
+  *
+@@ -22,7 +22,7 @@
+ #ifndef __CONFIG_H
+ #define __CONFIG_H
+ 
+-#include <asm/arch/mx31-regs.h>
++#include <asm/arch/mx31.h>
+ 
+  /* High Level Configuration Options */
+ #define CONFIG_ARM1136		1	/* This is an arm1136 CPU core */
+@@ -51,7 +51,7 @@
+  * Hardware drivers
+  */
+ #define CONFIG_MXC_UART	1
+-#define CONFIG_SYS_MX31_UART1   1
++#define CONFIG_UART_BASE_ADDR	0x43f90000
+ 
+ #define CONFIG_MXC_SPI		1
+ 
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 89b9f39..43715be 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -68,7 +68,8 @@
+ #define CONFIG_SYS_I2C_SPEED		100000
+ #define CONFIG_SYS_I2C_SLAVE		0xfe
+ 
+-#define CONFIG_MX35_UART	UART1_BASE_ADDR
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx35_3stack_mfg.h b/include/configs/mx35_3stack_mfg.h
+index ba962ef..87d1238 100644
+--- a/include/configs/mx35_3stack_mfg.h
++++ b/include/configs/mx35_3stack_mfg.h
+@@ -76,7 +76,8 @@
+ #define CONFIG_SYS_I2C_SPEED		100000
+ #define CONFIG_SYS_I2C_SLAVE		0xfe
+ 
+-#define CONFIG_MX35_UART	UART1_BASE_ADDR
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index c0c53fd..6104c09 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -71,7 +71,8 @@
+ #define CONFIG_SYS_I2C_SPEED		100000
+ #define CONFIG_SYS_I2C_SLAVE		0xfe
+ 
+-#define CONFIG_MX35_UART	UART1_BASE_ADDR
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index e628ede..e39565b 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX51_UART	1
+-#define CONFIG_MX51_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 7935c76..a18944a 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX51_UART	1
+-#define CONFIG_MX51_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /*
+  * SPI Configs
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 99fd4ac..bdb3621 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -68,8 +68,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX51_UART	1
+-#define CONFIG_MX51_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index d4db1c9..a44e821 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX51_UART	1
+-#define CONFIG_MX51_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ 
+ #define CONFIG_CMD_PING
+@@ -157,8 +157,8 @@
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
+ 		"bootcmd_android=run bootargs_base bootargs_android; "	\
+-			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
+-			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"mmc read 0 ${loadaddr} 0x800 0x1280; "	\
++			"mmc read 0 ${rd_loadaddr} 0x2000 0x258; "	\
+ 			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
+ 		"prg_uboot=tftpboot ${loadaddr} ${uboot}; "		\
+ 			"protect off ${uboot_addr} 0xa003ffff; "	\
+diff --git a/include/configs/mx51_bbg_iram.h b/include/configs/mx51_bbg_iram.h
+new file mode 100644
+index 0000000..b048d9b
+--- /dev/null
++++ b/include/configs/mx51_bbg_iram.h
+@@ -0,0 +1,207 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX51-3Stack Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx51.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
++
++#define CONFIG_MXC		1
++#define CONFIG_MX51_BBG		1	/* in a mx51 */
++#define CONFIG_FLASH_HEADER	1
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++#define CONFIG_FLASH_HEADER_BARKER 0xB1
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(5 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
++
++/*
++ * SPI Configs
++ * */
++
++/*
++ * MMC Configs
++ * */
++
++/*
++ * Eth Configs
++ */
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#define CONFIG_CMD_BDI		/* bdinfo			*/
++#define CONFIG_CMD_BOOTD	/* bootd			*/
++#define CONFIG_CMD_CONSOLE	/* coninfo			*/
++#define CONFIG_CMD_FPGA		/* FPGA configuration Support	*/
++#define CONFIG_CMD_IMI		/* iminfo			*/
++#define CONFIG_CMD_MEMORY	/* md mm nm mw cp cmp crc base loop mtest */
++#define CONFIG_CMD_RUN		/* run command in env variable	*/
++#define CONFIG_CMD_SOURCE	/* "source" command support	*/
++#define CONFIG_CMD_XIMG		/* Load part of Multi Image	*/
++
++/*
++ * SPI Configs
++ * */
++
++/*
++ * MMC Configs
++ * */
++/*
++ * Eth Configs
++ */
++
++
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_ENV
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x90100000	/* loadaddr env var */
++
++#define CONFIG_BOOTARGS         "console=ttymxc0,115200 "\
++				"rdinit=/linuxrc"
++
++#define CONFIG_BOOTCOMMAND      "bootm ${loadaddr} 0x90800000"
++#define CONFIG_ENV_IS_EMBEDDED
++/*
++ * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
++ * U-Boot, RedBoot and Linux: the ethernet Rx signal is reaching the CS8900A
++ * controller inverted. The controller is capable of detecting and correcting
++ * this, but it needs 4 network packets for that. Which means, at startup, you
++ * will not receive answers to the first 4 packest, unless there have been some
++ * broadcasts on the network, or your board is on a hub. Reducing the ARP
++ * timeout from default 5 seconds to 200ms we speed up the initial TFTP
++ * transfer, should the user wish one, significantly.
++ */
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"BBG U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(30 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++/* TO1 boards */
++/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++/* #define CONFIG_FSL_ENV_IN_SF
++*/
++/* #define CONFIG_FSL_ENV_IN_MMC */
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++#define CONFIG_ENV_IS_NOWHERE
++
++/*
++ * JFFS2 partitions
++ */
++/*
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++*/
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx51_bbg_mfg.h b/include/configs/mx51_bbg_mfg.h
+index becad73..baca67b 100644
+--- a/include/configs/mx51_bbg_mfg.h
++++ b/include/configs/mx51_bbg_mfg.h
+@@ -68,8 +68,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX51_UART	1
+-#define CONFIG_MX51_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /*
+  * SPI Configs
+diff --git a/include/configs/mx53_arm2.h b/include/configs/mx53_arm2.h
+index f94191d..9a976b8 100644
+--- a/include/configs/mx53_arm2.h
++++ b/include/configs/mx53_arm2.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx53_arm2_android.h b/include/configs/mx53_arm2_android.h
+index 3e02620..4eed270 100644
+--- a/include/configs/mx53_arm2_android.h
++++ b/include/configs/mx53_arm2_android.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /*
+  * Android support Configs
+diff --git a/include/configs/mx53_arm2_ddr3.h b/include/configs/mx53_arm2_ddr3.h
+index f4cd6ba..ea13cfd 100644
+--- a/include/configs/mx53_arm2_ddr3.h
++++ b/include/configs/mx53_arm2_ddr3.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx53_arm2_ddr3_android.h b/include/configs/mx53_arm2_ddr3_android.h
+index dc97ba2..6fd0dff 100644
+--- a/include/configs/mx53_arm2_ddr3_android.h
++++ b/include/configs/mx53_arm2_ddr3_android.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /*
+  * Android support Configs
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index 0b1e75e..da0ac7f 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index d892d33..6b6ee17 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /*
+  * Android support Configs
+-- 
+1.5.4.4
+

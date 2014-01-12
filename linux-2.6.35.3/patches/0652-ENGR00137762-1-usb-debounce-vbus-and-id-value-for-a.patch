@@ -1,0 +1,151 @@
+From 205d226b4f3ee574e30b6b0f1a3652a39d71d8d0 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Sat, 8 Jan 2011 17:13:19 +0800
+Subject: [PATCH] ENGR00137762-1 usb: debounce vbus and id value for all usb mode
+
+The old code only debounce vbus and id value for OTG mode,
+these value should be debounce for all usb mode,
+including usb device only mode, usb host only mode, and usb otg mode.
+
+Besides, It also changes the debounce function name from
+usb_debounce_id_pin to usb_debounce_id_vbus, it will be more
+clear for reader.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/plat-mxc/usb_common.c |   18 ++++++++----------
+ arch/arm/plat-mxc/usb_wakeup.c |    9 ++++-----
+ arch/arm/plat-mxs/usb_common.c |   15 ++++++++-------
+ arch/arm/plat-mxs/usb_wakeup.c |    9 ++++-----
+ 4 files changed, 24 insertions(+), 27 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index 8cf601f..69cbcfc 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -872,18 +872,16 @@ void usbotg_uninit(struct fsl_usb2_platform_data *pdata)
+ }
+ EXPORT_SYMBOL(usbotg_uninit);
+ 
+-/* the debounce function is only used when OTG is enabled,
+- * if otg disabled, the ID pin is not used */
+-void usb_debounce_id_pin(void)
++/*
++ * This function is used to debounce the reading value for id/vbus at
++ * the register of otgsc
++ */
++void usb_debounce_id_vbus(void)
+ {
+-#ifdef CONFIG_USB_OTG
+-	/* Because the IC design needs to remove the glitch on ID so the otgsc bit 8 will
+-	 * be delayed max 2 ms to show the real ID pin value
+-	 */
+ 	mdelay(3);
+-#endif
+ }
+-EXPORT_SYMBOL(usb_debounce_id_pin);
++EXPORT_SYMBOL(usb_debounce_id_vbus);
++
+ int usb_host_wakeup_irq(struct device *wkup_dev)
+ {
+ 	int wakeup_req = 0;
+diff --git a/arch/arm/plat-mxc/usb_wakeup.c b/arch/arm/plat-mxc/usb_wakeup.c
+index 69354eb..24300fb 100644
+--- a/arch/arm/plat-mxc/usb_wakeup.c
++++ b/arch/arm/plat-mxc/usb_wakeup.c
+@@ -32,7 +32,7 @@ struct wakeup_ctrl {
+ static struct wakeup_ctrl *g_ctrl;
+ 
+ extern int usb_event_is_otg_wakeup(void);
+-extern void usb_debounce_id_pin(void);
++extern void usb_debounce_id_vbus(void);
+ 
+ static void wakeup_clk_gate(struct fsl_usb2_wakeup_platform_data *pdata, bool on)
+ {
+@@ -97,11 +97,10 @@ static void wakeup_event_handler(struct wakeup_ctrl *ctrl)
+ 	int i;
+ 
+ 	wakeup_clk_gate(ctrl->pdata, true);
+-	/* if this is an wakeup event, we should debounce ID pin
+-	 * so we can get the correct ID value(ID status) here
+-	 * */
++
++	/* In order to get the real id/vbus value */
+ 	if (usb_event_is_otg_wakeup())
+-		usb_debounce_id_pin();
++		usb_debounce_id_vbus();
+ 
+ 	for (i = 0; i < 3; i++) {
+ 		struct fsl_usb2_platform_data *usb_pdata = pdata->usb_pdata[i];
+diff --git a/arch/arm/plat-mxs/usb_common.c b/arch/arm/plat-mxs/usb_common.c
+index a3b18be..16ef473 100644
+--- a/arch/arm/plat-mxs/usb_common.c
++++ b/arch/arm/plat-mxs/usb_common.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -370,15 +370,16 @@ void fsl_usb_host_uninit(struct fsl_usb2_platform_data *pdata)
+ }
+ EXPORT_SYMBOL(fsl_usb_host_uninit);
+ 
+-void usb_debounce_id_pin(void)
++/*
++ * This function is used to debounce the reading value for id/vbus at
++ * the register of otgsc
++ */
++void usb_debounce_id_vbus(void)
+ {
+-
+-	/* Because the IC design needs to remove the glitch on ID so the otgsc bit 8 will
+-	 * be delayed max 2 ms to show the real ID pin value
+-	 */
+ 	mdelay(3);
+ }
+-EXPORT_SYMBOL(usb_debounce_id_pin);
++EXPORT_SYMBOL(usb_debounce_id_vbus);
++
+ int usb_host_wakeup_irq(struct device *wkup_dev)
+ {
+ 	return 0;
+diff --git a/arch/arm/plat-mxs/usb_wakeup.c b/arch/arm/plat-mxs/usb_wakeup.c
+index 74223a8..ecefaee 100644
+--- a/arch/arm/plat-mxs/usb_wakeup.c
++++ b/arch/arm/plat-mxs/usb_wakeup.c
+@@ -34,7 +34,7 @@ struct wakeup_ctrl {
+ static struct wakeup_ctrl *g_ctrl;
+ 
+ extern int usb_event_is_otg_wakeup(void);
+-extern void usb_debounce_id_pin(void);
++extern void usb_debounce_id_vbus(void);
+ 
+ static void wakeup_clk_gate(struct fsl_usb2_wakeup_platform_data *pdata, bool on)
+ {
+@@ -94,11 +94,10 @@ static void wakeup_event_handler(struct wakeup_ctrl *ctrl)
+ 	int i;
+ 
+ 	wakeup_clk_gate(ctrl->pdata, true);
+-	/* if this is an wakeup event, we should debounce ID pin
+-	 * so we can get the correct ID value(ID status) here
+-	 * */
++
++	/* In order to get the real id/vbus value */
+ 	if (usb_event_is_otg_wakeup())
+-		usb_debounce_id_pin();
++		usb_debounce_id_vbus();
+ 
+ 	for (i = 0; i < 3; i++) {
+ 		struct fsl_usb2_platform_data *usb_pdata = pdata->usb_pdata[i];
+-- 
+1.5.4.4
+

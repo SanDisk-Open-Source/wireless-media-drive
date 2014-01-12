@@ -1,0 +1,37 @@
+<h2>MaraDNS tutorial</h2>
+A tutorial for using MaraDNS 1.2 is available 
+<A href="tutorial/tutorial.html">here</A>.
+
+<h2>MaraDNS FAQ</h2>
+A FAQ for MaraDNS is available <A href="faq.html">here</A>.
+
+<h2>MaraDNS man pages</h2>
+
+<A href="http://www.maradns.org/tutorial/man.maradns.html">MaraDNS man page</A>
+<br>
+<A href="http://www.maradns.org/tutorial/man.mararc.html">mararc configuration
+file man page</A>
+<br>
+<A href="http://www.maradns.org/tutorial/man.csv1.html">csv1 zone file man
+page</A> (this format supported in 1.0 and future MaraDNS releases)
+<br>
+<A href="http://www.maradns.org/tutorial/man.csv2.html">csv2 zone file
+man page</A> (the MaraDNS 1.2 zone file format)
+<p>
+<A href="http://www.maradns.org/download/manpage_reference.pdf">All MaraDNS
+1.2 man pages as a single pdf file</A>
+
+<p>
+
+<h2>Security information</h2>
+<A href="security.html">Informaiton on MaraDNS' security design and a
+description of all of MaraDNS' security updates</A>
+
+<h2>Some other information</h2>
+
+<A href="speed.comparison.html">An informal speed comparison between MaraDNS
+ and two other DNS servers.</A>
+
+<P><A href="dns_software.html">A list of some other DNS server software 
+   available</A>.</P>
+

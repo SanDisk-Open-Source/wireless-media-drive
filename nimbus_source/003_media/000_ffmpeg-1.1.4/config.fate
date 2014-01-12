@@ -1,0 +1,1 @@
+config:arm:armv4t:armv4t:linux:gcc 4.4.4 (4.4.4_09.06.2010):--cross-prefix=arm-fsl-linux-gnueabi- --enable-cross-compile --arch=arm --enable-shared --prefix=/usr --enable-swscale --enable-pthreads --target-os=linux --enable-decoder=png --enable-encoder=png --enable-zlib

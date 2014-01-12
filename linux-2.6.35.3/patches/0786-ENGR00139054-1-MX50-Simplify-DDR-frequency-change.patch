@@ -1,0 +1,41 @@
+From 8014ded3b0b31eefb0665252d36c18fc228c4b15 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 16 Feb 2011 14:23:30 -0600
+Subject: [PATCH] ENGR00139054-1: MX50- Simplify DDR frequency change code.
+
+The DDR init code is changeing frequently and is modified based on the
+memory vendor. Change the DDR frequency code in the BSP so that is
+reads the DDR settings initialized by the bootlader. Use these settings
+when swithcing between 24Mhz and 200/266MHz.
+Also simplify the bus frequency driver, move MX50 DDR freq change to a
+different file.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/mx5x.h |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/mx5x.h b/arch/arm/plat-mxc/include/mach/mx5x.h
+index 0f5cf54..8ecd236 100644
+--- a/arch/arm/plat-mxc/include/mach/mx5x.h
++++ b/arch/arm/plat-mxc/include/mach/mx5x.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -165,7 +165,8 @@
+ #define LOWPOWER_REFRESH_ENABLE_OFFSET	16
+ #define LOWPOWER_REFRESH_HOLD_MASK		0xFFFF
+ #define LOWPOWER_REFRESH_HOLD_OFFSET	0
+-
++#define MX50_LPDDR2				(0x5 << 8)
++#define MX50_MDDR					(0x1 << 8)
+ 
+ #define DEBUG_BASE_ADDR	0x40000000
+ /*MX53 + 0x2000000 */
+-- 
+1.5.4.4
+

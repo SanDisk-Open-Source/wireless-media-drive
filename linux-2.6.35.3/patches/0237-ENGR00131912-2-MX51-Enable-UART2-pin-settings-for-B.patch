@@ -1,0 +1,28 @@
+From d814e50b0fd07bc5ef93fd3b1a5043e2c4bc1d82 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Sat, 25 Sep 2010 14:06:36 +0800
+Subject: [PATCH] ENGR00131912-2 MX51: Enable UART2 pin settings for Babbage
+
+Enable UART2 by setup the pin pads ctrl and iomux mode.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ arch/arm/mach-mx5/mx51_babbage.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 0891490..2b378e5 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -104,6 +104,8 @@ static struct pad_desc mx51babbage_pads[] = {
+ 	MX51_PAD_UART1_TXD__UART1_TXD,
+ 	MX51_PAD_UART1_RTS__UART1_RTS,
+ 	MX51_PAD_UART1_CTS__UART1_CTS,
++	MX51_PAD_UART2_RXD__UART2_RXD,
++	MX51_PAD_UART2_TXD__UART2_TXD,
+ 
+ 	/* USB HOST1 */
+ 	MX51_PAD_USBH1_STP__USBH1_STP,
+-- 
+1.5.4.4
+

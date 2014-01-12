@@ -1,0 +1,58 @@
+From 925c5e424b04f31b14004b8b7fcbc8ae9dcf12d9 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Fri, 28 Jan 2011 16:19:15 -0600
+Subject: [PATCH] ENGR00138742 - EPDC fb: Driver may run out of markers after a while
+
+Markers now cleared once the associated LUT completes.  This
+ensures that markers will always be cleared. The marker does not
+have to be waited on to be cleared.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |   16 ++++++++++------
+ 1 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index c5767e8..a008356 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -2224,19 +2224,18 @@ int mxc_epdc_fb_wait_update_complete(u32 update_marker, struct fb_info *info)
+ 	if (update_marker == 0)
+ 		return -EINVAL;
+ 
+-	/* Wait for completion associated with update_marker requested */
++	/*
++	 * Wait for completion associated with update_marker requested.
++	 * Note: If update completed already, marker will have been
++	 * cleared and we will just return
++	 */
+ 	for (i = 0; i < EPDC_MAX_NUM_UPDATES; i++) {
+ 		if (fb_data->update_marker_array[i].update_marker == update_marker) {
+ 			dev_dbg(fb_data->dev, "Waiting for marker %d\n", update_marker);
+ 			ret = wait_for_completion_timeout(&fb_data->update_marker_array[i].update_completion, msecs_to_jiffies(5000));
+ 			if (!ret)
+ 				dev_err(fb_data->dev, "Timed out waiting for update completion\n");
+-
+ 			dev_dbg(fb_data->dev, "marker %d signalled!\n", update_marker);
+-
+-			/* Reset marker so it can be reused */
+-			fb_data->update_marker_array[i].update_marker = 0;
+-
+ 			break;
+ 		}
+ 	}
+@@ -2630,6 +2629,11 @@ static irqreturn_t mxc_epdc_irq_handler(int irq, void *dev_id)
+ 			complete(&fb_data->update_marker_array[j].update_completion);
+ 			/* Ensure this doesn't get signaled again inadvertently */
+ 			fb_data->update_marker_array[j].lut_num = INVALID_LUT;
++			/*
++			 * Setting marker to 0 is OK - any wait call will
++			 * return when marker doesn't match any in array
++			 */
++			fb_data->update_marker_array[j].update_marker = 0;
+ 		}
+ 	}
+ 
+-- 
+1.5.4.4
+

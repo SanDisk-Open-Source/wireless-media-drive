@@ -1,0 +1,41 @@
+From 4ae1776e35e9ed3d2aff604dac4be94e9b407fdd Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 13 Sep 2010 22:29:40 +0800
+Subject: [PATCH] ENGR00131466-4 mxs spi: dynamically check which clock to use
+
+The original spi host driver uses the fixed clock, spi.0,
+which will cause the spi driver only support spi0.
+Change it to dynamically check which clock to use to support
+different spi hosts.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/spi/spi_mxs.c |   10 +++++++++-
+ 1 files changed, 9 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/spi/spi_mxs.c b/drivers/spi/spi_mxs.c
+index 106b813..149d24a 100644
+--- a/drivers/spi/spi_mxs.c
++++ b/drivers/spi/spi_mxs.c
+@@ -67,9 +67,17 @@ static int debug;
+  */
+ static int mxs_spi_init_hw(struct mxs_spi *ss)
+ {
++	struct mxs_spi_platform_data *pdata;
+ 	int err;
+ 
+-	ss->clk = clk_get(NULL, "ssp.0");
++	pdata = ss->master_dev->platform_data;
++
++	if (!pdata->clk) {
++		dev_err(ss->master_dev, "unknown clock\n");
++		err = -EINVAL;
++		goto out;
++	}
++	ss->clk = clk_get(ss->master_dev, pdata->clk);
+ 	if (IS_ERR(ss->clk)) {
+ 		err = PTR_ERR(ss->clk);
+ 		goto out;
+-- 
+1.5.4.4
+

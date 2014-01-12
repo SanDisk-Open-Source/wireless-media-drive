@@ -1,0 +1,75 @@
+From 5cbe940f849ab7da732ac0db6f388ceb7ea01778 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Sat, 2 Apr 2011 21:58:48 +0800
+Subject: [PATCH] ENGR00141567 Fix build break for other platforms
+
+Resolved conflict with MC34704 on MX25
+Switched off MC13783 config for MX3
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/mxc/pmic/core/Makefile        |    7 +++----
+ drivers/mxc/pmic/core/pmic_external.c |    7 +++++++
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mxc/pmic/core/Makefile b/drivers/mxc/pmic/core/Makefile
+index e631939..be06863 100644
+--- a/drivers/mxc/pmic/core/Makefile
++++ b/drivers/mxc/pmic/core/Makefile
+@@ -1,11 +1,10 @@
+ #
+ # Makefile for the PMIC core drivers.
+ #
+-obj-$(CONFIG_MXC_PMIC_MC13783) += pmic_mc13783_mod.o
+-pmic_mc13783_mod-objs := pmic_external.o pmic_event.o pmic_common.o pmic_core_spi.o mc13783.o
++#obj-$(CONFIG_MXC_PMIC_MC13783) += pmic_mc13783_mod.o
++#pmic_mc13783_mod-objs := pmic_external.o pmic_event.o pmic_common.o pmic_core_spi.o mc13783.o
+ 
+-
+-obj-$(CONFIG_MXC_PMIC)	+= pmic_mxc_mod.o
++obj-$(findstring y, $(CONFIG_MXC_PMIC_MC13892) $(CONFIG_MXC_PMIC_MC34708))	+= pmic_mxc_mod.o
+ pmic_mxc_mod-objs	:= pmic_external.o pmic_event.o pmic_common.o pmic_adc_interface.o
+ 
+ ifneq ($(CONFIG_MXC_PMIC_MC13892),)
+diff --git a/drivers/mxc/pmic/core/pmic_external.c b/drivers/mxc/pmic/core/pmic_external.c
+index 6ff35db..1181490 100644
+--- a/drivers/mxc/pmic/core/pmic_external.c
++++ b/drivers/mxc/pmic/core/pmic_external.c
+@@ -46,6 +46,10 @@ struct mxc_pmic pmic_drv_data;
+ static unsigned int events_enabled0;
+ static unsigned int events_enabled1;
+ 
++#ifdef CONFIG_MXC_PMIC_MC34704
++extern int pmic_read(int reg_num, unsigned int *reg_val);
++extern int pmic_write(int reg_num, const unsigned int reg_val);
++#else
+ int pmic_spi_setup(struct spi_device *spi)
+ {
+ 	/* Setup the SPI slave i.e.PMIC */
+@@ -101,6 +105,7 @@ int pmic_write(int reg_num, const unsigned int reg_val)
+ 		return PMIC_ERROR;
+ 	}
+ }
++#endif
+ 
+ /*!
+  * This function is called by PMIC clients to read a register on PMIC.
+@@ -162,6 +167,7 @@ PMIC_STATUS pmic_write_reg(int reg, unsigned int reg_value,
+ 	return ret;
+ }
+ 
++#ifndef CONFIG_MXC_PMIC_MC34704
+ unsigned int pmic_get_active_events(unsigned int *active_events)
+ {
+ 	unsigned int count = 0;
+@@ -260,6 +266,7 @@ int pmic_event_mask(type_event event)
+ 	return ret;
+ }
+ EXPORT_SYMBOL(pmic_event_mask);
++#endif
+ 
+ EXPORT_SYMBOL(pmic_read_reg);
+ EXPORT_SYMBOL(pmic_write_reg);
+-- 
+1.5.4.4
+

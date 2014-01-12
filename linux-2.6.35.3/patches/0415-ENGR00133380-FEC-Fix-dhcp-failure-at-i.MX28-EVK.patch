@@ -1,0 +1,29 @@
+From b6614e875f10a871c411c547e6cd42b221ff4215 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Wed, 10 Nov 2010 09:27:01 +0800
+Subject: [PATCH] ENGR00133380 FEC: Fix dhcp failure at i.MX28 EVK
+
+Fix dhcp failure at i.MX28 EVK board caused by 1588 patch
+
+Signed-off-by: Xie Xiaobo <R63061@freescale.com>
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/net/fec.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/fec.h b/drivers/net/fec.h
+index 3047330..0bd534d 100644
+--- a/drivers/net/fec.h
++++ b/drivers/net/fec.h
+@@ -84,7 +84,7 @@
+ 
+ #endif /* CONFIG_M5272 */
+ 
+-#ifdef CONFIG_ARCH_MX28
++#if defined(CONFIG_ARCH_MX28) && defined(CONFIG_FEC_1588)
+ #define CONFIG_ENHANCED_BD
+ #endif
+ 
+-- 
+1.5.4.4
+

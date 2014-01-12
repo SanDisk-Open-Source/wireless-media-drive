@@ -1,0 +1,29 @@
+From b2d2a7f6c46993d6b4c2c3aef43db5ec166bef45 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Mon, 20 Sep 2010 13:52:08 -0500
+Subject: [PATCH] ENGR00131694-2 MX50 RDP Kernel upgrade to 2.6.35
+
+Disable MC13892 charging for MX50 RDP
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/mxc/pmic/mc13892/pmic_battery.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/pmic/mc13892/pmic_battery.c b/drivers/mxc/pmic/mc13892/pmic_battery.c
+index 905ffd1..75fcf25 100644
+--- a/drivers/mxc/pmic/mc13892/pmic_battery.c
++++ b/drivers/mxc/pmic/mc13892/pmic_battery.c
+@@ -536,7 +536,8 @@ static int pmic_battery_probe(struct platform_device *pdev)
+ 		pr_debug("Battery driver is only applied for MC13892 V2.0\n");
+ 		return -1;
+ 	}
+-	if (machine_is_mx51_babbage() || machine_is_mx50_arm2()) {
++	if (machine_is_mx51_babbage() || machine_is_mx50_arm2()
++		|| machine_is_mx50_rdp()) {
+ 		pr_debug("mc13892 charger is not used for this platform\n");
+ 		return -1;
+ 	}
+-- 
+1.5.4.4
+

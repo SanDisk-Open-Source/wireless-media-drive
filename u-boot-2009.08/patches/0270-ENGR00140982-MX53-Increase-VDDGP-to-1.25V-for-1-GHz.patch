@@ -1,0 +1,66 @@
+From 33e33116c24f2c1468385142fb0eba2e777cf010 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Tue, 22 Mar 2011 16:40:28 -0500
+Subject: [PATCH] ENGR00140982 MX53 Increase VDDGP to 1.25V for 1 GHz
+
+MX53 TO 2.0 requires 1.25V for VDDGP instead of 1.2V
+in order for the core to operate at 1 GHz.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ board/freescale/mx53_evk/mx53_evk.c   |    4 ++--
+ board/freescale/mx53_loco/mx53_loco.c |    4 ++--
+ board/freescale/mx53_smd/mx53_smd.c   |    4 ++--
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index d36c803..aea2adb 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -321,10 +321,10 @@ void setup_core_voltages(void)
+ 	}
+ 
+ 	if (is_soc_rev(CHIP_REV_2_0) >= 0) {
+-		/* set VDDGP as 1.2V for 1.0 GHZ */
++		/* set VDDGP as 1.25V for 1.0 GHZ */
+ 		buf[0] = 0x45;
+ 		buf[1] = 0x4a;
+-		buf[2] = 0x58;
++		buf[2] = 0x5a;
+ 		if (i2c_write(0x8, 24, 1, buf, 3))
+ 			return;
+ 		/* Set VCC to 1.3V for TO2 */
+diff --git a/board/freescale/mx53_loco/mx53_loco.c b/board/freescale/mx53_loco/mx53_loco.c
+index ef90889..0c38e3e 100644
+--- a/board/freescale/mx53_loco/mx53_loco.c
++++ b/board/freescale/mx53_loco/mx53_loco.c
+@@ -307,8 +307,8 @@ void setup_pmic_voltages(void)
+ {
+ 	int value;
+ 	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+-	/* increase VDDGP as 1.2V for 1GHZ */
+-	value = 0x5c;
++	/* increase VDDGP as 1.25V for 1GHZ */
++	value = 0x5e;
+ 	i2c_write(0x48, 0x2e, 1, &value, 1);
+ 	i2c_read(0x48, 60, 1, &value, 1);
+ 	value |= 0x1;
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index 5a9062f..7c3e1c3 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -390,8 +390,8 @@ void setup_pmic_voltages(void)
+ {
+ 	int value;
+ 	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+-	/* increase VDDGP as 1.2V for 1GHZ */
+-	value = 0x5c;
++	/* increase VDDGP as 1.25V for 1GHZ */
++	value = 0x5e;
+ 	i2c_write(0x48, 0x2e, 1, &value, 1);
+ 	i2c_read(0x48, 60, 1, &value, 1);
+ 	value |= 0x1;
+-- 
+1.5.4.4
+

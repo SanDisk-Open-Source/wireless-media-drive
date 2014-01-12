@@ -1,0 +1,29 @@
+From a357deb0e63f1cec372dd209af3b0ef4c4ddd440 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 16 Dec 2010 16:55:23 +0800
+Subject: [PATCH] ENGR00136941 MX50: Fix crash issue caused by ePxP when playback video
+
+The root cause is list_del() are called twice on same entry in pxp irq handler.
+Remove latter one fixes this issue.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index 1545682..92a2434 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -950,8 +950,6 @@ static irqreturn_t pxp_irq(int irq, void *dev_id)
+ 	list_splice_init(&desc->tx_list, &pxp_chan->free_list);
+ 	list_move(&desc->list, &pxp_chan->free_list);
+ 
+-	list_del(&pxp_chan->list);
+-
+ 	wake_up(&pxp->done);
+ 	pxp->pxp_ongoing = 0;
+ 	mod_timer(&pxp->clk_timer, jiffies + msecs_to_jiffies(timeout_in_ms));
+-- 
+1.5.4.4
+

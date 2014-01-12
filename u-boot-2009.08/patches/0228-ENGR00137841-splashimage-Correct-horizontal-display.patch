@@ -1,0 +1,32 @@
+From 63926913016bd8ce0b8b14175239c2d23ace636f Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 11 Jan 2011 13:58:58 +0800
+Subject: [PATCH] ENGR00137841 splashimage:Correct horizontal display position
+
+When we use splashpos command to set the display position
+of a bmp image, the x value means the number of pixels
+from the left boundary of the screen, so we should consider
+the bits of every pixel when we calculate fb address offset.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ common/lcd.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/common/lcd.c b/common/lcd.c
+index 859aef2..c46422e 100644
+--- a/common/lcd.c
++++ b/common/lcd.c
+@@ -746,7 +746,8 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ 		height = panel_info.vl_row - y;
+ 
+ 	bmap = (uchar *)bmp + le32_to_cpu (bmp->header.data_offset);
+-	fb   = (uchar *) (lcd_base + (y + height - 1) * lcd_line_length + x);
++	fb   = (uchar *) (lcd_base +
++		(y + height - 1) * lcd_line_length + x * bpix / 8);
+ 
+ 	switch (bmp_bpix) {
+ 	case 1: /* pass through */
+-- 
+1.5.4.4
+

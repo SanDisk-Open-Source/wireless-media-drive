@@ -1,0 +1,28 @@
+From 482306121c50b30bb073c28aad1f388d54b54a23 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Tue, 9 Nov 2010 11:14:29 +0800
+Subject: [PATCH] ENGR00133481-2 [MX28] eMMC Write failed on MX28 boards
+
+Removed one useless DDR releated macro definition, refer
+to the kernel upgrade from 31 to 35.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ include/linux/mmc/mmc.h |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/include/linux/mmc/mmc.h b/include/linux/mmc/mmc.h
+index f8fcc0b..139dadf 100644
+--- a/include/linux/mmc/mmc.h
++++ b/include/linux/mmc/mmc.h
+@@ -273,7 +273,6 @@ struct _mmc_csd {
+ #define EXT_CSD_CARD_TYPE_26	(1<<0)	/* Card can run at 26MHz */
+ #define EXT_CSD_CARD_TYPE_52	(1<<1)	/* Card can run at 52MHz */
+ #define EXT_CSD_CARD_TYPE_MASK	0x3	/* Mask out reserved and DDR bits */
+-#define EXT_CSD_CARD_TYPE_DDR_52	(1<<2)	/* Card can run at DDR 52MHz */
+ 
+ #define EXT_CSD_BUS_WIDTH_1	0	/* Card is in 1 bit mode */
+ #define EXT_CSD_BUS_WIDTH_4	1	/* Card is in 4 bit mode */
+-- 
+1.5.4.4
+

@@ -1,0 +1,77 @@
+From 6df06f89062bfc62b48a4748dcf06d3ba6c7b7a5 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Tue, 16 Nov 2010 13:56:32 +0800
+Subject: [PATCH] ENGR00133729 ePxP: move clk_[en|dis]able outside spinlock section
+
+clk_enable and clk_disable could be sleep, so it can not be
+surrounded with spin_lock/spin_unlock. This patch fixed it.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c |   16 ++++++++--------
+ 1 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index 00ea92b..98fdc61 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -53,6 +53,7 @@ struct pxps {
+ 	int irq;		/* PXP IRQ to the CPU */
+ 
+ 	spinlock_t lock;
++	struct mutex clk_mutex;
+ 	int clk_stat;
+ #define	CLK_STAT_OFF		0
+ #define	CLK_STAT_ON		1
+@@ -637,34 +638,32 @@ static int pxp_config(struct pxps *pxp, struct pxp_channel *pxp_chan)
+ 
+ static void pxp_clk_enable(struct pxps *pxp)
+ {
+-	unsigned long flags;
+-	spin_lock_irqsave(&pxp->lock, flags);
++	mutex_lock(&pxp->clk_mutex);
+ 
+ 	if (pxp->clk_stat == CLK_STAT_ON) {
+-		spin_unlock_irqrestore(&pxp->lock, flags);
++		mutex_unlock(&pxp->clk_mutex);
+ 		return;
+ 	}
+ 
+ 	clk_enable(pxp->clk);
+ 	pxp->clk_stat = CLK_STAT_ON;
+ 
+-	spin_unlock_irqrestore(&pxp->lock, flags);
++	mutex_unlock(&pxp->clk_mutex);
+ }
+ 
+ static void pxp_clk_disable(struct pxps *pxp)
+ {
+-	unsigned long flags;
+-	spin_lock_irqsave(&pxp->lock, flags);
++	mutex_lock(&pxp->clk_mutex);
+ 
+ 	if (pxp->clk_stat == CLK_STAT_OFF) {
+-		spin_unlock_irqrestore(&pxp->lock, flags);
++		mutex_unlock(&pxp->clk_mutex);
+ 		return;
+ 	}
+ 
+ 	clk_disable(pxp->clk);
+ 	pxp->clk_stat = CLK_STAT_OFF;
+ 
+-	spin_unlock_irqrestore(&pxp->lock, flags);
++	mutex_unlock(&pxp->clk_mutex);
+ }
+ 
+ static inline void clkoff_callback(struct work_struct *w)
+@@ -1374,6 +1373,7 @@ static int pxp_probe(struct platform_device *pdev)
+ 	pxp->lut_state = 0;
+ 
+ 	spin_lock_init(&pxp->lock);
++	mutex_init(&pxp->clk_mutex);
+ 
+ 	if (!request_mem_region(res->start, resource_size(res), "pxp-mem")) {
+ 		err = -EBUSY;
+-- 
+1.5.4.4
+

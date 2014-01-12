@@ -1,0 +1,35 @@
+From bbc556203086e602d176d2b627293377354b644e Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 17 Mar 2011 14:20:02 +0800
+Subject: [PATCH] ENGR00140764 ipuv3 dev: change cache policy to writethrough
+
+Change from writecombine to writethrough.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_device.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_device.c b/drivers/mxc/ipu3/ipu_device.c
+index c7c032d..25a2686 100644
+--- a/drivers/mxc/ipu3/ipu_device.c
++++ b/drivers/mxc/ipu3/ipu_device.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -446,7 +446,7 @@ static int mxc_ipu_ioctl(struct inode *inode, struct file *file,
+ 
+ static int mxc_ipu_mmap(struct file *file, struct vm_area_struct *vma)
+ {
+-	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
++	vma->vm_page_prot = pgprot_writethru(vma->vm_page_prot);
+ 
+ 	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+ 				vma->vm_end - vma->vm_start,
+-- 
+1.5.4.4
+

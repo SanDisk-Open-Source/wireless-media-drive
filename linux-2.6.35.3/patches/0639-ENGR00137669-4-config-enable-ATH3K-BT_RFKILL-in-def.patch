@@ -1,0 +1,46 @@
+From a8c4aedbf5e357f9a0f99ae877d2548fcd49795a Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Mon, 6 Dec 2010 20:04:08 +0800
+Subject: [PATCH] ENGR00137669-4 config: enable ATH3K BT_RFKILL in default config
+
+enable ATH3K and mx53 SMD Bluetooth RF kill configs.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index eb51327..77630ce 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -527,13 +527,17 @@ CONFIG_BT_HIDP=y
+ #
+ CONFIG_BT_HCIBTUSB=y
+ # CONFIG_BT_HCIBTSDIO is not set
+-# CONFIG_BT_HCIUART is not set
++CONFIG_BT_HCIUART is not set
++# CONFIG_BT_HCIUART_H4 is not set
+++# CONFIG_BT_HCIUART_BCSP is not set
+++# CONFIG_BT_HCIUART_LL is not set
+ # CONFIG_BT_HCIBCM203X is not set
+ # CONFIG_BT_HCIBPA10X is not set
+ # CONFIG_BT_HCIBFUSB is not set
+ CONFIG_BT_HCIVHCI=y
+ # CONFIG_BT_MRVL is not set
+ # CONFIG_BT_ATH3K is not set
++CONFIG_BT_HCIUART_ATH=y
+ # CONFIG_AF_RXRPC is not set
+ CONFIG_WIRELESS=y
+ CONFIG_WIRELESS_EXT=y
+@@ -656,6 +660,7 @@ CONFIG_MTD_NAND_IDS=y
+ # CONFIG_MTD_NAND_NANDSIM is not set
+ # CONFIG_MTD_NAND_IMX_NFC is not set
+ CONFIG_MTD_NAND_MXC_V3=y
++CONFIG_MXC_BLUETOOTH_RFKILL=y
+ # CONFIG_MTD_NAND_MXC_SWECC is not set
+ # CONFIG_MTD_NAND_MXC_FORCE_CE is not set
+ # CONFIG_MXC_NAND_LOW_LEVEL_ERASE is not set
+-- 
+1.5.4.4
+

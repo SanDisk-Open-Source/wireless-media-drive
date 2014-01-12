@@ -1,0 +1,29 @@
+From a215a8695c701044b938df2298d65b1ef7e55577 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Fri, 30 Jul 2010 10:46:06 +0800
+Subject: [PATCH] ENGR00125693-1 MX53:Set gpo regulator to camera platform data
+
+Set gpo regulator to be VVIDEO to camera platform data. This
+regulator setting may enable the power domain of TVDAC_1 so that
+GPIO_10 can be driven as CAM_RESET_B.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 89c9985..61f9e67 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -876,6 +876,7 @@ static void camera_pwdn(int pwdn)
+ 
+ static struct mxc_camera_platform_data camera_data = {
+ 	.analog_regulator = "VSD",
++	.gpo_regulator = "VVIDEO",
+ 	.mclk = 24000000,
+ 	.csi = 0,
+ 	.pwdn = camera_pwdn,
+-- 
+1.5.4.4
+

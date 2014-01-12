@@ -1,0 +1,50 @@
+From c9888ae52f3ca01f28c04f527d5ed0317706bc2d Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Mon, 9 Aug 2010 15:05:24 -0500
+Subject: [PATCH] ENGR00126089 RNG driver defines suspend resume even when CONFIG_PM not set
+
+Define suspend resume functions only when CONFIG_PM is set
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ drivers/char/hw_random/fsl-rngc.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/char/hw_random/fsl-rngc.c b/drivers/char/hw_random/fsl-rngc.c
+index c430130..ba518a9 100644
+--- a/drivers/char/hw_random/fsl-rngc.c
++++ b/drivers/char/hw_random/fsl-rngc.c
+@@ -356,6 +356,7 @@ static int __exit fsl_rngc_remove(struct platform_device *pdev)
+ static int fsl_rngc_suspend(struct platform_device *pdev,
+ 		pm_message_t state)
+ {
++#ifdef CONFIG_PM
+ 	struct clk *clk = clk_get(&pdev->dev, "rng_clk");
+ 
+ 	if (IS_ERR(clk)) {
+@@ -364,12 +365,14 @@ static int fsl_rngc_suspend(struct platform_device *pdev,
+ 	}
+ 
+ 	clk_disable(clk);
++#endif
+ 
+ 	return 0;
+ }
+ 
+ static int fsl_rngc_resume(struct platform_device *pdev)
+ {
++#ifdef CONFIG_PM
+ 	struct clk *clk = clk_get(&pdev->dev, "rng_clk");
+ 
+ 	if (IS_ERR(clk)) {
+@@ -378,6 +381,7 @@ static int fsl_rngc_resume(struct platform_device *pdev)
+ 	}
+ 
+ 	clk_enable(clk);
++#endif
+ 
+ 	return 0;
+ }
+-- 
+1.5.4.4
+

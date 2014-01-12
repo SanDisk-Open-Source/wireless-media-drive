@@ -1,0 +1,47 @@
+From a7f05c847856eb97e286ff2dfd6918250ef334d9 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Mon, 17 Jan 2011 20:16:40 +0800
+Subject: [PATCH] ENGR00138071-2 input: mpr121: change input type from EV_MSC to EV_KEY
+
+EV_MSC will ignore by some system, so change this device to a EV_KEY
+device.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ drivers/input/keyboard/mpr121.c |    5 +----
+ 1 files changed, 1 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/input/keyboard/mpr121.c b/drivers/input/keyboard/mpr121.c
+index 7aae302..6a72323 100644
+--- a/drivers/input/keyboard/mpr121.c
++++ b/drivers/input/keyboard/mpr121.c
+@@ -30,7 +30,6 @@
+ #include <linux/delay.h>
+ #include <linux/bitops.h>
+ 
+-
+ struct mpr121_touchkey_data {
+ 	struct i2c_client	*client;
+ 	struct input_dev	*input_dev;
+@@ -88,7 +87,6 @@ static irqreturn_t mpr_touchkey_interrupt(int irq, void *dev_id)
+ 	data->statusbits = reg;
+ 	data->key_val = data->keycodes[key_num];
+ 
+-	input_event(input, EV_MSC, MSC_SCAN, data->key_val);
+ 	input_report_key(input, data->key_val, pressed);
+ 	input_sync(input);
+ 
+@@ -205,9 +203,8 @@ static int __devinit mpr_touchkey_probe(struct i2c_client *client,
+ 	for (i = 0; i < input_dev->keycodemax; i++) {
+ 		__set_bit(pdata->matrix[i], input_dev->keybit);
+ 		data->keycodes[i] = pdata->matrix[i];
++		input_set_capability(input_dev, EV_KEY, pdata->matrix[i]);
+ 	}
+-
+-	input_set_capability(input_dev, EV_MSC, MSC_SCAN);
+ 	input_set_drvdata(input_dev, data);
+ 
+ 	error = request_threaded_irq(client->irq, NULL,
+-- 
+1.5.4.4
+

@@ -1,0 +1,40 @@
+From b59a1326a6ccde04a35955365826d1e367767682 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 29 Nov 2010 18:16:17 +0800
+Subject: [PATCH] ENGR00134116 MX5 MFG: disable battery driver
+
+MC13892 LED workaround can only be applied when a battery is connected.
+But we can not detect if a battery is connected since the ADIN5
+pin has been tied to look like a battery is attached on MX5x
+boards. So disable battery driver firstly.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/configs/imx5_updater_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_updater_defconfig b/arch/arm/configs/imx5_updater_defconfig
+index 96b4ff5..d5ef907 100644
+--- a/arch/arm/configs/imx5_updater_defconfig
++++ b/arch/arm/configs/imx5_updater_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Wed Oct 20 12:02:48 2010
++# Fri Nov 26 10:35:54 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -1428,7 +1428,7 @@ CONFIG_MXC_PMIC_SPI=y
+ CONFIG_MXC_MC13892_ADC=y
+ CONFIG_MXC_MC13892_RTC=y
+ CONFIG_MXC_MC13892_LIGHT=y
+-CONFIG_MXC_MC13892_BATTERY=y
++# CONFIG_MXC_MC13892_BATTERY is not set
+ CONFIG_MXC_MC13892_CONNECTIVITY=y
+ CONFIG_MXC_MC13892_POWER=y
+ # CONFIG_MXC_PMIC_MC9S08DZ60 is not set
+-- 
+1.5.4.4
+

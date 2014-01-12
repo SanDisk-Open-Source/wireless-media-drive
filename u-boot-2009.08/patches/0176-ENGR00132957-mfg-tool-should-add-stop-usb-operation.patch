@@ -1,0 +1,34 @@
+From 6a8d78074cefec80c194697a72b0a17b0334aae9 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 26 Oct 2010 09:18:30 +0800
+Subject: [PATCH] ENGR00132957 mfg-tool: should add stop usb operation for mx50 rdp
+
+It should add stop usb operation for mx50 rdp,
+otherwise, the usb enumeration at kernel will be very slow
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ board/freescale/mx50_rdp/mx50_rdp.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx50_rdp/mx50_rdp.c b/board/freescale/mx50_rdp/mx50_rdp.c
+index 1a736b4..809f124 100644
+--- a/board/freescale/mx50_rdp/mx50_rdp.c
++++ b/board/freescale/mx50_rdp/mx50_rdp.c
+@@ -599,6 +599,13 @@ void setup_voltage_cpu(void)
+ 
+ int board_init(void)
+ {
++#ifdef CONFIG_MFG
++/* MFG firmware need reset usb to avoid host crash firstly */
++#define USBCMD 0x140
++	int val = readl(OTG_BASE_ADDR + USBCMD);
++	val &= ~0x1; /*RS bit*/
++	writel(val, OTG_BASE_ADDR + USBCMD);
++#endif
+ 	/* boot device */
+ 	setup_boot_device();
+ 
+-- 
+1.5.4.4
+

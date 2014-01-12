@@ -1,0 +1,33 @@
+From 86f3eb13dcf921638301553ce400e7e66dddad25 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Mon, 11 Oct 2010 15:09:45 -0500
+Subject: [PATCH] ENGR00132334 - EPDC fb: Report PSEUDOCOLOR when framebuffer set to grayscale
+
+EPDC FB driver currently always reports FB_VISUAL_TRUECOLOR as the visual
+element of fb_fix_screeninfo.  For grayscale formats, it should report
+FB_VISUAL_PSEUDOCOLOR.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index 1b8b698..27db198 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -963,7 +963,10 @@ static int mxc_epdc_fb_set_fix(struct fb_info *info)
+ 
+ 	fix->type = FB_TYPE_PACKED_PIXELS;
+ 	fix->accel = FB_ACCEL_NONE;
+-	fix->visual = FB_VISUAL_TRUECOLOR;
++	if (var->grayscale)
++		fix->visual = FB_VISUAL_STATIC_PSEUDOCOLOR;
++	else
++		fix->visual = FB_VISUAL_TRUECOLOR;
+ 	fix->xpanstep = 1;
+ 	fix->ypanstep = 1;
+ 
+-- 
+1.5.4.4
+

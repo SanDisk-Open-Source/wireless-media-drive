@@ -1,0 +1,54 @@
+From 512a222c1feba34dc51eeb35cda89a5a87a5c6a1 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Tue, 25 Jan 2011 11:53:26 +0800
+Subject: [PATCH] ENGR00138468-2 Enable splashimage support for several platforms
+
+This patch enables splashimage support for MX53 SMD/ARD and
+MX51 BBG pdk platforms.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ include/configs/mx51_bbg.h |    1 +
+ include/configs/mx53_ard.h |    1 +
+ include/configs/mx53_smd.h |    1 +
+ 3 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 6b3a513..46ff011 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -274,6 +274,7 @@
+ #undef CONFIG_JFFS2_CMDLINE
+ #define CONFIG_JFFS2_DEV	"nand0"
+ 
++#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 3ba6188..6791011 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -283,6 +283,7 @@
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+ 
++#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+diff --git a/include/configs/mx53_smd.h b/include/configs/mx53_smd.h
+index 4858de4..223761f 100644
+--- a/include/configs/mx53_smd.h
++++ b/include/configs/mx53_smd.h
+@@ -274,6 +274,7 @@
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+ 
++#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+-- 
+1.5.4.4
+

@@ -1,0 +1,135 @@
+From 0b6b3bda41d05a808bd3ea4146d90b028aa7e41b Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Mon, 11 Apr 2011 12:28:27 -0500
+Subject: [PATCH] ENGR00142006: MX50- Fix audio noise issue.
+
+Clicking sound can be heard whenever the system transitions between LPAPM
+mode and normal mode. Sometimes channel swapping also occurs. The issue
+can be reproduced only when tested with a mono-tone audio clip.
+
+The issue was caused by stalling of the bus masters when the DDR
+frequency was being changed. Fix is to allow SDMA to access IRAM
+via QoS (ports 0 and 1) during the DDR frequency transition.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c   |   14 +++++++-------
+ arch/arm/mach-mx5/clock_mx50.c |   10 ++++++++++
+ arch/arm/mach-mx5/mx50_freq.c  |    7 +++++--
+ 3 files changed, 22 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 055b9ae..bfac8dc 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -55,6 +55,7 @@
+ #define DDR_TYPE_DDR2		0x1
+ 
+ DEFINE_SPINLOCK(ddr_freq_lock);
++DEFINE_SPINLOCK(freq_lock);
+ 
+ unsigned long lp_normal_rate;
+ unsigned long lp_med_rate;
+@@ -182,13 +183,12 @@ void enter_lpapm_mode_mx50()
+ {
+ 	u32 reg;
+ 	unsigned long flags;
+-	spin_lock_irqsave(&ddr_freq_lock, flags);
++	spin_lock_irqsave(&freq_lock, flags);
+ 
+ 	set_ddr_freq(LP_APM_CLK);
+-	/* Set the parent of main_bus_clk to be PLL3 */
+ 
++	/* Set the parent of main_bus_clk to be PLL3 */
+ 	clk_set_parent(main_bus_clk, pll3);
+-
+ 	/* Set the AHB dividers to be 2.
+ 	 * Set the dividers so that clock rates
+ 	 * are not greater than current clock rate.
+@@ -230,7 +230,7 @@ void enter_lpapm_mode_mx50()
+ 	while (__raw_readl(MXC_CCM_CDHIPR) & 0x0F)
+ 		udelay(10);
+ 
+-	spin_unlock_irqrestore(&ddr_freq_lock, flags);
++	spin_unlock_irqrestore(&freq_lock, flags);
+ 
+ 	spin_lock_irqsave(&voltage_lock, flags);
+ 	lp_voltage = LP_LOW_VOLTAGE;
+@@ -518,9 +518,9 @@ void exit_lpapm_mode_mx50(int high_bus_freq)
+ 			wait_for_completion_interruptible(&voltage_change_cmpl);
+ 	}
+ 
+-	spin_lock_irqsave(&ddr_freq_lock, flags);
++	spin_lock_irqsave(&freq_lock, flags);
+ 	if (!low_bus_freq_mode) {
+-		spin_unlock_irqrestore(&ddr_freq_lock, flags);
++		spin_unlock_irqrestore(&freq_lock, flags);
+ 		return;
+ 	}
+ 
+@@ -592,7 +592,7 @@ void exit_lpapm_mode_mx50(int high_bus_freq)
+ 		med_bus_freq_mode = 0;
+ 		set_ddr_freq(ddr_normal_rate);
+ 	}
+-	spin_unlock_irqrestore(&ddr_freq_lock, flags);
++	spin_unlock_irqrestore(&freq_lock, flags);
+ 
+ 	udelay(100);
+ }
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 0135903..6bcfbeb 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -826,6 +826,8 @@ static unsigned long _clk_main_bus_get_rate(struct clk *clk)
+ static int _clk_main_bus_set_parent(struct clk *clk, struct clk *parent)
+ {
+ 	u32 reg, mux;
++	struct timespec nstimeofday;
++	struct timespec curtime;
+ 
+ 	mux = _get_mux(parent, &pll1_sw_clk, &pll2_sw_clk, &pll3_sw_clk,
+ 			&lp_apm_clk);
+@@ -833,6 +835,14 @@ static int _clk_main_bus_set_parent(struct clk *clk, struct clk *parent)
+ 	reg |= (mux << MX50_CCM_CBCDR_PERIPH_CLK_SEL_OFFSET);
+ 	__raw_writel(reg, MXC_CCM_CBCDR);
+ 
++	getnstimeofday(&nstimeofday);
++	while (__raw_readl(MXC_CCM_CDHIPR) &
++			MXC_CCM_CDHIPR_PERIPH_CLK_SEL_BUSY) {
++		getnstimeofday(&curtime);
++		if (curtime.tv_nsec - nstimeofday.tv_nsec > SPIN_DELAY)
++			panic("_clk_main_bus_set_parent failed\n");
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/arch/arm/mach-mx5/mx50_freq.c b/arch/arm/mach-mx5/mx50_freq.c
+index 2bf7b1c..0259e6a 100644
+--- a/arch/arm/mach-mx5/mx50_freq.c
++++ b/arch/arm/mach-mx5/mx50_freq.c
+@@ -39,6 +39,7 @@
+ #define HW_QOS_DISABLE			0x70
+ #define HW_QOS_DISABLE_SET	0x74
+ #define HW_QOS_DISABLE_CLR	0x78
++#define QoS_DISABLE_MASTERS	0xFF0
+ 
+ static struct clk *epdc_clk;
+ 
+@@ -320,9 +321,11 @@ int update_ddr_freq(int ddr_rate)
+ 			}
+ 		}
+ 	}
+-	/* Disable all masters from accessing the DDR. */
++	/* Disable all masters from accessing the DDR, leave masters
++	 * on port 0 and 1 enabled.
++	 */
+ 	reg = __raw_readl(qosc_base + HW_QOS_DISABLE);
+-	reg |= 0xFFE;
++	reg |= QoS_DISABLE_MASTERS;
+ 	__raw_writel(reg, qosc_base + HW_QOS_DISABLE_SET);
+ 	udelay(100);
+ 
+-- 
+1.5.4.4
+

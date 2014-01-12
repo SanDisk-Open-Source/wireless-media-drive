@@ -1,0 +1,58 @@
+From bdd8d6f7b43a2209242fd5e72fde271bc1b2e2b8 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 5 Aug 2010 11:15:13 -0500
+Subject: [PATCH] ENGR00126061 - EPDC fb: Linux logo should appear when console enabled
+
+When FB console is enabled, the EPDC will perform a full-screen update
+after completing register_framebuffer().  This update will show
+the Linux logo if it has been selected.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |   23 +++++++++++++++++++++++
+ 1 files changed, 23 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index 109fa31..95be9ff 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -2372,6 +2372,9 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
+ 	struct update_data_list *upd_list;
+ 	struct update_data_list *plist, *temp_list;
+ 	int i;
++#ifdef CONFIG_FRAMEBUFFER_CONSOLE
++	struct mxcfb_update_data update;
++#endif
+ 
+ 	fb_data = (struct mxc_epdc_fb_data *)framebuffer_alloc(
+ 			sizeof(struct mxc_epdc_fb_data), &pdev->dev);
+@@ -2735,6 +2738,26 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
+ 	}
+ #endif
+ 
++#ifdef CONFIG_FRAMEBUFFER_CONSOLE
++	/* If FB console included, update display to show logo */
++	update.update_region.left = 0;
++	update.update_region.width = info->var.xres;
++	update.update_region.top = 0;
++	update.update_region.height = info->var.yres;
++	update.update_mode = UPDATE_MODE_PARTIAL;
++	update.waveform_mode = WAVEFORM_MODE_AUTO;
++	update.update_marker = INIT_UPDATE_MARKER;
++	update.temp = TEMP_USE_AMBIENT;
++	update.use_alt_buffer = false;
++
++	mxc_epdc_fb_send_update(&update, info);
++
++	ret = mxc_epdc_fb_wait_update_complete(update.update_marker, info);
++	if (ret < 0)
++		dev_err(fb_data->dev,
++			"Wait for update complete failed.  Error = 0x%x", ret);
++#endif
++
+ 	goto out;
+ 
+ out_dmaengine:
+-- 
+1.5.4.4
+

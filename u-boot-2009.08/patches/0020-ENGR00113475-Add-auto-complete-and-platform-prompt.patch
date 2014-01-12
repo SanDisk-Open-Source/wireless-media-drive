@@ -1,0 +1,74 @@
+From c6e205a9fde82e69608850c24686cc972cf258f1 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 24 Jun 2009 15:55:06 +0800
+Subject: [PATCH] ENGR00113475: Add auto-complete and platform prompt for each platform.
+
+Add auto-complete and platform prompt for each platform.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx25_3stack.h |    3 ++-
+ include/configs/mx31_3stack.h |    3 ++-
+ include/configs/mx35_3stack.h |    3 ++-
+ include/configs/mx51_3stack.h |    3 ++-
+ 4 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index 01a4c03..05b3500 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -136,7 +136,8 @@
+  * Miscellaneous configurable options
+  */
+ #define CONFIG_SYS_LONGHELP	/* undef to save memory */
+-#define CONFIG_SYS_PROMPT	"uboot> "
++#define CONFIG_SYS_PROMPT	"MX25 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE	256  /* Console I/O Buffer Size */
+ /* Print Buffer Size */
+ #define CONFIG_SYS_PBSIZE	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
+diff --git a/include/configs/mx31_3stack.h b/include/configs/mx31_3stack.h
+index e90df0a..e7b6f89 100644
+--- a/include/configs/mx31_3stack.h
++++ b/include/configs/mx31_3stack.h
+@@ -109,7 +109,8 @@
+  * Miscellaneous configurable options
+  */
+ #define CONFIG_SYS_LONGHELP	/* undef to save memory */
+-#define CONFIG_SYS_PROMPT	"=> "
++#define CONFIG_SYS_PROMPT	"MX31 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE	256		/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+ #define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 58b098e..49c0b84 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -145,7 +145,8 @@
+  * Miscellaneous configurable options
+  */
+ #define CONFIG_SYS_LONGHELP	/* undef to save memory */
+-#define CONFIG_SYS_PROMPT	"=> "
++#define CONFIG_SYS_PROMPT	"MX35 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE	256	/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+ #define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 7446c39..9cb463d 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -131,7 +131,8 @@
+  * Miscellaneous configurable options
+  */
+ #define CONFIG_SYS_LONGHELP		/* undef to save memory */
+-#define CONFIG_SYS_PROMPT		"=> "
++#define CONFIG_SYS_PROMPT		"MX51 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+ #define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+-- 
+1.5.4.4
+

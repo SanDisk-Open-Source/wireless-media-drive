@@ -1,0 +1,91 @@
+From 52bd5df58dad37c994fc2b396c0c9bc20c321cb9 Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Sat, 9 Oct 2010 13:09:14 +0800
+Subject: [PATCH] ENGR00132418-1 I.MX USB ID debounce only needed when wakeup event is present
+
+MSL Part
+We do need software ID debounce only when the wakeup event is present
+This is becasse that on some boards when an usb device is attached to otg
+port,the vbus wakeup event is present earlier than ID pin wakeup
+event,but the vbus wakeup event is not expected, So we must delay
+with some time (3ms) when wakup event is present to let the ID pin
+change to the correct value.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ arch/arm/plat-mxc/usb_common.c |   17 +++++++++++++++--
+ arch/arm/plat-mxs/usb_common.c |    6 +++++-
+ 2 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index 1f6a902..2d5dc71 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -883,16 +883,18 @@ void usbotg_uninit(struct fsl_usb2_platform_data *pdata)
+ }
+ EXPORT_SYMBOL(usbotg_uninit);
+ 
++/* the debounce function is only used when OTG is enabled,
++ * if otg disabled, the ID pin is not used */
+ void usb_debounce_id_pin(void)
+ {
+-
++#ifdef CONFIG_USB_OTG
+ 	/* Because the IC design needs to remove the glitch on ID so the otgsc bit 8 will
+ 	 * be delayed max 2 ms to show the real ID pin value
+ 	 */
+ 	mdelay(3);
++#endif
+ }
+ EXPORT_SYMBOL(usb_debounce_id_pin);
+-
+ int usb_host_wakeup_irq(struct device *wkup_dev)
+ {
+ 	int wakeup_req = 0;
+@@ -904,15 +906,26 @@ int usb_host_wakeup_irq(struct device *wkup_dev)
+ 		wakeup_req = USBCTRL_HOST2 & UCTRL_H2WIR;
+ 	} else if (!strcmp("DR", pdata->name)) {
+ 		wakeup_req = USBCTRL & UCTRL_OWIR;
++		/*if only host mode is enabled, the wakeup event
++		 * must be host wakeup event */
++#ifdef CONFIG_USB_OTG
+ 		usb_debounce_id_pin();
+ 		if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID))
+ 			wakeup_req = 0;
++#endif
+ 	}
+ 
+ 	return wakeup_req;
+ }
+ EXPORT_SYMBOL(usb_host_wakeup_irq);
+ 
++int usb_event_is_otg_wakeup(void)
++{
++	int ret = (USBCTRL & UCTRL_OWIR) ? 1 : 0;
++	return ret;
++}
++EXPORT_SYMBOL(usb_event_is_otg_wakeup);
++
+ void usb_host_set_wakeup(struct device *wkup_dev, bool para)
+ {
+ 	struct fsl_usb2_platform_data *pdata = wkup_dev->platform_data;
+diff --git a/arch/arm/plat-mxs/usb_common.c b/arch/arm/plat-mxs/usb_common.c
+index 4bfbb3c..d8da3dd 100644
+--- a/arch/arm/plat-mxs/usb_common.c
++++ b/arch/arm/plat-mxs/usb_common.c
+@@ -368,7 +368,11 @@ void usb_debounce_id_pin(void)
+ 	mdelay(3);
+ }
+ EXPORT_SYMBOL(usb_debounce_id_pin);
+-
++int usb_event_is_otg_wakeup(void)
++{
++	return 0;
++}
++EXPORT_SYMBOL(usb_event_is_otg_wakeup);
+ int usb_host_wakeup_irq(struct device *wkup_dev)
+ {
+ 	return 0;
+-- 
+1.5.4.4
+

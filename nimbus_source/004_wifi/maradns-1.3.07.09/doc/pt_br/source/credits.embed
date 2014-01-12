@@ -1,0 +1,59 @@
+Aqui é uma lista parcial das pessoas que proveram ajuda:
+<p>
+Floh generosamente configurou um sistema FreeBSD 4, FreeBSD 6, e Mac OS X para
+que assim eu poder portar MaraDNS à mais plataformas.
+<p>
+Albert Lee tem providos inumeros relatórios de erros, e, correções para esses bugs. 
+Ele também aprimorou o código em  tcp "zoneserver".
+<p>
+Franky Van Liedekerke tem provido um assistência sem valor. Apenas um
+exemplo, ele proveu uma enorme assistencia em fazer o MaraDNS compilar no
+Solaris. E mais, ele vem ajudando e muito no SQA.
+<p>
+Thomas Seyrat tem realizado a tradução para o Françês da documentação 
+do MaraDNS.
+<p>
+Christian Kurz, que proveu valiosos relatórios de erros, especialmente 
+quando tive que re-implementar o núclo do algorítimo hashing.
+<p>
+Remmy, que provê tanto o espaço para o wesite como para lista de emails.
+<p>
+Phil Homewood, que forneceu o auxílio incalculável em encontrar e consertar
+erros na parcela autoritativa do servidor MaraDNS. Ajudou-me consertar escapes
+de memória, achar variáveis sem utilização e encontrar um número de erros
+que eu era incapaz de encontrar. 
+<p>
+Albert Prats gentilmente fornecu as traduções espanholas para vários 
+arquivos textos.
+<p>
+Shin Zukeran forneceu um patch para o arquivo recursive.c que  
+corretamente faz uma null-terminated string normal de um objeto js_string, 
+emitir como um argumento para open() assim podemos pegar a chave rijndael
+para o PRNG. 
+<p>
+D Richard Felker III forneceu incalculáveis relatos de erros. Olhando seus 
+relatos, eu pude caçar e reparar muitos problemas que o servidor recursivo
+teve, além ao menos de um problema com o servidor autoritativo.
+<p>
+Ole deu-me também muitos relatórios valiosos sobre erros no MaraDNS. 
+<p>
+Florin Iucha forneceu uma dica no FAQ de como compilar MaraDNS
+em OpenBSD. 
+<p>
+Roy Arends (um dos desenvolvedore do BIND, como se apresentou)
+encontrou um problema sério de segurança com MaraDNS, onde MaraDNS
+responderia a respostas, e apontou-o para mim. 
+<p>
+O código usado como a base para o gerador de número psudo-aleatório foi
+escrito por Vincent Rijmen, Antoon Bosselaers, e Paulo Barreto. Eu aprecio
+estes programadores que fazem o código de domínio público, que é a única
+licença sob qual eu posso adicionar ao código do MaraDNS. 
+<p>
+Eu aprecio também o trabalho do Dr. Brian Gladman e Fritz Schneider, 
+no qual ambos tem escritos implementações independentes do AES 
+da onde eu obtenho testes de vetores. Com a ajuda do seu trabalho duro,
+eu pode descobrir um problema de segurança que as liberações 
+precedentes do MaraDNS tiveram. 
+
+
+

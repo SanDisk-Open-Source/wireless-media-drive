@@ -1,0 +1,136 @@
+From 249aff2795916d1f87e6d9313ad74520eaee16f7 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Fri, 5 Nov 2010 09:52:50 +0800
+Subject: [PATCH] ENGR00133440 mx23/mx28: add CONFIG_I2C_CHARDEV in defconfig
+
+This is required for using i2c tools.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/configs/imx23evk_defconfig |    9 ++++++---
+ arch/arm/configs/imx28evk_defconfig |    9 ++++++---
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/configs/imx23evk_defconfig b/arch/arm/configs/imx23evk_defconfig
+index 53c2486..38b1c90 100644
+--- a/arch/arm/configs/imx23evk_defconfig
++++ b/arch/arm/configs/imx23evk_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Thu Sep 30 09:56:42 2010
++# Fri Nov  5 09:51:09 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+@@ -776,6 +776,7 @@ CONFIG_NETDEV_10000=y
+ CONFIG_WLAN=y
+ # CONFIG_USB_ZD1201 is not set
+ # CONFIG_HOSTAP is not set
++# CONFIG_ATH6K_LEGACY is not set
+ 
+ #
+ # Enable WiMAX (Networking options) to see the WiMAX drivers
+@@ -933,7 +934,7 @@ CONFIG_HW_RANDOM=y
+ CONFIG_I2C=y
+ CONFIG_I2C_BOARDINFO=y
+ CONFIG_I2C_COMPAT=y
+-# CONFIG_I2C_CHARDEV is not set
++CONFIG_I2C_CHARDEV=y
+ CONFIG_I2C_HELPER_AUTO=y
+ 
+ #
+@@ -1086,6 +1087,7 @@ CONFIG_HWMON=y
+ # CONFIG_SENSORS_LM95241 is not set
+ # CONFIG_SENSORS_MAX1111 is not set
+ # CONFIG_SENSORS_MAX1619 is not set
++# CONFIG_SENSORS_MAX17135 is not set
+ # CONFIG_SENSORS_MAX6650 is not set
+ # CONFIG_SENSORS_PC87360 is not set
+ # CONFIG_SENSORS_PC87427 is not set
+@@ -1159,11 +1161,13 @@ CONFIG_MFD_SUPPORT=y
+ # CONFIG_MFD_WM831X is not set
+ # CONFIG_MFD_WM8350_I2C is not set
+ # CONFIG_MFD_WM8994 is not set
++# CONFIG_MFD_LTC3589_I2C is not set
+ # CONFIG_MFD_PCF50633 is not set
+ # CONFIG_MFD_MC13783 is not set
+ # CONFIG_ABX500_CORE is not set
+ # CONFIG_EZX_PCAP is not set
+ # CONFIG_AB8500_CORE is not set
++# CONFIG_MFD_MAX17135 is not set
+ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_DEBUG is not set
+ # CONFIG_REGULATOR_DUMMY is not set
+@@ -1178,7 +1182,6 @@ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_TPS65023 is not set
+ # CONFIG_REGULATOR_TPS6507X is not set
+ CONFIG_REGULATOR_MXS=y
+-# CONFIG_REGULATOR_MAX17135 is not set
+ CONFIG_MEDIA_SUPPORT=y
+ 
+ #
+diff --git a/arch/arm/configs/imx28evk_defconfig b/arch/arm/configs/imx28evk_defconfig
+index 92f2b4a..b081bd7 100644
+--- a/arch/arm/configs/imx28evk_defconfig
++++ b/arch/arm/configs/imx28evk_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Tue Oct 12 14:50:07 2010
++# Fri Nov  5 09:50:20 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+@@ -256,6 +256,7 @@ CONFIG_ARCH_MX28=y
+ CONFIG_MACH_MX28EVK=y
+ CONFIG_VECTORS_PHY_ADDR=0
+ CONFIG_MXS_TIMER_WITH_MACH=y
++# CONFIG_MEM_mDDR is not set
+ CONFIG_MXS_ICOLL=y
+ CONFIG_MXS_EARLY_CONSOLE=y
+ CONFIG_MXS_DMA_ENGINE=y
+@@ -773,6 +774,7 @@ CONFIG_MII=y
+ # CONFIG_KS8851 is not set
+ # CONFIG_KS8851_MLL is not set
+ CONFIG_FEC=y
++# CONFIG_FEC_1588 is not set
+ # CONFIG_FEC2 is not set
+ # CONFIG_NETDEV_1000 is not set
+ # CONFIG_NETDEV_10000 is not set
+@@ -994,7 +996,7 @@ CONFIG_MAX_RAW_DEVS=8192
+ CONFIG_I2C=y
+ CONFIG_I2C_BOARDINFO=y
+ CONFIG_I2C_COMPAT=y
+-# CONFIG_I2C_CHARDEV is not set
++CONFIG_I2C_CHARDEV=y
+ CONFIG_I2C_HELPER_AUTO=y
+ 
+ #
+@@ -1147,11 +1149,13 @@ CONFIG_MFD_SUPPORT=y
+ # CONFIG_MFD_WM831X is not set
+ # CONFIG_MFD_WM8350_I2C is not set
+ # CONFIG_MFD_WM8994 is not set
++# CONFIG_MFD_LTC3589_I2C is not set
+ # CONFIG_MFD_PCF50633 is not set
+ # CONFIG_MFD_MC13783 is not set
+ # CONFIG_ABX500_CORE is not set
+ # CONFIG_EZX_PCAP is not set
+ # CONFIG_AB8500_CORE is not set
++# CONFIG_MFD_MAX17135 is not set
+ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_DEBUG is not set
+ # CONFIG_REGULATOR_DUMMY is not set
+@@ -1166,7 +1170,6 @@ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_TPS65023 is not set
+ # CONFIG_REGULATOR_TPS6507X is not set
+ CONFIG_REGULATOR_MXS=y
+-# CONFIG_REGULATOR_MAX17135 is not set
+ CONFIG_MEDIA_SUPPORT=y
+ 
+ #
+-- 
+1.5.4.4
+

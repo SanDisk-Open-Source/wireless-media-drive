@@ -1,0 +1,37 @@
+From 9f3ec5e932c444736f988190814b50830625704b Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 1 Dec 2010 15:14:27 +0800
+Subject: [PATCH] ENGR00134203-1 IPUv3 VDI:de-interlacing improvement
+
+Support VDI 422 mode(we support UYVY and YUYV 422
+pixel format only).
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_ic.c |   10 +++++++---
+ 1 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_ic.c b/drivers/mxc/ipu3/ipu_ic.c
+index 7f1dfe9..80369f6 100644
+--- a/drivers/mxc/ipu3/ipu_ic.c
++++ b/drivers/mxc/ipu3/ipu_ic.c
+@@ -164,9 +164,13 @@ void _ipu_vdi_init(ipu_channel_t channel, ipu_channel_params_t *params)
+ 
+ 	/* Full motion, only vertical filter is used
+ 	   Burst size is 4 accesses */
+-	pixel_fmt =
+-	    (params->mem_prp_vf_mem.in_pixel_fmt ==
+-	     V4L2_PIX_FMT_YUV422P) ? VDI_C_CH_422 : VDI_C_CH_420;
++	if (params->mem_prp_vf_mem.in_pixel_fmt ==
++	     IPU_PIX_FMT_UYVY ||
++	     params->mem_prp_vf_mem.in_pixel_fmt ==
++	     IPU_PIX_FMT_YUYV)
++		pixel_fmt = VDI_C_CH_422;
++	else
++		pixel_fmt = VDI_C_CH_420;
+ 
+ 	reg = __raw_readl(VDI_C);
+ 	reg |= pixel_fmt;
+-- 
+1.5.4.4
+

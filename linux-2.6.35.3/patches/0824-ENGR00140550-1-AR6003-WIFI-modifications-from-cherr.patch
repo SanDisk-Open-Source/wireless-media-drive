@@ -1,0 +1,56 @@
+From b1417407fe6a32e7c1e3e28ea1997c3a018716a7 Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Tue, 15 Mar 2011 10:44:44 +0800
+Subject: [PATCH] ENGR00140550-1 [AR6003 WIFI]modifications from cherry-pick
+
+add header files to make cherry-pick compile on 2.6.35 kernel
+change wireless name from eth to wlan
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ .../staging/ath6kl/hif/sdio/linux_sdio/src/hif.c   |    2 +-
+ .../ath6kl/hif/sdio/linux_sdio/src/hif_scatter.c   |    1 +
+ drivers/staging/ath6kl/os/linux/ar6000_drv.c       |    2 +-
+ 3 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif.c b/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif.c
+index c307a55..f0e9aa4 100644
+--- a/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif.c
++++ b/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif.c
+@@ -30,7 +30,7 @@
+ #include <linux/mmc/sdio.h>
+ #include <linux/mmc/sd.h>
+ #include <linux/kthread.h>
+-
++#include <linux/semaphore.h>
+ /* by default setup a bounce buffer for the data packets, if the underlying host controller driver
+    does not use DMA you may be able to skip this step and save the memory allocation and transfer time */
+ #define HIF_USE_DMA_BOUNCE_BUFFER 1
+diff --git a/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif_scatter.c b/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif_scatter.c
+index 22c6c66..10f6f60 100644
+--- a/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif_scatter.c
++++ b/drivers/staging/ath6kl/hif/sdio/linux_sdio/src/hif_scatter.c
+@@ -28,6 +28,7 @@
+ #include <linux/mmc/sdio_ids.h>
+ #include <linux/mmc/sdio.h>
+ #include <linux/kthread.h>
++#include <linux/semaphore.h>
+ #include "hif_internal.h"
+ #define ATH_MODULE_NAME hif
+ #include "a_debug.h"
+diff --git a/drivers/staging/ath6kl/os/linux/ar6000_drv.c b/drivers/staging/ath6kl/os/linux/ar6000_drv.c
+index ff7976e..1d31c7d 100644
+--- a/drivers/staging/ath6kl/os/linux/ar6000_drv.c
++++ b/drivers/staging/ath6kl/os/linux/ar6000_drv.c
+@@ -120,7 +120,7 @@ HCI_TRANSPORT_CALLBACKS ar6kHciTransCallbacks = { NULL };
+ unsigned int processDot11Hdr = 0;
+ int bmienable = BMIENABLE_DEFAULT;
+ 
+-char ifname[IFNAMSIZ] = {0,};
++char ifname[IFNAMSIZ] = "wlan%d";
+ 
+ int wlaninitmode = WLAN_INIT_MODE_DEFAULT;
+ unsigned int bypasswmi = 0;
+-- 
+1.5.4.4
+

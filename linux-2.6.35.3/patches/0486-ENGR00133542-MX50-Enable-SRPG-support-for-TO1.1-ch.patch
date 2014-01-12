@@ -1,0 +1,33 @@
+From e2d47a74eb8615009463147d7f9a2037e9cbaa85 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Wed, 1 Dec 2010 13:25:00 +0800
+Subject: [PATCH] ENGR00133542: MX50- Enable SRPG support for TO1.1 chips
+
+Enable SRPG for TO1.1 chips.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/system.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index 605837f..a04962f 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -111,9 +111,11 @@ void mxc_cpu_lp_set(enum mxc_cpu_pwr_mode mode)
+ 
+ 	__raw_writel(plat_lpc, MXC_CORTEXA8_PLAT_LPC);
+ 	__raw_writel(ccm_clpcr, MXC_CCM_CLPCR);
+-	if (cpu_is_mx51() || (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1))
++	if (cpu_is_mx51() || (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1)
++		|| cpu_is_mx50_rev(CHIP_REV_1_1) >= 1)
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_ARM_SRPGCR);
+-	if (!cpu_is_mx50())
++	/* Enable NEON SRPG for all but MX50TO1.0. */
++	if (!(cpu_is_mx50_rev(CHIP_REV_1_0) == 1))
+ 		__raw_writel(arm_srpgcr, MXC_SRPG_NEON_SRPGCR);
+ 	if (stop_mode) {
+ 		__raw_writel(empgc0, MXC_SRPG_EMPGC0_SRPGCR);
+-- 
+1.5.4.4
+

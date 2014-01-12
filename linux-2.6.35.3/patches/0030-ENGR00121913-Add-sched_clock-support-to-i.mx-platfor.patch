@@ -1,0 +1,43 @@
+From 43203ef2b1ccb6feb68cba6c8714fc23978c022a Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 24 Mar 2010 10:18:23 +0800
+Subject: [PATCH] ENGR00121913 Add sched_clock support to i.mx platform
+
+Add sched_clock() implement for i.mx platform to support nanosecond
+resolution time for sched clock used by scheduler.
+This case is found by running Android's CTS case: android.os.cts.DebugTest,
+which tests the clock_gettime with CLOCK_THREAD_CPUTIME_ID clock,
+and needs nanosecond resolution sched clock.
+It returns 0 before timer initialize, return GPT counter after that.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ arch/arm/plat-mxc/time.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/time.c b/arch/arm/plat-mxc/time.c
+index 0d7e0f9..b5cb23d 100644
+--- a/arch/arm/plat-mxc/time.c
++++ b/arch/arm/plat-mxc/time.c
+@@ -125,6 +125,18 @@ static struct clocksource clocksource_mxc = {
+ 	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
+ };
+ 
++unsigned long long sched_clock(void)
++{
++	unsigned long long ret;
++
++	if (!timer_base)
++		return 0;
++
++	ret = (unsigned long long)clocksource_mxc.read(&clocksource_mxc);
++	ret = (ret * clocksource_mxc.mult) >> clocksource_mxc.shift;
++	return ret;
++}
++
+ static int __init mxc_clocksource_init(struct clk *timer_clk)
+ {
+ 	unsigned int c = clk_get_rate(timer_clk);
+-- 
+1.5.4.4
+

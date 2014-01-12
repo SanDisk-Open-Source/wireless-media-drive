@@ -1,0 +1,36 @@
+From 7fb370c29b62290133a4ae455c5befea2da8366e Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Thu, 11 Nov 2010 15:34:35 +0800
+Subject: [PATCH] ENGR00133590 UART: let user control HW flow control
+
+HW flow control should be enable/disable by userspace.
+It can be set by tty option: options.c_cflag of  CRTSCTS
+bit.
+
+This bug is found by testing UART BT AR3001 chip,
+this chip will wake up the chip by set RTS to high,
+it needs frist disable HW flow control, set RTS,
+then disable HW flow control.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ drivers/serial/mxc_uart.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/serial/mxc_uart.c b/drivers/serial/mxc_uart.c
+index 55f7660..347a746 100644
+--- a/drivers/serial/mxc_uart.c
++++ b/drivers/serial/mxc_uart.c
+@@ -1357,6 +1357,9 @@ static void mxcuart_set_termios(struct uart_port *port,
+ 		umxc->port.ignore_status_mask |= UART_CREAD_BIT;
+ 	}
+ 
++	/* Hardware flow control should controled by userspace */
++	umxc->hardware_flow = (termios->c_cflag & CRTSCTS) ? 1 : 0;
++
+ 	cr4 = readl(umxc->port.membase + MXC_UARTUCR4);
+ 	if (UART_ENABLE_MS(port, termios->c_cflag)) {
+ 		mxcuart_enable_ms(port);
+-- 
+1.5.4.4
+

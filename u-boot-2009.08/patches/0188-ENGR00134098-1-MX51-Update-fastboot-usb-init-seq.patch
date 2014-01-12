@@ -1,0 +1,196 @@
+From f9c90ac3717b2907487f559f5227a7dab4675063 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Fri, 26 Nov 2010 22:35:55 +0800
+Subject: [PATCH] ENGR00134098-1 MX51: Update fastboot usb init seq
+
+Update fastboot usb init seq, and use defined macro for coding.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ cpu/arm_cortexa8/mx51/generic.c |   14 ++++++-----
+ drivers/fastboot/fastboot.c     |    7 ++---
+ drivers/usb/gadget/imx_udc.c    |   48 +++++++++------------------------------
+ include/usb/imx_udc.h           |    6 +----
+ 4 files changed, 23 insertions(+), 52 deletions(-)
+
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index 7013645..d02bc5f 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -933,9 +933,11 @@ void set_usboh3_clk(void)
+ {
+ 	unsigned int reg;
+ 
+-	reg = readl(MXC_CCM_CSCMR1);
+-	reg |= 1 << 22;
++	reg = readl(MXC_CCM_CSCMR1) &
++		    ~MXC_CCM_CSCMR1_USBOH3_CLK_SEL_MASK;
++	reg |= 1 << MXC_CCM_CSCMR1_USBOH3_CLK_SEL_OFFSET;
+ 	writel(reg, MXC_CCM_CSCMR1);
++
+ 	reg = readl(MXC_CCM_CSCDR1);
+ 	reg &= ~MXC_CCM_CSCDR1_USBOH3_CLK_PODF_MASK;
+ 	reg &= ~MXC_CCM_CSCDR1_USBOH3_CLK_PRED_MASK;
+@@ -960,9 +962,9 @@ void enable_usboh3_clk(unsigned char enable)
+ 
+ 	reg = readl(MXC_CCM_CCGR2);
+ 	if (enable)
+-		reg |= 1 << 14;
++		reg |= 1 << MXC_CCM_CCGR2_CG14_OFFSET;
+ 	else
+-		reg &= ~(1 << 14);
++		reg &= ~(1 << MXC_CCM_CCGR2_CG14_OFFSET);
+ 	writel(reg, MXC_CCM_CCGR2);
+ }
+ 
+@@ -974,9 +976,9 @@ void enable_usb_phy1_clk(unsigned char enable)
+ 	reg = readl(MXC_CCM_CCGR2);
+ 
+ 	if (enable)
+-		reg |= 1 << 0;
++		reg |= 1 << MXC_CCM_CCGR2_CG0_OFFSET;
+ 	else
+-		reg &= ~(1<<0);
++		reg &= ~(1 << MXC_CCM_CCGR2_CG0_OFFSET);
+ 	writel(reg, MXC_CCM_CCGR2);
+ }
+ 
+diff --git a/drivers/fastboot/fastboot.c b/drivers/fastboot/fastboot.c
+index 4008506..198c7c6 100644
+--- a/drivers/fastboot/fastboot.c
++++ b/drivers/fastboot/fastboot.c
+@@ -224,15 +224,14 @@ int fastboot_init(struct cmd_fastboot_interface *interface)
+ 				(unsigned char *)CONFIG_FASTBOOT_TRANSFER_BUF;
+ 	fastboot_interface->transfer_buffer_size =
+ 				CONFIG_FASTBOOT_TRANSFER_BUF_SIZE;
+-
+ 	fastboot_init_strings();
++	/* Basic USB initialization */
++	udc_init();
++
+ 	fastboot_init_instances();
+ #ifdef CONFIG_FASTBOOT_STORAGE_EMMC
+ 	fastboot_init_mmc_ptable();
+ #endif
+-	/* Now, set up USB controller and infrastructure */
+-	/* Basic USB initialization */
+-	udc_init();
+ 	udc_startup_events(device_instance);
+ 	udc_connect();		/* Enable pullup for host detection */
+ 
+diff --git a/drivers/usb/gadget/imx_udc.c b/drivers/usb/gadget/imx_udc.c
+index d180597..e08c2a3 100644
+--- a/drivers/usb/gadget/imx_udc.c
++++ b/drivers/usb/gadget/imx_udc.c
+@@ -388,39 +388,7 @@ static void mxc_ep0_stall(void)
+ 	temp |= EPCTRL_TX_EP_STALL | EPCTRL_RX_EP_STALL;
+ 	writel(temp, USB_ENDPTCTRL(0));
+ }
+-/*
+- * usb function
+- */
+-void usb_setup(void)
+-{
+-	unsigned int temp = 0, portctrl = 0;
+-
+-	/* Stop and reset the usb controller */
+-	temp = readl(USB_USBCMD);
+-	temp &= ~USB_CMD_RUN_STOP;
+-	writel(temp, USB_USBCMD);
+-
+-	temp = readl(USB_USBCMD);
+-	temp |= USB_CMD_CTRL_RESET;
+-	writel(temp, USB_USBCMD);
+-	while (readl(USB_USBCMD) & USB_CMD_CTRL_RESET)
+-		;
+-
+-	/* Set the controller as device mode */
+-	temp = readl(USB_USBMODE);
+-	temp &= ~USB_MODE_CTRL_MODE_MASK;	/* clear mode bits */
+-	temp |= USB_MODE_CTRL_MODE_DEVICE;
+-	/* Disable Setup Lockout */
+-	writel(temp, USB_USBMODE);
+-
+-	/* Config PHY interface */
+-	portctrl = readl(USB_PORTSC);
+-	portctrl &= ~(PORTSCX_PHY_TYPE_SEL | PORTSCX_PORT_WIDTH);
+-	portctrl |= PORTSCX_PTW_16BIT;
+-	writel(portctrl, USB_PORTSC);
+ 
+-	writel(0xffffffff, USB_ENDPTFLUSH);
+-}
+ static void mxc_usb_run(void)
+ {
+ 	unsigned int temp = 0;
+@@ -459,16 +427,22 @@ static void usb_phy_init(void)
+ 	temp |= 1;
+ 	writel(temp, USB_PHY1_CTRL);
+ 	/* Config PHY interface */
+-	temp = readl(USB_PORTSC);
++	temp = readl(USB_PORTSC1);
+ 	temp &= ~(PORTSCX_PHY_TYPE_SEL | PORTSCX_PORT_WIDTH);
+ 	temp |= PORTSCX_PTW_16BIT;
+-	writel(temp, USB_PORTSC);
++	writel(temp, USB_PORTSC1);
+ 	DBG("Config PHY  END\n");
+ }
+ 
+ static void usb_set_mode_device(void)
+ {
+ 	u32 temp;
++
++	/* Set controller to stop */
++	temp = readl(USB_USBCMD);
++	temp &= ~USB_CMD_RUN_STOP;
++	writel(temp, USB_USBCMD);
++
+ 	/* Do core reset */
+ 	temp = readl(USB_USBCMD);
+ 	temp |= USB_CMD_CTRL_RESET;
+@@ -731,16 +705,16 @@ static void usb_dev_hand_reset(void)
+ 	while (readl(USB_ENDPTPRIME))
+ 		;
+ 	writel(0xffffffff, USB_ENDPTFLUSH);
+-	DBG("reset-PORTSC=%x\n", readl(USB_PORTSC));
++	DBG("reset-PORTSC=%x\n", readl(USB_PORTSC1));
+ 	usbd_device_event_irq(udc_device, DEVICE_RESET, 0);
+ }
+ 
+ void usb_dev_hand_pci(void)
+ {
+ 	u32 speed;
+-	while (readl(USB_PORTSC) & PORTSCX_PORT_RESET)
++	while (readl(USB_PORTSC1) & PORTSCX_PORT_RESET)
+ 		;
+-	speed = readl(USB_PORTSC) & PORTSCX_PORT_SPEED_MASK;
++	speed = readl(USB_PORTSC1) & PORTSCX_PORT_SPEED_MASK;
+ 	switch (speed) {
+ 	case PORTSCX_PORT_SPEED_HIGH:
+ 		usb_highspeed = 2;
+diff --git a/include/usb/imx_udc.h b/include/usb/imx_udc.h
+index bbc18cb..039d480 100644
+--- a/include/usb/imx_udc.h
++++ b/include/usb/imx_udc.h
+@@ -28,10 +28,6 @@
+ #ifndef _IMX_UDC_H_
+ #define _IMX_UDC_H_
+ 
+-#define AIPS1_BASE_ADDR		0x73F00000
+-
+-#define OTG_BASE_ADDR	(AIPS1_BASE_ADDR + 0x00080000)
+-
+ #define USB_ID               (OTG_BASE_ADDR + 0x0000)
+ #define USB_HWGENERAL        (OTG_BASE_ADDR + 0x0004)
+ #define USB_HWHOST           (OTG_BASE_ADDR + 0x0008)
+@@ -57,7 +53,7 @@
+ #define USB_ULPI_VIEWPORT    (OTG_BASE_ADDR + 0x0170)
+ #define USB_ENDPTNAK         (OTG_BASE_ADDR + 0x0178)
+ #define USB_ENDPTNAKEN       (OTG_BASE_ADDR + 0x017C)
+-#define USB_PORTSC           (OTG_BASE_ADDR + 0x0184)
++#define USB_PORTSC1          (OTG_BASE_ADDR + 0x0184)
+ #define USB_OTGSC            (OTG_BASE_ADDR + 0x01A4)
+ #define USB_USBMODE          (OTG_BASE_ADDR + 0x01A8)
+ #define USB_ENDPTSETUPSTAT   (OTG_BASE_ADDR + 0x01AC)
+-- 
+1.5.4.4
+

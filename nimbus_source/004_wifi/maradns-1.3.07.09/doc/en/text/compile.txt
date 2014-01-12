@@ -1,0 +1,35 @@
+                          Compiling MaraDNS
+
+Requirements
+
+   MaraDNS needs a UNIX-compatible operating system, ideally one
+   which is not proprietary, such as Linux or FreeBSD. MaraDNS is
+   currently being developed on a CentOS 3.6 (RHEL 3 compatible)
+   machine.
+
+   MaraDNS currently will only compile on Linux, FreeBSD, Cygwin,
+   and Mac OS X systems. Other systems can be easily ported to.
+   MaraDNS also has partial MinGW32 support; this allows MaraDNS to
+   (partially) run as a native Win32 binary.
+
+Downloading, compiling, and installing MaraDNS
+
+     * Obtain MaraDNS from www.maradns.org
+     * Extract the MaraDNS tarball:
+
+         bzip2 -cd maradns-*.tar.bz2 | tar xvf -
+
+     * Enter the directory that the above extraction generated.
+     * Compile MaraDNS. Type in ./configure followed by make in the
+       top-level MaraDNS directory.
+     * Install the MaraDNS package. As root:
+
+         make install
+
+       This will install both the binaries and the man pages for
+       'maradns', 'askmara', 'duende', 'fetchzone', and
+       'zoneserver'. In addition, this will (if the files are not
+       already present), install an example /etc/mararc, make the
+       /etc/maradns directory, and place an example zone file
+       (db.example.com) in /etc/maradns. Finally, this will place
+       MaraDNS documentation in /usr/local/doc.

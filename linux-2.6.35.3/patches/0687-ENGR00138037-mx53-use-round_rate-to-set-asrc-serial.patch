@@ -1,0 +1,116 @@
+From 8e006e3e9285e962f1e2d5a960c92df61cadc142 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 17 Jan 2011 11:32:49 +0800
+Subject: [PATCH] ENGR00138037 mx53: use round_rate to set asrc serial clk
+
+The parent clk of asrc serial clk is PLL4. After PLL4 clk is
+changed as 455MHZ in U-Boot, asrc serial clk is not right.
+So the patch uses round_rate to set asrc serial clk and make
+it pass clk rate check.
+This patch also moves asrc serial clk set from board file to
+clock file.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c     |   19 +++++++++++++++++++
+ arch/arm/mach-mx5/mx53_ard.c  |    1 -
+ arch/arm/mach-mx5/mx53_evk.c  |    1 -
+ arch/arm/mach-mx5/mx53_loco.c |    1 -
+ arch/arm/mach-mx5/mx53_smd.c  |    1 -
+ 5 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index d0be51f..84be464 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4249,6 +4249,21 @@ static int _clk_asrc_set_rate(struct clk *clk, unsigned long rate)
+ 	return 0;
+ }
+ 
++static unsigned long _clk_asrc_round_rate(struct clk *clk,
++			unsigned long rate)
++{
++	u32 pre, post;
++	u32 parent_rate = clk_get_rate(clk->parent);
++	u32 div = parent_rate / rate;
++
++	if (parent_rate % rate)
++		div++;
++
++	__calc_pre_post_dividers(div, &pre, &post);
++
++	return parent_rate / (pre * post);
++}
++
+ static struct clk asrc_clk[] = {
+ 	{
+ 	.id = 0,
+@@ -4256,6 +4271,7 @@ static struct clk asrc_clk[] = {
+ 	.set_parent = _clk_asrc_set_parent,
+ 	.get_rate = _clk_asrc_get_rate,
+ 	.set_rate = _clk_asrc_set_rate,
++	.round_rate = _clk_asrc_round_rate,
+ 	.enable_reg = MXC_CCM_CCGR7,
+ 	.enable_shift = MXC_CCM_CCGRx_CG1_OFFSET,
+ 	.enable = _clk_enable,
+@@ -5016,6 +5032,9 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	clk_set_rate(&emi_enfc_clk, clk_round_rate(&emi_enfc_clk,
+ 			MAX_NFC_CLK));
+ 
++	/* set the freq of asrc_serial_clk */
++	clk_set_rate(&asrc_clk[0], clk_round_rate(&asrc_clk[0],
++			1190000));
+ 	base = ioremap(MX53_BASE_ADDR(GPT1_BASE_ADDR), SZ_4K);
+ 	mxc_timer_init(&gpt_clk[0], base, MXC_INT_GPT);
+ 	return 0;
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 9da099f..b0ca6f5 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1287,7 +1287,6 @@ static void __init mxc_board_init(void)
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+-		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
+ 		clk_put(mxc_asrc_data.asrc_audio_clk);
+ 		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
+ 	}
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index f97ccdd..adf435e 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1585,7 +1585,6 @@ static void __init mxc_board_init(void)
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+-		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
+ 		clk_put(mxc_asrc_data.asrc_audio_clk);
+ 		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
+ 	}
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index adc0fd6..45e8317 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -871,7 +871,6 @@ static void __init mxc_board_init(void)
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+-		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
+ 		clk_put(mxc_asrc_data.asrc_audio_clk);
+ 		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
+ 	}
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 6c9f3bf..cea9b77 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -1158,7 +1158,6 @@ static void __init mxc_board_init(void)
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+ 		clk_put(mxc_asrc_data.asrc_core_clk);
+ 		mxc_asrc_data.asrc_audio_clk = clk_get(NULL, "asrc_serial_clk");
+-		clk_set_rate(mxc_asrc_data.asrc_audio_clk, 1190000);
+ 		clk_put(mxc_asrc_data.asrc_audio_clk);
+ 		mxc_register_device(&mxc_asrc_device, &mxc_asrc_data);
+ 	}
+-- 
+1.5.4.4
+

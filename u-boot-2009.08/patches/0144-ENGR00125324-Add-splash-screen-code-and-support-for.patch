@@ -1,0 +1,1241 @@
+From 70d1be1c21e1ee63df7593eb0bd733dfaae6a2da Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 2 Aug 2010 19:54:41 +0800
+Subject: [PATCH] ENGR00125324: Add splash screen code and support for epdc
+
+Add splash screen code and support for epdc.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx50_arm2/mx50_arm2.c |  245 ++++++++++++++++++
+ drivers/video/Makefile                |    1 +
+ drivers/video/mxc_epdc_fb.c           |  446 +++++++++++++++++++++++++++++++++
+ drivers/video/mxc_epdc_fb.h           |  299 ++++++++++++++++++++++
+ include/asm-arm/arch-mx50/mx50.h      |   30 +++
+ include/configs/mx50_arm2.h           |   30 +++
+ include/configs/mx50_arm2_lpddr2.h    |   30 +++
+ include/lcd.h                         |   39 +++
+ 8 files changed, 1120 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx50_arm2/mx50_arm2.c b/board/freescale/mx50_arm2/mx50_arm2.c
+index d698db0..0494ea7 100644
+--- a/board/freescale/mx50_arm2/mx50_arm2.c
++++ b/board/freescale/mx50_arm2/mx50_arm2.c
+@@ -52,6 +52,10 @@
+ #include <asm/clock.h>
+ #endif
+ 
++#ifdef CONFIG_MXC_EPDC
++#include <lcd.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+@@ -563,6 +567,243 @@ int board_mmc_init(bd_t *bis)
+ 
+ #endif
+ 
++#ifdef CONFIG_MXC_EPDC
++#ifdef CONFIG_SPLASH_SCREEN
++int setup_splash_img()
++{
++#ifdef CONFIG_SPLASH_IS_IN_MMC
++	int mmc_dev = get_mmc_env_devno();
++	ulong offset = CONFIG_SPLASH_IMG_OFFSET;
++	ulong size = CONFIG_SPLASH_IMG_SIZE;
++	ulong addr = 0;
++	char *s = NULL;
++	struct mmc *mmc = find_mmc_device(mmc_dev);
++	uint blk_start, blk_cnt, n;
++
++	s = getenv("splashimage");
++
++	if (NULL == s) {
++		puts("env splashimage not found!\n");
++		return -1;
++	}
++	addr = simple_strtoul(s, NULL, 16);
++
++	if (!mmc) {
++		printf("MMC Device %d not found\n",
++			mmc_dev);
++		return -1;
++	}
++
++	if (mmc_init(mmc)) {
++		puts("MMC init failed\n");
++		return  -1;
++	}
++
++	blk_start = ALIGN(offset, mmc->read_bl_len) / mmc->read_bl_len;
++	blk_cnt   = ALIGN(size, mmc->read_bl_len) / mmc->read_bl_len;
++	n = mmc->block_dev.block_read(mmc_dev, blk_start,
++					blk_cnt, (u_char *)addr);
++	flush_cache((ulong)addr, blk_cnt * mmc->read_bl_len);
++
++	return (n == blk_cnt) ? 0 : -1;
++#endif
++}
++#endif
++
++vidinfo_t panel_info = {
++	.vl_refresh = 60,
++	.vl_col = 800,
++	.vl_row = 600,
++	.vl_pixclock = 17700000,
++	.vl_left_margin = 8,
++	.vl_right_margin = 142,
++	.vl_upper_margin = 4,
++	.vl_lower_margin = 10,
++	.vl_hsync = 20,
++	.vl_vsync = 4,
++	.vl_sync = 0,
++	.vl_mode = 0,
++	.vl_flag = 0,
++	.vl_bpix = 3,
++	cmap:0,
++};
++
++static void setup_epdc_power()
++{
++	unsigned int reg;
++
++	/* Setup epdc voltage */
++
++	/* EPDC PWRSTAT - GPIO3[28] for PWR_GOOD status */
++	mxc_request_iomux(MX50_PIN_EPDC_PWRSTAT, IOMUX_CONFIG_ALT1);
++
++	/* EPDC VCOM0 - GPIO4[21] for VCOM control */
++	mxc_request_iomux(MX50_PIN_EPDC_VCOM0, IOMUX_CONFIG_ALT1);
++	/* Set as output */
++	reg = readl(GPIO4_BASE_ADDR + 0x4);
++	reg |= (1 << 21);
++	writel(reg, GPIO4_BASE_ADDR + 0x4);
++
++	/* UART4 TXD - GPIO6[16] for EPD PMIC WAKEUP */
++	mxc_request_iomux(MX50_PIN_UART4_TXD, IOMUX_CONFIG_ALT1);
++	/* Set as output */
++	reg = readl(GPIO6_BASE_ADDR + 0x4);
++	reg |= (1 << 16);
++	writel(reg, GPIO6_BASE_ADDR + 0x4);
++}
++
++void epdc_power_on()
++{
++	unsigned int reg;
++
++	/* Set PMIC Wakeup to high - enable Display power */
++	reg = readl(GPIO6_BASE_ADDR + 0x0);
++	reg |= (1 << 16);
++	writel(reg, GPIO6_BASE_ADDR + 0x0);
++
++	/* Wait for PWRGOOD == 1 */
++	while (1) {
++		reg = readl(GPIO3_BASE_ADDR + 0x0);
++		if (!(reg & (1 << 28)))
++			break;
++
++		udelay(100);
++	}
++
++	/* Enable VCOM */
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg |= (1 << 21);
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++
++	udelay(500);
++}
++
++void  epdc_power_off()
++{
++	unsigned int reg;
++	/* Set PMIC Wakeup to low - disable Display power */
++	reg = readl(GPIO6_BASE_ADDR + 0x0);
++	reg |= 0 << 16;
++	writel(reg, GPIO6_BASE_ADDR + 0x0);
++
++	/* Disable VCOM */
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg |= 0 << 21;
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++}
++
++int setup_waveform_file()
++{
++#ifdef CONFIG_WAVEFORM_FILE_IN_MMC
++	int mmc_dev = get_mmc_env_devno();
++	ulong offset = CONFIG_WAVEFORM_FILE_OFFSET;
++	ulong size = CONFIG_WAVEFORM_FILE_SIZE;
++	ulong addr = CONFIG_WAVEFORM_BUF_ADDR;
++	char *s = NULL;
++	struct mmc *mmc = find_mmc_device(mmc_dev);
++	uint blk_start, blk_cnt, n;
++
++	if (!mmc) {
++		printf("MMC Device %d not found\n",
++			mmc_dev);
++		return -1;
++	}
++
++	if (mmc_init(mmc)) {
++		puts("MMC init failed\n");
++		return -1;
++	}
++
++	blk_start = ALIGN(offset, mmc->read_bl_len) / mmc->read_bl_len;
++	blk_cnt   = ALIGN(size, mmc->read_bl_len) / mmc->read_bl_len;
++	n = mmc->block_dev.block_read(mmc_dev, blk_start,
++		blk_cnt, (u_char *)addr);
++	flush_cache((ulong)addr, blk_cnt * mmc->read_bl_len);
++
++	return (n == blk_cnt) ? 0 : -1;
++#else
++	return -1;
++#endif
++}
++
++static void setup_epdc()
++{
++	unsigned int reg;
++
++	/* epdc iomux settings */
++	mxc_request_iomux(MX50_PIN_EPDC_D0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D3, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D4, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D5, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D6, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_D7, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_GDCLK, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_GDSP, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_GDOE, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_GDRL, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDCLK, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDOE, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDLE, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDSHR, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_BDR0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDCE0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDCE1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX50_PIN_EPDC_SDCE2, IOMUX_CONFIG_ALT0);
++
++
++	/*** epdc Maxim PMIC settings ***/
++
++	/* EPDC PWRSTAT - GPIO3[28] for PWR_GOOD status */
++	mxc_request_iomux(MX50_PIN_EPDC_PWRSTAT, IOMUX_CONFIG_ALT1);
++
++	/* EPDC VCOM0 - GPIO4[21] for VCOM control */
++	mxc_request_iomux(MX50_PIN_EPDC_VCOM0, IOMUX_CONFIG_ALT1);
++
++	/* UART4 TXD - GPIO6[16] for EPD PMIC WAKEUP */
++	mxc_request_iomux(MX50_PIN_UART4_TXD, IOMUX_CONFIG_ALT1);
++
++
++	/*** Set pixel clock rates for EPDC ***/
++
++	/* EPDC AXI clk and EPDC PIX clk from PLL1 */
++	reg = readl(CCM_BASE_ADDR + CLKCTL_CLKSEQ_BYPASS);
++	reg &= ~(0x3 << 4);
++	reg |= (0x2 << 4) | (0x2 << 12);
++	writel(reg, CCM_BASE_ADDR + CLKCTL_CLKSEQ_BYPASS);
++
++	/* EPDC AXI clk enable and set to 200MHz (800/4) */
++	reg = readl(CCM_BASE_ADDR + 0xA8);
++	reg &= ~((0x3 << 30) | 0x3F);
++	reg |= (0x2 << 30) | 0x4;
++	writel(reg, CCM_BASE_ADDR + 0xA8);
++
++	/* EPDC PIX clk enable and set to 20MHz (800/40) */
++	reg = readl(CCM_BASE_ADDR + 0xA0);
++	reg &= ~((0x3 << 30) | (0x3 << 12) | 0x3F);
++	reg |= (0x2 << 30) | (0x1 << 12) | 0x2D;
++	writel(reg, CCM_BASE_ADDR + 0xA0);
++
++	panel_info.epdc_data.working_buf_addr = CONFIG_WORKING_BUF_ADDR;
++	panel_info.epdc_data.waveform_buf_addr = CONFIG_WAVEFORM_BUF_ADDR;
++
++	panel_info.epdc_data.wv_modes.mode_init = 0;
++	panel_info.epdc_data.wv_modes.mode_du = 1;
++	panel_info.epdc_data.wv_modes.mode_gc4 = 3;
++	panel_info.epdc_data.wv_modes.mode_gc8 = 2;
++	panel_info.epdc_data.wv_modes.mode_gc16 = 2;
++	panel_info.epdc_data.wv_modes.mode_gc32 = 2;
++
++	setup_epdc_power();
++
++	/* Assign fb_base */
++	gd->fb_base = CONFIG_FB_BASE;
++}
++#endif
++
+ #ifdef CONFIG_IMX_CSPI
+ static void setup_power(void)
+ {
+@@ -633,6 +874,10 @@ int board_init(void)
+ 	setup_fec();
+ #endif
+ 
++#ifdef CONFIG_MXC_EPDC
++	setup_epdc();
++#endif
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/video/Makefile b/drivers/video/Makefile
+index c140312..cb57f8a 100644
+--- a/drivers/video/Makefile
++++ b/drivers/video/Makefile
+@@ -29,6 +29,7 @@ COBJS-$(CONFIG_ATI_RADEON_FB) += ati_radeon_fb.o
+ COBJS-$(CONFIG_ATMEL_LCD) += atmel_lcdfb.o
+ COBJS-$(CONFIG_CFB_CONSOLE) += cfb_console.o
+ COBJS-$(CONFIG_MXC2_LCD) += mx2fb.o
++COBJS-$(CONFIG_MXC_EPDC) += mxc_epdc_fb.o
+ COBJS-$(CONFIG_S6E63D6) += s6e63d6.o
+ COBJS-$(CONFIG_VIDEO_CT69000) += ct69000.o
+ COBJS-$(CONFIG_VIDEO_MB862xx) += mb862xx.o
+diff --git a/drivers/video/mxc_epdc_fb.c b/drivers/video/mxc_epdc_fb.c
+new file mode 100644
+index 0000000..6430cc9
+--- /dev/null
++++ b/drivers/video/mxc_epdc_fb.c
+@@ -0,0 +1,446 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ *
++ */
++/*
++ * Based on STMP378X LCDIF
++ * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
++ */
++
++#include <common.h>
++#include <lcd.h>
++#include <linux/list.h>
++#include <linux/err.h>
++#include <linux/types.h>
++#include <asm/arch/mx50.h>
++
++#include "mxc_epdc_fb.h"
++
++
++extern int setup_waveform_file();
++extern void epdc_power_on();
++extern void epdc_power_off();
++
++DECLARE_GLOBAL_DATA_PTR;
++
++void *lcd_base;			/* Start of framebuffer memory	*/
++void *lcd_console_address;	/* Start of console buffer	*/
++
++int lcd_line_length;
++int lcd_color_fg;
++int lcd_color_bg;
++
++short console_col;
++short console_row;
++
++void lcd_initcolregs(void)
++{
++}
++
++void lcd_setcolreg(ushort regno, ushort red, ushort green, ushort blue)
++{
++}
++
++#define TEMP_USE_DEFAULT 8
++
++#define UPDATE_MODE_PARTIAL			0x0
++#define UPDATE_MODE_FULL			0x1
++
++#define TRUE 1
++#define FALSE 0
++
++#define msleep(a)	udelay(a * 1000)
++
++
++/********************************************************
++ * Start Low-Level EPDC Functions
++ ********************************************************/
++
++static inline void epdc_set_screen_res(u32 width, u32 height)
++{
++	u32 val = (height << EPDC_RES_VERTICAL_OFFSET) | width;
++
++	REG_WR(EPDC_BASE, EPDC_RES, val);
++}
++
++static inline void epdc_set_update_coord(u32 x, u32 y)
++{
++	u32 val = (y << EPDC_UPD_CORD_YCORD_OFFSET) | x;
++
++	REG_WR(EPDC_BASE, EPDC_UPD_CORD, val);
++}
++
++static inline void epdc_set_update_dimensions(u32 width, u32 height)
++{
++	u32 val = (height << EPDC_UPD_SIZE_HEIGHT_OFFSET) | width;
++
++	REG_WR(EPDC_BASE, EPDC_UPD_SIZE, val);
++}
++
++static void epdc_submit_update(u32 lut_num, u32 waveform_mode, u32 update_mode,
++			       int use_test_mode, u32 np_val)
++{
++	u32 reg_val = 0;
++
++	if (use_test_mode) {
++		reg_val |=
++			((np_val << EPDC_UPD_FIXED_FIXNP_OFFSET) &
++			EPDC_UPD_FIXED_FIXNP_MASK) | EPDC_UPD_FIXED_FIXNP_EN;
++
++		REG_WR(EPDC_BASE, EPDC_UPD_FIXED, reg_val);
++
++		reg_val = EPDC_UPD_CTRL_USE_FIXED;
++	} else {
++		REG_WR(EPDC_BASE, EPDC_UPD_FIXED, reg_val);
++	}
++
++	reg_val |=
++		((lut_num << EPDC_UPD_CTRL_LUT_SEL_OFFSET) &
++		EPDC_UPD_CTRL_LUT_SEL_MASK) |
++		((waveform_mode << EPDC_UPD_CTRL_WAVEFORM_MODE_OFFSET) &
++		EPDC_UPD_CTRL_WAVEFORM_MODE_MASK) |
++		update_mode;
++
++	REG_WR(EPDC_BASE, EPDC_UPD_CTRL, reg_val);
++}
++
++static inline int epdc_is_lut_active(u32 lut_num)
++{
++	u32 val = REG_RD(EPDC_BASE, EPDC_STATUS_LUTS);
++	int is_active = val & (1 << lut_num) ? TRUE : FALSE;
++
++	return is_active;
++}
++
++static void epdc_set_horizontal_timing(u32 horiz_start, u32 horiz_end,
++				       u32 hsync_width, u32 hsync_line_length)
++{
++	u32 reg_val =
++		((hsync_width << EPDC_TCE_HSCAN1_LINE_SYNC_WIDTH_OFFSET) &
++		EPDC_TCE_HSCAN1_LINE_SYNC_WIDTH_MASK)
++		| ((hsync_line_length << EPDC_TCE_HSCAN1_LINE_SYNC_OFFSET) &
++		EPDC_TCE_HSCAN1_LINE_SYNC_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_HSCAN1, reg_val);
++
++	reg_val =
++		((horiz_start << EPDC_TCE_HSCAN2_LINE_BEGIN_OFFSET) &
++		EPDC_TCE_HSCAN2_LINE_BEGIN_MASK)
++		| ((horiz_end << EPDC_TCE_HSCAN2_LINE_END_OFFSET) &
++		EPDC_TCE_HSCAN2_LINE_END_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_HSCAN2, reg_val);
++}
++
++static void epdc_set_vertical_timing(u32 vert_start, u32 vert_end,
++					u32 vsync_width)
++{
++	u32 reg_val =
++		((vert_start << EPDC_TCE_VSCAN_FRAME_BEGIN_OFFSET) &
++		EPDC_TCE_VSCAN_FRAME_BEGIN_MASK)
++		| ((vert_end << EPDC_TCE_VSCAN_FRAME_END_OFFSET) &
++		EPDC_TCE_VSCAN_FRAME_END_MASK)
++		| ((vsync_width << EPDC_TCE_VSCAN_FRAME_SYNC_OFFSET) &
++		EPDC_TCE_VSCAN_FRAME_SYNC_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_VSCAN, reg_val);
++}
++
++static void epdc_init_settings(void)
++{
++	u32 reg_val;
++
++	/* EPDC_CTRL */
++	reg_val = REG_RD(EPDC_BASE, EPDC_CTRL);
++	reg_val &= ~EPDC_CTRL_UPD_DATA_SWIZZLE_MASK;
++	reg_val |= EPDC_CTRL_UPD_DATA_SWIZZLE_NO_SWAP;
++	reg_val &= ~EPDC_CTRL_LUT_DATA_SWIZZLE_MASK;
++	reg_val |= EPDC_CTRL_LUT_DATA_SWIZZLE_NO_SWAP;
++	REG_SET(EPDC_BASE, EPDC_CTRL, reg_val);
++
++	/* EPDC_FORMAT - 2bit TFT and 4bit Buf pixel format */
++	reg_val = EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT
++		| EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N
++		| ((0x0 << EPDC_FORMAT_DEFAULT_TFT_PIXEL_OFFSET) &
++		EPDC_FORMAT_DEFAULT_TFT_PIXEL_MASK);
++	REG_WR(EPDC_BASE, EPDC_FORMAT, reg_val);
++
++	/* EPDC_FIFOCTRL (disabled) */
++	reg_val =
++		((100 << EPDC_FIFOCTRL_FIFO_INIT_LEVEL_OFFSET) &
++		EPDC_FIFOCTRL_FIFO_INIT_LEVEL_MASK)
++		| ((200 << EPDC_FIFOCTRL_FIFO_H_LEVEL_OFFSET) &
++		EPDC_FIFOCTRL_FIFO_H_LEVEL_MASK)
++		| ((100 << EPDC_FIFOCTRL_FIFO_L_LEVEL_OFFSET) &
++		EPDC_FIFOCTRL_FIFO_L_LEVEL_MASK);
++	REG_WR(EPDC_BASE, EPDC_FIFOCTRL, reg_val);
++
++	/* EPDC_TEMP - Use default temperature */
++	REG_WR(EPDC_BASE, EPDC_TEMP, TEMP_USE_DEFAULT);
++
++	/* EPDC_RES */
++	epdc_set_screen_res(panel_info.vl_col, panel_info.vl_row);
++
++	/*
++	 * EPDC_TCE_CTRL
++	 * VSCAN_HOLDOFF = 4
++	 * VCOM_MODE = MANUAL
++	 * VCOM_VAL = 0
++	 * DDR_MODE = DISABLED
++	 * LVDS_MODE_CE = DISABLED
++	 * LVDS_MODE = DISABLED
++	 * DUAL_SCAN = DISABLED
++	 * SDDO_WIDTH = 8bit
++	 * PIXELS_PER_SDCLK = 4
++	 */
++	reg_val =
++		((4 << EPDC_TCE_CTRL_VSCAN_HOLDOFF_OFFSET) &
++		EPDC_TCE_CTRL_VSCAN_HOLDOFF_MASK)
++		| EPDC_TCE_CTRL_PIXELS_PER_SDCLK_4;
++	REG_WR(EPDC_BASE, EPDC_TCE_CTRL, reg_val);
++
++	/* EPDC_TCE_HSCAN */
++	epdc_set_horizontal_timing(panel_info.vl_left_margin,
++				panel_info.vl_right_margin,
++				panel_info.vl_hsync,
++				panel_info.vl_hsync);
++
++	/* EPDC_TCE_VSCAN */
++	epdc_set_vertical_timing(panel_info.vl_upper_margin,
++				 panel_info.vl_lower_margin,
++				 panel_info.vl_vsync);
++
++	/* EPDC_TCE_OE */
++	reg_val =
++		((10 << EPDC_TCE_OE_SDOED_WIDTH_OFFSET) &
++		EPDC_TCE_OE_SDOED_WIDTH_MASK)
++		| ((20 << EPDC_TCE_OE_SDOED_DLY_OFFSET) &
++		EPDC_TCE_OE_SDOED_DLY_MASK)
++		| ((10 << EPDC_TCE_OE_SDOEZ_WIDTH_OFFSET) &
++		EPDC_TCE_OE_SDOEZ_WIDTH_MASK)
++		| ((20 << EPDC_TCE_OE_SDOEZ_DLY_OFFSET) &
++		EPDC_TCE_OE_SDOEZ_DLY_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_OE, reg_val);
++
++	/* EPDC_TCE_TIMING1 */
++	REG_WR(EPDC_BASE, EPDC_TCE_TIMING1, 0x0);
++
++	/* EPDC_TCE_TIMING2 */
++	reg_val =
++		((480 << EPDC_TCE_TIMING2_GDCLK_HP_OFFSET) &
++		EPDC_TCE_TIMING2_GDCLK_HP_MASK)
++		| ((20 << EPDC_TCE_TIMING2_GDSP_OFFSET_OFFSET) &
++		EPDC_TCE_TIMING2_GDSP_OFFSET_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_TIMING2, reg_val);
++
++	/* EPDC_TCE_TIMING3 */
++	reg_val =
++		((0 << EPDC_TCE_TIMING3_GDOE_OFFSET_OFFSET) &
++		EPDC_TCE_TIMING3_GDOE_OFFSET_MASK)
++		| ((1 << EPDC_TCE_TIMING3_GDCLK_OFFSET_OFFSET) &
++		EPDC_TCE_TIMING3_GDCLK_OFFSET_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_TIMING3, reg_val);
++
++	/*
++	 * EPDC_TCE_SDCFG
++	 * SDCLK_HOLD = 1
++	 * SDSHR = 1
++	 * NUM_CE = 1
++	 * SDDO_REFORMAT = FLIP_PIXELS
++	 * SDDO_INVERT = DISABLED
++	 * PIXELS_PER_CE = display horizontal resolution
++	 */
++	reg_val = EPDC_TCE_SDCFG_SDCLK_HOLD | EPDC_TCE_SDCFG_SDSHR
++		| ((1 << EPDC_TCE_SDCFG_NUM_CE_OFFSET) & EPDC_TCE_SDCFG_NUM_CE_MASK)
++		| EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS
++		| ((panel_info.vl_col << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
++		EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK);
++	REG_WR(EPDC_BASE, EPDC_TCE_SDCFG, reg_val);
++
++	/*
++	 * EPDC_TCE_GDCFG
++	 * GDRL = 1
++	 * GDOE_MODE = 0;
++	 * GDSP_MODE = 0;
++	 */
++	reg_val = EPDC_TCE_SDCFG_GDRL;
++	REG_WR(EPDC_BASE, EPDC_TCE_GDCFG, reg_val);
++
++	/*
++	 * EPDC_TCE_POLARITY
++	 * SDCE_POL = ACTIVE LOW
++	 * SDLE_POL = ACTIVE HIGH
++	 * SDOE_POL = ACTIVE HIGH
++	 * GDOE_POL = ACTIVE HIGH
++	 * GDSP_POL = ACTIVE LOW
++	 */
++	reg_val = EPDC_TCE_POLARITY_SDLE_POL_ACTIVE_HIGH
++		| EPDC_TCE_POLARITY_SDOE_POL_ACTIVE_HIGH
++		| EPDC_TCE_POLARITY_GDOE_POL_ACTIVE_HIGH;
++	REG_WR(EPDC_BASE, EPDC_TCE_POLARITY, reg_val);
++
++	/* EPDC_IRQ_MASK */
++	REG_WR(EPDC_BASE, EPDC_IRQ_MASK,
++		EPDC_IRQ_TCE_UNDERRUN_IRQ);
++
++	/*
++	 * EPDC_GPIO
++	 * PWRCOM = ?
++	 * PWRCTRL = ?
++	 * BDR = ?
++	 */
++	reg_val = ((0 << EPDC_GPIO_PWRCTRL_OFFSET) & EPDC_GPIO_PWRCTRL_MASK)
++		| ((0 << EPDC_GPIO_BDR_OFFSET) & EPDC_GPIO_BDR_MASK);
++	REG_WR(EPDC_BASE, EPDC_GPIO, reg_val);
++}
++
++static void draw_mode0(void)
++{
++	int i;
++
++	/* Program EPDC update to process buffer */
++	epdc_set_update_coord(0, 0);
++	epdc_set_update_dimensions(panel_info.vl_col, panel_info.vl_row);
++	epdc_submit_update(0, panel_info.epdc_data.wv_modes.mode_init,
++				UPDATE_MODE_FULL, FALSE, 0);
++
++	debug("Mode0 update - Waiting for LUT to complete...\n");
++
++	/* Will timeout after ~4-5 seconds */
++
++	for (i = 0; i < 40; i++) {
++		if (!epdc_is_lut_active(0)) {
++			debug("Mode0 init complete\n");
++			return;
++		}
++		msleep(100);
++	}
++
++	debug("Mode0 init failed!\n");
++
++}
++
++static void draw_splash_screen(void)
++{
++	int i;
++	int lut_num = 0;
++
++	/* Program EPDC update to process buffer */
++	epdc_set_update_coord(0, 0);
++	epdc_set_update_dimensions(panel_info.vl_col, panel_info.vl_row);
++	epdc_submit_update(lut_num, panel_info.epdc_data.wv_modes.mode_gc16,
++		UPDATE_MODE_FULL, FALSE, 0);
++
++	for (i = 0; i < 40; i++) {
++		if (!epdc_is_lut_active(lut_num)) {
++			debug("Splash screen update complete\n");
++			return;
++		}
++		msleep(100);
++	}
++	debug("Splash screen update failed!\n");
++
++}
++
++void lcd_enable(void)
++{
++	int i;
++
++	epdc_power_on();
++
++	/* Draw black border around framebuffer*/
++	memset(lcd_base, 0xFF, panel_info.vl_col * panel_info.vl_row);
++	memset(lcd_base, 0x0, 24 * panel_info.vl_col);
++	for (i = 24; i < (panel_info.vl_row - 24); i++) {
++		memset((u8 *)lcd_base + i * panel_info.vl_col, 0x00, 24);
++		memset((u8 *)lcd_base + i * panel_info.vl_col
++			+ panel_info.vl_col - 24, 0x00, 24);
++	}
++	memset((u8 *)lcd_base + panel_info.vl_col * (panel_info.vl_row - 24),
++		0x00, 24 * panel_info.vl_col);
++
++	/* Draw data to display */
++	draw_mode0();
++
++	draw_splash_screen();
++}
++
++void lcd_disable(void)
++{
++	debug("lcd_disable\n");
++
++	/* Disable clocks to EPDC */
++	REG_SET(EPDC_BASE, EPDC_CTRL, EPDC_CTRL_CLKGATE);
++}
++
++void lcd_panel_disable(void)
++{
++	epdc_power_off();
++}
++
++void lcd_ctrl_init(void *lcdbase)
++{
++	/*
++	 * We rely on lcdbase being a physical address, i.e., either MMU off,
++	 * or 1-to-1 mapping. Might want to add some virt2phys here.
++	 */
++	if (!lcdbase)
++		return;
++
++	lcd_color_fg = 0xFF;
++	lcd_color_bg = 0xFF;
++
++	/* Reset */
++	REG_SET(EPDC_BASE, EPDC_CTRL, EPDC_CTRL_SFTRST);
++	while (!(REG_RD(EPDC_BASE, EPDC_CTRL) & EPDC_CTRL_CLKGATE))
++		;
++	REG_CLR(EPDC_BASE, EPDC_CTRL, EPDC_CTRL_SFTRST);
++
++	/* Enable clock gating (clear to enable) */
++	REG_CLR(EPDC_BASE, EPDC_CTRL, EPDC_CTRL_CLKGATE);
++	while (REG_RD(EPDC_BASE, EPDC_CTRL) &
++	       (EPDC_CTRL_SFTRST | EPDC_CTRL_CLKGATE))
++		;
++
++	debug("resolution %dx%d, bpp %d\n", (int)panel_info.vl_col,
++		(int)panel_info.vl_row, NBITS(panel_info.vl_bpix));
++
++	/* Set framebuffer pointer */
++	REG_WR(EPDC_BASE, EPDC_UPD_ADDR, (u32)lcdbase);
++
++	/* Set Working Buffer pointer */
++	REG_WR(EPDC_BASE, EPDC_WB_ADDR, panel_info.epdc_data.working_buf_addr);
++
++	/* Get waveform data address and offset */
++	if (setup_waveform_file()) {
++		printf("Can't load waveform data!\n");
++		return;
++	}
++
++	/* Set Waveform Buffer pointer */
++	REG_WR(EPDC_BASE, EPDC_WVADDR,
++		panel_info.epdc_data.waveform_buf_addr);
++
++	/* Initialize EPDC, passing pointer to EPDC registers */
++	epdc_init_settings();
++
++	return;
++}
++
++ulong calc_fbsize(void)
++{
++	return panel_info.vl_row * panel_info.vl_col * 2 \
++		* NBITS(panel_info.vl_bpix) / 8;
++}
++
+diff --git a/drivers/video/mxc_epdc_fb.h b/drivers/video/mxc_epdc_fb.h
+new file mode 100644
+index 0000000..e078538
+--- /dev/null
++++ b/drivers/video/mxc_epdc_fb.h
+@@ -0,0 +1,299 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ *
++ */
++#ifndef __EPDC_REGS_INCLUDED__
++#define __EPDC_REGS_INCLUDED__
++
++#include <linux/types.h>
++#include <linux/list.h>
++
++/*************************************
++ * Register addresses
++ *************************************/
++#define EPDC_BASE			(EPDC_BASE_ADDR)
++
++#define EPDC_CTRL			(0x000)
++#define EPDC_CTRL_SET			(0x004)
++#define EPDC_CTRL_CLR			(0x008)
++#define EPDC_CTRL_TOG			(0x00c)
++#define EPDC_WVADDR			(0x020)
++#define EPDC_WB_ADDR			(0x030)
++#define EPDC_RES			(0x040)
++#define EPDC_FORMAT			(0x050)
++#define EPDC_FORMAT_SET			(0x054)
++#define EPDC_FORMAT_CLR			(0x058)
++#define EPDC_FORMAT_TOG			(0x05c)
++#define EPDC_FIFOCTRL			(0x0a0)
++#define EPDC_FIFOCTRL_SET		(0x0a4)
++#define EPDC_FIFOCTRL_CLR		(0x0a8)
++#define EPDC_FIFOCTRL_TOG		(0x0ac)
++#define EPDC_UPD_ADDR			(0x100)
++#define EPDC_UPD_CORD			(0x120)
++#define EPDC_UPD_SIZE			(0x140)
++#define EPDC_UPD_CTRL			(0x160)
++#define EPDC_UPD_FIXED			(0x180)
++#define EPDC_TEMP			(0x1a0)
++#define EPDC_TCE_CTRL			(0x200)
++#define EPDC_TCE_SDCFG			(0x220)
++#define EPDC_TCE_GDCFG			(0x240)
++#define EPDC_TCE_HSCAN1			(0x260)
++#define EPDC_TCE_HSCAN2			(0x280)
++#define EPDC_TCE_VSCAN			(0x2a0)
++#define EPDC_TCE_OE			(0x2c0)
++#define EPDC_TCE_POLARITY		(0x2e0)
++#define EPDC_TCE_TIMING1		(0x300)
++#define EPDC_TCE_TIMING2		(0x310)
++#define EPDC_TCE_TIMING3		(0x320)
++#define EPDC_IRQ_MASK			(0x400)
++#define EPDC_IRQ_MASK_SET		(0x404)
++#define EPDC_IRQ_MASK_CLR		(0x408)
++#define EPDC_IRQ_MASK_TOG		(0x40c)
++#define EPDC_IRQ			(0x420)
++#define EPDC_IRQ_SET			(0x424)
++#define EPDC_IRQ_CLR			(0x428)
++#define EPDC_IRQ_TOG			(0x42c)
++#define EPDC_STATUS_LUTS		(0x440)
++#define EPDC_STATUS_LUTS_SET		(0x444)
++#define EPDC_STATUS_LUTS_CLR		(0x448)
++#define EPDC_STATUS_LUTS_TOG		(0x44c)
++#define EPDC_STATUS_NEXTLUT		(0x460)
++#define EPDC_STATUS_COL			(0x480)
++#define EPDC_STATUS			(0x4a0)
++#define EPDC_STATUS_SET			(0x4a4)
++#define EPDC_STATUS_CLR			(0x4a8)
++#define EPDC_STATUS_TOG			(0x4ac)
++#define EPDC_DEBUG			(0x500)
++#define EPDC_DEBUG_LUT0			(0x540)
++#define EPDC_DEBUG_LUT1			(0x550)
++#define EPDC_DEBUG_LUT2			(0x560)
++#define EPDC_DEBUG_LUT3			(0x570)
++#define EPDC_DEBUG_LUT4			(0x580)
++#define EPDC_DEBUG_LUT5			(0x590)
++#define EPDC_DEBUG_LUT6			(0x5a0)
++#define EPDC_DEBUG_LUT7			(0x5b0)
++#define EPDC_DEBUG_LUT8			(0x5c0)
++#define EPDC_DEBUG_LUT9			(0x5d0)
++#define EPDC_DEBUG_LUT10		(0x5e0)
++#define EPDC_DEBUG_LUT11		(0x5f0)
++#define EPDC_DEBUG_LUT12		(0x600)
++#define EPDC_DEBUG_LUT13		(0x610)
++#define EPDC_DEBUG_LUT14		(0x620)
++#define EPDC_DEBUG_LUT15		(0x630)
++#define EPDC_GPIO			(0x700)
++#define EPDC_VERSION			(0x7f0)
++
++enum {
++	/* EPDC_CTRL field values */
++	EPDC_CTRL_SFTRST = 0x80000000,
++	EPDC_CTRL_CLKGATE = 0x40000000,
++	EPDC_CTRL_SRAM_POWERDOWN = 0x100,
++	EPDC_CTRL_UPD_DATA_SWIZZLE_MASK = 0xc0,
++	EPDC_CTRL_UPD_DATA_SWIZZLE_NO_SWAP = 0,
++	EPDC_CTRL_UPD_DATA_SWIZZLE_ALL_BYTES_SWAP = 0x40,
++	EPDC_CTRL_UPD_DATA_SWIZZLE_HWD_SWAP = 0x80,
++	EPDC_CTRL_UPD_DATA_SWIZZLE_HWD_BYTE_SWAP = 0xc0,
++	EPDC_CTRL_LUT_DATA_SWIZZLE_MASK = 0x30,
++	EPDC_CTRL_LUT_DATA_SWIZZLE_NO_SWAP = 0,
++	EPDC_CTRL_LUT_DATA_SWIZZLE_ALL_BYTES_SWAP = 0x10,
++	EPDC_CTRL_LUT_DATA_SWIZZLE_HWD_SWAP = 0x20,
++	EPDC_CTRL_LUT_DATA_SWIZZLE_HWD_BYTE_SWAP = 0x30,
++	EPDC_CTRL_BURST_LEN_8_8 = 0x1,
++	EPDC_CTRL_BURST_LEN_8_16 = 0,
++
++	/* EPDC_RES field values */
++	EPDC_RES_VERTICAL_MASK = 0x1fff0000,
++	EPDC_RES_VERTICAL_OFFSET = 16,
++	EPDC_RES_HORIZONTAL_MASK = 0x1fff,
++	EPDC_RES_HORIZONTAL_OFFSET = 0,
++
++	/* EPDC_FORMAT field values */
++	EPDC_FORMAT_BUF_PIXEL_SCALE_ROUND = 0x1000000,
++	EPDC_FORMAT_DEFAULT_TFT_PIXEL_MASK = 0xff0000,
++	EPDC_FORMAT_DEFAULT_TFT_PIXEL_OFFSET = 16,
++	EPDC_FORMAT_BUF_PIXEL_FORMAT_P2N = 0x200,
++	EPDC_FORMAT_BUF_PIXEL_FORMAT_P3N = 0x300,
++	EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N = 0x400,
++	EPDC_FORMAT_BUF_PIXEL_FORMAT_P5N = 0x500,
++	EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT = 0x0,
++	EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT_VCOM = 0x1,
++	EPDC_FORMAT_TFT_PIXEL_FORMAT_4BIT = 0x2,
++	EPDC_FORMAT_TFT_PIXEL_FORMAT_4BIT_VCOM = 0x3,
++
++	/* EPDC_FIFOCTRL field values */
++	EPDC_FIFOCTRL_ENABLE_PRIORITY = 0x80000000,
++	EPDC_FIFOCTRL_FIFO_INIT_LEVEL_MASK = 0xff0000,
++	EPDC_FIFOCTRL_FIFO_INIT_LEVEL_OFFSET = 16,
++	EPDC_FIFOCTRL_FIFO_H_LEVEL_MASK = 0xff00,
++	EPDC_FIFOCTRL_FIFO_H_LEVEL_OFFSET = 8,
++	EPDC_FIFOCTRL_FIFO_L_LEVEL_MASK = 0xff,
++	EPDC_FIFOCTRL_FIFO_L_LEVEL_OFFSET = 0,
++
++	/* EPDC_UPD_CORD field values */
++	EPDC_UPD_CORD_YCORD_MASK = 0x1fff0000,
++	EPDC_UPD_CORD_YCORD_OFFSET = 16,
++	EPDC_UPD_CORD_XCORD_MASK = 0x1fff,
++	EPDC_UPD_CORD_XCORD_OFFSET = 0,
++
++	/* EPDC_UPD_SIZE field values */
++	EPDC_UPD_SIZE_HEIGHT_MASK = 0x1fff0000,
++	EPDC_UPD_SIZE_HEIGHT_OFFSET = 16,
++	EPDC_UPD_SIZE_WIDTH_MASK = 0x1fff,
++	EPDC_UPD_SIZE_WIDTH_OFFSET = 0,
++
++	/* EPDC_UPD_CTRL field values */
++	EPDC_UPD_CTRL_USE_FIXED = 0x80000000,
++	EPDC_UPD_CTRL_LUT_SEL_MASK = 0xf0000,
++	EPDC_UPD_CTRL_LUT_SEL_OFFSET = 16,
++	EPDC_UPD_CTRL_WAVEFORM_MODE_MASK = 0xff00,
++	EPDC_UPD_CTRL_WAVEFORM_MODE_OFFSET = 8,
++	EPDC_UPD_CTRL_UPDATE_MODE_FULL = 0x1,
++
++	/* EPDC_UPD_FIXED field values */
++	EPDC_UPD_FIXED_FIXNP_EN = 0x80000000,
++	EPDC_UPD_FIXED_FIXCP_EN = 0x40000000,
++	EPDC_UPD_FIXED_FIXNP_MASK = 0xff00,
++	EPDC_UPD_FIXED_FIXNP_OFFSET = 8,
++	EPDC_UPD_FIXED_FIXCP_MASK = 0xff,
++	EPDC_UPD_FIXED_FIXCP_OFFSET = 0,
++
++	/* EPDC_TCE_CTRL field values */
++	EPDC_TCE_CTRL_VSCAN_HOLDOFF_MASK = 0x1ff0000,
++	EPDC_TCE_CTRL_VSCAN_HOLDOFF_OFFSET = 16,
++	EPDC_TCE_CTRL_VCOM_VAL_MASK = 0xc00,
++	EPDC_TCE_CTRL_VCOM_VAL_OFFSET = 10,
++	EPDC_TCE_CTRL_VCOM_MODE_AUTO = 0x200,
++	EPDC_TCE_CTRL_VCOM_MODE_MANUAL = 0x000,
++	EPDC_TCE_CTRL_DDR_MODE_ENABLE = 0x100,
++	EPDC_TCE_CTRL_LVDS_MODE_CE_ENABLE = 0x80,
++	EPDC_TCE_CTRL_LVDS_MODE_ENABLE = 0x40,
++	EPDC_TCE_CTRL_SCAN_DIR_1_UP = 0x20,
++	EPDC_TCE_CTRL_SCAN_DIR_0_UP = 0x10,
++	EPDC_TCE_CTRL_DUAL_SCAN_ENABLE = 0x8,
++	EPDC_TCE_CTRL_SDDO_WIDTH_16BIT = 0x4,
++	EPDC_TCE_CTRL_PIXELS_PER_SDCLK_2 = 1,
++	EPDC_TCE_CTRL_PIXELS_PER_SDCLK_4 = 2,
++	EPDC_TCE_CTRL_PIXELS_PER_SDCLK_8 = 3,
++
++	/* EPDC_TCE_SDCFG field values */
++	EPDC_TCE_SDCFG_SDCLK_HOLD = 0x200000,
++	EPDC_TCE_SDCFG_SDSHR = 0x100000,
++	EPDC_TCE_SDCFG_NUM_CE_MASK = 0xf0000,
++	EPDC_TCE_SDCFG_NUM_CE_OFFSET = 16,
++	EPDC_TCE_SDCFG_SDDO_REFORMAT_STANDARD = 0,
++	EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS = 0x4000,
++	EPDC_TCE_SDCFG_SDDO_INVERT_ENABLE = 0x2000,
++	EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK = 0x1fff,
++	EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET = 0,
++
++	/* EPDC_TCE_GDCFG field values */
++	EPDC_TCE_SDCFG_GDRL = 0x10,
++	EPDC_TCE_SDCFG_GDOE_MODE_DELAYED_GDCLK = 0x2,
++	EPDC_TCE_SDCFG_GDSP_MODE_FRAME_SYNC = 0x1,
++	EPDC_TCE_SDCFG_GDSP_MODE_ONE_LINE = 0x0,
++
++	/* EPDC_TCE_HSCAN1 field values */
++	EPDC_TCE_HSCAN1_LINE_SYNC_WIDTH_MASK = 0xfff0000,
++	EPDC_TCE_HSCAN1_LINE_SYNC_WIDTH_OFFSET = 16,
++	EPDC_TCE_HSCAN1_LINE_SYNC_MASK = 0xfff,
++	EPDC_TCE_HSCAN1_LINE_SYNC_OFFSET = 0,
++
++	/* EPDC_TCE_HSCAN2 field values */
++	EPDC_TCE_HSCAN2_LINE_END_MASK = 0xfff0000,
++	EPDC_TCE_HSCAN2_LINE_END_OFFSET = 16,
++	EPDC_TCE_HSCAN2_LINE_BEGIN_MASK = 0xfff,
++	EPDC_TCE_HSCAN2_LINE_BEGIN_OFFSET = 0,
++
++	/* EPDC_TCE_VSCAN field values */
++	EPDC_TCE_VSCAN_FRAME_END_MASK = 0xff0000,
++	EPDC_TCE_VSCAN_FRAME_END_OFFSET = 16,
++	EPDC_TCE_VSCAN_FRAME_BEGIN_MASK = 0xff00,
++	EPDC_TCE_VSCAN_FRAME_BEGIN_OFFSET = 8,
++	EPDC_TCE_VSCAN_FRAME_SYNC_MASK = 0xff,
++	EPDC_TCE_VSCAN_FRAME_SYNC_OFFSET = 0,
++
++	/* EPDC_TCE_OE field values */
++	EPDC_TCE_OE_SDOED_WIDTH_MASK = 0xff000000,
++	EPDC_TCE_OE_SDOED_WIDTH_OFFSET = 24,
++	EPDC_TCE_OE_SDOED_DLY_MASK = 0xff0000,
++	EPDC_TCE_OE_SDOED_DLY_OFFSET = 16,
++	EPDC_TCE_OE_SDOEZ_WIDTH_MASK = 0xff00,
++	EPDC_TCE_OE_SDOEZ_WIDTH_OFFSET = 8,
++	EPDC_TCE_OE_SDOEZ_DLY_MASK = 0xff,
++	EPDC_TCE_OE_SDOEZ_DLY_OFFSET = 0,
++
++	/* EPDC_TCE_POLARITY field values */
++	EPDC_TCE_POLARITY_GDSP_POL_ACTIVE_HIGH = 0x10,
++	EPDC_TCE_POLARITY_GDOE_POL_ACTIVE_HIGH = 0x8,
++	EPDC_TCE_POLARITY_SDOE_POL_ACTIVE_HIGH = 0x4,
++	EPDC_TCE_POLARITY_SDLE_POL_ACTIVE_HIGH = 0x2,
++	EPDC_TCE_POLARITY_SDCE_POL_ACTIVE_HIGH = 0x1,
++
++	/* EPDC_TCE_TIMING1 field values */
++	EPDC_TCE_TIMING1_SDLE_SHIFT_NONE = 0x00,
++	EPDC_TCE_TIMING1_SDLE_SHIFT_1 = 0x10,
++	EPDC_TCE_TIMING1_SDLE_SHIFT_2 = 0x20,
++	EPDC_TCE_TIMING1_SDLE_SHIFT_3 = 0x30,
++	EPDC_TCE_TIMING1_SDCLK_INVERT = 0x8,
++	EPDC_TCE_TIMING1_SDCLK_SHIFT_NONE = 0,
++	EPDC_TCE_TIMING1_SDCLK_SHIFT_1CYCLE = 1,
++	EPDC_TCE_TIMING1_SDCLK_SHIFT_2CYCLES = 2,
++	EPDC_TCE_TIMING1_SDCLK_SHIFT_3CYCLES = 3,
++
++	/* EPDC_TCE_TIMING2 field values */
++	EPDC_TCE_TIMING2_GDCLK_HP_MASK = 0xffff0000,
++	EPDC_TCE_TIMING2_GDCLK_HP_OFFSET = 16,
++	EPDC_TCE_TIMING2_GDSP_OFFSET_MASK = 0xffff,
++	EPDC_TCE_TIMING2_GDSP_OFFSET_OFFSET = 0,
++
++	/* EPDC_TCE_TIMING3 field values */
++	EPDC_TCE_TIMING3_GDOE_OFFSET_MASK = 0xffff0000,
++	EPDC_TCE_TIMING3_GDOE_OFFSET_OFFSET = 16,
++	EPDC_TCE_TIMING3_GDCLK_OFFSET_MASK = 0xffff,
++	EPDC_TCE_TIMING3_GDCLK_OFFSET_OFFSET = 0,
++
++	/* EPDC_IRQ_MASK/EPDC_IRQ field values */
++	EPDC_IRQ_WB_CMPLT_IRQ = 0x10000,
++	EPDC_IRQ_LUT_COL_IRQ = 0x20000,
++	EPDC_IRQ_TCE_UNDERRUN_IRQ = 0x40000,
++	EPDC_IRQ_FRAME_END_IRQ = 0x80000,
++	EPDC_IRQ_BUS_ERROR_IRQ = 0x100000,
++	EPDC_IRQ_TCE_IDLE_IRQ = 0x200000,
++
++	/* EPDC_STATUS_NEXTLUT field values */
++	EPDC_STATUS_NEXTLUT_NEXT_LUT_VALID = 0x100,
++	EPDC_STATUS_NEXTLUT_NEXT_LUT_MASK = 0xf,
++	EPDC_STATUS_NEXTLUT_NEXT_LUT_OFFSET = 0,
++
++	/* EPDC_STATUS field values */
++	EPDC_STATUS_LUTS_UNDERRUN = 0x4,
++	EPDC_STATUS_LUTS_BUSY = 0x2,
++	EPDC_STATUS_WB_BUSY = 0x1,
++
++	/* EPDC_DEBUG field values */
++	EPDC_DEBUG_UNDERRUN_RECOVER = 0x2,
++	EPDC_DEBUG_COLLISION_OFF = 0x1,
++
++	/* EPDC_GPIO field values */
++	EPDC_GPIO_PWRCOM = 0x40,
++	EPDC_GPIO_PWRCTRL_MASK = 0x3c,
++	EPDC_GPIO_PWRCTRL_OFFSET = 2,
++	EPDC_GPIO_BDR_MASK = 0x3,
++	EPDC_GPIO_BDR_OFFSET = 0,
++};
++
++#endif
+diff --git a/include/asm-arm/arch-mx50/mx50.h b/include/asm-arm/arch-mx50/mx50.h
+index d5e0d2c..2395252 100644
+--- a/include/asm-arm/arch-mx50/mx50.h
++++ b/include/asm-arm/arch-mx50/mx50.h
+@@ -43,6 +43,7 @@
+ #define CTI3_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00007000)
+ #define CORTEX_DBG_BASE_ADDR	(DEBUG_BASE_ADDR + 0x00008000)
+ #define OCOTP_CTRL_BASE_ADDR	(DEBUG_BASE_ADDR + 0x01002000)
++#define EPDC_BASE_ADDR		(DEBUG_BASE_ADDR + 0x01010000)
+ 
+ /*
+  * SPBA global module enabled #0
+@@ -135,6 +136,35 @@
+ #define FEC_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000EC000)
+ 
+ /*
++ * Some of i.MX50 SoC registers are associated with four addresses
++ * used for different operations - read/write, set, clear and toggle bits.
++ *
++ * Some of registers do not implement such feature and, thus, should be
++ * accessed/manipulated via single address in common way.
++ */
++#define REG_RD(base, reg) \
++	(*(volatile unsigned int *)((base) + (reg)))
++#define REG_WR(base, reg, value) \
++	((*(volatile unsigned int *)((base) + (reg))) = (value))
++#define REG_SET(base, reg, value) \
++	((*(volatile unsigned int *)((base) + (reg ## _SET))) = (value))
++#define REG_CLR(base, reg, value) \
++	((*(volatile unsigned int *)((base) + (reg ## _CLR))) = (value))
++#define REG_TOG(base, reg, value) \
++	((*(volatile unsigned int *)((base) + (reg ## _TOG))) = (value))
++
++#define REG_RD_ADDR(addr) \
++	(*(volatile unsigned int *)((addr)))
++#define REG_WR_ADDR(addr, value) \
++	((*(volatile unsigned int *)((addr))) = (value))
++#define REG_SET_ADDR(addr, value) \
++	((*(volatile unsigned int *)((addr) + 0x4)) = (value))
++#define REG_CLR_ADDR(addr, value) \
++	((*(volatile unsigned int *)((addr) + 0x8)) = (value))
++#define REG_TOG_ADDR(addr, value) \
++	((*(volatile unsigned int *)((addr) + 0xc)) = (value))
++
++/*
+  * Memory regions and CS
+  */
+ #define CSD0_BASE_ADDR		0x70000000
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+index 4c23b95..c7f8faf 100644
+--- a/include/configs/mx50_arm2.h
++++ b/include/configs/mx50_arm2.h
+@@ -163,6 +163,36 @@
+ #define CONFIG_DISCOVER_PHY
+ 
+ /*
++#define CONFIG_SPLASH_SCREEN
++*/
++
++/*
++ * SPLASH SCREEN Configs
++ */
++#ifdef CONFIG_SPLASH_SCREEN
++	#define CONFIG_LCD
++	#undef LCD_TEST_PATTERN
++	#define CONFIG_FB_BASE                          (TEXT_BASE + 0x300000)
++	#define CONFIG_SYS_CONSOLE_IS_IN_ENV		1
++	/* #define CONFIG_SPLASH_IS_IN_MMC                 1 */
++	#define LCD_BPP					LCD_MONOCHROME
++	/* #define CONFIG_SPLASH_SCREEN_ALIGN           1 */
++
++	#define CONFIG_MXC_EPDC				1
++
++	#define CONFIG_WORKING_BUF_ADDR			(TEXT_BASE + 0x100000)
++	#define CONFIG_WAVEFORM_BUF_ADDR		(TEXT_BASE + 0x200000)
++	#define CONFIG_WAVEFORM_FILE_OFFSET		0x100000
++	#define CONFIG_WAVEFORM_FILE_SIZE		0xB4000
++	#define CONFIG_WAVEFORM_FILE_IN_MMC
++#endif
++
++#ifdef CONFIG_SPLASH_IS_IN_MMC
++	#define CONFIG_SPLASH_IMG_OFFSET		0x4c000
++	#define CONFIG_SPLASH_IMG_SIZE			0x19000
++#endif
++
++/*
+  * I2C Configs
+  */
+ #define CONFIG_CMD_I2C          1
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index a5683ad..6efe6a6 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -164,6 +164,36 @@
+ #define CONFIG_DISCOVER_PHY
+ 
+ /*
++#define CONFIG_SPLASH_SCREEN
++*/
++
++/*
++ * SPLASH SCREEN Configs
++ */
++#ifdef CONFIG_SPLASH_SCREEN
++	#define CONFIG_LCD
++	#undef LCD_TEST_PATTERN
++	#define CONFIG_FB_BASE                          (TEXT_BASE + 0x300000)
++	#define CONFIG_SYS_CONSOLE_IS_IN_ENV            1
++	/* #define CONFIG_SPLASH_IS_IN_MMC                 1 */
++	#define LCD_BPP					LCD_MONOCHROME
++	/* #define CONFIG_SPLASH_SCREEN_ALIGN           1 */
++
++	#define CONFIG_MXC_EPDC				1
++
++	#define CONFIG_WORKING_BUF_ADDR			(TEXT_BASE + 0x100000)
++	#define CONFIG_WAVEFORM_BUF_ADDR		(TEXT_BASE + 0x200000)
++	#define CONFIG_WAVEFORM_FILE_OFFSET		0x100000
++	#define CONFIG_WAVEFORM_FILE_SIZE		0xB4000
++	#define CONFIG_WAVEFORM_FILE_IN_MMC
++#endif
++
++#ifdef CONFIG_SPLASH_IS_IN_MMC
++	#define CONFIG_SPLASH_IMG_OFFSET		0x4c000
++	#define CONFIG_SPLASH_IMG_SIZE			0x19000
++#endif
++
++/*
+  * I2C Configs
+  */
+ #define CONFIG_CMD_I2C          1
+diff --git a/include/lcd.h b/include/lcd.h
+index afb99ba..062e024 100644
+--- a/include/lcd.h
++++ b/include/lcd.h
+@@ -203,6 +203,45 @@ typedef struct vidinfo {
+ 	ushort	*cmap;
+ } vidinfo_t;
+ 
++#elif defined(CONFIG_MXC_EPDC)
++
++struct waveform_modes {
++	int mode_init;
++	int mode_du;
++	int mode_gc4;
++	int mode_gc8;
++	int mode_gc16;
++	int mode_gc32;
++};
++
++struct epdc_data_struct {
++	/* EPDC buffer pointers */
++	u_long working_buf_addr;
++	u_long waveform_buf_addr;
++
++	/* Waveform mode definitions */
++	struct waveform_modes wv_modes;
++};
++
++typedef struct vidinfo {
++	u_long vl_refresh;      /* Refresh Rate Hz */
++	u_long vl_row;          /* resolution in x */
++	u_long vl_col;          /* resolution in y */
++	u_long vl_pixclock;     /* pixel clock in picoseconds */
++	u_long vl_left_margin;  /* Horizontal back porch */
++	u_long vl_right_margin; /* Horizontal front porch */
++	u_long vl_upper_margin; /* Vertical back porch */
++	u_long vl_lower_margin; /* Vertical front porch */
++	u_long vl_hsync;        /* Horizontal sync pulse length */
++	u_long vl_vsync;        /* Vertical sync pulse length */
++	u_long vl_sync;         /* Polarity on data enable */
++	u_long vl_mode;         /* Video Mode */
++	u_long vl_flag;
++	u_char  vl_bpix;
++	ushort  *cmap;
++	struct epdc_data_struct epdc_data;
++} vidinfo_t;
++
+ #else
+ 
+ typedef struct vidinfo {
+-- 
+1.5.4.4
+

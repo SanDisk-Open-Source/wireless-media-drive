@@ -1,0 +1,831 @@
+﻿Current Version: 0.62.1110
+Version Format: Major Version.Minor Version.Release Date
+-----------------------------------------------------------------
+Version        : 0.1.0720 
+Release by     : Steven
+Release Note   : Add below feature
+				1. Folder View
+					a. Sort
+					b. List
+					c. Switch Folder
+					d. Upload
+					e. Delete
+					f.  Search(Wrong Result Display format)
+					g. Select & Deselect
+					h. Folder Path
+					i. Multi Select with Ctrl Key
+				2. Photos View
+					a. List Albums
+					b. List Photos
+					c. Photo Viewer
+					d. Slideshow
+					e. Next
+					g. Previous
+					h. Close
+				3. Videos View
+					a. List Videos
+					b. Launch Default Player
+					c. Multi Select with Ctrl Key
+				4. Settings
+					a. Battery Life
+					b. Admin Login
+					c. Modify SSID UI
+					d. Enable MSC UI
+					e. Enable Server Functionality UI
+					f.  See Who's Connected UI
+-----------------------------------------------------------------					
+Version        : 0.2.0726 
+Release Note   : 
+	Tim: Add 1. Folder View
+				a. Multi Select with Shift Key	
+		 2. Audio
+				a. playlist function
+				b. recent playlist page show
+				c. playlist page show								
+	Tony: Add 1. Video
+				a. Search
+				b. Multi Select with Shift Key
+				c. Delete
+				d. Select & Deselect
+				e. Double Cilck to video
+                  2. Settings
+				a. Format Nimbus UI
+				b. Firmware Upgrade UI
+                  3. Folder View
+				a. Nimbus Capacity
+    	Ryan: Add 1. Audio Artist
+				a.Search
+				b.Play
+				c.Pause
+				d.Previous song
+				e.Next song
+				f.Double click to albums
+				g.Add to playlist UI
+			  2. Audio Albums
+				a.Search
+				b.Play
+				c.Pause
+				d.Previous song
+				e.Next song
+				f.Double click to songs
+				g.Add to playlist UI
+			  3. Audio Genre
+				a.Search
+				b.Play
+				c.Pause
+				d.Previous song
+				e.Next song
+				f.double click to albums
+				g.Add to playlist UI
+			  4.Settings
+				a.Password Hint UI
+				b.Change Admin Password
+				c.Connect to Internet UI
+				d.Subscribe for Updates UI
+    Ian : Add 1.Audio Songs
+				a. List 
+				b. More songs by this artists
+				c. Search
+				d. Add to playlist UI
+				e. search
+				 
+			  2.Audio NowPlayList
+			    a. List
+				b. remove
+			  3.Audio Recent
+			    a. UI
+			  4.Audio Playlist
+			    a. UI
+    Bill: Add 1. Photo View
+				a. Album Search
+				b. Album Multi Select with Ctrl Key
+				c. Album Select effect
+    Bill: Modify 1. Photo View
+				a. slideshow display photot image
+-----------------------------------------------------------------					
+Version        : 0.3.0801
+Release Note   : 
+	Tim: Modified 1. Folder View
+				a. change to asynchronous request
+				b. set the folderView as the default view
+				c. cancel the search method,because of waiting for the new API(we can support to search in the now dir)	
+				d. modified the sort function,in order to run on IE	
+				e. the default setting which sort asc by name 
+				f. merge the Nimbus Capacity function
+				g. reset the file icons	
+		      2. Audio
+				a. To correct audio player 
+	Tony: Modified 1. Video
+				a. merge the video delete function
+                       3. Folder View
+				a. change the multi-language of the Nimbus Capacity
+    	
+    	Bill: Modified 1. Photo View
+				a. PhotoViewer SlideShow info,for example 2-5
+				b. Photo Album Multi Select with Ctrl Key
+				c. Photo Album Multi Select with Shift Key
+				d. Photo Album Select effect
+				e. Photo Album stack photo 
+				f. Photo list Multi Select with Ctrl Key
+-----------------------------------------------------------------					
+Version        : 0.6.0811
+Release Note   : 
+	Tim: Modified 1. Folder View
+				a. set the sort function as the non case sensitive function.
+		      2. Audio
+				a. refactor the architech architecture.
+-----------------------------------------------------------------					
+Version        : 0.8.0820
+Release Note   : 
+	Tim: Modified 1. Folder View
+				a. infinite-scroll
+				b. delete dialog 
+				c. The delete button will be disabled,when user does not select any item
+		      2. Audio
+				a. remove the song information in the view of all song
+				b. infinite-scroll in the view of all image list
+				c. if the audio player is not playing,the music bar will hide something
+-----------------------------------------------------------------					
+Version        : 0.9.0824
+Release Note   : 
+	Tim: Modified 1. Folder View
+				a. download
+		      2. Audio
+				a. the logic of playing song
+                                b. infinite-scroll(album,artist,genre)
+-----------------------------------------------------------------					
+Version        : 0.10.0831
+Release Note   : 
+	Tim: Modified 1. Folder View
+				a. Stop the infinite-scroll
+				b. If the color box library have loded,it won't load again.
+		      2. Audio
+				a. Stop the all infinite-scroll
+                                b. Change the size of audio player buttons
+				c. The now playing list & recent & playlist will be asynchronous
+				d. Fixed the audio player can not play in IE.
+		      3. All
+				a. The dialog will be at the center forever.If the dialog is showing,the user can not do anything.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.11.0912
+Release Note   : 	
+                  1. Modify folder view, replace double click with single click
+                  2. Replace right-click menu with triangle
+                  3. Add checkbox to folder view, photo view, video view and song lists.
+                  4. Rotate photo album(it works fine on firefox, safari, chrome. IE9 needs to adjust)
+                  5. Add error message when audio format is not support
+                  6. Let Firefox, Chrome and Safari to support most of the feature	
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.12.0918
+Release Note   : 	
+                  1. Modify all the double click with single click
+                  2. Fix rotate photo in IE9
+                  3. Fix photo ratio issue
+                  4. Implement and fix most of the settings function
+                  5. Fix multiple files download issue in IE9
+                  6. Fix video time issue
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.13.0920
+Release Note   : 	
+                  1. Fix firefox and safari cannot play music
+                  2. Fix audio player progress bar bug
+                  3. Fix audio player volume bug
+                  4. Fix setting bug
+                  5. Add flash pack
+		      
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.14.0921
+Release Note   : 	
+                  1. Fix bug EWNUL20120918038 Playlist會被誤刪
+                  2. Fix bug EWNUL20120918036 Wifi name修改提示訊息錯誤
+                  3. Fix bug EWNUL20120918027 No function for Subscribe
+                  4. Fix bug EWNUL20120913018 (Music View) Remove feather of the Now Playing List
+                  5. Fix bug EWNUL20120913017 (Music View) Genres tab: Album Art Thumbnails
+                  6. Fix bug EWNUL20120913014 (Music View) Albums tab ==> Album Art Thumbnail
+                  7. Fix bug EWNUL20120909002 Shuffle is not working properly
+                  8. Fix bug EWNUL20120908008 Progress bar cannot be slided 
+                  9. Fix bug EWNUL20120817003 Music bar的Progress bar無法Slide
+                10. Fix bug EWNUL20120803006 Can append the same song to playlist	
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.15.0924
+Release Note   : 	
+                  1. Fix bug EWNUL20120918016 [Photp View] 照片搜尋時會無法找到檔案
+                  2. Fix bug EWNUL20120918015 [Folder View] 在Folder View情況下,無法Search
+                  3. Fix bug EWNUL20120913011 (Photo View) Delete button--to delete a photo
+                  4. Fix bug EWNUL20120913010 (Photo View) Delete button
+                  5. Fix bug EWNUL20120909003 Capacity is not correct
+                  6. Fix bug EWNUL20120909001 Loop button is not work properly 
+                  7. Fix bug EWNUL20120908007 Press the music info area should show the Now Playing song list
+                  8. Fix bug EWNUL20120903001 Photo player - the position of function button is incorrect
+                  9. Fix bug EWNUL20120831005 The position of scroll bar is incorrect
+                10. Fix bug EWNUL20120831004 Folder viewer - the file list is incorrect after delete file
+                11. Fix bug EWNUL20120817001 infinite-scroll造成scroll bar無法回復
+                12. Fix bug EWNUL20120803018 Now Playing List問題
+                13. Fix bug EWNUL20120803017 Audio player問題
+                14. Fix bug EWNUL20120803015 Artist Albums Genres搜尋
+                15. Fix bug EWNUL20120726002 Audio 循環模式                
+                16. Fix bug EWNUL20120903005 video view - the thumbnail is incorrect when the list is empty
+                17. Fix bug EWNUL20120903004 Music view - the now playing music file is incorrect
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.16.0926
+Release Note   : 	
+                  1. Fix bug EWNUL20120918037 Video Information顯示錯誤
+                  2. Fix bug EWNUL20120918030 Mp3文字顯示位置不正確
+                  3. Fix bug EWNUL20120918023 Mp3 View 狀況下check box蓋到文字
+                  4. Fix bug EWNUL20120918020 Next 功能無反應
+                  5. Fix bug EWNUL20120918019 Previous功能無反應
+                  6. Fix bug EWNUL20120918018 Mp3檔案有些無法播放
+                  7. Fix bug EWNUL20120913009 (Photo View)Photo sorting
+                  8. Fix bug EWNUL20120903006 Photo view - The photo album list should be sort by name
+                  9. Fix bug EWNUL20120821008 Photo view - Only can browse 100 photo files
+                10. Fix bug EWNUL20120831002 Folder viewer - Only can display 100 files
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.17.1002
+Release Note   : 	
+                  1. Fix bug EWNUL20120918026 No function for Reset to Factory
+                  2. Fix bug EWNUL20120918024 Mp3 時間顯示錯誤 
+                  3. Fix bug EWNUL20120918022 圖片.畫面框偏移
+                  4. Fix bug EWNUL20120918012 Bonjour Media Server 功能鍵無反應
+                  5. Fix bug EWNUL20120918004 [Music View] 當連續按壓Music-->Genres時,Web loading時間太久無反應
+                  6. Fix bug EWNUL20120918001 Storage無法格式化
+                  7. Fix bug EWNUL20120913005 (Folder View)If the copied folder is pasted in the same folder,the warning shold be shown.
+                  8. Fix bug EWNUL20120913004 (Folder View) the problem of paste
+                  9. Fix bug EWNUL20120913003 (Folder View) the problems of Copy
+                 10. Fix bug EWNUL20120913002 (Folder View) Thumbnail:The thumbnail of files is same
+                 11. Fix bug EWNUL20120911005 Web loading時間太久無反應
+                 12. Fix bug EWNUL20120908006 Search feature is failed in each view
+                 13. Fix bug EWNUL20120831001 Folder viewer - the position of title should be fixed
+                 14. Fix bug EWNUL20120829001 Music - the now playing list is incorrect when add one music artist to playing
+                 15. Fix bug EWNUL20120827001 Music view - the music playlist name still abnormal
+                 16. Fix bug EWNUL20120803010 (FromQSI)the add playlist is abnormal
+                 17. Fix bug EWNUL20120803003 (FromQSI)The thumbnail of music-arist/album/song list abnormal
+                 18. Fix bug EWNUL20120821006 Music view - the now playing list is incorrect
+                 19. Fix bug EWNUL20120816006 Mass Data Behavior  
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.18.1008
+Release Note   : 
+	1. Fix bug	EWNUL20120918010 [Folder View] 中文名稱的檔案字元顯示錯誤
+	2. Fix bug	EWNUL20120918006 無法識別檔名的檔案無法下載
+	3. Fix bug	EWNUL20120913007 (Photo View) Delete button--to delete a ablum
+	4. Fix bug	EWNUL20120913006 (Folder View) Private folder
+	5. Fix bug	EWNUL20120913002 (Folder View) Thumbnail:The thumbnail of files is same
+	6. Fix bug	EWNUL20120906001 Folder viewer - the thumbnail function
+	7. Fix bug	EWNUL20120903005 video view - the thumbnail is incorrect when the list is empty
+	8. Fix bug	EWNUL20120831007 Photo view - the thumbnail is incorrect when thumbnail can not generated by nimbus
+	9. Fix bug	EWNUL20120822001 Folder viewer - the file/folder will not be refresh when upload completed
+	10. Fix bug EWNUL20120803012 (FromQSI)The playlist name is difference with music/playlist
+	11. Fix bug EWNUL20120803004 (FromQSI)No any error message
+	12. Fix bug EWNUL20120724006 切換View並未執行unbind,因為事件堆疊,可能導致SERVER當掉,甚至是CLIENT當掉
+	13. Fix bug EWNUL20120724003 音樂檔名為中文或有特殊字元
+	14. Fix bug EWNUL20120724002 Password Hint顯示問題
+	15. Fix bug EWNUL20120925003 (From QSI_7282) 無法下載資料夾
+	16. Fix bug EWNUL20120925005 (From QSI_7284) Photo資料夾無法開啟
+	17. Fix bug EWNUL20121003003 [Folder View]Click MP3 should play, not download
+	18. Fix bug EWNUL20121003006 [Folder View]Photo, Video and music should get thumbnail from server
+	19. Fix bug EWNUL20121005006 Setting問題
+	20. Fix bug EWNUL20121005005 PlayList問題
+	21. Fix bug EWNUL20121005004 Audio，Recent勾選點擊Delete變空白
+	22. Fix bug EWNUL20121005002 photo UI跑掉
+	23. Fix bug EWNUL20121005001 Audio搜尋空白搜尋
+	24. Fix bug EWNUL20121004001 選擇一個Artist，點到歌曲列表，往下滾，會帶出不是這個歌手的歌
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.19.1011
+Release Note   : 
+	1. Fix bug	EWNUL20120918033 No function for Connect to Internet
+	2. Fix bug	EWNUL20120918007 Web剩餘電量顯示錯誤, add charging indication
+	3. Fix bug	EWNUL20120911001 Upload file - UI will block when upload file fail
+	4. Fix bug	EWNUL20120925006 (From QSI_7285) 上傳700MB以上的檔案時,Web會無反應
+	5. Fix bug	EWNUL20121003001 連結網路的連線方式有錯
+	6. Fix bug	EWNUL20121005003 upload 上傳相同檔案問題
+	7. Add ajax manager to prevent too much timeout
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.20.1014
+Release Note   : 
+	1. Fix bug	EWNUL20120913016 (Music View) Rename
+	2. Fix bug	EWNUL20120913008 (Photo View) the problem of Download button
+	3. Fix bug	EWNUL20120822004 Folder viewer - The memory usage will grow up when browsing over 1000 files in one folder
+	4. Fetch data from 100 records per time to 30 records per time
+	5. When fetching data after the first fetch, no loading UI is shown
+	6. Fix after sorting, photo viewer is disable
+	7. Fix updating firmware issue. Use customizing comfirm dialog instead browser default confirm dialog
+	8. Add infinite scroll to video view
+	9. Apply thumbnail to photo view
+	10. Fix photo album thumbnail bug
+	11. Remove sorting right after fetch data from server
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.21.1025
+Release Note   : 
+
+1. Folder, Photo, Video and Music View Search
+2. Folder View Sort
+3. After delete a song, the data will become blank. The item should be removed from the list
+4. All songs load duplicated data
+5. Clicking a song in Now playing list should not remove all the songs in Now playing list,
+    the correct behavior should be played from the selected song
+6. Video View Position of Default thumbnail Generator is wrong
+7. Take /storage/Personal as private folder
+8. Replace Nimbus with Scotti in a. UI string b. Comment c. Title
+9. Fix the bug(wasConnected) of connect to internet
+10. Fix portrait mode filename position is not correct in folder view
+11. Fix wrong default thumbnail generator in video view 
+12. Fix the bug of add to Now Playing list
+13. Fix the bug that the UI is wrong after deleting a file in Music View
+14. Fix bug EWNUL20120822002 Howerver click history back button, should stay nimbus browser
+15. Fix bug EWNUL20121018004 Thumbnail of Audio Player should be the same as the thumbnail of the folder view thumbnail
+16. Fix bug EWNUL20121018007 (Music)Back Button
+17. Fix bug EWNUL20121018010 Music的搜尋，搜尋title和path，只要有符合的都要出現(title only)
+18. Fix bug EWNUL20121019006 (Folder View)點擊整個畫面中最底下的檔案，點擊其小三角形圖示，則本應出現的下拉選單，會被喀掉，無法完整呈現。
+19. Fix bug EWNUL20121019003 (Music View)在Now Playing List正在播放最後一首歌時，由loop1狀態更改成 loop off，則當此首歌播放完畢後，會一直持續播放最後一首歌
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.22.1025.1
+Release Note   : 
+1. Fix bug Music playlist: the items will be empty if the file is not exists. Remove the item from playlist if the file has been deleted.
+2. Fix bug The list of recent will be empty if the file is not exists. Remove the item from recent if the file has been deleted.
+3. Fix bug Web client will be halted when render the music’s playlist and the some file already removed. 
+    Remove the item if the file has been deleted when adding to Now Playing list.
+4. Fix bug When searching in music view, only 30 records can be shown. 
+5. Fix bug In Music View search result, if one file is deleted, the search result should refresh.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.23.1028
+Release Note   : 
+1. Fix bug FileName in folder View is too long with a tooltip
+2. Fix bug Photo viewer can be opened only one time with the same file in firefox and chrome
+3. Open video in another window
+4. Fix folder view halt when browsing to some folder
+5. Fix volume bar cannot be modified in chrome
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.24.1030
+Release Note   : 
+1. Show blocking UI effect when loading data from server.
+2. Moidfy volume bar behavior. When volume bar is shown and clicking other place, the volume bar will be closed.
+3. Fix photo view calls server too many times.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.25.1031
+Release Note   : 
+1. Modify the way of getting thumbnail in Folder View
+2. Modify the way of getting thumbnail in Music View
+3. Add cancelling previous request when switching to other view including switching folder in Folder View and switching tab in Music View
+4. Don't show blocking UI effect when getting more data from server
+5. Fix changeDeviceName doesn't change the name issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.26.1106
+Release Note   : 
+1. Add inifinite scroll to Genre, Artist and Album
+2. Show Albumart
+3. Fix bug: Photo Viewer covers buttons
+4. Fix bug: Photo View shows wrong title and sorts in the wrong order
+5. Fix bug: After deleting the current playing song, the player doesn't play the next one
+6. Fix bug: After deleting file, the ui doesn't refresh
+7. Support firefox for wav, wave and oga
+8. Let firefox can play Chinese song or  Korean song whose file path contains Chinese or Korean words
+9. Fix bug: After switching the menu for several times, the Photo View cannot be shown
+10. Fix Issue raised by SanDisk: 
+a. Should fix to center. The corners of the grey box should be rounded. See file: webapp_folder_2.psd 
+b. Clicking anywhere off the volume should close the popup. 
+c. Spacing is incorrect. There should be no gap. This line should touch the top horizontal line. 
+d. The grey line should not go to the edge 
+e. The grey bar should not go to the edge 
+f. Space is too large 
+g. This popup should use the same format as the settings screen on the right. 
+h. The corners do not match the background 
+11. Open Video with a new Browser in Folder View
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.27.1114
+Release Note   : 
+1. Modify the code, encodes the URI in Firefox to let the player can play Chinese songs
+2. Fix scrolling issue in IE7
+3. Fix blue background doesn't extend to the same width issue 
+4. Fix background in list view issue. Background should be gray when mouse is over, blue when item is selected.
+5. Fix detecting count in playlist issue
+6. Add timeout from 10 to 20 seconds
+7. Fix title width is wrong when albumart and song is shown in the same page
+8. Fix Line is missing when the item is a folder in Folder View in IE7
+9. Decrease the song count in Recent and Playlist from 30 to 20
+10. Fix song is missing in Now Playlig List in Firefox
+11. Use Flash to play music in Firefox
+12. Fix goback button UI is wrong issue
+13. Fix buttons in Music View is too wide in IE7
+14. Fix setting UI wrong issue in IE7
+15. Fix icon is missing in Folder View in E7
+16. Fix the list in all song is in the wrong place issue in IE7
+17. Use memory to save recent and playlist.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.28.1121
+Release Note   : 
+1. Fix Firefox Slideshow in full screen issue
+2. Fix photo count is wrong in photo view and folder view with Photo Viewer
+3. Fix scrollbar is gone issue
+4. Fix part of popup window in setting is hidden issue
+5. Fix position of checkbox is off in setting
+6. Fix part of menu is hidden issue
+7. Hide DLNA
+8. Fix position of little triangle in Photo, Video and Music View
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.29.1124
+Release Note   : 
+1. Fix Music searching issue.
+2. Fix PhotoViewer doesn't support FullScreen with only a photo issue
+3. Modify code, get albums by album id
+4. Fix photo View, not to load all the data
+5. Fix password hint behavior.
+6. Fix title too long to let music progress bar out of position issue
+7. Fix path, replace '//' with '/'
+8. Fix multi language issue, if we cannot find the value of the specified key, use the key as the value.
+9. Fix after deleting photos, the photos list is wrong issue
+10. Fix the error message is wrong when copying data to the same folder issue.
+11. Fix music view, Add to Now Playing list is wrong in Album, Artist, Genre issue.
+12. Fix cannot get group name issue in get connected device
+13. Fix showing infinite screen when checking available firmware issue
+14. Add error message when there is error in getting AP List
+15. Fix Korean song cannot be played issue.
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.30.1217
+Release Note   : 
+1. Modify photo view, in photos list, sort by name
+2. Fix personal folder issue
+3. Fix after updating firmware, firmware information is still cache issue
+4. Fix after removing a song from playlist, all other songs are removed from playlist
+5. Add a message when clicking non-media file, for example, rar, xls, pdf.
+6. Fix showing wrong song list in an album when scrolling to bottom.
+7. Fix title will mass together issue in Now Playing List
+8. Hide default music information when web client is loading
+9. Fix get Genre issue. Some strange wording will cause Genre doesn't work properly.
+10. Fix if there is only one song playing, the playing sign will not be shown issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.31.1225
+Release Note   : 
+1. Fix little triangle is gone in IE7
+2. Remove redundant string
+3. Fix updating firmware function is broken issue
+4. Fix setting dialog and loading dialog is not in the vertical middle issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.32.0121
+Release Note   : 
+1. Fix positions of buttons of previous picture and next picture are different in different browser
+2. Fix music progress bar is in the wrong position issue
+3. Fix shuffle button behavior
+4. Modify code to prevent file cache when playing music
+5. Fix directory name too long issue, when length is over 300, replace with ...
+6. Fix title is wrong in Video issue 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.33.0124
+Release Note   : 
+1. Fix positions of buttons of previous picture and next picture are different in different browser
+2. Fix WEP password length issue. Supports 5 or 13 characters.
+3. Modify fail handling architecture
+4. Check errcode and errorcode for the response correctness
+5. Add logout. When user log out, reset setting to previous situation
+6. Fix showing a dummy album when there is no photos issue
+7. Retry 3 times if server cannot respond capacity information
+8. If the error of the music file cannot be played is file name or path, show file name or path cannot support message
+9. Fix Music progress bar to the left issue.
+10. Change the way of showing artist, album and genre default thumbnail. Show the default thumbnail first.
+11. Fix folder view keeps on and off issue when loading data over a page
+12. Preload default thumbnail pattern files
+13. Hide who's connected
+14. Add about
+15. Check whether a file over 4GB is copied to a fat32 system
+16. Modify the code of showing albumart in music playing area
+17. Modify the screen after updating firmware
+18. Clean music lists when switching functions
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.34.0204
+Release Note   : 
+1. Fix the bug in add to Now Playing List in Playlist detail
+2. Fix the bug of deleting photo and songs in music
+3. Modify the reminding message according to SA document
+4. Fix the bug of using trim in IE7. Use jQuery $.trim() instead
+5. Fix the bug of deleting songs in Artis, Album and Genre
+6. Fix Video list cannot be loaded issue
+7. Modify the UI to let wording can be longer
+8. Fix there is no mouse over effect in Photo View in IE7
+9. Fix content in connect to Internet closes to the right too much issue.
+10. Fix the UI behavior in Now Playing List is wrong issue in IE7
+11. Fix the little triangle is gone in IE7 issue
+12. Fix the battery description closes to the right too much in IE7 issue
+13. Fix the wording in Subscribe closes to the right too much in IE7 issue
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.35.0816
+Release Note   : 
+1. Remove blue background
+2. Align search box on the right side
+3. Modify the search box
+4. Add or modify UI of the top right 4 buttons, add(not function yet), upload, download, delete
+5. Modify the UI of the folder, photo, video, music, help button
+6. Modify the setting UI, group the settings to 2 groups
+7. Add duration in the music information area(not function yet)
+8. Modify the UI of back button
+9. Add help menu UI(not function yet)
+10. Modify the UI of battery energy indication
+11. Modify the UI of music related buttons(loop, shuffle, volume)
+12. Modify the UI of back button
+13. Add hint in music information area
+14. Add new translation strings
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.36.0826
+Release Note   : 
+1. Add picture to close button in Photo player
+2. Fix progess bar slider exceeds progress bar issue
+3. Modify the position of the two current time when Music is playing
+4. Change title of web site to SanDisk Wireless Media Drive
+2. Add getting started help
+3. Add slider to volume adjustment
+4. Change folders to files
+5. Add creating folder
+6. Add message of Top right buttons when there are no files selected(Download and delete)
+7. Trim the name of photo album, title of video and album name with ... when they are too long
+8. Fix caption row in Files view not align with the value row when clicking sort button issue
+9. Fix the path in Files view not vertical align with the back button issue
+10. Modify button gray out behavior(Download and Delete) => No gray out
+11. Hide Music information area when music is not playing or paused in other View(Files View, Folder View and Video View)
+12. Add html 5 multiple file upload tag(Need server to support)
+13. Upload to specific folder
+14. When uploading to root folder, show an error message
+15. Fix photoview menu lost focus after entering an album issue
+16. Remove hour information if the duration is less then 1 hour in Video View
+17. Fix The left menu wording should be vertical center issue(Environment)
+18. Fix The cursor should be in hand shape when cursor is over an item which can be clicked(Environment)
+19. Fix The icon in the menu has distorted, it should be in a circle issue(Environment)
+20. Fix The title wording should be closed to the top issue(Files View)
+21. Fix The photo should be closer to top left issue(Photo View)
+22. Fix The music button(Album, Artist, all songs.. on the top) should be bigger(Music View)
+23. Fix The icon in the menu has distorted, it should be in a circle issue
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.37.0904
+Release Note   : 
+1. Photo View: It should be black line , white line then the image. Check the PSD first. Photos: The black line you added around the photo albums and photos is incorrect. The black line should be thin and also there is a white border between the black line and image.
+2. Change the photo style, it should not show the other two images on the background
+3. Music View: The music bar should be 70 pixels high and the << > >> icons should be smaller. 
+4. All Categories: The content gets cut off before reaching the bottom of the web window.
+5. The screen should not get dark during screen transitions.
+6. Timer: the animated "spinning" time is incorrect
+7. Music Playlist: line spacing is not correct
+8. Thumbnails Text (videos, photos, music): The font location is not correct. See the .psd file for locations and size. If there are 2 lines (video) than the bottom line should be justified left to the upper line. All the fonts sizes should be the same for the thumbnail titles. The font under Photos is too large
+9. Help Icon – The icon is not circular. It is stretched too wide.
+10. Settings: The roll over highlight does not work
+11. Modify Music next and previos icon size
+12. Remove photo name from photo viewer
+13. Modify Setting items order
+14. Modify Setting battery information
+15. Remove useless feature from Setting
+16. Fix List Ap behavior
+17. Modify AP related API usage
+18. Fix upload files rename issue
+19. Add a message after clicking a video
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.38.0911
+Release Note   : 
+1. Modify the message of new firmware available
+2. Align the title and content of folder view and music view
+3. Add multi-language to setting
+4. Storage should change to "Media Drive". When the card is plugged in than the folder will be called "Media Drive Card".
+5. If no card is plugged in than the UI will skip the root folder
+6. Title of albums and # of pictures need to align
+7. Text in Photo Albums should be the same as the video title text
+8. Title should be in black
+9. line spacing and font size should be the same
+10. The popup message should show after you click on the video as a "hint" The user can check mark to not show again
+11. The button width for Recent, Albums, etc should be the same as the width of the back button
+12. The Download and Delete button should not jump below instead they should disappear of covered up
+13. The music bar icons and text should be vertical centered
+14. The Recent, albums, button row should be the same color as the back button. During roll over the buttons get darker
+15. Use the same font and line spacing as "Files" in Setting
+16. Capacity - not working correctly. Add one float digit.
+17. Activity timer - sometimes shows the orange bar instead of the circle. Maybe a cache issue.
+18. Popup message should all be consistent - Please follow the text size as "Format Media" the text box can be different size if needed. Also, the cancel and ok button should highlight during hover (roll over)
+19. Change text after pressing format. Change "Scotti" to "Format Wireless Media Drive"
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.39.0918
+Release Note   : 
+1. Add message when uploading, pasting and deleting
+2. Let the font to be the same
+3. Modify the font size of left menu
+4. Modify File view title. Bolden it.
+5. Modify sort button's behavior
+6. Modify more button's behavior
+7. Modify File view title's behavior
+8. Handle uploading's error
+9. Add cancel function to upload component
+10. Fix issue - The music counter on the right side should count down
+11. Fix issue - Music - No controls when played from "Files" folder
+12. Modify the width of title in File View
+13. Fix issue - After clicking "Artists" tab in Music , not able to view any file on any folder on Nimbus
+14. Fix issue - The spinning activity timer is not correct
+Version        : 0.40.0918
+Release Note   : 
+1. Fix file view word falls down issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.40.0918
+1. Fix File view file name align issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.41.0925
+Release Note   : 
+1. Fix bug "Cannot modify music's progress"
+2. Fix bug "Cannot repeat, shuffle"
+3. Fasten the speed of relayout after resizing the UI in File View
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.42.0926
+1. Fix File view file name align issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.43.0927
+Release Note:
+1. Fix audio file cannot be launched in Files View
+2. Remove personal folder from Files View
+3. Replace file icon with the new one in Files View(pdf, excel, doc, file, folder, ppt)
+4. Replace home with Home
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.44.0927
+Release Note:
+1. Fix File view file name and image align issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.45.0928
+Release Note:
+1. Fix Music, Photo and Video default generator view issue.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.46.0930
+Release Note:
+1. Fix photo viewer UI including font size, position, capitalize the wording according to the psd
+2. Fix message button doesn't hover effect
+3. Modify font sequence Helvetica, Arial, Sans-Serif, Gotham
+4. Modify left menu position, font size and align
+5. Fix Music, Video and Music right align issue with ...
+6. Fix Setting UI position according to psd file
+7. Fix radio button behavior
+8. Modify space between radio button and wording
+9. Fix music duration NaN:NaN issue
+10. Hide folder path in the root folder
+11. Replace storage and sdcard with Media Drive and Media Drive Card in the folder path and in Photo View
+12. Hide top 4 buttons in the root folder
+13. Align battery information to vertical center
+14. Modify Setting UI roll over for radio button
+15. Align firmware version to the left
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.47.1004
+Release Note:
+1. Modify word postion, font size, button position and space between top and bottom.
+2. Align wording to the left in Photo View album list
+3. Align wording to the left in Video View
+4. Modify the style of multi language, usb access option 
+5. Fix battery information miss bug
+6. Add no search result message
+7. Add online support link
+8. Add multiple languages(German, Italian, Spanish and French) and remove traditional chinese
+9. Fix align issue in folder view
+10. Add legal information
+11. Respond multiple files information after uploading
+12. Fix more song by this artist align issue in Playlist details.
+13. Fix next song, previous song highlight issue
+14. Fix Don't show again issue.
+15. Add multiple copy
+16. Fix back button doesn't work after clicking any song's more song by this artist in music search result
+17. Fix no sdcard, go to Media Drive directly bug
+18. Fix folder view sort bug
+19. Fix artist name, song name doesn't show properly in Music View issue
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.48.1005
+Release Note:
+1. Fix pdf, xls, doc, ppt and file icon is disappeared in File View bug
+2. Add Join Other Network wording
+3. Fix the message of Copying
+4. Fix more icon has gray line on roll over in IE
+5. Modify Setting UI, if items are disable, roll over shows default cursor(not hand)
+6. Fix default generator does not show in the correct position in IE
+7. Show a message after selecting a network name in connect to internet dialog(Fix back button bug)
+8. Fix upload file issue when folder name contains @#$
+9. Reset default when showing any dialog in Setting
+10. Update music player component
+11. Fix web app cannot enter an empty folder issue.
+12. Fix options issue in reset to factory default dialog
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.49.1010
+1. Wording in Setting in Web Client should be consistent with App
+2. The upload issue is fixed.But we are not able to view/play the uploaded files inside the special character folder
+3. If usb access is on and is connected, web client should popup message on request
+4. Fix bug CSSNIMBUS-1057 WebApp - The icon for .doc shifts when hovered over
+5. Fix bug CSSNIMBUS-1055 WebApp - Text file icon is not shown
+6. Fix bug CSSNIMBUS-1043 Web App - Music files are not playing in Firefox
+7. Reposition “Slideshow” “Full Screen” and “Close” button. The picture should scale with the window.
+8. The “X” should should highlight blue in Photo Browser
+9. Mobile Device needs to show different message in iOS
+10. Fix bug Upgrade Firmware – nothing happens – there should be a pop up text message that says – "You are running the latest Firmware"
+11. Fix bug Video playback hint text pop up is not allowing me to uncheck the check box (don't show this message, check box) - see screenshot
+     *   Actually none of the check box windows work (eg. Try format your drive).
+12. Fix bug No search results – is not translated.
+13. Fix file extension case sensitive bug
+14. Fix load setting event too many time issue
+15. Add message after turn on/off USB Access
+16. Add message after retore to factory default
+17. Add message after login
+18. Add message after updating administrator's information
+19. Update jPlayer component
+20. Modify the signal strength icon of wireless
+21. Reposition of more icon in Music View => Artist, Album and Genre
+22. Remove the roll over effect of check option
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.50.1011
+1. Reposition doc icon.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.51.1014
+1. Limit the width of File View folder path(CSSNIMBUS-1059 WebApp - Upload/download/New/Delete options not visible for folder with name of 17 and above characters)
+2. Modify the width of Time, Type and Size in File View(CSSNIMBUS-1058 WebApp - Size column not visible in Restored down Mode of browser)
+3. Fix the shift issue when roll over in File View(CSSNIMBUS-1052 WebApp - Shift in orientation when hovered over on any files)
+4. Fix the image of folder in File View
+5. Modify the way to trigger Help from roll over to click(CSSNIMBUS-1053 WebApp - Help link is not working in Windows Surface Tablet)
+6. Remove the focus in back, music category, download and delete button after user clicks these buttons.
+7. Fix bug CSSNIMBUS-1048 Web app - File selection is not working properly
+8. Fix bug CSSNIMBUS-1044 Web app - Music player- Song pauses while minimize and maximize the window
+9. This popup message should appear for file formats not supported by the web browser.
+10. Single albums icons are 165x165 px
+11. Modify the width between 2 music albums to be 45px
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.52.1021
+1. Change the way of showing getting started. Replace web pages with image files
+2. Modify the line space in message
+3. Modify the width of admin password input box width.(For resolution 1024*768)
+4. Fix bug. In IE8 doc, xls ..etc icons have a black line in the right
+5. Change the way of select multilanguage
+6. Modify the width of battery information(For resolution 1024*768)
+7. Fix bug. In Music recent, click a song, it shows current playing song indication in recent page
+8. Fix bug. The songs add to Playlist are failed. Becuase we get media information with too many attributes. Get the media information with path only.
+9. Fix bug. If there is no song, the title has no space.
+10. Fix bug. In full screen, the image ratio is wrong.
+11. Fix folder view path issue.
+12. When clicking a pdf file, web app opens a new window to show the information
+13. Fix bug. Artist page cannot be entered.
+14. Fix bug. Photo album cannot be deleted.
+15. Fix bug. Wep => WEP. None => NONE
+16. Add Wifi On/Off
+17. When showing a dialog, remove the focus.
+18. Fix the button width in IE8
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.53.1022
+1. Fix bug. Add songs in Artist, Album and Genre to playlist failed.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.55.1027
+1. Remove Music Queue button
+2. Change asking install Flash message and do not open a new page to Adobe
+3. Change message for uploading multiple files
+4. Fix the bug that web app shows different message when Media Drive is connected to PC in Video View
+5. Change the link for getting Media Drive App in iPhone and iPad
+6. When clicking a song, add all the songs in the same level(album, playlist, songs, recent and folder view) to the playlist and play from the selected song
+7. Fix the bug that music information area is disappeared in Music View if the first selected song cannot be played.
+8. Fix the bug that songs in Music album cannot be seen
+9. Hint user to install flash activeX or plugin instead of showing Unknown type or file path is not supported
+10. Remove add to Now Playing list
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.56.1029
+1. Fix every folder is empty bug
+2. Fix music infor area still exists after switching from Music to other view when music is not in playing or paused status.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.57.1031
+1. Fix CSSNIMBUS-1134:Web App - Unknown File Type when some mp3 is clicked
+2. Fix CSSNIMBUS-1130:Web App - No search result found in "Music"
+3. Fix CSSNIMBUS-1129:Web App - Back button not working after upload.
+4. Fix CSSNIMBUS-1128:Web App - Source misspelled as souce
+5. Fix CSSNIMBUS-1127:Web App - Recent in Music not updating correctly
+6. Fix CSSNIMBUS-1118:WebApp - Firmware Upgrade Popup issue
+7. Fix CSSNIMBUS-1116:WebApp - Change Wifi settings - confirm password checkbox not working
+8. Fix CSSNIMBUS-1091:WebApp - Scrolling down the artists shows unusual behaviour
+9. Fix Upload window is gone
+10. Resize align issue
+11. Connect to internet On/Off align
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.58.1101
+1. Fix multi language in Photo Viewer
+2. Fix Connect to internet On/Off align when Wifi is off
+3. Fix wording in Connect to internet
+4. Modify the link of Online Support
+5. Fix Update Firmware infinite loading when new Firmware is not available
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.59.1104
+1. Fix Folder View align issue in Safari 5
+2. Fix Music View default thumbnail generator is not in correct size in IE8
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Version        : 0.60.1104
+1. Fix CSSNIMBUS-1135:Web Client makes a strange file name when download a file.
+----------------------------------------------------------------------------------------
+Version        : 0.61.1108
+1. Modify the wording after connect to internet
+2. Fix create folder, delete files, back button doesn't work properly bug
+3. Fix folder view loads data twice bug.
+4. Fix after deleting all the pictures in photo, ui shows a dummy photo issue.
+5. Remove supporting tiff in File view
+6. Fix buttons disappear in Mac Safari in Photo player bug 
+7. Fix music doesn't show error message when audio cannot be played bug.
+8. Fix when message is blank, use the predefine error message lists.
+----------------------------------------------------------------------------------------
+Version        : 0.62.1110
+1. Fix CSSNIMBUS-1169	Web App - During upload if WMD is full there is no error message
+2. Fix CSSNIMBUS-1166	Web App - Selection not working properly in Files --> Music
+3. Fix CSSNIMBUS-1164	Web App - Files do not open in Special character folder.
+4. Fix CSSNIMBUS-1163	Web app - Video file name with special chars do not play in the browser
+5. Fix CSSNIMBUS-1162	Web app - Cache clear is needed to play the song again in IE10
+6. Fix CSSNIMBUS-1136          Web Client display the folder list twice.
+7. Fix Upload in Mac Chrome spinner time is always there even upload is finished
+8. Fix Photo player arrows, close button etc. missing in Mac Safari

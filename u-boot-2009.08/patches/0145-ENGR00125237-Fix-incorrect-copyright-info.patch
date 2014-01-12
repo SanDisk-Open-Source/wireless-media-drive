@@ -1,0 +1,211 @@
+From 5d7638868e4fc91609e144405ef97b812dc57148 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 16 Jul 2010 16:12:23 +0800
+Subject: [PATCH] ENGR00125237: Fix incorrect copyright info.
+
+Fix incorrect copyright info.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx50_arm2/flash_header.S |    2 +-
+ common/cmd_mmc.c                         |    3 +++
+ cpu/arm_cortexa8/mx50/cache.c            |    2 +-
+ cpu/arm_cortexa8/mx50/crm_regs.h         |    2 +-
+ cpu/arm_cortexa8/mx50/generic.c          |    2 +-
+ cpu/arm_cortexa8/mx50/iomux.c            |   25 +++++++++++++++++--------
+ drivers/block/dwc_ahsata.c               |    2 +-
+ drivers/block/dwc_ahsata.h               |    2 +-
+ include/asm-arm/arch-mx50/mmu.h          |   27 ++++++++++++++++++---------
+ include/mx2fb.h                          |   25 +++++++++++++++++--------
+ 10 files changed, 61 insertions(+), 31 deletions(-)
+
+diff --git a/board/freescale/mx50_arm2/flash_header.S b/board/freescale/mx50_arm2/flash_header.S
+index fbab4f5..0fe60db 100644
+--- a/board/freescale/mx50_arm2/flash_header.S
++++ b/board/freescale/mx50_arm2/flash_header.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index 139b1e8..dab4109 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -1,4 +1,7 @@
+ /*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Terry Lv <r65388@freescale.com>
++ *
+  * (C) Copyright 2003
+  * Kyle Harris, kharris@nexus-tech.net
+  *
+diff --git a/cpu/arm_cortexa8/mx50/cache.c b/cpu/arm_cortexa8/mx50/cache.c
+index 60df92f..6b8a009 100644
+--- a/cpu/arm_cortexa8/mx50/cache.c
++++ b/cpu/arm_cortexa8/mx50/cache.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/cpu/arm_cortexa8/mx50/crm_regs.h b/cpu/arm_cortexa8/mx50/crm_regs.h
+index eb94bbe..e8915c8 100644
+--- a/cpu/arm_cortexa8/mx50/crm_regs.h
++++ b/cpu/arm_cortexa8/mx50/crm_regs.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+diff --git a/cpu/arm_cortexa8/mx50/generic.c b/cpu/arm_cortexa8/mx50/generic.c
+index d1562d1..66ffaf9 100644
+--- a/cpu/arm_cortexa8/mx50/generic.c
++++ b/cpu/arm_cortexa8/mx50/generic.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/cpu/arm_cortexa8/mx50/iomux.c b/cpu/arm_cortexa8/mx50/iomux.c
+index 66f1bf7..d85a88f 100644
+--- a/cpu/arm_cortexa8/mx50/iomux.c
++++ b/cpu/arm_cortexa8/mx50/iomux.c
+@@ -1,14 +1,23 @@
+ /*
+  * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
+  */
+ 
+ #include <common.h>
+diff --git a/drivers/block/dwc_ahsata.c b/drivers/block/dwc_ahsata.c
+index 3a78490..2f0a1f8 100644
+--- a/drivers/block/dwc_ahsata.c
++++ b/drivers/block/dwc_ahsata.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  * Terry Lv <r65388@freescale.com>
+  *
+  * See file CREDITS for list of people who contributed to this
+diff --git a/drivers/block/dwc_ahsata.h b/drivers/block/dwc_ahsata.h
+index dce70e9..4dac5dc 100644
+--- a/drivers/block/dwc_ahsata.h
++++ b/drivers/block/dwc_ahsata.h
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  * Terry Lv <r65388@freescale.com>
+  *
+  * This program is free software; you can redistribute it and/or
+diff --git a/include/asm-arm/arch-mx50/mmu.h b/include/asm-arm/arch-mx50/mmu.h
+index 5fa2fc0..29e8091 100644
+--- a/include/asm-arm/arch-mx50/mmu.h
++++ b/include/asm-arm/arch-mx50/mmu.h
+@@ -1,14 +1,23 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
+  */
+ 
+ #ifndef __ARM_ARCH_MMU_H
+diff --git a/include/mx2fb.h b/include/mx2fb.h
+index de05bc0..2177c33 100644
+--- a/include/mx2fb.h
++++ b/include/mx2fb.h
+@@ -1,14 +1,23 @@
+ /*
+  * Copyright (C) 2004-2010 Freescale Semiconductor, Inc.
+- */
+-
+-/*
+- * The code contained herein is licensed under the GNU General Public
+- * License. You may obtain a copy of the GNU General Public License
+- * Version 2 or later at the following locations:
+  *
+- * http://www.opensource.org/licenses/gpl-license.html
+- * http://www.gnu.org/copyleft/gpl.html
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
+  */
+ 
+ /*!
+-- 
+1.5.4.4
+

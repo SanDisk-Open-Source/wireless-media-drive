@@ -1,0 +1,39 @@
+From d6ec69b17ce7f741c6af72d38014ccd4d0b83c5c Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 19 Jan 2011 20:17:48 +0800
+Subject: [PATCH] ENGR00138211 mx5: don't allow to enter low bus if only have 1 WP
+
+Current set_low_bus_freq codes enter low bus frequency automatically
+if the CPU frequency is the lowest one. If only have one working
+point, it enters low bus state in boot up phase. It causes mx53 RevA
+board hang up in boot phase. And it also causes the bus frequency of
+mx53 ard is reduced.
+This patch doesn't allow to enter low bus state if only have 1 WP
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c |    8 +++++---
+ 1 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 0358c86..a41bcfc 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -167,9 +167,11 @@ int set_low_bus_freq(void)
+ 		return 0;
+ 
+ 	if (bus_freq_scaling_initialized) {
+-		/* can not enter low bus freq, when cpu is in highest freq */
+-		if (clk_get_rate(cpu_clk) >
+-				cpu_wp_tbl[cpu_wp_nr - 1].cpu_rate) {
++		/* can not enter low bus freq, when cpu is in higher freq
++		 * or only have one working point */
++		if ((clk_get_rate(cpu_clk) >
++				cpu_wp_tbl[cpu_wp_nr - 1].cpu_rate)
++			|| (cpu_wp_nr == 1)) {
+ 			return 0;
+ 		}
+ 
+-- 
+1.5.4.4
+

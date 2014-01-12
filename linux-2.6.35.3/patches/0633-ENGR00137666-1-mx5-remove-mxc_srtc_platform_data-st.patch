@@ -1,0 +1,214 @@
+From 13b6445cda40e29a4471e929effa01fe3b964ff8 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 6 Jan 2011 15:05:28 +0800
+Subject: [PATCH] ENGR00137666-1 mx5: remove mxc_srtc_platform_data struct
+
+Remove mxc_srtc_platform_data struct from MX5 platform.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c    |    6 +-----
+ arch/arm/mach-mx5/mx50_rdp.c     |    6 +-----
+ arch/arm/mach-mx5/mx51_3stack.c  |    6 +-----
+ arch/arm/mach-mx5/mx51_babbage.c |    6 +-----
+ arch/arm/mach-mx5/mx53_ard.c     |    6 +-----
+ arch/arm/mach-mx5/mx53_evk.c     |    6 +-----
+ arch/arm/mach-mx5/mx53_loco.c    |    6 +-----
+ arch/arm/mach-mx5/mx53_smd.c     |    6 +-----
+ 8 files changed, 8 insertions(+), 40 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index f5540b2..f0000d2 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -440,10 +440,6 @@ static struct imxi2c_platform_data mxci2c_data = {
+ 	.bitrate = 100000,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = OCOTP_CTRL_BASE_ADDR + 0x80,
+-};
+-
+ #define mV_to_uV(mV) (mV * 1000)
+ #define uV_to_mV(uV) (uV / 1000)
+ #define V_to_uV(V) (mV_to_uV(V * 1000))
+@@ -1182,7 +1178,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[2], &mxci2c_data);
+ 
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+ 	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 4d23841..20b0b7c 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -533,10 +533,6 @@ static struct mxc_spi_master mxcspi3_data = {
+ 	.chipselect_inactive = mx50_rdp_gpio_spi_chipselect_inactive,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = OCOTP_CTRL_BASE_ADDR + 0x80,
+-};
+-
+ #define mV_to_uV(mV) (mV * 1000)
+ #define uV_to_mV(uV) (uV / 1000)
+ #define V_to_uV(V) (mV_to_uV(V * 1000))
+@@ -1396,7 +1392,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[2], &mxci2c_data);
+ 
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+ 	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index f14b79e..3188cc7 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -267,10 +267,6 @@ static struct mxc_i2c_platform_data mxci2c_hs_data = {
+ 	.i2c_clk = 400000,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = 0x83F98840,
+-};
+-
+ static struct tve_platform_data tve_data = {
+ 	.dac_reg = "VVIDEO",
+ 	.dig_reg = "VDIG",
+@@ -972,7 +968,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[0], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_hs_device, &mxci2c_hs_data);
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_tve_device, &tve_data);
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 64506a3..c21623a 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -438,10 +438,6 @@ static struct mxc_i2c_platform_data mxci2c_hs_data = {
+ 	.i2c_clk = 400000,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = 0x83F98840,
+-};
+-
+ static struct tve_platform_data tve_data = {
+ 	.dac_reg = "VVIDEO",
+ };
+@@ -1233,7 +1229,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[0], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_hs_device, &mxci2c_hs_data);
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_tve_device, &tve_data);
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index f869006..97eecab 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -596,10 +596,6 @@ static struct imxi2c_platform_data mxci2c2_data = {
+ 	.bitrate = 400000,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = 0x83F98840,
+-};
+-
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "SW1",
+ 	.clk1_id = "cpu_clk",
+@@ -1309,7 +1305,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c1_data);
+ 	mxc_register_device(&mxci2c_devices[2], &mxci2c2_data);
+ 
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
+ 	mxc_register_device(&mxcvpu_device, &mxc_vpu_data);
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 81b4221..1d7b95e 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -733,10 +733,6 @@ static struct imxi2c_platform_data mxci2c_data = {
+ 	.bitrate = 100000,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = 0x83F98840,
+-};
+-
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "SW1",
+ 	.clk1_id = "cpu_clk",
+@@ -1585,7 +1581,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[1], &mxci2c_data);
+ 	mxc_register_device(&mxci2c_devices[2], &mxci2c_data);
+ 
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_w1_master_device, &mxc_w1_data);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index deff9bb..83e441e 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -433,10 +433,6 @@ static struct fec_platform_data fec_data = {
+ 	.phy = PHY_INTERFACE_MODE_RMII,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = 0x83F98840,
+-};
+-
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "DA9052_BUCK_CORE",
+ 	.clk1_id = "cpu_clk",
+@@ -852,7 +848,7 @@ static void __init mxc_board_init(void)
+ 
+ 	mx53_loco_init_da9052();
+ 
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
+ 	mxc_register_device(&mxc_tve_device, &tve_data);
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 8e518ef..e3112b6 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -614,10 +614,6 @@ static struct mxc_spi_master mxcspi1_data = {
+ 	.chipselect_inactive = NULL,
+ };
+ 
+-static struct mxc_srtc_platform_data srtc_data = {
+-	.srtc_sec_mode_addr = 0x83F98840,
+-};
+-
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "DA9052_BUCK_CORE",
+ 	.clk1_id = "cpu_clk",
+@@ -1113,7 +1109,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxci2c_devices[2], &mxci2c_data);
+ 	mx53_smd_init_da9052();
+ 
+-	mxc_register_device(&mxc_rtc_device, &srtc_data);
++	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
+ 	mxc_register_device(&mxc_tve_device, &tve_data);
+-- 
+1.5.4.4
+

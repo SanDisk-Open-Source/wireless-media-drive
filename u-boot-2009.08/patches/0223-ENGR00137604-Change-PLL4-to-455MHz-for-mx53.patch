@@ -1,0 +1,191 @@
+From 1fa596e19e8ea43414d88835726b98fb90ffc877 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 5 Jan 2011 17:03:28 +0800
+Subject: [PATCH] ENGR00137604: Change PLL4 to 455MHz for mx53
+
+Required by display to set ldb.
+We need to set PLL4 to 455MHz.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx53_ard/lowlevel_init.S  |    7 ++++++-
+ board/freescale/mx53_evk/lowlevel_init.S  |    7 ++++++-
+ board/freescale/mx53_loco/lowlevel_init.S |    7 ++++++-
+ board/freescale/mx53_smd/lowlevel_init.S  |    7 ++++++-
+ cpu/arm_cortexa8/mx53/generic.c           |    5 ++++-
+ include/asm-arm/arch-mx53/mx53.h          |    6 +++++-
+ 6 files changed, 33 insertions(+), 6 deletions(-)
+
+diff --git a/board/freescale/mx53_ard/lowlevel_init.S b/board/freescale/mx53_ard/lowlevel_init.S
+index 32f8ee3..249c2f8 100644
+--- a/board/freescale/mx53_ard/lowlevel_init.S
++++ b/board/freescale/mx53_ard/lowlevel_init.S
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -135,6 +135,8 @@
+ 
+         setup_pll PLL3_BASE_ADDR, 216
+ 
++	setup_pll PLL4_BASE_ADDR, 455
++
+ 	/* Set the platform clock dividers */
+ 	ldr r0, PLATFORM_BASE_ADDR_W
+ 	ldr r1, PLATFORM_CLOCK_DIV_W
+@@ -224,5 +226,8 @@ W_DP_MFN_400:           .word DP_MFN_400
+ W_DP_OP_216:            .word DP_OP_216
+ W_DP_MFD_216:           .word DP_MFD_216
+ W_DP_MFN_216:           .word DP_MFN_216
++W_DP_OP_455:            .word DP_OP_455
++W_DP_MFD_455:           .word DP_MFD_455
++W_DP_MFN_455:           .word DP_MFN_455
+ PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
+ PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/board/freescale/mx53_evk/lowlevel_init.S b/board/freescale/mx53_evk/lowlevel_init.S
+index 4c5d78d..7b1fbd7 100644
+--- a/board/freescale/mx53_evk/lowlevel_init.S
++++ b/board/freescale/mx53_evk/lowlevel_init.S
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -135,6 +135,8 @@
+ 
+         setup_pll PLL3_BASE_ADDR, 216
+ 
++	setup_pll PLL4_BASE_ADDR, 455
++
+ 	/* Set the platform clock dividers */
+ 	ldr r0, PLATFORM_BASE_ADDR_W
+ 	ldr r1, PLATFORM_CLOCK_DIV_W
+@@ -224,5 +226,8 @@ W_DP_MFN_400:           .word DP_MFN_400
+ W_DP_OP_216:            .word DP_OP_216
+ W_DP_MFD_216:           .word DP_MFD_216
+ W_DP_MFN_216:           .word DP_MFN_216
++W_DP_OP_455:            .word DP_OP_455
++W_DP_MFD_455:           .word DP_MFD_455
++W_DP_MFN_455:           .word DP_MFN_455
+ PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
+ PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/board/freescale/mx53_loco/lowlevel_init.S b/board/freescale/mx53_loco/lowlevel_init.S
+index 5fadbc2..ac374f3 100644
+--- a/board/freescale/mx53_loco/lowlevel_init.S
++++ b/board/freescale/mx53_loco/lowlevel_init.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -133,6 +133,8 @@
+ 
+         setup_pll PLL3_BASE_ADDR, 216
+ 
++	setup_pll PLL4_BASE_ADDR, 455
++
+ 	/* Set the platform clock dividers */
+ 	ldr r0, PLATFORM_BASE_ADDR_W
+ 	ldr r1, PLATFORM_CLOCK_DIV_W
+@@ -225,5 +227,8 @@ W_DP_MFN_400:           .word DP_MFN_400
+ W_DP_OP_216:            .word DP_OP_216
+ W_DP_MFD_216:           .word DP_MFD_216
+ W_DP_MFN_216:           .word DP_MFN_216
++W_DP_OP_455:            .word DP_OP_455
++W_DP_MFD_455:           .word DP_MFD_455
++W_DP_MFN_455:           .word DP_MFN_455
+ PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
+ PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/board/freescale/mx53_smd/lowlevel_init.S b/board/freescale/mx53_smd/lowlevel_init.S
+index 363db56..5feaaf1 100644
+--- a/board/freescale/mx53_smd/lowlevel_init.S
++++ b/board/freescale/mx53_smd/lowlevel_init.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -133,6 +133,8 @@
+ 
+         setup_pll PLL3_BASE_ADDR, 216
+ 
++	setup_pll PLL4_BASE_ADDR, 455
++
+ 	/* Set the platform clock dividers */
+ 	ldr r0, PLATFORM_BASE_ADDR_W
+ 	ldr r1, PLATFORM_CLOCK_DIV_W
+@@ -236,5 +238,8 @@ W_DP_MFN_400:           .word DP_MFN_400
+ W_DP_OP_216:            .word DP_OP_216
+ W_DP_MFD_216:           .word DP_MFD_216
+ W_DP_MFN_216:           .word DP_MFN_216
++W_DP_OP_455:            .word DP_OP_455
++W_DP_MFD_455:           .word DP_MFD_455
++W_DP_MFN_455:           .word DP_MFN_455
+ PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
+ PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 3e3571e..d31d9b5 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -494,6 +494,8 @@ void mxc_dump_clocks(void)
+ 	printf("mx53 pll2: %dMHz\n", freq / 1000000);
+ 	freq = __decode_pll(PLL3_CLK, CONFIG_MX53_HCLK_FREQ);
+ 	printf("mx53 pll3: %dMHz\n", freq / 1000000);
++	freq = __decode_pll(PLL4_CLK, CONFIG_MX53_HCLK_FREQ);
++	printf("mx53 pll4: %dMHz\n", freq / 1000000);
+ 	printf("ipg clock     : %dHz\n", mxc_get_clock(MXC_IPG_CLK));
+ 	printf("ipg per clock : %dHz\n", mxc_get_clock(MXC_IPG_PERCLK));
+ 	printf("uart clock    : %dHz\n", mxc_get_clock(MXC_UART_CLK));
+@@ -989,6 +991,7 @@ int print_cpuinfo(void)
+ 	       (get_board_rev() & 0xFF) >> 4,
+ 	       (get_board_rev() & 0xF),
+ 		__get_mcu_main_clk() / 1000000);
++	mxc_dump_clocks();
+ 	return 0;
+ }
+ #endif
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index 1a59998..39babf9 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -374,6 +374,10 @@
+ #define DP_MFD_532      (24 - 1)
+ #define DP_MFN_532      13
+ 
++#define DP_OP_455       ((8 << 4) + ((2 - 1)  << 0))
++#define DP_MFD_455      (48 - 1)
++#define DP_MFN_455      71
++
+ #define DP_OP_400       ((8 << 4) + ((2 - 1)  << 0))
+ #define DP_MFD_400      (3 - 1)
+ #define DP_MFN_400      1
+-- 
+1.5.4.4
+

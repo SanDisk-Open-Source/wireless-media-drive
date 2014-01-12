@@ -1,0 +1,94 @@
+From 7bcdea937a3d48ca39a57ba3ba1d3eed91ec5abf Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Thu, 22 Jul 2010 21:10:17 +0800
+Subject: [PATCH] ENGR00125220 MX28: SD(slot0)boot dhcp failed
+
+This is caused by fec_pwr_en pin is mis-used which lead
+to FEC not power on. This commit fix this issue.
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ board/freescale/mx28_evk/mx28_evk.c |   25 ++++++++++++++-----------
+ include/asm-arm/arch-mx28/pinctrl.h |   16 ++--------------
+ 2 files changed, 16 insertions(+), 25 deletions(-)
+
+diff --git a/board/freescale/mx28_evk/mx28_evk.c b/board/freescale/mx28_evk/mx28_evk.c
+index cabb6f4..714cb67 100644
+--- a/board/freescale/mx28_evk/mx28_evk.c
++++ b/board/freescale/mx28_evk/mx28_evk.c
+@@ -52,17 +52,17 @@ static struct pin_desc mmc0_pins_desc[] = {
+ };
+ 
+ static struct pin_desc mmc1_pins_desc[] = {
+-	{ PINID_SSP1_DATA0, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA1, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA2, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA3, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA4, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA5, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA6, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DATA7, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_CMD, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_DETECT, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP1_SCK, PIN_FUN2, PAD_8MA, PAD_3V3, 1 }
++	{ PINID_GPMI_D00, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D01, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D02, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D03, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D04, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D05, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D06, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_D07, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_RDY1, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_RDY0, PIN_FUN2, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_GPMI_WRN, PIN_FUN2, PAD_8MA, PAD_3V3, 1 }
+ };
+ 
+ static struct pin_group mmc0_pins = {
+@@ -132,6 +132,9 @@ int get_mmc_env_devno()
+ }
+ #endif
+ 
++#define PINID_SSP0_GPIO_WP PINID_SSP1_SCK
++#define PINID_SSP1_GPIO_WP PINID_GPMI_RESETN
++
+ u32 ssp_mmc_is_wp(struct mmc *mmc)
+ {
+ 	return (mmc->block_dev.dev == 0) ?
+diff --git a/include/asm-arm/arch-mx28/pinctrl.h b/include/asm-arm/arch-mx28/pinctrl.h
+index 6f0eea0..14e62b1 100644
+--- a/include/asm-arm/arch-mx28/pinctrl.h
++++ b/include/asm-arm/arch-mx28/pinctrl.h
+@@ -106,19 +106,6 @@ extern void pin_set_group(struct pin_group *pin_group);
+ #define PINID_GPMI_CLE		PINID_ENCODE(0, 27)
+ #define PINID_GPMI_RESETN	PINID_ENCODE(0, 28)
+ 
+-#define PINID_SSP1_DATA0	PINID_ENCODE(0, 0)
+-#define PINID_SSP1_DATA1	PINID_ENCODE(0, 1)
+-#define PINID_SSP1_DATA2	PINID_ENCODE(0, 2)
+-#define PINID_SSP1_DATA3	PINID_ENCODE(0, 3)
+-#define PINID_SSP1_DATA4	PINID_ENCODE(0, 4)
+-#define PINID_SSP1_DATA5	PINID_ENCODE(0, 5)
+-#define PINID_SSP1_DATA6	PINID_ENCODE(0, 6)
+-#define PINID_SSP1_DATA7	PINID_ENCODE(0, 7)
+-#define PINID_SSP1_DETECT	PINID_ENCODE(0, 20)
+-#define PINID_SSP1_CMD		PINID_ENCODE(0, 21)
+-#define PINID_SSP1_SCK		PINID_ENCODE(0, 25)
+-#define PINID_SSP1_GPIO_WP	PINID_ENCODE(0, 28)
+-
+ /* Bank 1 */
+ #define PINID_LCD_D00		PINID_ENCODE(1, 0)
+ #define PINID_LCD_D01		PINID_ENCODE(1, 1)
+@@ -165,7 +152,8 @@ extern void pin_set_group(struct pin_group *pin_group);
+ #define PINID_SSP0_CMD		PINID_ENCODE(2, 8)
+ #define PINID_SSP0_DETECT	PINID_ENCODE(2, 9)
+ #define PINID_SSP0_SCK		PINID_ENCODE(2, 10)
+-#define PINID_SSP0_GPIO_WP	PINID_ENCODE(2, 12)
++#define PINID_SSP1_SCK		PINID_ENCODE(2, 12)
++#define PINID_SSP1_DATA3	PINID_ENCODE(2, 15)
+ #define PINID_SSP2_SCK		PINID_ENCODE(2, 16)
+ #define PINID_SSP2_MOSI		PINID_ENCODE(2, 17)
+ #define PINID_SSP2_MISO		PINID_ENCODE(2, 18)
+-- 
+1.5.4.4
+

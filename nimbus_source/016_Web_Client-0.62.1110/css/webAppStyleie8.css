@@ -1,0 +1,15 @@
+﻿@charset "utf-8";
+/* CSS Document */
+
+#btnUpload{ background:url(../images/icons/gray_upload.png) #e7e7e8  6px center no-repeat; padding-left:25px; min-width:44px;}
+#btnDownload{ background:url(../images/icons/gray_download.png)  6px center no-repeat #e7e7e8; padding-left:25px; min-width:44px;}
+#btnNew{ background:url(../images/icons/gray_new.png) #e7e7e8  6px center no-repeat; padding-left:30px;  min-width:44px;}
+#btnDel{ background:url(../images/icons/gray_delete.png) #e7e7e8 6px center no-repeat; padding-left:25px;  min-width:44px;}
+
+#btnUpload:hover{background:url(../images/icons/gray_upload.png)  #c6c6c6 6px center no-repeat;}
+#btnDownload:hover{background:url(../images/icons/gray_download.png) #c6c6c6 6px center no-repeat;}
+#btnNew:hover{ background:url(../images/icons/gray_new.png) #c6c6c6 6px center no-repeat; }
+#btnDel:hover{ background:url(../images/icons/gray_delete.png) #c6c6c6 6px center no-repeat;}
+
+#searchContainer .bottom input.goBack{ background:url(../images/icons/gray_back.png) #e7e7e8 5px center no-repeat;   color:#5f5e5e; margin-right:20px; padding-left:20px;min-width:44px;} 
+.size_144x144{ width:163px !important; height:163px !important;}

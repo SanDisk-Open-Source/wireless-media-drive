@@ -1,0 +1,48 @@
+From 36913edd6354fc84ebd70287ea8da0104fd03644 Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Wed, 16 Mar 2011 10:43:26 +0800
+Subject: [PATCH] ENGR00140699-2 [mx28 spi] add a parameter to select spi master/slave mode
+
+add a parameter to select spi master/slave mode
+by default, spi master mode is selected.
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ arch/arm/mach-mx28/device.c             |    1 +
+ arch/arm/plat-mxs/include/mach/device.h |    3 ++-
+ 2 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/device.c b/arch/arm/mach-mx28/device.c
+index 410928f..2545a72 100644
+--- a/arch/arm/mach-mx28/device.c
++++ b/arch/arm/mach-mx28/device.c
+@@ -662,6 +662,7 @@ static void mx28_init_mmc(void)
+ #if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
+ static struct mxs_spi_platform_data spi_data = {
+ 	.clk = "ssp.2",
++	.slave_mode = 0,
+ };
+ static struct resource ssp2_resources[] = {
+ 	{
+diff --git a/arch/arm/plat-mxs/include/mach/device.h b/arch/arm/plat-mxs/include/mach/device.h
+index 080add7..f46b984 100644
+--- a/arch/arm/plat-mxs/include/mach/device.h
++++ b/arch/arm/plat-mxs/include/mach/device.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -129,6 +129,7 @@ struct mxs_spi_platform_data {
+ 	int (*hw_pin_init)(void);
+ 	int (*hw_pin_release)(void);
+ 
++	int slave_mode;
+ 	char *clk;
+ };
+ 
+-- 
+1.5.4.4
+

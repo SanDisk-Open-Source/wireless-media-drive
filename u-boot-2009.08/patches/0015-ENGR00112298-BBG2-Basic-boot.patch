@@ -1,0 +1,1185 @@
+From 31594f542d3c7b1db6b8404e608e452a604bd6d8 Mon Sep 17 00:00:00 2001
+From: r65388 <r65388@freescale.com>
+Date: Wed, 13 May 2009 16:32:51 +0800
+Subject: [PATCH] ENGR00112298 BBG2: Basic boot.
+
+Basic boot on BBG2 board.
+
+Signed-off-by: r65388 <r65388@freescale.com>
+---
+ Makefile                              |    3 +
+ board/freescale/imx51/Makefile        |   49 ++++++
+ board/freescale/imx51/board-imx51.h   |   64 +++++++
+ board/freescale/imx51/config.mk       |    1 +
+ board/freescale/imx51/flash_header.S  |  113 +++++++++++++
+ board/freescale/imx51/imx51.c         |  290 +++++++++++++++++++++++++++++++++
+ board/freescale/imx51/lowlevel_init.S |  289 ++++++++++++++++++++++++++++++++
+ board/freescale/imx51/u-boot.lds      |   73 ++++++++
+ include/configs/imx51.h               |  221 +++++++++++++++++++++++++
+ 9 files changed, 1103 insertions(+), 0 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index a445f14..5eac5fb 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3238,6 +3238,9 @@ Mx31_3stack_config	: unconfig
+ mx35_3stack_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 mx35_3stack freescale mx35
+ 
++imx51_config		: unconfig
++	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 imx51 freescale mx51
++
+ mx51_3stack_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx51_3stack freescale mx51
+ 
+diff --git a/board/freescale/imx51/Makefile b/board/freescale/imx51/Makefile
+new file mode 100644
+index 0000000..fbd40f2
+--- /dev/null
++++ b/board/freescale/imx51/Makefile
+@@ -0,0 +1,49 @@
++#
++# Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++#
++# (C) Copyright 2009 Freescale Semiconductor, Inc.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= imx51.o
++SOBJS	:= lowlevel_init.o flash_header.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/freescale/imx51/board-imx51.h b/board/freescale/imx51/board-imx51.h
+new file mode 100644
+index 0000000..7a2cae0
+--- /dev/null
++++ b/board/freescale/imx51/board-imx51.h
+@@ -0,0 +1,64 @@
++/*
++ * Copyright 2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#ifndef __BOARD_FREESCALE_BOARD_IMX51_H__
++#define __BOARD_FREESCALE_BOARD_IMX51_H__
++
++/*!
++ * @defgroup BRDCFG_MX51 Board Configuration Options
++ * @ingroup MSL_MX51
++ */
++
++/*!
++ * @file mx51_3stack/board-imx51.h
++ *
++ * @brief This file contains all the board level configuration options.
++ *
++ * It currently hold the options defined for MX51 3Stack Platform.
++ *
++ * @ingroup BRDCFG_IMX51
++ */
++
++/* CPLD offsets */
++#define PBC_LED_CTRL		(0x20000)
++#define PBC_SB_STAT		(0x20008)
++#define PBC_ID_AAAA		(0x20040)
++#define PBC_ID_5555		(0x20048)
++#define PBC_VERSION		(0x20050)
++#define PBC_ID_CAFE		(0x20058)
++#define PBC_INT_STAT		(0x20010)
++#define PBC_INT_MASK		(0x20038)
++#define PBC_INT_REST		(0x20020)
++#define PBC_SW_RESET		(0x20060)
++
++/* LED switchs */
++#define LED_SWITCH_REG		0x00
++/* buttons */
++#define SWITCH_BUTTONS_REG	0x08
++/* status, interrupt */
++#define INTR_STATUS_REG	0x10
++#define INTR_MASK_REG		0x38
++#define INTR_RESET_REG		0x20
++/* magic word for debug CPLD */
++#define MAGIC_NUMBER1_REG	0x40
++#define MAGIC_NUMBER2_REG	0x48
++/* CPLD code version */
++#define CPLD_CODE_VER_REG	0x50
++/* magic word for debug CPLD */
++#define MAGIC_NUMBER3_REG	0x58
++/* module reset register*/
++#define MODULE_RESET_REG	0x60
++/* CPU ID and Personality ID */
++#define MCU_BOARD_ID_REG	0x68
++
++#endif				/* __BOARD_FREESCALE_BOARD_IMX51_H__ */
+diff --git a/board/freescale/imx51/config.mk b/board/freescale/imx51/config.mk
+new file mode 100644
+index 0000000..ce7369d
+--- /dev/null
++++ b/board/freescale/imx51/config.mk
+@@ -0,0 +1 @@
++TEXT_BASE = 0x97800000
+diff --git a/board/freescale/imx51/flash_header.S b/board/freescale/imx51/flash_header.S
+new file mode 100644
+index 0000000..6790679
+--- /dev/null
++++ b/board/freescale/imx51/flash_header.S
+@@ -0,0 +1,113 @@
++/*
++ * Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx51.h>
++#include "board-imx51.h"
++
++#ifdef	CONFIG_FLASH_HEADER
++#ifndef CONFIG_FLASH_HEADER_OFFSET
++# error "Must define the offset of flash header"
++#endif
++#define MXC_DCD_ITEM(i, type, addr, val)	\
++dcd_node_##i:					\
++	.word type			;	\
++	.word addr			;	\
++	.word val			;	\
++
++.section ".text.flasheader", "x"
++	b	_start
++	.org	CONFIG_FLASH_HEADER_OFFSET
++app_code_jump_v:	.word	_start
++app_code_code_barker:	.word	CONFIG_FLASH_HEADER_BARKER
++app_code_csf:		.word	0
++dcd_ptr_ptr:		.word	dcd_ptr
++super_root_key:		.word	0
++dcd_ptr:		.word	dcd_array_start
++app_dest_ptr:		.word	TEXT_BASE
++dcd_array_start:
++magic:			.word	0xB17219E9
++dcd_array_size:		.word	dcd_data_end - dcd_array_start - 8
++/* DCD */
++/* DDR2 IOMUX configuration */
++MXC_DCD_ITEM(1, 4, IOMUXC_BASE_ADDR + 0x8a0, 0x200)
++MXC_DCD_ITEM(2, 4, IOMUXC_BASE_ADDR + 0x50c, 0x20c5)
++MXC_DCD_ITEM(3, 4, IOMUXC_BASE_ADDR + 0x510, 0x20c5)
++MXC_DCD_ITEM(4, 4, IOMUXC_BASE_ADDR + 0x83c, 0x2)
++MXC_DCD_ITEM(5, 4, IOMUXC_BASE_ADDR + 0x848, 0x2)
++MXC_DCD_ITEM(6, 4, IOMUXC_BASE_ADDR + 0x4b8, 0xe7)
++MXC_DCD_ITEM(7, 4, IOMUXC_BASE_ADDR + 0x4bc, 0x45)
++MXC_DCD_ITEM(8, 4, IOMUXC_BASE_ADDR + 0x4c0, 0x45)
++MXC_DCD_ITEM(9, 4, IOMUXC_BASE_ADDR + 0x4c4, 0x45)
++MXC_DCD_ITEM(10, 4, IOMUXC_BASE_ADDR + 0x4c8, 0x45)
++MXC_DCD_ITEM(11, 4, IOMUXC_BASE_ADDR + 0x820, 0x0)
++MXC_DCD_ITEM(12, 4, IOMUXC_BASE_ADDR + 0x4a4, 0x3)
++MXC_DCD_ITEM(13, 4, IOMUXC_BASE_ADDR + 0x4a8, 0x3)
++MXC_DCD_ITEM(14, 4, IOMUXC_BASE_ADDR + 0x4ac, 0xe3)
++MXC_DCD_ITEM(15, 4, IOMUXC_BASE_ADDR + 0x4b0, 0xe3)
++MXC_DCD_ITEM(16, 4, IOMUXC_BASE_ADDR + 0x4b4, 0xe3)
++MXC_DCD_ITEM(17, 4, IOMUXC_BASE_ADDR + 0x4cc, 0xe3)
++MXC_DCD_ITEM(18, 4, IOMUXC_BASE_ADDR + 0x4d0, 0xe2)
++/* Set drive strength to MAX */
++MXC_DCD_ITEM(19, 4, IOMUXC_BASE_ADDR + 0x82c, 0x6)
++MXC_DCD_ITEM(20, 4, IOMUXC_BASE_ADDR + 0x8a4, 0x6)
++MXC_DCD_ITEM(21, 4, IOMUXC_BASE_ADDR + 0x8ac, 0x6)
++MXC_DCD_ITEM(22, 4, IOMUXC_BASE_ADDR + 0x8b8, 0x6)
++/* 13 ROW, 10 COL, 32Bit, SREF=4 Micron Model */
++/* CAS=3,  BL=4 */
++MXC_DCD_ITEM(23, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCTL0, 0x82a20000)
++MXC_DCD_ITEM(24, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCTL1, 0x82a20000)
++MXC_DCD_ITEM(25, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDMISC, 0x000ad0d0)
++MXC_DCD_ITEM(26, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCFG0, 0x333574aa)
++MXC_DCD_ITEM(27, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCFG1, 0x333574aa)
++/* Init DRAM on CS0 */
++MXC_DCD_ITEM(28, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x04008008)
++MXC_DCD_ITEM(29, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0000801a)
++MXC_DCD_ITEM(30, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0000801b)
++MXC_DCD_ITEM(31, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00448019)
++MXC_DCD_ITEM(32, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x07328018)
++MXC_DCD_ITEM(33, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x04008008)
++MXC_DCD_ITEM(34, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00008010)
++MXC_DCD_ITEM(35, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00008010)
++MXC_DCD_ITEM(36, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x06328018)
++MXC_DCD_ITEM(37, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x03808019)
++MXC_DCD_ITEM(38, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00408019)
++MXC_DCD_ITEM(39, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00008000)
++/* Init DRAM on CS1 */
++MXC_DCD_ITEM(40, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0400800c)
++MXC_DCD_ITEM(41, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0000801e)
++MXC_DCD_ITEM(42, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0000801f)
++MXC_DCD_ITEM(43, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0000801d)
++MXC_DCD_ITEM(44, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0732801c)
++MXC_DCD_ITEM(45, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0400800c)
++MXC_DCD_ITEM(46, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00008014)
++MXC_DCD_ITEM(47, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00008014)
++MXC_DCD_ITEM(48, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0632801c)
++MXC_DCD_ITEM(49, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0380801d)
++MXC_DCD_ITEM(50, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x0040801d)
++MXC_DCD_ITEM(51, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00008004)
++MXC_DCD_ITEM(52, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCTL0, 0xb2a20000)
++MXC_DCD_ITEM(53, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCTL1, 0xb2a20000)
++MXC_DCD_ITEM(54, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDMISC, 0x000ad6d0)
++MXC_DCD_ITEM(55, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCDLYGD, 0x90000000)
++MXC_DCD_ITEM(56, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00000000)
++dcd_data_end:
++image_len:		.word	0x100000
++//image_len:		.word	_end - _start
++#endif
+diff --git a/board/freescale/imx51/imx51.c b/board/freescale/imx51/imx51.c
+new file mode 100644
+index 0000000..c8fe23b
+--- /dev/null
++++ b/board/freescale/imx51/imx51.c
+@@ -0,0 +1,290 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/errno.h>
++#include <asm/arch/mx51.h>
++#include <asm/arch/mx51_pins.h>
++#include <asm/arch/iomux.h>
++#include <i2c.h>
++#include "board-imx51.h"
++
++DECLARE_GLOBAL_DATA_PTR;
++
++static u32 system_rev;
++u32	mx51_io_base_addr;
++volatile u32 *esdhc_base_pointer;
++
++u32 get_board_rev(void)
++{
++	return system_rev;
++}
++
++static inline void setup_soc_rev(void)
++{
++	int reg;
++	reg = __REG(ROM_SI_REV);
++	switch (reg) {
++	case 0x02:
++		system_rev = 0x51000 | CHIP_REV_1_1;
++		break;
++	case 0x10:
++		system_rev = 0x51000 | CHIP_REV_2_0;
++		break;
++	default:
++		system_rev = 0x51000 | CHIP_REV_1_0;
++	}
++}
++
++static inline void set_board_rev(int rev)
++{
++	system_rev |= (rev & 0xF) << 8;
++}
++
++inline int is_soc_rev(int rev)
++{
++	return (system_rev & 0xFF) - rev;
++}
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++	return 0;
++}
++
++static void setup_uart(void)
++{
++	unsigned int pad = PAD_CTL_HYS_ENABLE | PAD_CTL_PKE_ENABLE |
++			 PAD_CTL_PUE_PULL | PAD_CTL_DRV_HIGH;
++	mxc_request_iomux(MX51_PIN_UART1_RXD, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX51_PIN_UART1_RXD, pad | PAD_CTL_SRE_FAST);
++	mxc_request_iomux(MX51_PIN_UART1_TXD, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX51_PIN_UART1_TXD, pad | PAD_CTL_SRE_FAST);
++	mxc_request_iomux(MX51_PIN_UART1_RTS, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX51_PIN_UART1_RTS, pad);
++	mxc_request_iomux(MX51_PIN_UART1_CTS, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX51_PIN_UART1_CTS, pad);
++}
++
++void setup_nfc(void)
++{
++	/* Enable NFC IOMUX */
++	mxc_request_iomux(MX51_PIN_NANDF_CS0, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS1, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS2, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS3, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS4, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS5, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS6, IOMUX_CONFIG_ALT0);
++	mxc_request_iomux(MX51_PIN_NANDF_CS7, IOMUX_CONFIG_ALT0);
++}
++
++static void setup_expio(void)
++{
++	u32 reg;
++	/* CS5 setup */
++	mxc_request_iomux(MX51_PIN_EIM_CS5, IOMUX_CONFIG_ALT0);
++	writel(0x00410089, WEIM_BASE_ADDR + 0x78 + CSGCR1);
++	writel(0x00000002, WEIM_BASE_ADDR + 0x78 + CSGCR2);
++	/* RWSC=50, RADVA=2, RADVN=6, OEA=0, OEN=0, RCSA=0, RCSN=0 */
++	writel(0x32260000, WEIM_BASE_ADDR + 0x78 + CSRCR1);
++	/* APR = 0 */
++	writel(0x00000000, WEIM_BASE_ADDR + 0x78 + CSRCR2);
++	/* WAL=0, WBED=1, WWSC=50, WADVA=2, WADVN=6, WEA=0, WEN=0,
++	 * WCSA=0, WCSN=0
++	 */
++	writel(0x72080F00, WEIM_BASE_ADDR + 0x78 + CSWCR1);
++	if ((readw(CS5_BASE_ADDR + PBC_ID_AAAA) == 0xAAAA) &&
++	    (readw(CS5_BASE_ADDR + PBC_ID_5555) == 0x5555)) {
++		if (is_soc_rev(CHIP_REV_2_0) < 0) {
++			reg = readl(CCM_BASE_ADDR + CLKCTL_CBCDR);
++			reg = (reg & (~0x70000)) | 0x30000;
++			writel(reg, CCM_BASE_ADDR + CLKCTL_CBCDR);
++			/* make sure divider effective */
++			while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++				;
++			writel(0x0, CCM_BASE_ADDR + CLKCTL_CCDR);
++		}
++		mx51_io_base_addr = CS5_BASE_ADDR;
++	} else {
++		/* CS1 */
++		writel(0x00410089, WEIM_BASE_ADDR + 0x18 + CSGCR1);
++		writel(0x00000002, WEIM_BASE_ADDR + 0x18 + CSGCR2);
++		/*  RWSC=50, RADVA=2, RADVN=6, OEA=0, OEN=0, RCSA=0, RCSN=0 */
++		writel(0x32260000, WEIM_BASE_ADDR + 0x18 + CSRCR1);
++		/* APR=0 */
++		writel(0x00000000, WEIM_BASE_ADDR + 0x18 + CSRCR2);
++		/* WAL=0, WBED=1, WWSC=50, WADVA=2, WADVN=6, WEA=0,
++		 * WEN=0, WCSA=0, WCSN=0
++		 */
++		writel(0x72080F00, WEIM_BASE_ADDR + 0x18 + CSWCR1);
++		mx51_io_base_addr = CS1_BASE_ADDR;
++	}
++
++	/* Reset interrupt status reg */
++	writew(0x1F, mx51_io_base_addr + PBC_INT_REST);
++	writew(0x00, mx51_io_base_addr + PBC_INT_REST);
++	writew(0xFFFF, mx51_io_base_addr + PBC_INT_MASK);
++
++	/* Reset the XUART and Ethernet controllers */
++	reg = readw(mx51_io_base_addr + PBC_SW_RESET);
++	reg |= 0x9;
++	writew(reg, mx51_io_base_addr + PBC_SW_RESET);
++	reg &= ~0x9;
++	writew(reg, mx51_io_base_addr + PBC_SW_RESET);
++}
++
++int board_init(void)
++{
++	int pad;
++	setup_soc_rev();
++
++	gd->bd->bi_arch_number = MACH_TYPE_MX51_3DS;	/* board id for linux */
++	/* address of boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
++
++	setup_uart();
++	setup_nfc();
++	setup_expio();
++	return 0;
++}
++
++#ifdef BOARD_LATE_INIT
++int board_late_init(void)
++{
++	return 0;
++}
++#endif
++
++int checkboard(void)
++{
++	printf("Board: MX51 3STACK [");
++	switch (__REG(SRC_BASE_ADDR + 0x8)) {
++	case 0x0001:
++		printf("POR");
++		break;
++	case 0x0009:
++		printf("RST");
++		break;
++	case 0x0010:
++	case 0x0011:
++		printf("WDOG");
++		break;
++	default:
++		printf("unknown");
++	}
++	printf("]\n");
++	return 0;
++}
++
++#ifdef CONFIG_NET_MULTI
++int board_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_DRIVER_SMC911X)
++	 rc = smc911x_initialize(bis);
++#endif
++	return rc;
++}
++#endif
++
++#ifdef CONFIG_FSL_MMC
++
++int sdhc_init(void)
++{
++	u32 interface_esdhc = 0;
++	u32 pad_val = 0;
++	s32 status = 0;
++
++	interface_esdhc = (readl(SRC_BASE_ADDR + 0x4) & (0x00180000)) >> 19;
++
++	switch (interface_esdhc) {
++	case 0:
++
++		esdhc_base_pointer = (volatile u32 *)MMC_SDHC1_BASE_ADDR;
++
++		mxc_request_iomux(MX51_PIN_SD1_CMD,
++			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_CLK,
++			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++
++		mxc_request_iomux(MX51_PIN_SD1_DATA0,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_DATA1,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_DATA2,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_request_iomux(MX51_PIN_SD1_DATA3,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		break;
++	case 1:
++		status = 1;
++		break;
++	case 2:
++		status = 1;
++		break;
++	case 3:
++		status = 1;
++		break;
++	default:
++		status = 1;
++		break;
++	}
++
++	return status = 1;
++}
++
++#endif
+diff --git a/board/freescale/imx51/lowlevel_init.S b/board/freescale/imx51/lowlevel_init.S
+new file mode 100644
+index 0000000..4fff3e5
+--- /dev/null
++++ b/board/freescale/imx51/lowlevel_init.S
+@@ -0,0 +1,289 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx51.h>
++#include "board-imx51.h"
++
++/*
++ * return soc version
++ * 	0x10:  TO1
++ *	0x20:  TO2
++ *	0x30:  TO3
++ */
++.macro check_soc_version ret, tmp
++.endm
++
++/*
++ * L2CC Cache setup/invalidation/disable
++ */
++.macro init_l2cc
++	/* reconfigure L2 cache aux control reg */
++	ldr r0, =0x03C000C4
++	mcr p15, 1, r0, c9, c0, 2
++.endm /* init_l2cc */
++
++/* AIPS setup - Only setup MPROTx registers.
++ * The PACR default values are good.*/
++.macro init_aips
++	/*
++	 * Set all MPROTx to be non-bufferable, trusted for R/W,
++	 * not forced to user-mode.
++	 */
++	ldr r0, =AIPS1_BASE_ADDR
++	ldr r1, =0x77777777
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++	ldr r0, =AIPS2_BASE_ADDR
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++	/*
++	 * Clear the on and off peripheral modules Supervisor Protect bit
++	 * for SDMA to access them. Did not change the AIPS control registers
++	 * (offset 0x20) access type
++	 */
++.endm /* init_aips */
++
++/* MAX (Multi-Layer AHB Crossbar Switch) setup */
++.macro init_max
++.endm /* init_max */
++
++/* M4IF setup */
++.macro init_m4if
++	/* VPU and IPU given higher priority (0x4)
++	 * IPU accesses with ID=0x1 given highest priority (=0xA)
++	 */
++	ldr r0, =M4IF_BASE_ADDR
++
++	ldr r1, =0x00000203
++	str r1, [r0, #0x40]
++
++	ldr r1, =0x0
++	str r1, [r0, #0x44]
++
++	ldr r1, =0x00120125
++	str r1, [r0, #0x9C]
++
++	ldr r1, =0x001901A3
++	str r1, [r0, #0x48]
++
++/*
++	ldr r1, =0x00000a01
++	str r1, [r0, #0x48]
++	ldr r1, =0x00000404
++	str r1, [r0, #0x40]
++*/
++.endm /* init_m4if */
++
++/* To support 133MHz DDR */
++.macro  init_drive_strength
++.endm /* init_drive_strength */
++
++/* CPLD on CS5 setup */
++.macro init_debug_board
++.endm /* init_debug_board */
++
++.macro setup_pll pll, freq
++	ldr r2, =\pll
++	ldr r1, =0x00001232
++	str r1, [r2, #PLL_DP_CTL] /* Set DPLL ON (set UPEN bit): BRMO=1 */
++	mov r1, #0x2
++	str r1, [r2, #PLL_DP_CONFIG] /* Enable auto-restart AREN bit */
++
++	str r3, [r2, #PLL_DP_OP]
++	str r3, [r2, #PLL_DP_HFS_OP]
++
++	str r4, [r2, #PLL_DP_MFD]
++	str r4, [r2, #PLL_DP_HFS_MFD]
++
++	str r5, [r2, #PLL_DP_MFN]
++	str r5, [r2, #PLL_DP_HFS_MFN]
++
++	ldr r1, =0x00001232
++	str r1, [r2, #PLL_DP_CTL]
++1:	ldr r1, [r2, #PLL_DP_CTL]
++	ands r1, r1, #0x1
++	beq 1b
++.endm
++
++.macro init_clock
++	ldr r0, =CCM_BASE_ADDR
++	mov r1, #0x00060000
++	str r1, [r0, #CLKCTL_CCDR]
++
++	/* Switch ARM to step clock */
++	mov r1, #0x4
++	str r1, [r0, #CLKCTL_CCSR]
++
++	mov r3, #DP_OP_800
++	mov r4, #DP_MFD_800
++	mov r5, #DP_MFN_800
++	setup_pll PLL1_BASE_ADDR
++	mov r3, #DP_OP_665
++	mov r4, #DP_MFD_665
++	mov r5, #DP_MFN_665
++	setup_pll PLL3_BASE_ADDR
++
++	/* Switch peripheral to PLL 3 */
++	ldr r1, =0x0000D3C0
++	str r1, [r0, #CLKCTL_CBCMR]
++	ldr r1, =0x033B9145
++	str r1, [r0, #CLKCTL_CBCDR]
++	mov r3, #DP_OP_665
++	mov r4, #DP_MFD_665
++	mov r5, #DP_MFN_665
++	setup_pll PLL2_BASE_ADDR
++
++	/* Switch peripheral to PLL2 */
++	ldr r1, =0x013B9145
++	str r1, [r0, #CLKCTL_CBCDR]
++	ldr r1, =0x0000E3C0
++	str r1, [r0, #CLKCTL_CBCMR]
++
++	mov r3, #DP_OP_216
++	mov r4, #DP_MFD_216
++	mov r5, #DP_MFN_216
++	setup_pll PLL3_BASE_ADDR
++
++	/* Set the platform clock dividers */
++	ldr r2, =ARM_BASE_ADDR
++	ldr r1, =0x00000725
++	str r1, [r2, #0x14]
++
++	/* Switch ARM back to PLL 1 */
++	mov r1, #0
++	str r1, [r0,  #CLKCTL_CCSR]
++	str r1, [r0,  #CLKCTL_CACRR]
++
++	/* Use lp_apm (24MHz) source for perclk */
++	mov r2, #0x48
++	ldr r2, [r0]
++	cmp r2, #0x10
++	ldrhs r1, =0x000020C2
++	ldrlo r1, =0x0000E3C2
++	str r1, [r0, #CLKCTL_CBCMR]
++	/* TO1.x emi = ahb, all perclk dividers are 1 since using 24MHz */
++	/* TO2.x ddr from PLL1, all perclk dividers are 1 since using 24MHz */
++	ldrhs r1, =0x59239100
++	ldrlo r1, =0x013D9100
++	strlo r1, [r0, #CLKCTL_CBCDR]
++
++	/* use PLL2 for UART source, get 66.5MHz */
++	ldr r1, =0xA5A2A020
++	str r1, [r0, #CLKCTL_CSCMR1]
++	ldr r1, =0x00C30321
++	str r1, [r0, #CLKCTL_CSCDR1]
++
++	/* make sure divider effective */
++1:	ldr r1, [r0, #CLKCTL_CDHIPR]
++	cmp r1, #0
++	bne 1b
++
++	mov r1, #0x0
++	str r1, [r0, #CLKCTL_CCDR]
++.endm
++
++.macro setup_wdog
++	ldr r0, =WDOG1_BASE_ADDR
++	mov r1, #0x30
++	strh r1, [r0]
++.endm
++
++.section ".text.init", "x"
++
++.globl lowlevel_init
++lowlevel_init:
++	/* Platform CHIP level init*/
++	ldr r0, =GPIO1_BASE_ADDR
++    ldr r1, [r0, #0x0]
++    orr r1, r1, #(1 << 23)
++    str r1, [r0, #0x0]
++    ldr r1, [r0, #0x4]
++    orr r1, r1, #(1 << 23)
++    str r1, [r0, #0x4]
++
++#ifdef TURN_OFF_IMPRECISE_ABORT
++	mrs r0, cpsr
++	bic r0, r0, #0x100
++	msr cpsr, r0
++#endif
++
++	mrc 15, 0, r1, c1, c0, 0
++
++#ifndef BRANCH_PREDICTION_ENABLE
++    	mrc 15, 0, r0, c1, c0, 1
++    	bic r0, r0, #7
++    	mcr 15, 0, r0, c1, c0, 1
++#else
++    	mrc 15, 0, r0, c1, c0, 1
++    	orr r0, r0, #7
++    	mcr 15, 0, r0, c1, c0, 1
++    	orr r1, r1, #(1<<11)
++#endif
++
++#ifdef UNALIGNED_ACCESS_ENABLE
++    	orr r1, r1, #(1<<22)
++#endif
++
++#ifdef LOW_INT_LATENCY_ENABLE
++    	orr r1, r1, #(1<<21)
++#endif
++    	mcr 15, 0, r1, c1, c0, 0
++
++    	mov r0, #0
++#ifdef BRANCH_PREDICTION_ENABLE
++   	mcr 15, 0, r0, c15, c2, 4
++#endif
++	mcr 15, 0, r0, c7, c10, 4       /* Drain the write buffer */
++
++	init_l2cc
++
++	init_aips
++
++	setup_wdog
++
++	init_max
++
++	init_m4if
++
++	init_drive_strength
++
++	cmp pc, #PHYS_SDRAM_1
++	blo init_clock_start
++	cmp pc, #(PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE)
++	blo init_clock_start
++
++init_clock_start:
++	init_clock
++	init_debug_board
++	/*init_sdram*/
++
++	/* return from mxc_nand_load */
++	/* r12 saved upper lr*/
++	b mxc_nand_load
++
++/* Board level setting value */
++DDR_PERCHARGE_CMD:	.word 0x04008008
++DDR_REFRESH_CMD:	.word 0x00008010
++DDR_LMR1_W:		.word 0x00338018
++DDR_LMR_CMD:		.word 0xB2220000
++DDR_TIMING_W:		.word 0xB02567A9
++DDR_MISC_W:		.word 0x000A0104
+diff --git a/board/freescale/imx51/u-boot.lds b/board/freescale/imx51/u-boot.lds
+new file mode 100644
+index 0000000..15d50ab
+--- /dev/null
++++ b/board/freescale/imx51/u-boot.lds
+@@ -0,0 +1,73 @@
++/*
++ * January 2004 - Changed to support H4 device
++ * Copyright (c) 2004 Texas Instruments
++ *
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text	   :
++	{
++	  /* WARNING - the following is hand-optimized to fit within	*/
++	  /* the sector layout of our flash chips!	XXX FIXME XXX	*/
++	  board/freescale/imx51/flash_header.o	(.text.flasheader)
++	  cpu/arm_cortexa8/start.o
++	  board/freescale/imx51/libimx51.a	(.text)
++	  lib_arm/libarm.a		(.text)
++	  net/libnet.a			(.text)
++	  drivers/mtd/libmtd.a		(.text)
++	  drivers/mmc/libmmc.a		(.text)
++
++	  . = DEFINED(env_offset) ? env_offset : .;
++	  common/env_embedded.o(.text)
++
++	  *(.text)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(.rodata) }
++
++	. = ALIGN(4);
++	.data : { *(.data) }
++
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/include/configs/imx51.h b/include/configs/imx51.h
+new file mode 100644
+index 0000000..4ab1acb
+--- /dev/null
++++ b/include/configs/imx51.h
+@@ -0,0 +1,221 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX51-3Stack Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx51.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
++#define CONFIG_SYS_APCS_GNU
++#define CONFIG_L2_OFF
++
++#define CONFIG_MXC		1
++#define CONFIG_MX51		1	/* in a mx51 */
++#define CONFIG_FLASH_HEADER	1
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++#define CONFIG_FLASH_HEADER_BARKER 0xB1
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
++#define CONFIG_MX51_CLK32	32768
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX51_UART	1
++#define CONFIG_MX51_UART1	1
++
++
++/* #define CONFIG_CMD_SPI */
++
++/*
++#define CONFIG_FSL_MMC		1
++#define CONFIG_DOS_PARTITION	1
++#define CONFIG_CMD_FAT		1
++*/
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX	1
++#define CONFIG_BAUDRATE		115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++#define CONFIG_MMC_BASE		0x0
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++/* Enable below configure when supporting nand */
++/* #define CONFIG_CMD_NAND */
++/* #define CONFIG_CMD_ENV */
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=smc911x\0"					\
++		"uboot_addr=0xa0000000\0"				\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootcmd=run bootcmd_net\0"				\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"prg_uboot=tftpboot ${loadaddr} ${uboot}; "		\
++			"protect off ${uboot_addr} 0xa003ffff; "	\
++			"erase ${uboot_addr} 0xa003ffff; "		\
++			"cp.b ${loadaddr} ${uboot_addr} ${filesize}; "	\
++			"setenv filesize; saveenv\0"
++
++/*Support LAN9217*/
++#define CONFIG_DRIVER_SMC911X	1
++#define CONFIG_DRIVER_SMC911X_16_BIT 1
++#define CONFIG_DRIVER_SMC911X_BASE_VARIABLE mx51_io_base_addr
++
++/*
++ * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
++ * U-Boot, RedBoot and Linux: the ethernet Rx signal is reaching the CS8900A
++ * controller inverted. The controller is capable of detecting and correcting
++ * this, but it needs 4 network packets for that. Which means, at startup, you
++ * will not receive answers to the first 4 packest, unless there have been some
++ * broadcasts on the network, or your board is on a hub. Reducing the ARP
++ * timeout from default 5 seconds to 200ms we speed up the initial TFTP
++ * transfer, should the user wish one, significantly.
++ */
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"=> "
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++/* TO1 boards */
++/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH driver setup
++ */
++#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
++
++/* Monitor at beginning of flash */
++#if defined(CONFIG_FSL_MMC)
++	#define CONFIG_MMC              1
++	#define CONFIG_CMD_MMC
++/*
++	#define CONFIG_FSL_ENV_IN_MMC
++*/
++#elif defined(CONFIG_CMD_NAND)
++	#define CONFIG_FSL_ENV_IN_NAND
++#endif
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(1024 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++/*
++ * JFFS2 partitions
++ */
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++
++#endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

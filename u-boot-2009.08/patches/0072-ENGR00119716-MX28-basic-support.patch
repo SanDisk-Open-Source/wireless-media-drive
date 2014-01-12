@@ -1,0 +1,1607 @@
+From 1c0e2611a1823029d8ae8fc1fdb5773c5b03930e Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 29 Dec 2009 15:59:45 +0800
+Subject: [PATCH] ENGR00119716: MX28 basic support.
+
+Add mx28 to u-boot and pass the compiling.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ Makefile                             |    3 +
+ board/freescale/mx28/Makefile        |   52 +++++++
+ board/freescale/mx28/config.mk       |    6 +
+ board/freescale/mx28/lowlevel_init.S |   34 +++++
+ board/freescale/mx28/mx28.c          |   82 +++++++++++
+ board/freescale/mx28/u-boot.lds      |   51 +++++++
+ cpu/arm926ejs/mx28/Makefile          |   47 ++++++
+ cpu/arm926ejs/mx28/config.mk         |    2 +
+ cpu/arm926ejs/mx28/reset.S           |   43 ++++++
+ cpu/arm926ejs/mx28/spi.c             |  255 ++++++++++++++++++++++++++++++++++
+ cpu/arm926ejs/mx28/timer.c           |  245 ++++++++++++++++++++++++++++++++
+ include/asm-arm/arch-mx28/clkctrl.h  |   64 +++++++++
+ include/asm-arm/arch-mx28/dbguart.h  |   30 ++++
+ include/asm-arm/arch-mx28/mx28.h     |   40 ++++++
+ include/asm-arm/arch-mx28/ocotp.h    |   69 +++++++++
+ include/asm-arm/arch-mx28/pinmux.h   |   42 ++++++
+ include/asm-arm/arch-mx28/spi.h      |   69 +++++++++
+ include/asm-arm/arch-mx28/ssp.h      |  100 +++++++++++++
+ include/asm-arm/arch-mx28/timrot.h   |   63 +++++++++
+ include/configs/mx28.h               |  150 ++++++++++++++++++++
+ 20 files changed, 1447 insertions(+), 0 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index d37e5ad..8230ef2 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3210,6 +3210,9 @@ apollon_config		: unconfig
+ mx25_3stack_config	:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx25_3stack freescale mx25
+ 
++mx28_config : unconfig
++	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx28 freescale mx28
++
+ imx31_litekit_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 imx31_litekit NULL mx31
+ 
+diff --git a/board/freescale/mx28/Makefile b/board/freescale/mx28/Makefile
+new file mode 100644
+index 0000000..5460fcb
+--- /dev/null
++++ b/board/freescale/mx28/Makefile
+@@ -0,0 +1,52 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= mx28.o
++SOBJS	:= lowlevel_init.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
++
+diff --git a/board/freescale/mx28/config.mk b/board/freescale/mx28/config.mk
+new file mode 100644
+index 0000000..7b57ec3
+--- /dev/null
++++ b/board/freescale/mx28/config.mk
+@@ -0,0 +1,6 @@
++#
++# image should be loaded at 0x41008000
++#
++LDSCRIPT := $(SRCTREE)/board/$(VENDOR)/$(BOARD)/u-boot.lds
++
++TEXT_BASE = 0x41008000
+diff --git a/board/freescale/mx28/lowlevel_init.S b/board/freescale/mx28/lowlevel_init.S
+new file mode 100644
+index 0000000..e874e4f
+--- /dev/null
++++ b/board/freescale/mx28/lowlevel_init.S
+@@ -0,0 +1,34 @@
++/*
++ * Board specific setup info
++ *
++ * (C) Copyright 2003, ARM Ltd.
++ * Philippe Robin, <philippe.robin@arm.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <version.h>
++
++/* Set up the platform, once the cpu has been initialized */
++.globl lowlevel_init
++lowlevel_init:
++
++	/* All SDRAM settings are done by sdram_prep */
++	mov pc, lr
+diff --git a/board/freescale/mx28/mx28.c b/board/freescale/mx28/mx28.c
+new file mode 100644
+index 0000000..fa53e82
+--- /dev/null
++++ b/board/freescale/mx28/mx28.c
+@@ -0,0 +1,82 @@
++/*
++ *
++ * (c) 2008 Embedded Alley Solutions, Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#include <common.h>
++#include <asm/arch/mx28.h>
++#include <asm/arch/clkctrl.h>
++#include <asm/arch/pinmux.h>
++#include <asm/arch/spi.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define KHz	1000
++#define MHz	(1000 * KHz)
++
++static void set_pinmux(void)
++{
++}
++
++#define IO_DIVIDER	18
++static void set_clocks(void)
++{
++}
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++
++	return 0;
++}
++
++int board_init(void)
++{
++	/* arch number of Freescale STMP 378x development board */
++	/* gd->bd->bi_arch_number = MACH_TYPE_MX28_EVK; */
++
++	/* adress of boot parameters */
++	gd->bd->bi_boot_params = LINUX_BOOT_PARAM_ADDR;
++
++	set_clocks();
++
++	set_pinmux();
++
++	/* Configure SPI on SSP1 or SSP2 */
++	spi_init();
++
++	return 0;
++}
++
++int misc_init_r(void)
++{
++	return 0;
++}
++
++int checkboard(void)
++{
++	printf("Board: MX28 EVK \n");
++	return 0;
++}
+diff --git a/board/freescale/mx28/u-boot.lds b/board/freescale/mx28/u-boot.lds
+new file mode 100644
+index 0000000..82cb8e3
+--- /dev/null
++++ b/board/freescale/mx28/u-boot.lds
+@@ -0,0 +1,51 @@
++/*
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++	. = ALIGN(4);
++	.text	:
++	{
++	  cpu/arm926ejs/start.o	(.text)
++	  *(.text)
++	}
++	.rodata : { *(.rodata) }
++	. = ALIGN(4);
++	.data : { *(.data) }
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss (NOLOAD) : { *(.bss) }
++	_end = .;
++}
+diff --git a/cpu/arm926ejs/mx28/Makefile b/cpu/arm926ejs/mx28/Makefile
+new file mode 100644
+index 0000000..3b23886
+--- /dev/null
++++ b/cpu/arm926ejs/mx28/Makefile
+@@ -0,0 +1,47 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= timer.o spi.o
++SOBJS	= reset.o
++
++SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS) $(SOBJS))
++START	:= $(addprefix $(obj),$(START))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/arm926ejs/mx28/config.mk b/cpu/arm926ejs/mx28/config.mk
+new file mode 100644
+index 0000000..b524ad1
+--- /dev/null
++++ b/cpu/arm926ejs/mx28/config.mk
+@@ -0,0 +1,2 @@
++PLATFORM_CPPFLAGS += -march=armv5te
++PLATFORM_CPPFLAGS += $(call cc-option,-mtune=arm926ejs,)
+\ No newline at end of file
+diff --git a/cpu/arm926ejs/mx28/reset.S b/cpu/arm926ejs/mx28/reset.S
+new file mode 100644
+index 0000000..324c384
+--- /dev/null
++++ b/cpu/arm926ejs/mx28/reset.S
+@@ -0,0 +1,43 @@
++/*
++ * Processor reset for Freescale MX28 SoC.
++ *
++ * Copyright (C) 2007 Sergey Kubushyn <ksi@koi8.net>
++ *
++ * -----------------------------------------------------
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++.globl reset_cpu
++reset_cpu:
++	ldr	r0, POWER_CHARGE
++	mov	r1, #0x0
++	str	r1, [r0]
++	ldr	r0, POWER_MINPWR
++	str	r1, [r0]
++	ldr	r0, CLKCTRL_RESET
++	mov	r1, #0x1
++	str	r1, [r0]
++_loop_forever:
++	b	_loop_forever
++
++POWER_MINPWR:
++	.word 0x80044020
++POWER_CHARGE:
++	.word 0x80044030
++CLKCTRL_RESET:
++	.word 0x80040120
++
+diff --git a/cpu/arm926ejs/mx28/spi.c b/cpu/arm926ejs/mx28/spi.c
+new file mode 100644
+index 0000000..cad2569
+--- /dev/null
++++ b/cpu/arm926ejs/mx28/spi.c
+@@ -0,0 +1,255 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Freescale MX28 SSP/SPI driver
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#include <asm/arch/spi.h>
++
++#define SPI_NUM_BUSES	2
++#define SPI_NUM_SLAVES	3
++
++/* Initalized in spi_init() depending on SSP port configuration */
++static unsigned long ssp_bases[SPI_NUM_BUSES];
++
++/* Set in spi_set_cfg() depending on which SSP port is being used */
++static unsigned long ssp_base = SSP1_BASE;
++
++/*
++ * Init SSP port: SSP1 (@bus = 0) or SSP2 (@bus == 1)
++ */
++static void ssp_spi_init(unsigned int bus)
++{
++	u32 spi_div;
++	u32 val = 0;
++
++	if (bus >= SPI_NUM_BUSES) {
++		printf("SPI bus %d doesn't exist\n", bus);
++		return;
++	}
++
++	ssp_base = ssp_bases[bus];
++
++	/* Reset block */
++
++	/* Clear SFTRST */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
++	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_SFTRST)
++		;
++
++	/* Clear CLKGATE */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_CLKGATE);
++
++	/* Set SFTRST and wait until CLKGATE is set */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
++	while (!(REG_RD(ssp_base + SSP_CTRL0) & CTRL0_CLKGATE))
++		;
++
++	/* Clear SFTRST and CLKGATE */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_CLKGATE);
++
++	/*
++	* Set CLK to desired value
++	*/
++
++	spi_div = ((CONFIG_SSP_CLK>>1) + CONFIG_SPI_CLK - 1) / CONFIG_SPI_CLK;
++	val = (2 << TIMING_CLOCK_DIVIDE) | ((spi_div - 1) << TIMING_CLOCK_RATE);
++	REG_WR(ssp_base + SSP_TIMING, val);
++
++	/* Set transfer parameters */
++
++	/* Set SSP SPI Master mode and word length to 8 bit */
++	REG_WR(ssp_base + SSP_CTRL1, WORD_LENGTH8 | SSP_MODE_SPI);
++
++	/* Set BUS_WIDTH to 1 bit and XFER_COUNT to 1 byte */
++	REG_WR(ssp_base + SSP_CTRL0,
++	       BUS_WIDTH_SPI1 | (0x1 << CTRL0_XFER_COUNT));
++
++	/*
++	* Set BLOCK_SIZE and BLOCK_COUNT to 0, so that XFER_COUNT
++	* reflects number of bytes to send. Disalbe other bits as
++	* well
++	*/
++	REG_WR(ssp_base + SSP_CMD0, 0x0);
++}
++
++/*
++ * Init SSP ports, must be called first and only once
++ */
++void spi_init(void)
++{
++#ifdef CONFIG_SPI_SSP1
++	ssp_bases[0] = SSP1_BASE;
++	ssp_spi_init(0);
++#endif
++
++#ifdef CONFIG_SPI_SSP2
++	ssp_bases[1] = SSP2_BASE;
++	ssp_spi_init(1);
++#endif
++}
++
++void spi_set_cfg(unsigned int bus, unsigned int cs, unsigned long mode)
++{
++	u32 clr_mask = 0;
++	u32 set_mask = 0;
++
++	if (bus >= SPI_NUM_BUSES || cs >= SPI_NUM_SLAVES) {
++		printf("SPI device %d:%d doesn't exist", bus, cs);
++		return;
++	}
++
++	if (ssp_bases[bus] == 0) {
++		printf("SSP port %d isn't in SPI mode\n", bus + 1);
++		return;
++	}
++
++	/* Set SSP port to use */
++	ssp_base = ssp_bases[bus];
++
++	/* Set phase and polarity: HW_SSP_CTRL1 */
++	if (mode & SPI_PHASE)
++		set_mask |= CTRL1_PHASE;
++	else
++		clr_mask |= CTRL1_PHASE;
++
++	if (mode & SPI_POLARITY)
++		set_mask |= CTRL1_POLARITY;
++	else
++		clr_mask |= CTRL1_POLARITY;
++
++	REG_SET(ssp_base + SSP_CTRL1, set_mask);
++	REG_CLR(ssp_base + SSP_CTRL1, clr_mask);
++
++	/* Set SSn number: HW_SSP_CTRL0 */
++	REG_CLR(ssp_base + SSP_CTRL0, SPI_CS_CLR_MASK);
++
++	switch (cs) {
++	case 0:
++		set_mask = SPI_CS0;
++		break;
++	case 1:
++		set_mask = SPI_CS1;
++		break;
++	case 2:
++		set_mask = SPI_CS2;
++		break;
++	}
++
++	REG_SET(ssp_base + SSP_CTRL0, set_mask);
++}
++
++/* Read single data byte */
++static unsigned char spi_read(void)
++{
++	unsigned char b = 0;
++
++	/* Set XFER_LENGTH to 1 */
++	REG_CLR(ssp_base + SSP_CTRL0, 0xffff);
++	REG_SET(ssp_base + SSP_CTRL0, 1);
++
++	/* Enable READ mode */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_READ);
++
++	/* Set RUN bit */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_RUN);
++
++
++	/* Set transfer */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_DATA_XFER);
++
++	while (REG_RD(ssp_base + SSP_STATUS) & STATUS_FIFO_EMPTY)
++		;
++
++	/* Read data byte */
++	b = REG_RD(ssp_base + SSP_DATA) & 0xff;
++
++	/* Wait until RUN bit is cleared */
++	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_RUN)
++			;
++
++	return b;
++}
++
++/* Write single data byte */
++static void spi_write(unsigned char b)
++{
++	/* Set XFER_LENGTH to 1 */
++	REG_CLR(ssp_base + SSP_CTRL0, 0xffff);
++	REG_SET(ssp_base + SSP_CTRL0, 1);
++
++	/* Enable WRITE mode */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_READ);
++
++	/* Set RUN bit */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_RUN);
++
++	/* Write data byte */
++	REG_WR(ssp_base + SSP_DATA, b);
++
++	/* Set transfer */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_DATA_XFER);
++
++	/* Wait until RUN bit is cleared */
++	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_RUN)
++		;
++}
++
++static void spi_lock_cs(void)
++{
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_IGNORE_CRC);
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_LOCK_CS);
++}
++
++static void spi_unlock_cs(void)
++{
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_LOCK_CS);
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_IGNORE_CRC);
++}
++
++void spi_txrx(const char *dout, unsigned int tx_len, char *din,
++	       unsigned int rx_len, unsigned long flags)
++{
++	int i;
++
++	if (tx_len == 0 && rx_len == 0)
++		return;
++
++	if (flags & SPI_START)
++		spi_lock_cs();
++
++	for (i = 0; i < tx_len; i++) {
++
++		/* Check if it is last data byte to transfer */
++		if (flags & SPI_STOP && rx_len == 0 && i == tx_len - 1)
++			spi_unlock_cs();
++
++		spi_write(dout[i]);
++	}
++
++	for (i = 0; i < rx_len; i++) {
++
++		/* Check if it is last data byte to transfer */
++		if (flags & SPI_STOP && i == rx_len - 1)
++			spi_unlock_cs();
++
++		din[i] = spi_read();
++	}
++}
+diff --git a/cpu/arm926ejs/mx28/timer.c b/cpu/arm926ejs/mx28/timer.c
+new file mode 100644
+index 0000000..ffad4d8
+--- /dev/null
++++ b/cpu/arm926ejs/mx28/timer.c
+@@ -0,0 +1,245 @@
++/*
++ * (C) Copyright 2003
++ * Texas Instruments <www.ti.com>
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Marius Groeger <mgroeger@sysgo.de>
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Alex Zuepke <azu@sysgo.de>
++ *
++ * (C) Copyright 2002-2004
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * (C) Copyright 2004
++ * Philippe Robin, ARM Ltd. <philippe.robin@arm.com>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/mx28.h>
++#include <asm/arch/timrot.h>
++
++#define CONFIG_USE_TIMER0
++
++#if defined(CONFIG_USE_TIMER0)
++#define TIMCTRL		TIMCTRL0
++#define TIMCOUNT	TIMCOUNT0
++#elif defined(CONFIG_USE_TIMER1)
++#define TIMCTRL		TIMCTRL1
++#define TIMCOUNT	TIMCOUNT1
++#elif defined(CONFIG_USE_TIMER2)
++#define TIMCTRL		TIMCTRL2
++#define TIMCOUNT	TIMCOUNT2
++#elif defined(CONFIG_USE_TIMER3)
++#define TIMCTRL		TIMCTRL3
++#define TIMCOUNT	TIMCOUNT3
++#else
++#error "Define which STMP378x timer to use"
++#endif
++
++#define TIMER_LOAD_VAL 0x0000ffff
++
++/* macro to read the 16 bit timer */
++#define READ_TIMER ((REG_RD(TIMROT_BASE + TIMCOUNT) & 0xffff0000) >> 16)
++
++static ulong timestamp;
++static ulong lastdec;
++
++int timer_init(void)
++{
++	u32 val;
++
++	/*
++	 * Reset Timers and Rotary Encoder module
++	 */
++
++	/* Clear SFTRST */
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 31);
++	while (REG_RD(TIMROT_BASE + ROTCTRL) & (1 << 31))
++		;
++
++	/* Clear CLKGATE */
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 30);
++
++	/* Set SFTRST and wait until CLKGATE is set */
++	REG_SET(TIMROT_BASE + ROTCTRL, 1 << 31);
++	while (!(REG_RD(TIMROT_BASE + ROTCTRL) & (1 << 30)))
++		;
++
++	/* Clear SFTRST and CLKGATE */
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 31);
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 30);
++
++	/*
++	* Now initialize timer
++	*/
++
++	/* Set fixed_count to 0 */
++	REG_WR(TIMROT_BASE + TIMCOUNT, 0);
++
++	/* set UPDATE bit and 1Khz frequency */
++	REG_WR(TIMROT_BASE + TIMCTRL,
++	       TIMCTRL_RELOAD | TIMCTRL_UPDATE | TIMCTRL_SELECT_1KHZ);
++
++	/* Set fixed_count to maximal value */
++	REG_WR(TIMROT_BASE + TIMCOUNT, TIMER_LOAD_VAL);
++
++	/* init the timestamp and lastdec value */
++	reset_timer_masked();
++
++	return 0;
++}
++
++/*
++ * timer without interrupts
++ */
++
++void reset_timer(void)
++{
++	reset_timer_masked();
++}
++
++ulong get_timer(ulong base)
++{
++	return get_timer_masked() - base;
++}
++
++void set_timer(ulong t)
++{
++	timestamp = t;
++}
++
++/* delay x useconds AND perserve advance timstamp value */
++void udelay(unsigned long usec)
++{
++	ulong tmo, tmp;
++
++	if (usec >= 1000) {
++		/* if "big" number, spread normalization to seconds */
++		tmo = usec / 1000;
++		/* start to normalize for usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;
++		/* find number of "ticks" to wait to achieve target */
++		tmo /= 1000;
++		/* finish normalize. */
++	} else {
++		/* else small number, don't kill it prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++		tmo /= (1000*1000);
++	}
++
++	tmp = get_timer(0);
++		/* get current timestamp */
++	if ((tmo + tmp + 1) < tmp)
++		/* if setting this fordward will roll time stamp */
++		reset_timer_masked();
++		/* reset "advancing" timestamp to 0, set lastdec value */
++	else
++		tmo += tmp;
++		/* else, set advancing stamp wake up time */
++
++	while (get_timer_masked() < tmo)/* loop till event */
++		/*NOP*/;
++}
++
++void reset_timer_masked(void)
++{
++	/* reset time */
++	lastdec = READ_TIMER;  /* capure current decrementer value time */
++	timestamp = 0;	       /* start "advancing" time stamp from 0 */
++}
++
++ulong get_timer_masked(void)
++{
++	ulong now = READ_TIMER;		/* current tick value */
++
++	if (lastdec >= now) {		/* normal mode (non roll) */
++		/* normal mode */
++		timestamp += lastdec - now;
++		/* move stamp fordward with absoulte diff ticks */
++	} else {
++		/* we have overflow of the count down timer */
++		/* nts = ts + ld + (TLV - now)
++		 * ts=old stamp, ld=time that passed before passing through -1
++		 * (TLV-now) amount of time after passing though -1
++		 * nts = new "advancing time stamp"...it could also roll
++		 * and cause problems.
++		 */
++		timestamp += lastdec + TIMER_LOAD_VAL - now + 1;
++	}
++	lastdec = now;
++
++	return timestamp;
++}
++
++/* waits specified delay value and resets timestamp */
++void udelay_masked(unsigned long usec)
++{
++	ulong tmo;
++	ulong endtime;
++	signed long diff;
++
++	if (usec >= 1000) {
++		/* if "big" number, spread normalization to seconds */
++		tmo = usec / 1000;
++		/* start to normalize for usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;
++		/* find number of "ticks" to wait to achieve target */
++		tmo /= 1000;
++		/* finish normalize. */
++	} else {
++		/* else small number, don't kill it prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++		tmo /= (1000*1000);
++	}
++
++	endtime = get_timer_masked() + tmo;
++
++	do {
++		ulong now = get_timer_masked();
++		diff = endtime - now;
++	} while (diff >= 0);
++}
++
++/*
++ * This function is derived from PowerPC code (read timebase as long long).
++ * On ARM it just returns the timer value.
++ */
++unsigned long long get_ticks(void)
++{
++	return get_timer(0);
++}
++
++/*
++ * This function is derived from PowerPC code (timebase clock frequency).
++ * On ARM it returns the number of timer ticks per second.
++ */
++ulong get_tbclk(void)
++{
++	ulong tbclk;
++
++	tbclk = CONFIG_SYS_HZ;
++	return tbclk;
++}
+diff --git a/include/asm-arm/arch-mx28/clkctrl.h b/include/asm-arm/arch-mx28/clkctrl.h
+new file mode 100644
+index 0000000..76db80c
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/clkctrl.h
+@@ -0,0 +1,64 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Clock control register descriptions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef CLKCTRL_H
++#define CLKCTRL_H
++
++#include <asm/arch/mx28.h>
++
++#define CLKCTRL_BASE	(MX28_REGS_BASE + 0x40000)
++
++#define	CLKCTRL_PLLCTRL0	0x000
++#define	CLKCTRL_PLLCTRL1	0x010
++#define	CLKCTRL_CPU		0x020
++#define CLKCTRL_HBUS		0x030
++#define	CLKCTRL_XBUS		0x040
++#define	CLKCTRL_XTAL		0x050
++#define CLKCTRL_PIX		0x060
++#define	CLKCTRL_SSP		0x070
++#define	CLKCTRL_GPMI		0x080
++#define CLKCTRL_SPDIF		0x090
++#define	CLKCTRL_EMI		0x0a0
++#define	CLKCTRL_IR		0x0b0
++#define CLKCTRL_SAIF		0x0c0
++#define	CLKCTRL_TV		0x0d0
++#define	CLKCTRL_ETM		0x0e0
++#define	CLKCTRL_FRAC		0x0f0
++#define	CLKCTRL_FRAC1		0x100
++#define CLKCTRL_CLKSEQ		0x110
++#define	CLKCTRL_RESET		0x120
++#define	CLKCTRL_STATUS		0x130
++#define CLKCTRL_VERSION		0x140
++
++/* CLKCTRL_SSP register bits, bit fields and values */
++#define	SSP_CLKGATE	(1 << 31)
++#define	SSP_BUSY	(1 << 29)
++#define	SSP_DIV_FRAC_EN	(1 << 9)
++#define SSP_DIV		0
++
++/* CLKCTRL_FRAC register bits, bit fields and values */
++#define	FRAC_CLKGATEIO	(1 << 31)
++#define FRAC_IOFRAC	24
++
++/* CLKCTRL_FRAC register bits, bit fields and values */
++#define CLKSEQ_BYPASS_SSP	(1 << 5)
++
++#endif /* CLKCTRL_H */
+diff --git a/include/asm-arm/arch-mx28/dbguart.h b/include/asm-arm/arch-mx28/dbguart.h
+new file mode 100644
+index 0000000..b9a4bae
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/dbguart.h
+@@ -0,0 +1,30 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Debug UART register definitions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#ifndef DBGUART_H
++#define DBGUART_H
++
++#include <asm/arch/mx28.h>
++
++#define DBGUART_BASE	(MX28_REGS_BASE + 0x00070000)
++
++#endif /* DBGUART_H */
+diff --git a/include/asm-arm/arch-mx28/mx28.h b/include/asm-arm/arch-mx28/mx28.h
+new file mode 100644
+index 0000000..b6343f3
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/mx28.h
+@@ -0,0 +1,40 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef MX28_H
++#define MX28_H
++
++/*
++ * Most of MX28 SoC registers are associated with four addresses
++ * used for different operations - read/write, set, clear and toggle bits.
++ *
++ * Some of registers do not implement such feature and, thus, should be
++ * accessed/manipulated via single address in common way.
++ */
++#define REG_RD(x)	(*(volatile unsigned int *)(x))
++#define REG_WR(x, v)	((*(volatile unsigned int *)(x)) = (v))
++#define REG_SET(x, v)	((*(volatile unsigned int *)((x) + 0x04)) = (v))
++#define REG_CLR(x, v)	((*(volatile unsigned int *)((x) + 0x08)) = (v))
++#define REG_TOG(x, v)	((*(volatile unsigned int *)((x) + 0x0c)) = (v))
++
++#define MX28_OCRAM_BASE	0x00000000
++#define MX28_SDRAM_BASE	0x40000000
++#define MX28_REGS_BASE	0x80000000
++
++#endif /* MX28_H */
+diff --git a/include/asm-arm/arch-mx28/ocotp.h b/include/asm-arm/arch-mx28/ocotp.h
+new file mode 100644
+index 0000000..9396820
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/ocotp.h
+@@ -0,0 +1,69 @@
++/* Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * On-Chip OTP register descriptions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef OCOTP_H
++#define OCOTP_H
++
++#include <asm/arch/mx28.h>
++
++#define OCOTP_BASE	(MX28_REGS_BASE + 0x2c000)
++
++#define	OCOTP_CTRL		0x000
++#define	OCOTP_CTRL_SET		0x004
++#define	OCOTP_CTRL_CLR		0x008
++#define	OCOTP_CTRL_TOG		0x00c
++#define	OCOTP_DATA		0x010
++#define	OCOTP_CUST0		0x020
++#define	OCOTP_CUST1		0x030
++#define	OCOTP_CUST2		0x040
++#define	OCOTP_CUST3		0x050
++#define	OCOTP_CRYPTO1		0x070
++#define	OCOTP_CRYPTO2		0x080
++#define	OCOTP_CRYPTO3		0x090
++#define	OCOTP_HWCAP0		0x0a0
++#define	OCOTP_HWCAP1		0x0b0
++#define	OCOTP_HWCAP2		0x0c0
++#define	OCOTP_HWCAP3		0x0d0
++#define	OCOTP_HWCAP4		0x0e0
++#define	OCOTP_HWCAP5		0x0f0
++#define	OCOTP_SWCAP		0x100
++#define	OCOTP_CUSTCAP		0x110
++#define	OCOTP_LOCK		0x120
++#define	OCOTP_OPS0		0x130
++#define	OCOTP_OPS1		0x140
++#define	OCOTP_OPS2		0x150
++#define	OCOTP_OPS3		0x160
++#define	OCOTP_UN0		0x170
++#define	OCOTP_UN1		0x180
++#define	OCOTP_UN2		0x190
++#define	OCOTP_ROM0		0x1a0
++#define	OCOTP_ROM1		0x1b0
++#define	OCOTP_ROM2		0x1c0
++#define	OCOTP_ROM3		0x1d0
++#define	OCOTP_ROM4		0x1e0
++#define	OCOTP_ROM5		0x1f0
++#define	OCOTP_ROM6		0x200
++#define	OCOTP_ROM7		0x210
++#define	OCOTP_VERSION		0x220
++
++
++/* OCOTP_CTRL register bits, bit fields and values */
++#define CTRL_RD_BANK_OPEN	(1 << 12)
++#define CTRL_BUSY		(8 << 12)
++
++#endif /* OCOTP_H */
+diff --git a/include/asm-arm/arch-mx28/pinmux.h b/include/asm-arm/arch-mx28/pinmux.h
+new file mode 100644
+index 0000000..db581bc
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/pinmux.h
+@@ -0,0 +1,42 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Clock control register descriptions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef PINMUX_H
++#define PINMUX_H
++
++#include <asm/arch/mx28.h>
++
++#define	PINCTRL_BASE	(MX28_REGS_BASE + 0x18000)
++
++#define PINCTRL_CTRL		0x000
++#define	PINCTRL_MUXSEL(n)	(0x100 + 0x10*(n))
++#define PINCTRL_DRIVE(n)	(0x200 + 0x10*(n))
++#define PINCTRL_PULL(n)		(0x400 + 0x10*(n))
++#define PINCTRL_DOUT(n)		(0x500 + 0x10*(n))
++#define PINCTRL_DIN(n)		(0x600 + 0x10*(n))
++#define PINCTRL_DOE(n)		(0x700 + 0x10*(n))
++#define PINCTRL_PIN2IRQ(n)	(0x800 + 0x10*(n))
++#define PINCTRL_IRQEN(n)	(0x900 + 0x10*(n))
++#define PINCTRL_IRQLEVEL(n)	(0xa00 + 0x10*(n))
++#define PINCTRL_IRQPOL(n)	(0xb00 + 0x10*(n))
++#define PINCTRL_IRQSTAT(n)	(0xc00 + 0x10*(n))
++
++#endif /* PINMUX_H */
+diff --git a/include/asm-arm/arch-mx28/spi.h b/include/asm-arm/arch-mx28/spi.h
+new file mode 100644
+index 0000000..afd3245
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/spi.h
+@@ -0,0 +1,69 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * SSP/SPI driver
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef SPI_H
++#define SPI_H
++
++#include <config.h>
++#include <common.h>
++#include <asm/arch/ssp.h>
++
++/*
++ * Flags to set SPI mode
++ */
++#define SPI_PHASE	0x1 /* Set phase to 1 */
++#define SPI_POLARITY	0x2 /* Set polarity to 1 */
++
++/* Various flags to control SPI transfers */
++#define SPI_START	0x1	/* Lock CS signal */
++#define SPI_STOP	0x2	/* Unlock CS signal */
++
++/*
++ * Init SSPx interface, must be called first
++ */
++void spi_init(void);
++
++/*
++ * Set phase, polarity and CS number (SS0, SS1, SS2)
++ */
++void spi_set_cfg(unsigned int bus, unsigned int cs, unsigned long mode);
++
++
++/*
++ * Send @rx_len bytes from @dout, then receive @rx_len bytes
++ * saving them to @din
++ */
++void spi_txrx(const char *dout, unsigned int tx_len, char *din,
++	       unsigned int rx_len, unsigned long flags);
++
++
++/* Lock/unlock SPI bus */
++static inline void spi_lock(void)
++{
++	disable_interrupts();
++}
++
++static inline void spi_unlock(void)
++{
++	enable_interrupts();
++}
++
++#endif /* SPI_H */
+diff --git a/include/asm-arm/arch-mx28/ssp.h b/include/asm-arm/arch-mx28/ssp.h
+new file mode 100644
+index 0000000..f6e8e28
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/ssp.h
+@@ -0,0 +1,100 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * SSP register definitions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef SSP_H
++#define SSP_H
++
++#include <asm/arch/mx28.h>
++
++#define SSP1_BASE	(MX28_REGS_BASE + 0x10000)
++#define SSP2_BASE	(MX28_REGS_BASE + 0x34000)
++
++#define SSP_CTRL0	0x000
++#define SSP_CMD0	0x010
++#define SSP_CMD1	0x020
++#define SSP_COMPREF	0x030
++#define SSP_COMPMASK	0x040
++#define SSP_TIMING	0x050
++#define SSP_CTRL1	0x060
++#define SSP_DATA	0x070
++#define SSP_SDRESP0	0x080
++#define SSP_SDRESP1	0x090
++#define SSP_SDRESP2	0x0a0
++#define SSP_SDRESP3	0x0b0
++#define SSP_STATUS	0x0c0
++#define SSP_DEBUG	0x100
++#define SSP_VERSION	0x110
++
++/* CTRL0 bits, bit fields and values */
++#define CTRL0_SFTRST		(0x1 << 31)
++#define CTRL0_CLKGATE		(0x1 << 30)
++#define	CTRL0_RUN		(0x1 << 29)
++#define CTRL0_LOCK_CS		(0x1 << 27)
++#define CTRL0_IGNORE_CRC	(0x1 << 26)
++#define CTRL0_DATA_XFER		(0x1 << 24)
++#define CTRL0_READ		(0x1 << 25)
++#define CTRL0_BUS_WIDTH		22
++#define CTRL0_WAIT_FOR_IRQ	(0x1 << 21)
++#define CTRL0_WAIT_FOR_CMD	(0x1 << 20)
++#define CTRL0_XFER_COUNT	0
++
++#define BUS_WIDTH_SPI1	(0x0 << CTRL0_BUS_WIDTH)
++#define BUS_WIDTH_SPI4	(0x1 << CTRL0_BUS_WIDTH)
++#define BUS_WIDTH_SPI8	(0x2 << CTRL0_BUS_WIDTH)
++
++#define SPI_CS0		0x0
++#define SPI_CS1		CTRL0_WAIT_FOR_CMD
++#define SPI_CS2		CTRL0_WAIT_FOR_IRQ
++#define SPI_CS_CLR_MASK	(CTRL0_WAIT_FOR_CMD | CTRL0_WAIT_FOR_IRQ)
++
++/* CMD0 bits, bit fields and values */
++#define CMD0_BLOCK_SIZE		16
++#define CMD0_BLOCK_COUNT	12
++#define CMD0_CMD		0
++
++/* TIMING bits, bit fields and values */
++#define TIMING_TIMEOUT		16
++#define TIMING_CLOCK_DIVIDE	8
++#define TIMING_CLOCK_RATE	0
++
++/* CTRL1 bits, bit fields and values */
++#define CTRL1_DMA_ENABLE	(0x1 << 13)
++#define CTRL1_PHASE		(0x1 << 10)
++#define CTRL1_POLARITY		(0x1 << 9)
++#define CTRL1_SLAVE_MODE	(0x1 << 8)
++#define CTRL1_WORD_LENGTH	4
++#define CTRL1_SSP_MODE		0
++
++#define WORD_LENGTH4	(0x3 << CTRL1_WORD_LENGTH)
++#define WORD_LENGTH8	(0x7 << CTRL1_WORD_LENGTH)
++#define WORD_LENGTH16	(0xF << CTRL1_WORD_LENGTH)
++
++#define SSP_MODE_SPI	(0x0 << CTRL1_SSP_MODE)
++#define SSP_MODE_SSI	(0x1 << CTRL1_SSP_MODE)
++#define SSP_MODE_SD_MMC	(0x3 << CTRL1_SSP_MODE)
++#define SSP_MODE_MS	(0x4 << CTRL1_SSP_MODE)
++#define SSP_MODE_ATA	(0x7 << CTRL1_SSP_MODE)
++
++/* CTRL1 bits, bit fields and values */
++#define STATUS_FIFO_EMPTY	(1 << 5)
++#define STATUS_FIFO_FULL	(1 << 8)
++
++#endif /* SSP_H */
+diff --git a/include/asm-arm/arch-mx28/timrot.h b/include/asm-arm/arch-mx28/timrot.h
+new file mode 100644
+index 0000000..ec9e716
+--- /dev/null
++++ b/include/asm-arm/arch-mx28/timrot.h
+@@ -0,0 +1,63 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Timers and rotary encoder register definitions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef TIMROT_H
++#define TIMROT_H
++
++#include <asm/arch/mx28.h>
++
++#define TIMROT_BASE	(MX28_REGS_BASE + 0x00068000)
++
++/* Timer and rotary encoder register offsets */
++#define ROTCTRL		0x0
++#define ROTCOUNT	0x10
++#define TIMCTRL0	0x20
++#define TIMCOUNT0	0x30
++#define TIMCTRL1	0x40
++#define TIMCOUNT1	0x50
++#define TIMCTRL2	0x60
++#define TIMCOUNT2	0x70
++#define TIMCTRL3	0x80
++#define TIMCTRL3	0x90
++
++/* TIMCTRL bits, bit fields and values */
++#define TIMCTRL_SELECT		0
++#define TIMCTRL_PRESCALE	4
++#define TIMCTRL_RELOAD		(1 << 6)
++#define TIMCTRL_UPDATE		(1 << 7)
++#define TIMCTRL_POLARITY	(1 << 8)
++#define TIMCTRL_IRQEN		(1 << 14)
++#define TIMCTRL_IRQ		(1 << 15)
++
++#define TIMCTRL_SELECT_PWM0	(0x1 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM1	(0x2 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM2	(0x3 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM3	(0x4 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM4	(0x5 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_ROTARYA	(0x6 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_ROTARYB	(0x7 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_32KHZ	(0x8 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_8KHZ	(0x9 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_4KHZ	(0xa << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_1KHZ	(0xb << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_ALWAYS	(0xc << TIMCTRL_SELECT)
++
++#endif /* TIMROT_H */
+diff --git a/include/configs/mx28.h b/include/configs/mx28.h
+new file mode 100644
+index 0000000..4af0a28
+--- /dev/null
++++ b/include/configs/mx28.h
+@@ -0,0 +1,150 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions, Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++#include <asm/sizes.h>
++
++/*
++ * Define this to make U-Boot skip low level initialization when loaded
++ * by initial bootloader. Not required by NAND U-Boot version but IS
++ * required for a NOR version used to burn the real NOR U-Boot into
++ * NOR Flash. NAND and NOR support for DaVinci chips is mutually exclusive
++ * so it is NOT possible to build a U-Boot with both NAND and NOR routines.
++ * NOR U-Boot is loaded directly from Flash so it must perform all the
++ * low level initialization itself. NAND version is loaded by an initial
++ * bootloader (UBL in TI-ese) that performs such an initialization so it's
++ * skipped in NAND version. The third DaVinci boot mode loads a bootloader
++ * via UART0 and that bootloader in turn loads and runs U-Boot (or whatever)
++ * performing low level init prior to loading. All that means we can NOT use
++ * NAND version to put U-Boot into NOR because it doesn't have NOR support and
++ * we can NOT use NOR version because it performs low level initialization
++ * effectively destroying itself in DDR memory. That's why a separate NOR
++ * version with this define is needed. It is loaded via UART, then one uses
++ * it to somehow download a proper NOR version built WITHOUT this define to
++ * RAM (tftp?) and burn it to NOR Flash. I would be probably able to squeeze
++ * NOR support into the initial bootloader so it won't be needed but DaVinci
++ * static RAM might be too small for this (I have something like 2Kbytes left
++ * as of now, without NOR support) so this might've not happened...
++ *
++ */
++
++/*===================*/
++/* SoC Configuration */
++/*===================*/
++#define CONFIG_ARM926EJS			/* arm926ejs CPU core */
++#define CONFIG_MX28				/* STMP378x SoC */
++#define CONFIG_SYS_CLK_FREQ	120000000	/* Arm Clock frequency */
++#define CONFIG_USE_TIMER0			/* use timer 0 */
++#define CONFIG_SYS_HZ		1000		/* Ticks per second */
++/*=============*/
++/* Memory Info */
++/*=============*/
++#define CONFIG_SYS_MALLOC_LEN	(0x10000 + 128*1024)	/* malloc() len */
++#define CONFIG_SYS_GBL_DATA_SIZE 128		/* reserved for initial data */
++#define CONFIG_SYS_MEMTEST_START 0x40000000	/* memtest start address */
++#define CONFIG_SYS_MEMTEST_END	 0x41000000	/* 16MB RAM test */
++#define CONFIG_NR_DRAM_BANKS	1		/* we have 1 bank of DRAM */
++#define CONFIG_STACKSIZE	(256*1024)	/* regular stack */
++#define PHYS_SDRAM_1		0x40000000	/* mDDR Start */
++#define PHYS_SDRAM_1_SIZE	0x02000000	/* mDDR size 32MB */
++
++/*====================*/
++/* Serial Driver info */
++/*====================*/
++#define CONFIG_STMP3XXX_DBGUART			/* 378x debug UART */
++#define CONFIG_DBGUART_CLK	24000000
++#define CONFIG_BAUDRATE		115200		/* Default baud rate */
++#define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++/*====================*/
++/* SPI Driver info */
++/*====================*/
++#define CONFIG_SSP_CLK		48000000
++#define CONFIG_SPI_CLK		3000000
++#define CONFIG_SPI_SSP1
++#undef CONFIG_SPI_SSP2
++
++/*=====================*/
++/* Flash & Environment */
++/*=====================*/
++#define CONFIG_SYS_NO_FLASH			/* Flash is not supported */
++#define CONFIG_ENV_IS_NOWHERE		/* Store ENV in memory only */
++#define CONFIG_ENV_SIZE		0x20000
++
++/*==============================*/
++/* U-Boot general configuration */
++/*==============================*/
++#undef	CONFIG_USE_IRQ				/* No IRQ/FIQ in U-Boot */
++#define CONFIG_MISC_INIT_R
++#define CONFIG_NETMASK		255.255.255.0
++#define CONFIG_IPADDR		192.167.10.2
++#define CONFIG_SERVERIP		192.167.10.1
++#define CONFIG_BOOTDELAY	2
++#define CONFIG_BOOTFILE		"uImage"	/* Boot file name */
++#define CONFIG_SYS_PROMPT	"stmp378x U-Boot > "
++						/* Monitor Command Prompt */
++#define CONFIG_SYS_CBSIZE	1024		/* Console I/O Buffer Size  */
++#define CONFIG_SYS_PBSIZE	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++						/* Print buffer sz */
++#define CONFIG_SYS_MAXARGS	16		/* max number of command args */
++#define CONFIG_SYS_BARGSIZE	CONFIG_SYS_CBSIZE
++						/* Boot Argument Buffer Size */
++#define CONFIG_SYS_LOAD_ADDR	0x40400000
++				/* default Linux kernel load address */
++#define CONFIG_VERSION_VARIABLE
++#define CONFIG_AUTO_COMPLETE	/* Won't work with hush so far, may be later */
++#define CFG_HUSH_PARSER
++#define CFG_PROMPT_HUSH_PS2	"> "
++#define CONFIG_CMDLINE_EDITING
++#define CFG_LONGHELP
++#define CONFIG_CRC32_VERIFY
++#define CONFIG_MX_CYCLIC
++
++/*===================*/
++/* Linux Information */
++/*===================*/
++#define LINUX_BOOT_PARAM_ADDR	0x40000100
++#define CONFIG_CMDLINE_TAG
++#define CONFIG_SETUP_MEMORY_TAGS
++#define CONFIG_BOOTARGS		"console=ttyAM0,115200n8 "\
++			"root=/dev/mtdblock1 rootfstype=jffs2 lcd_panel=lms350"
++#define CONFIG_BOOTCOMMAND	"tftpboot ; bootm"
++
++/*=================*/
++/* U-Boot commands */
++/*=================*/
++#include <config_cmd_default.h>
++#define CONFIG_CMD_ASKENV
++#define CONFIG_CMD_DHCP
++#undef CONFIG_CMD_DIAG
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_NET
++#define CONFIG_CMD_SAVES
++#undef CONFIG_CMD_IMLS
++
++/* Ethernet chip - select an alternative driver */
++#define CONFIG_ENC28J60_ETH
++#define CONFIG_ENC28J60_ETH_SPI_BUS	0
++#define CONFIG_ENC28J60_ETH_SPI_CS	0
++
++#endif /* __CONFIG_H */
+-- 
+1.5.4.4
+

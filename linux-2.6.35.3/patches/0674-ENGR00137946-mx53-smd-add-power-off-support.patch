@@ -1,0 +1,42 @@
+From ce37115c96f9a6adf95ed4f5fa74a72798fc1bad Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 13 Jan 2011 19:10:40 +0800
+Subject: [PATCH] ENGR00137946 mx53 smd: add power off support
+
+Clear SYS_ON_OFF_CTRL(GPIO7) as 0 to power down
+the system.
+SW19 must be put as location 2 to make it take
+effect.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 19c17d5..8762cb4 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -1005,6 +1005,11 @@ static struct mxc_bt_rfkill_platform_data mxc_bt_rfkill_data = {
+ 	.power_change = mx53_smd_bt_power_change,
+ };
+ 
++static void mx53_smd_power_off(void)
++{
++	gpio_request(MX53_SMD_SYS_ON_OFF_CTL, "power-off");
++	gpio_set_value(MX53_SMD_SYS_ON_OFF_CTL, 0);
++}
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -1166,6 +1171,7 @@ static void __init mxc_board_init(void)
+ 	mxc_cpu_common_init();
+ 	mx53_smd_io_init();
+ 
++	pm_power_off = mx53_smd_power_off;
+ 	mxc_register_device(&mxc_dma_device, NULL);
+ 	mxc_register_device(&mxc_wdt_device, NULL);
+ 	mxc_register_device(&mxcspi1_device, &mxcspi1_data);
+-- 
+1.5.4.4
+

@@ -1,0 +1,80 @@
+From 029aff138902466bdfc1e62c761e89f8d37e83ea Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 16 Mar 2010 16:09:39 +0800
+Subject: [PATCH] ENGR000121601: FEC not work in mx28 u-boot
+
+FEC not work in mx28 u-boot.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/net/mxc_fec.c      |   11 ++++++++++-
+ include/asm-arm/fec.h      |   12 ++++++++++++
+ include/configs/mx28_evk.h |    1 +
+ 3 files changed, 23 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index 1a9f53f..314496e 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -336,12 +336,21 @@ static void setFecDuplexSpeed(volatile fec_t *fecp, unsigned char addr,
+ 
+ 	if ((dup_spd >> 16) == FULL) {
+ 		/* Set maximum frame length */
++#ifdef CONFIG_RMII
++		fecp->rcr = FEC_RCR_MAX_FL(PKT_MAXBUF_SIZE) | FEC_RCR_RMII_MODE;
++#else
+ 		fecp->rcr = FEC_RCR_MAX_FL(PKT_MAXBUF_SIZE) | FEC_RCR_MII_MODE;
++#endif
+ 		fecp->tcr = FEC_TCR_FDEN;
+ 	} else {
+ 		/* Half duplex mode */
++#ifdef CONFIG_RMII
+ 		fecp->rcr = FEC_RCR_MAX_FL(PKT_MAXBUF_SIZE) |
+-		    FEC_RCR_MII_MODE | FEC_RCR_DRT;
++			FEC_RCR_RMII_MODE | FEC_RCR_DRT;
++#else
++		fecp->rcr = FEC_RCR_MAX_FL(PKT_MAXBUF_SIZE) |
++			FEC_RCR_MII_MODE | FEC_RCR_DRT;
++#endif
+ 		fecp->tcr &= ~FEC_TCR_FDEN;
+ 	}
+ 
+diff --git a/include/asm-arm/fec.h b/include/asm-arm/fec.h
+index 226bb26..48da9c5 100644
+--- a/include/asm-arm/fec.h
++++ b/include/asm-arm/fec.h
+@@ -212,7 +212,19 @@ typedef struct fec {
+ #define FEC_MIBC_MIB_IDLE		(0x40000000)
+ 
+ /* Bit definitions and macros for FEC_RCR */
++#define FEC_RCR_GRS			(0x80000000)
++#define FEC_RCR_NO_LGTH_CHECK		(0x40000000)
+ #define FEC_RCR_MAX_FL(x)		(((x)&0x7FF)<<16)
++#define FEC_RCR_CNTL_FRM_ENA		(0x00008000)
++#define FEC_RCR_CRC_FWD			(0x00004000)
++#define FEC_RCR_PAUSE_FWD		(0x00002000)
++#define FEC_RCR_PAD_EN			(0x00001000)
++#define FEC_RCR_RMII_ECHO		(0x00000800)
++#define FEC_RCR_RMII_LOOP		(0x00000400)
++#define FEC_RCR_RMII_10T		(0x00000200)
++#define FEC_RCR_RMII_MODE		(0x00000100)
++#define FEC_RCR_SGMII_ENA		(0x00000080)
++#define FEC_RCR_RGMII_ENA		(0x00000040)
+ #define FEC_RCR_FCE			(0x00000020)
+ #define FEC_RCR_BC_REJ			(0x00000010)
+ #define FEC_RCR_PROM			(0x00000008)
+diff --git a/include/configs/mx28_evk.h b/include/configs/mx28_evk.h
+index fa6069e..a1ca1aa 100644
+--- a/include/configs/mx28_evk.h
++++ b/include/configs/mx28_evk.h
+@@ -105,6 +105,7 @@
+ #define CONFIG_FEC0_PHY_ADDR		0
+ #define CONFIG_NET_MULTI
+ #define CONFIG_ETH_PRIME
++#define CONFIG_RMII
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_PING
+-- 
+1.5.4.4
+

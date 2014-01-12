@@ -1,0 +1,40 @@
+From e61ffd25a15b8825dc0cd8aecec986173ef72801 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 11 Aug 2010 12:39:06 +0800
+Subject: [PATCH] ENGR00126158 GPMI: Fix error handling when no NAND found
+
+There will be one oops when no NAND found for GPMI,
+This patch fix it
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c |   11 ++++++++---
+ 1 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index e6b5efb..83f5086 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -2571,11 +2571,16 @@ int gpmi_nfc_mil_init(struct gpmi_nfc_data *this)
+ exit_partitions:
+ 	nand_release(&mil->mtd);
+ exit_nand_scan:
+-	mil->cmd_virt =  0;
+-	mil->cmd_phys = ~0;
++	dma_free_coherent(dev,
++			this->nfc_geometry.payload_size_in_bytes,
++			mil->page_buffer_virt, mil->page_buffer_phys);
++	mil->page_buffer_virt = 0;
++	mil->page_buffer_phys = ~0;
+ exit_buf_allocation:
+ 	dma_free_coherent(dev, MIL_COMMAND_BUFFER_SIZE,
+-				mil->cmd_virt, mil->cmd_phys);
++			mil->cmd_virt, mil->cmd_phys);
++	mil->cmd_virt =  0;
++	mil->cmd_phys = ~0;
+ exit_cmd_allocation:
+ 
+ 	return error;
+-- 
+1.5.4.4
+

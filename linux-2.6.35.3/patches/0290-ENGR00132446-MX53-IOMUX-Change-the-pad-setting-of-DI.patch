@@ -1,0 +1,29 @@
+From 11eeddc60cb9333d33f9f1673154b712b8a82b01 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Mon, 11 Oct 2010 16:17:19 +0800
+Subject: [PATCH] ENGR00132446 MX53 IOMUX:Change the pad setting of DI0_PIN15
+
+Change the pad setting of DI0_PIN15 so that all the CLAA WVGA
+LCD panels can work normally.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/iomux-mx53.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx53.h b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+index 5438640..26c09dd 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx53.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+@@ -405,7 +405,7 @@ typedef enum iomux_config {
+ 
+ /* Display */
+ #define MX53_PAD_DI0_DISP_CLK__DI0_DISP_CLK	IOMUX_PAD(0x378, 0x4C, 0, 0x0, 0, PAD_CTRL_5)
+-#define MX53_PAD_DI0_PIN15__DI0_PIN15		IOMUX_PAD(0x37C, 0x50, 0, 0x0, 0, PAD_CTRL_7)
++#define MX53_PAD_DI0_PIN15__DI0_PIN15		IOMUX_PAD(0x37C, 0x50, 0, 0x0, 0, PAD_CTRL_5)
+ #define MX53_PAD_DI0_PIN2__DI0_PIN2		IOMUX_PAD(0x380, 0x54, 0, 0x0, 0, PAD_CTRL_7)
+ #define MX53_PAD_DI0_PIN3__DI0_PIN3		IOMUX_PAD(0x384, 0x58, 0, 0x0, 0, PAD_CTRL_7)
+ #define MX53_PAD_DISP0_DAT0__DISP0_DAT0	IOMUX_PAD(0x38C, 0x60, 0, 0x0, 0, PAD_CTRL_7)
+-- 
+1.5.4.4
+

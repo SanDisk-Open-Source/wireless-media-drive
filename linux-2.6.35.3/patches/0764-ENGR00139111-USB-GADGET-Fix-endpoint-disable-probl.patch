@@ -1,0 +1,44 @@
+From b549cbc712d2fe3bb231d50dc2c1012d0e0decbd Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Sat, 12 Feb 2011 15:52:52 +0800
+Subject: [PATCH] ENGR00139111: USB GADGET: Fix endpoint disable problems
+
+fsl_ep_disable may be called while unregister gadget driver. Gedget speed
+was set to UNKNOWN. So we should disable endpoint whatever link speed.
+Correct uninitialized variables in spin lock.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |    9 ++-------
+ 1 files changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index a6bae6c..68c2e1b 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -802,13 +802,6 @@ static int fsl_ep_disable(struct usb_ep *_ep)
+ 		return -EINVAL;
+ 	}
+ 
+-	spin_lock_irqsave(&udc->lock, flags);
+-	udc = (struct fsl_udc *)ep->udc;
+-	if (!udc->driver || (udc->gadget.speed == USB_SPEED_UNKNOWN)) {
+-		spin_unlock_irqrestore(&udc->lock, flags);
+-		return -ESHUTDOWN;
+-	}
+-
+ 	/* disable ep on controller */
+ 	ep_num = ep_index(ep);
+ 	epctrl = fsl_readl(&dr_regs->endptctrl[ep_num]);
+@@ -818,6 +811,8 @@ static int fsl_ep_disable(struct usb_ep *_ep)
+ 		epctrl &= ~EPCTRL_RX_ENABLE;
+ 	fsl_writel(epctrl, &dr_regs->endptctrl[ep_num]);
+ 
++	udc = (struct fsl_udc *)ep->udc;
++	spin_lock_irqsave(&udc->lock, flags);
+ 	/* nuke all pending requests (does flush) */
+ 	nuke(ep, -ESHUTDOWN);
+ 
+-- 
+1.5.4.4
+

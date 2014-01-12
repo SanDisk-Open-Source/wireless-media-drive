@@ -1,0 +1,41 @@
+From 632c358599889f6e97201fa7aa8baa5e21d82753 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 11 Aug 2010 12:25:22 +0800
+Subject: [PATCH] ENGR00126155 FEC:Set RMII mode corretly after FEC reset
+
+FEC will go to MII mode after the FEC reset
+which lead to PHY not work correctly for next link set up.
+
+We need to reconfigure the MII/RMII mode according
+the platform data setting after FEC reset
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ drivers/net/fec.c |   11 +++++++++++
+ 1 files changed, 11 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/fec.c b/drivers/net/fec.c
+index 7437595..c09cada 100644
+--- a/drivers/net/fec.c
++++ b/drivers/net/fec.c
+@@ -1320,6 +1320,17 @@ fec_stop(struct net_device *dev)
+ 	writel(1, fep->hwp + FEC_ECNTRL);
+ 	udelay(10);
+ 
++#ifdef CONFIG_ARCH_MXS
++	/* Check MII or RMII */
++	if (fep->phy_interface == PHY_INTERFACE_MODE_RMII)
++		writel(readl(fep->hwp + FEC_R_CNTRL) | 0x100,
++					fep->hwp + FEC_R_CNTRL);
++	else
++		writel(readl(fep->hwp + FEC_R_CNTRL) & ~0x100,
++					fep->hwp + FEC_R_CNTRL);
++#endif
++	/* Clear outstanding MII command interrupts. */
++	writel(FEC_ENET_MII, fep->hwp + FEC_IEVENT);
+ 	writel(fep->phy_speed, fep->hwp + FEC_MII_SPEED);
+ }
+ 
+-- 
+1.5.4.4
+

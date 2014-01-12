@@ -1,0 +1,33 @@
+From 2ff9ad7f55db9eeedf67cb71c1da38a7012b988c Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 26 Jan 2011 21:47:49 +0800
+Subject: [PATCH] ENGR00138540 mx51: set low bus flag after entering low bus mode
+
+If enabling DVFS core and enter suspend state, FEC resume was
+failed due to wrong clock. This is because enter_lpapm_mode_mx51
+function doesn't set low_bus_freq_mode flag after commit 30f6fc381.
+It causes the system is in wrong low bus mode.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 5e3c5de..d598a06 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -306,6 +306,10 @@ void enter_lpapm_mode_mx51()
+ 			udelay(10);
+ 		clk_disable(emi_garb_clk);
+ 
++		low_bus_freq_mode = 1;
++		high_bus_freq_mode = 0;
++		med_bus_freq_mode = 0;
++
+ 		/* Set the source of Periph_APM_Clock to be lp-apm. */
+ 		clk_set_parent(periph_apm_clk, lp_apm);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,112 @@
+From a56663f8604a5f0a39c510b0d58e4fea4e129cf2 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 20 Oct 2010 14:51:40 -0500
+Subject: [PATCH] ENGR00132874 Mx50: Donot change Vcc votlage in LPAPM mode
+
+Vcc voltage needs to be increased before increasing the frequency when exiting
+from LPAPM mode. Some drivers are initiating the frequency/voltage change
+request (via clk_enable/clk_disable) in an ISR or tasklet context. Since the
+regulator API code uses SPI that can sleep during its transactions, the
+system will crash when sleep is called in an ISR/tasklet context.
+
+Hence the current solution is to remove the voltage change code.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c |   59 ------------------------------------------
+ 1 files changed, 0 insertions(+), 59 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 9223490..54bfa6f 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -130,21 +130,6 @@ struct dvfs_wp dvfs_core_setpoint[] = {
+ 
+ static DEFINE_SPINLOCK(voltage_lock);
+ 
+-static void voltage_work_handler(struct work_struct *work)
+-{
+-	if (lp_regulator != NULL) {
+-		u32 ret = 0;
+-		ret = regulator_set_voltage(lp_regulator,
+-					lp_voltage, lp_voltage);
+-		udelay(400);
+-		if (ret < 0) {
+-			printk(KERN_ERR "COULD NOT SET LP VOLTAGE!!!!!!\n");
+-			return;
+-		}
+-	}
+-	complete_all(&voltage_change_cmpl);
+-}
+-
+ int set_low_bus_freq(void)
+ {
+ 	u32 reg;
+@@ -299,12 +284,6 @@ void enter_lpapm_mode_mx50()
+ 
+ 	spin_unlock_irqrestore(&ddr_freq_lock, flags);
+ 
+-	spin_lock_irqsave(&voltage_lock, flags);
+-	lp_voltage = LP_LOW_VOLTAGE;
+-	INIT_COMPLETION(voltage_change_cmpl);
+-	queue_work(voltage_wq, &voltage_change_handler);
+-	spin_unlock_irqrestore(&voltage_lock, flags);
+-
+ 	udelay(100);
+ }
+ 
+@@ -462,39 +441,6 @@ void exit_lpapm_mode_mx50()
+ 	u32 reg;
+ 	unsigned long flags;
+ 
+-	do {
+-		if (completion_done(&voltage_change_cmpl)) {
+-			spin_lock_irqsave(&voltage_lock, flags);
+-			break;
+-		} else {
+-			set_user_nice(get_current(), 10);
+-			yield();
+-			set_user_nice(get_current(), -10);
+-		}
+-	} while (1);
+-	if (completion_done(&voltage_change_cmpl)) {
+-		if (lp_voltage != LP_NORMAL_VOLTAGE) {
+-			INIT_COMPLETION(voltage_change_cmpl);
+-			lp_voltage = LP_NORMAL_VOLTAGE;
+-			if (!queue_work(voltage_wq, &voltage_change_handler))
+-				printk(KERN_ERR "WORK_NOT_ADDED\n");
+-			spin_unlock_irqrestore(&voltage_lock, flags);
+-			while (!completion_done(&voltage_change_cmpl)) {
+-				set_user_nice(get_current(), 10);
+-				yield();
+-				set_user_nice(get_current(), -10);
+-			}
+-		} else
+-			spin_unlock_irqrestore(&voltage_lock, flags);
+-	} else {
+-		spin_unlock_irqrestore(&voltage_lock, flags);
+-		while (!completion_done(&voltage_change_cmpl)) {
+-			set_user_nice(get_current(), 10);
+-			yield();
+-			set_user_nice(get_current(), -10);
+-		}
+-	}
+-
+ 	spin_lock_irqsave(&ddr_freq_lock, flags);
+ 	if (!low_bus_freq_mode) {
+ 		spin_unlock_irqrestore(&ddr_freq_lock, flags);
+@@ -884,11 +830,6 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 		reg = __raw_readl(qosc_base);
+ 		reg &= ~0xC0000000;
+ 		__raw_writel(reg, qosc_base);
+-
+-		voltage_wq = create_singlethread_workqueue("voltage_change");
+-		INIT_WORK(&voltage_change_handler, voltage_work_handler);
+-
+-		init_completion(&voltage_change_cmpl);
+ 	}
+ 	cpu_wp_tbl = get_cpu_wp(&cpu_wp_nr);
+ 	low_bus_freq_mode = 0;
+-- 
+1.5.4.4
+

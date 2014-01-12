@@ -1,0 +1,73 @@
+From e492e72693de1fbec348f3f46f0bb8241f70428d Mon Sep 17 00:00:00 2001
+From: Alan Tull <alan.tull@freescale.com>
+Date: Wed, 13 Oct 2010 17:52:58 -0500
+Subject: [PATCH] ENGR00132153 sgtl5000: do not enforce symmetry if rate is unknown
+
+If a playback and a record stream are started together, the
+alsa userspace may not not do the necessary ioctl calls for
+the audio driver stack to know the sample rate and sample
+size of the first stream before starting the second stream,
+
+i.e.:
+  arecord -D plughw:0 -d 10 -f S16_LE -r 44100 -c 2 -traw |
+  aplay -D plughw:0 -f S16_LE -r 44100 -c 2 -traw
+
+Normally we want to the driver to make sure that the second
+stream does not request a different playback rate/bit size
+from the first stream.  But at that point, the driver thinks
+that the sample rate and sample size are 0.  So in that case
+do not enforce constraints.
+
+This still allows for usecases where play is started first and
+then record is started after a delay while playback continues.
+
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+---
+ sound/soc/codecs/sgtl5000.c |   23 ++++++++++++++++-------
+ 1 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/sound/soc/codecs/sgtl5000.c b/sound/soc/codecs/sgtl5000.c
+index 6e4bf1e..bb94c65 100644
+--- a/sound/soc/codecs/sgtl5000.c
++++ b/sound/soc/codecs/sgtl5000.c
+@@ -537,13 +537,23 @@ static int sgtl5000_pcm_startup(struct snd_pcm_substream *substream,
+ 	if (sgtl5000->master_substream) {
+ 		master_runtime = sgtl5000->master_substream->runtime;
+ 
+-		pr_debug("Constraining to %d bits\n",
+-			 master_runtime->sample_bits);
++		if (master_runtime->rate != 0) {
++			pr_debug("Constraining to %dHz\n",
++				 master_runtime->rate);
++			snd_pcm_hw_constraint_minmax(substream->runtime,
++						     SNDRV_PCM_HW_PARAM_RATE,
++						     master_runtime->rate,
++						     master_runtime->rate);
++		}
+ 
+-		snd_pcm_hw_constraint_minmax(substream->runtime,
+-					     SNDRV_PCM_HW_PARAM_SAMPLE_BITS,
+-					     master_runtime->sample_bits,
+-					     master_runtime->sample_bits);
++		if (master_runtime->sample_bits != 0) {
++			pr_debug("Constraining to %d bits\n",
++				 master_runtime->sample_bits);
++			snd_pcm_hw_constraint_minmax(substream->runtime,
++						     SNDRV_PCM_HW_PARAM_SAMPLE_BITS,
++						     master_runtime->sample_bits,
++						     master_runtime->sample_bits);
++		}
+ 
+ 		sgtl5000->slave_substream = substream;
+ 	} else
+@@ -935,7 +945,6 @@ struct snd_soc_dai sgtl5000_dai = {
+ 		    .formats = SGTL5000_FORMATS,
+ 		    },
+ 	.ops = &sgtl5000_ops,
+-	.symmetric_rates = 1,
+ };
+ EXPORT_SYMBOL_GPL(sgtl5000_dai);
+ 
+-- 
+1.5.4.4
+

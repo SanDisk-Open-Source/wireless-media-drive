@@ -1,0 +1,27 @@
+From 22bb9216d1aa7510b384ecad99c5c870cc1236fd Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 14 Dec 2010 09:30:35 +0800
+Subject: [PATCH] ENGR00136914 mx53-ard: add platform data assignment for usb host h2
+
+add platform data assignment for usb host h2
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/mach-mx5/usb_h2.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/usb_h2.c b/arch/arm/mach-mx5/usb_h2.c
+index 3d5c0b5..237aa98 100644
+--- a/arch/arm/mach-mx5/usb_h2.c
++++ b/arch/arm/mach-mx5/usb_h2.c
+@@ -163,6 +163,7 @@ static struct fsl_usb2_wakeup_platform_data usbh2_wakeup_config = {
+ };
+ void __init mx5_usbh2_init(void)
+ {
++	usbh2_config.wakeup_pdata = &usbh2_wakeup_config;
+ 	mxc_register_device(&mxc_usbh2_device, &usbh2_config);
+ 	mxc_register_device(&mxc_usbh2_wakeup_device, &usbh2_wakeup_config);
+ }
+-- 
+1.5.4.4
+

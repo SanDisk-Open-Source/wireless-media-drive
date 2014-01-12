@@ -1,0 +1,31 @@
+From a604722168ebf62430a9fa496915036e891519a7 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 22 Sep 2010 11:13:33 +0800
+Subject: [PATCH] ENGR00131840 MX53 ARD:use serial_mxc as uart driver
+
+Use serial_mxc as uart driver for MX53 ARD.
+This change is required by ENGR00131779.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ include/configs/mx53_ard.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 15fe82b..17a1ba3 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -69,8 +69,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+-- 
+1.5.4.4
+

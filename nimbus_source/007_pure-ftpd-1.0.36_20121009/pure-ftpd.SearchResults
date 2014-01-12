@@ -1,0 +1,11 @@
+---- QSI_DEBUG Matches (10 in 4 files) ----
+Ftpd.c (src):        #ifdef QSI_DEBUG
+Ftpd.h (src):#define QSI_DEBUG
+Ftp_parser.c (src):#ifdef QSI_DEBUG
+Ls.c (src):    #if defined(QSI_PATCHED) && defined(QSI_DEBUG)
+Ls.c (src):    #ifdef QSI_DEBUG
+Ls.c (src):        #ifdef QSI_DEBUG
+Ls.c (src):                #ifdef QSI_DEBUG
+Ls.c (src):    #ifdef QSI_DEBUG
+Ls.c (src):            #ifdef QSI_DEBUG
+Ls.c (src):                #ifdef QSI_DEBUG

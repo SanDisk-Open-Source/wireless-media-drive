@@ -1,0 +1,40 @@
+From 3f09859a43ac38eac7df6efcf0ab93001e8a8695 Mon Sep 17 00:00:00 2001
+From: Jason <r64343@freescale.com>
+Date: Fri, 11 Dec 2009 18:58:03 +0800
+Subject: [PATCH] ENGR00119246 Add CONFIG_MXC_NAND config flag in MX25 platform
+
+Add CONFIG_MXC_NAND config flag in MX25 platform
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/Makefile     |    1 -
+ include/configs/mx25_3stack.h |    1 +
+ 2 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/Makefile b/drivers/mtd/nand/Makefile
+index 6fefe00..408f57c 100644
+--- a/drivers/mtd/nand/Makefile
++++ b/drivers/mtd/nand/Makefile
+@@ -46,7 +46,6 @@ COBJS-$(CONFIG_NAND_S3C2410) += s3c2410_nand.o
+ COBJS-$(CONFIG_NAND_S3C64XX) += s3c64xx.o
+ COBJS-$(CONFIG_NAND_OMAP_GPMC) += omap_gpmc.o
+ COBJS-$(CONFIG_NAND_PLAT) += nand_plat.o
+-COBJS-$(CONFIG_MX25) += mxc_nand.o
+ COBJS-$(CONFIG_MX31_NAND) += mx31_nand.o
+ COBJS-$(CONFIG_MXC_NAND) += mxc_nand.o nand_device_info.o
+ endif
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index 5763b24..5084fd8 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -101,6 +101,7 @@
+ /* #define CONFIG_CMD_DATE */
+ #define CONFIG_CMD_NAND
+ #define CONFIG_CMD_MMC
++#define CONFIG_MXC_NAND
+ 
+ /*
+  * MMC Configs
+-- 
+1.5.4.4
+

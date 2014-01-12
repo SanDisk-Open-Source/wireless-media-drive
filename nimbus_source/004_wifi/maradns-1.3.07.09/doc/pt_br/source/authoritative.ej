@@ -1,0 +1,508 @@
+<HEAD><TITLE>Serviço de DNS autoritativo</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Usando MaraDNS como um servidor de DNS autoritativo</H1>
+
+<H2>Índice</H2>
+<ul>
+<li><A href=#needs>Requisitos</a>
+ <li><A href=#what>O que é uma zona de domínio?</a>
+ <li><A href=#marazone>Configurando um domínio com MaraDNS</a>
+ <li><A href=#zonesetup>Configurando um arquivo de zona de domínio</a>
+ <li><A href=#format>O formato de um arquivo de zona de domínio</a>
+ <li><A href=#percent>O caractere de atalho %</a>
+ <li><A href=#register>Conectando-se aos servidores de root raiz</a>
+ <li><A href=#2ips>Adquirindo dois IPs</a>
+ <li><A href=#network>Nomes interno de uma rede</a>
+ </ul>
+
+<A name=needs>
+<H2>Requisitos</H2></a>
+
+Para configurar um servidor de DNS autoritativo, a pessoa precisa de um 
+ou ou mais <i>endereços de IP válidos.</i> No Brasil a entidade
+<i>registro.br</i> exige dois ou mais endereços de IP válidos.
+
+<p>
+Além disso, a(s) máquina(s) com os endereços de IP válidos precisam estar
+rodando um servidor de DNS autoritativo, como MaraDNS.
+
+<A name=what>
+<H2>O que é uma zona de domínio?</H2></a>
+
+Um nome como www.example.com faz parte da
+<A href="glossary.html#zone"><I>zona de domínio</I></a>example.com.
+O nome www.yahoo.com, como outro exemplo, faz parte da
+<A href="glossary.html#zone"><I>zona de domínio</I></a>yahoo.com.
+www.maradns.org faz parte da <A href="glossary.html#zone"><I>zona de
+domínio </I></a>maradns.org.
+
+
+<A name=marazone>
+<H2>Configurando um domínio com MaraDNS</H2></a>
+
+<A href=compile.html>Compile e instale</a>o MaraDNS no sistema que 
+agirá como um servidor de DNS autoritativo.
+ 
+<p>
+Depois de fazer isto, o arquivo <A href=man.mararc.html><TT>mararc</TT>
+</a>precisa ser alterado para o MaraDNS funcionar como um servidor de DNS 
+autoritativo. 
+
+<p>
+Um arquivo mararc que pode ser usado para <A href="glossary.html#serve">
+<I>servir</I></a> um <A href="glossary.html#zone"><I>domínio de zona</I>
+</a>precisa somente ter quatro linhas:
+
+<pre>
+ipv4_bind_addresses = "10.3.28.79"
+chroot_dir = "/etc/maradns"
+csv2 = {}
+csv2 ["example.com."] = "db.example.com"
+</pre>
+
+Vamos olhar estas quatro linhas. A primeira linha, <TT>ipv4_bind_addresses</TT>
+é o endereço de IP (ou endereços) que este servidor de DNS terá.
+Considerando que estamos executando um servidor de DNS autoritativo, 
+é fundamental que este endereço de IP seja <I>roteável</I>, ou seja, 
+um endereço IP que possa ser acessado por qualquer um na internet. 
+Também é importante que qualquer firewall entre esta máquina e a internet garanta
+a conexão da porta UDP 53 nesta máquina.
+
+<p>
+O valor de <TT>chroot_dir</TT>é o diretório que contém todos os 
+arquivos de informação para a zona de domínio (estes arquivos normalmente 
+são chamados "arquivo de zona" pelos administradores de DNS).
+
+Aqui, colocamos os arquivos de zona no diretório <TT>/etc/maradns</TT>.
+
+<p>
+A terceira linha, <TT>csv2 = {}</TT>, diz para o MaraDNS que estaremos agindo 
+como um servidor de DNS autoritativo. Esta linha deve ser colocada antes de dizer ao 
+MaraDNS onde todos os arquivos de zona serão encontrados.
+
+<p>
+A quarta linha, <TT>csv2 ["example.com."] = "db.example.com"</TT> conta para o 
+MaraDNS, que para a zona de domínio "example.com.", o arquivo de zona é 
+chamado "db.example.com". 
+
+<p>
+Em outras palavras, <B>example.com.</B> é o nome da zona de domínio 
+que o arquivo <B>db.example.com</B> contém os dados. Mude 
+<B>example.com.</B> para o nome de zona de domínio que você deseja 
+servir, e <B>db.example.com </B> para o nome do arquivo a ser usado para 
+servir aquela zona de domínio.
+
+<B>Importante:</B> o nome da zona de domínio (por exemplo <B>example.com.
+</B>) requer um ponto '.' no final. 
+ 
+<p>
+É possível servir múltiplas zonas de domínios.  Por exemplo: 
+
+<blockquote>
+<pre>
+csv2 ["example.com."] = "db.example.com"
+csv2 ["example.org."] = "db.example.org"
+csv2 ["heaven.af.mil."] = "db.heaven.af.mil"
+</pre>
+</blockquote>
+
+Também é possível atribuir ao MaraDNS, múltiplos endereços de IP, por exemplo: 
+
+<pre>
+ipv4_bind_addresses = "10.3.28.79, 10.9.87.23",
+</pre>
+
+<A name=zonesetup>
+<H2>Configurando um arquivo de zona de domínio</H2></a>
+
+Supomos que estamos configurando o domínio example.com, 
+onde teremos os seguintes serviços:
+ 
+<UL>
+<LI>Estamos rodando um servidor de web para example.com 
+e www.example.com no IP 10.10.10.12. Em outras palavras, pessoas podem 
+acessar páginas de web nesta máquina.
+<LI>Temos um servidor de correio eletrônico (e-mail) ou <A href="glossary.html#mta">
+<I>agente de transporte de correio </I></a> para example.com com o IP 10.10.10.15.
+Em outras palavras, a máquina com o IP 10.10.10.15 é configurada para manipular emails 
+endereçados a name@example.com, onde "name" é qualquer cadeia de caracteres antes do sinal '@'. 
+<LI>Ambos 10.10.10.11 e 10.10.10.17 estão executando MaraDNS em modo autoritativo para servir 
+solicitações de DNS para example.com.
+</UL>
+O arquivo de zona para a situação a acima seria como no exemplo abaixo.  Nota que as 
+linhas que inciam com o símbolo <TT>#</TT> são puramente comentários (linhas ignoradas 
+pelo MaraDNS).
+ 
+
+<pre>
+# This is an example zone file for the imaginary domain example.com.
+
+# We have two records which handle the serving of web pages.  These
+# are simple name-to-ip translations.  In other words, we have one
+# record which states "The IP for exmaple.com. is 10.10.10.12" and
+# another that states "The IP for www.example.com. is 10.10.10.12"
+example.com. 10.10.10.12
+www.example.com. 10.10.10.12
+
+# We also need to set up an IP for the machine that serves email for
+# example.com.  Becuase of how DNS is designed, we both need
+# a record which states "The machine which handles mail for
+# exmaple.com is called mail1.example.com" and a record which states
+# "The IP address for mail1.example.com is 10.10.10.15":
+example.com. MX 10 mail1.example.com.
+mail1.example.com. 10.10.10.15
+</pre>
+
+Agora, para adaptar este arquivo a uma outra zona, precisamos simplesmente
+fazer as seguintes mudanças:
+ 
+<ul>
+<li>Substitua o nome <B>example.com</B> pelo o nome do domínio que
+deseja configurar.
+<li>Substitua o IP 10.10.10.12 pelo o IP da máquina que executa o servidor 
+de web para o domínio.
+<li>Substitua o IP 10.10.10.15 pelo o IP da máquina que executa o servidor 
+de email para o domínio.
+</ul>
+
+Nota que a variável <TT>chroot_dir</TT> do mararc diz para o MaraDNS
+qual diretório contém os arquivos de zona de domínio.
+ 
+
+<A name=format>
+<H2>O formato de um arquivo de zona de domínio</H2></a>
+
+Aqui estão algumas linhas de exemplo de um arquivo de zona de domínio, 
+que é um exemplo de alguém usando o mesmo IP varias vezes. Por exemplo, 
+se a pessoa estiver usando 10.10.10.19 como um servidores de DNS, servidor 
+de email, e um servidor web, a pessoa teria registros assim:
+ 
+<pre>
+example.com.      NS ns1.example.com.
+ns1.example.com.        10.10.10.19
+example.com.            10.10.10.19
+www.example.com.        10.10.10.19
+example.com.      MX 10 mail1.example.com.
+mail1.example.com.      10.10.10.19
+</pre>
+
+Traduzido as linhas anteriores, elas dizem: 
+
+<ul>
+<li>Um servidor de nome para example.com é chamado ns1.example.com.
+<li>O IP para ns1.example.com é 10.10.10.19.
+<li>O IP para example.com (em outras palavras, a máquina que um navegador
+de web deve contactar se a pessoa digitar http://example.com) é 10.10.10.19.
+<li>O IP para www.example.com é 10.10.10.19. 
+<li>O nome da máquina que processa a entrada de email tem uma prioridade de
+dez (números de prioridade mais baixos são mais importantes), é chamada 
+mail1.example.com.
+<li>O IP para mail1.example.com é 10.10.10.19 
+</ul>
+
+<p>
+Uma linha em um arquivo de zona de domínio contém um único <I>registro de DNS</I>.
+Os dados tem múltiplos campos separados por um espaço ou pelo caractere <TT>|</TT>,
+e está neste formato:
+
+<ul>
+<li>A primeira porção do registro de DNS, é o nó de DNS para o qual este 
+registro é anexado.
+<li>A próxima porção de um registro de DNS, que é opcional, diz para o MaraDNS que
+tipo de registro de DNS é este. Uma lista dos registros de DNS que são suportados 
+pelo MaraDNS é descrito <A href=recordtypes.html>aqui.</a> Se este campo 
+estiver ausente, MaraDNS assume que o registro é do tipo "A" (endereço de IP 32-bit),
+e que a segunda porção é o endereço de IP em questão.
+<li>Se o registro não é do tipo "A", os campos subseqüentes descrevem o registro DNS
+em questão. O formato para estes dados depende do tipo do registro DNS a ser usado, que é 
+descrito <A href=recordtypes.html>aqui.</a>
+</ul>
+
+A razão para usar diferentes nomes para diferentes funções é de minimizar o número de problemas
+a ser encontrados, se precisar mudar os IPs deles mais tarde.
+
+<A name=percent>
+<H2>O atalho %</H2></a>
+
+<p>
+Se alguém estiver configurando múltiplas zonas de domínio, que tenham
+mais ou menos os mesmos dados, é conveniente ter um modelo de 
+arquivo de domínio que as diferentes zonas possam usar sem necessitar 
+modificar o arquivo em questão. 
+
+<p>
+MaraDNS tem suporte para isto usando o símbolo <TT>%</TT>.  Sempre que
+MaraDNS encontra <TT>%</TT> em um arquivo de zona csv2, MaraDNS irá 
+substituir o símbolo de porcentagem pelo nome da zona em questão. Por exemplo, 
+se o arquivo em questão é o arquivo da zona example.com, o % será trocado 
+por "example.com.". Se o arquivo da zona em questão é para maradns.org, o % é 
+trocado por "maradns.org.". Conseqüentemente, nós podemos, contanto que o arquivo 
+de zona seja para example.com, ter um arquivo de zona assim:
+
+<pre>
+# We have two records which handle the serving of web pages.  These
+# are simple name-to-ip translations.
+%     10.10.10.12
+www.% 10.10.10.12
+
+# We also need to set up an IP for the machine that serves email for
+# our zone.  Becuase of how DNS is designed, we both need
+# a record which states "The machine which handles mail for
+# out zone is called mail1." and a record which states
+# "The IP address for mail1. is 10.10.10.15":
+% MX  10 mail1.example.com.
+mail1.%  10.10.10.15
+</pre>
+
+Este arquivo de zona funcionaria identicamente ao primeiro arquivo de zona
+do exemplo mostrado anteriormente.
+ 
+
+<A name=register>
+<H2>Conectando-se aos servidores de dns raiz</H2></a>
+
+Um servidor de DNS autoritativo não servirá um domínio efetivamente a menos
+que os servidores de nome raiz estejam atentos que um determinado servidor 
+de DNS serve um determinado nome de domínio.
+
+<p>
+Quando um servidor de DNS recursivo tenta achar um IP, por exemplo, 
+www.example.com, ele primeiro pede ao servidor de dns raiz por este IP.
+Os servidores de nome raiz enviam uma resposta dizendo que "Nós não 
+sabemos a resposta para esta solicitacao, mas você pode contatar o servidor
+de DNS  10.1.2.3 para essa resposta". Neste momento, o servidor de DNS recursivo
+contata 10.1.2.3, pedindo pelo IP de www.example.com.	(De fato, os servidores 
+de nome raiz distribuem os servidores de nomes .com que distribui os servidores 
+de nomes example.com mas o princípio é o mesmo)
+
+<p>
+Para que a comunidade da internet inteira possa estar atenta a um domínio, o 
+domínio deve ser registrado com os servidores de nome raiz, de forma que 
+os servidores de nome raiz saibam que os IPs das máquinas que são servidores 
+de DNS autoritativos para o domínio em questão. (Novamente, você realmente 
+está registrando com, digamos, servidores .com)
+
+<p>
+As políticas exatas de como registrar um domínio depende do registrador
+em questão (No Brasil, é o Registro.br que faz esse trabalho). 
+
+<p>
+Há um grande número de registradores por aí para servir nomes de domínio. 
+No Brasil você pode usar intermediários, mas no final das contas tudo é feito
+pelo Registro.br <A href=http://registro.br/>http://registro.br </a> Para 
+registrar um domínio, você precisará conhecer os servidores de zona para 
+seu domínio. Você mesmo pode configurar isso (veja <A href=#network>abaixo
+</a>para um exemplo), ou usar o tutorial do <TT>askmara</TT> para
+descobrir os servidores de nome para seu domínio.
+
+<p>
+Para usar a ferramenta <TT>askmara</TT>, faça uma requisição deste modo: 
+ 
+<blockquote><TT>askmara Nexample.com. 127.0.0.1</TT></blockquote>
+
+Substitua <TT>example.com</TT> pelo nome do domínio a ser 
+registrado, e <TT>127.0.0.1</TT>com o IP do servidor de DNS.
+
+A saída da consulta se parecerá algo como:
+
+<pre>
+# Querying the server with the IP 127.0.0.1
+# Question: Nexample.com.
+example.com. +86400 ns <b>synth-ip-0a010203.example.com.</b>
+example.com. +86400 ns <b>synth-ip-0a040506.example.com.</b>
+# NS replies:
+# AR replies:
+#synth-ip-0a010203.example.com. +86400 a <b>10.1.2.3</b>
+#synth-ip-0a040506.example.com. +86400 a <b>10.4.5.6</b></pre>
+
+Os nomes para os servidores que nós desejamos submeter ao 
+registrador são o nomes acima <TT>synth-ip-0a010203.example.com </TT>e 
+<TT>synth-ip-0a040506.example.com </TT>. Estes nomes pouco longos
+são os nomes dos servidores de nome para o (no exemplo anterior) <TT>example.com.</TT>. 
+Ao término da saída de <TT>askmara</TT>, você pode ver os IPs para estes servidores;
+coloque estes IPs no campo onde eles pedem pelo IP dos servidores de nome do seu
+domínio.
+<p>
+
+Por exemplo, se a formulário do registrador se parece assim: 
+
+
+<pre>
+Nome de domínio: _________________
+
+Nameserver 1 nome: ____________________________________
+Nameserver 1 IP:   ____________________________________
+Nameserver 2 nome: ____________________________________
+Nameserver 2 IP:   ____________________________________
+Nameserver 3 nome: ____________________________________
+Nameserver 3 IP:   ____________________________________
+Nameserver 4 nome: ____________________________________
+Nameserver 4 IP:   ____________________________________
+</pre>
+
+Baseado na saída anterior do <TT>askmara</TT>, nós preencheríamos desta forma:
+ 
+
+<pre>
+Nome de domínio: example.com      
+
+Nameserver 1 nome: synth-ip-0a010203.example.com.      
+Nameserver 1 IP:   10.1.2.3
+Nameserver 2 nome: synth-ip-0a040506.example.com.
+Nameserver 2 IP:   10.4.5.6
+Nameserver 3 nome: ____________________________________
+Nameserver 3 IP:   ____________________________________
+Nameserver 4 nome: ____________________________________
+Nameserver 4 IP:   ____________________________________
+</pre>
+
+<p>
+
+Se você só tiver um servidor de NS, pode precisar adquirir um segundo para 
+registrar um domínio. O procedimento para fazer isto é descrito na seção seguinte.
+ 
+
+<A name=2ips>
+<h2>Adquirindo dois IPs</h2></a>
+
+Como declarado no começo deste documento, muitas registradoras de domínios
+requerem no mínimo dois IPs para registrar um domínio. Se a pessoa tem um 
+computador com dois ou mais IPs válidos roteáveis, é bastante simples ver o 
+MaraDNS lidar com estes IPs. Apenas mude a variável <TT>ipv4_bind_addresses</TT>
+para incluir todos os IPs que a pessoa deseja que o MaraDNS lide, como no exemplo seguinte,:
+
+<blockquote>
+<TT>ipv4_bind_addresses = "10.1.2.3, 10.5.6.7",</TT>
+ </blockquote>
+
+Naturalmente, substitua "10.1.2.3" e "10.5.6.7" pelos IPs que sua máquina possui.
+ 
+<p>
+Mas se você tem um único IP, é necessário achar alguém que proverá um DNS
+secundário para seu domínio, e configure o MaraDNS para ser um servidor de zona.
+Informaçoes de como fazer isto é mostrado no documento
+<A  href=dnsmaster.html>DNS mestre </a>.
+ 
+
+<A name=network>
+<h2>Nomes interno a uma rede</h2></a>
+
+Às vezes as pessoas teram vários computadores em um escritório, ou em outra
+rede pequena, com vários nomes diferentes. É desejável usar DNS para dar a 
+estas máquinas de escritório endereços de IP. Vamos supor que nós temos uma 
+empresa com computadores nomeados "Mascota", "Paloma", e "Vela." Se desejarmos
+ter computadores no escritório acessíveis apenas pelo nome (como "Vela"), nós 
+configuramos então o que é conhecido como um <I>sufixo de domínio padrão.</I>
+Supondo que a empresa em questão tem o domínio chamado de "example.com."  
+Nós damos então para nossos computadores os nomes "mascota.example.com ", " 
+paloma.example.com", e "vela.example.com". Nós dizemos então aos computadores
+no escritório que, quando é dado um nome sem sufixo, acrescentá-se o sufixo 
+"example.com" ao procurar nomes do host.
+
+<p>
+
+Em UNIX, BSD, e máquinas Linux em um escritório, isto é feito acrescentando uma 
+linha assim ao arquivo <TT>/etc/resolv.conf:</TT>:
+ 
+<p>
+<blockquote><TT>search example.com</TT></blockquote>
+
+<p>
+No Windows XP, vá para Painel de controle - Conexões de Rede - Conexão de Área 
+Local (ou qualquer conexão no computador que usa para seguir a LAN)
+ -> Propriedades -> Protocolo de Internet (TCP/IP) (isto está debaixo de 
+"Os usos de conexão os artigos seguintes" e você podem ter que rolar até vê isto)
+ -> Avançado -> DNS -> "Acrescente estes sufixos de DNS (em ordem) " 
+-> Some e digite "example.com" (ou tudo que) como o sufixo de Domínio.
+
+
+<p>
+Uma vez feito isto, crie uma zona para example.com.  Considerando que nós
+estamos dando apenas IP para três computadores, o arquivo de zona para 
+example.com é acrescentado ao arquivo mararc com esta linha:
+
+<blockquote><TT>csv2 ["example.com".] = "db.example.com"</TT></blockquote>
+
+Nós colocamos então, no diretório apontado para <TT>chroot_dir </TT> 
+no mararc arquivo, o arquivo <TT>db.example.com </TT>que se parece:
+ 
+<pre>
+mascota.% 10.1.2.3
+paloma.% 10.5.6.7
+vela.% 10.9.8.4
+</pre>
+
+Veja <A href=#percent>acima </a>para uma explicação do que o símbolo
+<TT>%</TT> faz.
+ 
+<p>
+
+
+As três linhas anteriores são um arquivo de zona csv2 completo, sendo
+um resumo para o seguinte:
+ 
+
+<pre>
+# The SOA record.  If a zone doesn't have a SOA record, MaraDNS will
+# synthesize an appropriate one for a given zone.  This is information
+# about who is in charge of the example.com zone; basically the zone
+# name "example.com.", SOA "It's a Start of Authority record",
+# "example.com." (this is the name of the machine in charge of
+# example.com), "hostmaster@example.com." (the email address of the
+# person in charge of example.com.)
+example.com.    SOA     example.com. hostmaster@example.com.
+# The following numbers, part of the SOA record, give some technical
+# information about transferring information about this zone to other
+# DNS servers.  If you use rsync to share zone files, these numbers
+# do not need to be worried about.
+                        1 7200 3600 604800 1800
+
+# NS records.  If a zone doesn't have NS record, MaraDNS will, again
+# synthesize appropriate NS records for a given zone.  This is a list
+# of all of the DNS servers that have the example.com zone file.
+example.com. NS ns1.example.com.
+example.com. NS ns2.example.com.
+
+# The NS records above need IPs.  Note that "A" (this is an IP) is
+# optional
+ns1.example.com.  A 10.1.2.3
+ns2.example.com.  A 10.4.5.6
+
+# Now that we have the SOA and NS records taken care of (again, MaraDNS
+# will automatically take care of these records if they are not in a
+# zone), we can add the records for the zone in question
+
+# mascota.example.com. has the IP address 10.1.2.3
+mascota.example.com.    A       10.1.2.3
+# mascota.example.com. has the IP address 10.5.6.7
+paloma.example.com.     A       10.5.6.7
+# mascota.example.com. has the IP address 10.9.8.4
+vela.example.com.       A       10.9.8.4
+</pre>
+
+Informações sobre como configurar um servidor recursivo na forma que 
+estes nomes são hostnames privado, estão disponível na 
+<A href=recursive.html#private>seção de hostname privado na 
+documentação do servidor recursivo.</a>
+
+</body>
+

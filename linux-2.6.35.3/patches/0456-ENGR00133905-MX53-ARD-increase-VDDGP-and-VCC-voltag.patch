@@ -1,0 +1,46 @@
+From 8a432649213ac1da40d9b9074ef1c05ec881db24 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 22 Nov 2010 09:53:04 +0800
+Subject: [PATCH] ENGR00133905 MX53 ARD: increase VDDGP and VCC voltages in suspend mode
+
+It's found that MX53 ARD reset sometimes if setting VDDGP/VCC
+to 0.95V in suspend mode. After many experiments, it's found
+the system can resume well if setting VDDGP as 1.05v and VCC
+as 1.025V accordingly, the system can resume.
+HW team thought that DDR power supply U2 "enable" may turn off
+U2 when VCC is 0.95V. So DDR may lost power. The suggested rework
+is to add a NC7SP125 chip.
+Since MX53 ARD boards didn't conduct such kind of reworks, this
+patch increase suspend voltages to workaround for it before a
+better solution can be found.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+index fe3880e..d1103b5 100644
+--- a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
++++ b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+@@ -54,7 +54,7 @@ static struct regulator_init_data sw1_init = {
+ 		.boot_on = 1,
+ 		.initial_state = PM_SUSPEND_MEM,
+ 		.state_mem = {
+-			.uV = 950000,
++			.uV = 1050000,
+ 			.mode = REGULATOR_MODE_NORMAL,
+ 			.enabled = 1,
+ 		},
+@@ -73,7 +73,7 @@ static struct regulator_init_data sw2_init = {
+ 		.boot_on = 1,
+ 		.initial_state = PM_SUSPEND_MEM,
+ 		.state_mem = {
+-			.uV = 950000,
++			.uV = 1025000,
+ 			.mode = REGULATOR_MODE_NORMAL,
+ 			.enabled = 1,
+ 		},
+-- 
+1.5.4.4
+

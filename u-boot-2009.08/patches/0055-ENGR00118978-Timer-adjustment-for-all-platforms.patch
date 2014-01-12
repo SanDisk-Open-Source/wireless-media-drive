@@ -1,0 +1,894 @@
+From d8667412a8b7e1ad96979bc2191b4e3fa90c8254 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Thu, 19 Nov 2009 16:43:08 +0800
+Subject: [PATCH] ENGR00118978: Timer adjustment for all platforms
+
+In current u-boot design,
+get_timer_masked is not correct and udelay is not accurate
+when the time is less than 1000us.
+Thus we need to use ipg clock source for accurate timer.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx35_3stack/board-mx35_3stack.h |    2 +-
+ board/freescale/mx35_3stack/lowlevel_init.S     |   16 +++---
+ board/freescale/mx51_bbg/mx51_bbg.c             |    2 +-
+ common/env_mmc.c                                |   12 +++-
+ cpu/arm1136/mx31/generic.c                      |    1 +
+ cpu/arm1136/mx35/generic.c                      |   15 ++---
+ cpu/arm1136/mx35/timer.c                        |   63 ++++++++++---------
+ cpu/arm926ejs/mx25/generic.c                    |    4 +
+ cpu/arm926ejs/mx25/timer.c                      |   77 +++++++++++++----------
+ cpu/arm_cortexa8/mx51/interrupts.c              |   12 ----
+ cpu/arm_cortexa8/mx51/timer.c                   |   68 +++++++++++---------
+ drivers/mmc/imx_esdhc.c                         |    8 +-
+ include/asm-arm/arch-mx25/mx25.h                |    3 +-
+ include/configs/mx25_3stack.h                   |    7 +-
+ include/configs/mx35_3stack.h                   |    4 +-
+ include/configs/mx35_3stack_mmc.h               |    7 ++-
+ include/configs/mx51_3stack.h                   |    5 +-
+ include/configs/mx51_3stack_android.h           |    5 +-
+ include/configs/mx51_bbg.h                      |    5 +-
+ include/configs/mx51_bbg_android.h              |    5 +-
+ 20 files changed, 170 insertions(+), 151 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/board-mx35_3stack.h b/board/freescale/mx35_3stack/board-mx35_3stack.h
+index f9c3074..82667ac 100644
+--- a/board/freescale/mx35_3stack/board-mx35_3stack.h
++++ b/board/freescale/mx35_3stack/board-mx35_3stack.h
+@@ -63,7 +63,7 @@
+ #define DBG_CSCR_A_CONFIG	0x22220A00
+ 
+ #define CCM_CCMR_CONFIG		0x003F4208
+-#define CCM_PDR0_CONFIG		0x00821000
++#define CCM_PDR0_CONFIG		0x00801000
+ 
+ #define PLL_BRM_OFFSET	31
+ #define PLL_PD_OFFSET	26
+diff --git a/board/freescale/mx35_3stack/lowlevel_init.S b/board/freescale/mx35_3stack/lowlevel_init.S
+index c255e98..c4454fa 100644
+--- a/board/freescale/mx35_3stack/lowlevel_init.S
++++ b/board/freescale/mx35_3stack/lowlevel_init.S
+@@ -204,9 +204,8 @@
+ 
+     	check_soc_version r1, r2
+ 	cmp r1, #CHIP_REV_2_0
+-	ldrhs r3, =CCM_MPLL_399_HZ
+-	bhs 1f
+-	ldr r2, [r0, #CLKCTL_PDR0]
++	movhs r2, #CLKMODE_CONSUMER
++	ldrlo r2, [r0, #CLKCTL_PDR0]
+         tst r2, #CLKMODE_CONSUMER
+         ldrne r3, =CCM_MPLL_532_HZ  /* consumer path*/
+         ldreq r3, =CCM_MPLL_399_HZ  /* auto path*/
+@@ -224,7 +223,7 @@
+         str r1, [r0, #CLKCTL_PDR0]
+ 
+         ldr r1, [r0, #CLKCTL_CGR0]
+-        orr r1, r1, #0x00300000
++        orr r1, r1, #0x0C300000
+         str r1, [r0, #CLKCTL_CGR0]
+ 
+         ldr r1, [r0, #CLKCTL_CGR1]
+@@ -322,14 +321,15 @@ lowlevel_init:
+ 
+ 	init_drive_strength
+ 
++	init_clock
++	init_debug_board
++
+ 	cmp pc, #PHYS_SDRAM_1
+-	blo init_clock_start
++	blo init_sdram_start
+ 	cmp pc, #(PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE)
+ 	blo skip_sdram_setup
+ 
+-init_clock_start:
+-	init_clock
+-	init_debug_board
++init_sdram_start:
+ 	/*init_sdram*/
+ 	setup_sdram
+ skip_sdram_setup:
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index e5287d0..8a45a78 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -29,7 +29,6 @@
+ #include <asm/arch/iomux.h>
+ #include <asm/errno.h>
+ #include <i2c.h>
+-#include <mxc_keyb.h>
+ #include <asm/arch/keypad.h>
+ #include "board-imx51.h"
+ #include <imx_spi.h>
+@@ -43,6 +42,7 @@
+ #endif
+ 
+ #ifdef CONFIG_FSL_ANDROID
++#include <mxc_keyb.h>
+ #include <part.h>
+ #include <ext2fs.h>
+ #include <linux/mtd/mtd.h>
+diff --git a/common/env_mmc.c b/common/env_mmc.c
+index 5742db0..8c98ad2 100644
+--- a/common/env_mmc.c
++++ b/common/env_mmc.c
+@@ -101,8 +101,10 @@ inline int write_env(struct mmc *mmc, unsigned long size,
+ {
+ 	uint blk_start = 0, blk_cnt = 0, n = 0;
+ 
+-	blk_start = (offset % 512) ? ((offset / 512) + 1) : (offset / 512);
+-	blk_cnt = (size % 512) ? ((size / 512) + 1) : (size / 512);
++	blk_start = (offset & (0x200 - 1)) \
++			? ((offset >> 9) + 1) : (offset >> 9);
++	blk_cnt   = (size   & (0x200 - 1)) \
++			? ((size   >> 9) + 1) : (size   >> 9);
+ 	n = mmc->block_dev.block_write(0, blk_start , blk_cnt, (u_char *)buffer);
+ 
+ 	return (n == blk_cnt) ? 0 : -1;
+@@ -132,8 +134,10 @@ inline int read_env(struct mmc *mmc, unsigned long size,
+ {
+ 	uint blk_start = 0, blk_cnt = 0, n = 0;
+ 
+-	blk_start = (offset % 512) ? ((offset / 512) + 1) : (offset / 512);
+-	blk_cnt = (size % 512) ? ((size / 512) + 1) : (size / 512);
++	blk_start = (offset & (0x200 - 1)) ? \
++			((offset >> 9) + 1) : (offset >> 9);
++	blk_cnt   = (size   & (0x200 - 1)) ? \
++			((size   >> 9) + 1) : (size   >> 9);
+ 
+ 	n = mmc->block_dev.block_read(0, blk_start, blk_cnt, (uchar *)buffer);
+ 
+diff --git a/cpu/arm1136/mx31/generic.c b/cpu/arm1136/mx31/generic.c
+index 1415d6c..67c0cc6 100644
+--- a/cpu/arm1136/mx31/generic.c
++++ b/cpu/arm1136/mx31/generic.c
+@@ -95,6 +95,7 @@ int print_cpuinfo (void)
+ {
+ 	printf("CPU:   Freescale i.MX31 at %d MHz\n",
+ 		mx31_get_mcu_main_clk() / 1000000);
++	mx31_dump_clocks();
+ 	return 0;
+ }
+ #endif
+diff --git a/cpu/arm1136/mx35/generic.c b/cpu/arm1136/mx35/generic.c
+index fbe9084..e9abe0c 100644
+--- a/cpu/arm1136/mx35/generic.c
++++ b/cpu/arm1136/mx35/generic.c
+@@ -89,15 +89,10 @@ static u32 __get_arm_div(u32 pdr0, u32 *fi, u32 *fd)
+ static int __get_ahb_div(u32 pdr0)
+ {
+ 	int *pclk_mux;
+-	if (pdr0 & MXC_CCM_PDR0_AUTO_CON) {
+-		pclk_mux = g_clk_mux_consumer +
+-		    ((pdr0 & MXC_CCM_PDR0_CON_MUX_DIV_MASK) >>
+-		     MXC_CCM_PDR0_CON_MUX_DIV_OFFSET);
+-	} else {
+-		pclk_mux = g_clk_mux_auto +
+-		    ((pdr0 & MXC_CCM_PDR0_AUTO_MUX_DIV_MASK) >>
+-		     MXC_CCM_PDR0_AUTO_MUX_DIV_OFFSET);
+-	}
++
++	pclk_mux = g_clk_mux_consumer +
++	    ((pdr0 & MXC_CCM_PDR0_CON_MUX_DIV_MASK) >>
++	     MXC_CCM_PDR0_CON_MUX_DIV_OFFSET);
+ 
+ 	if ((*pclk_mux) == -1)
+ 		return -1;
+@@ -348,6 +343,7 @@ void mxc_dump_clocks(void)
+ 	u32 cpufreq = __get_mcu_main_clk();
+ 	printf("mx35 cpu clock: %dMHz\n", cpufreq / 1000000);
+ 	printf("ipg clock     : %dHz\n", __get_ipg_clk());
++	printf("ipg per clock : %dHz\n", __get_ipg_per_clk());
+ 	printf("uart clock     : %dHz\n", mxc_get_clock(MXC_UART_CLK));
+ }
+ 
+@@ -356,6 +352,7 @@ int print_cpuinfo(void)
+ {
+ 	printf("CPU:   Freescale i.MX35 at %d MHz\n",
+ 	       __get_mcu_main_clk() / 1000000);
++	/* mxc_dump_clocks(); */
+ 	return 0;
+ }
+ #endif
+diff --git a/cpu/arm1136/mx35/timer.c b/cpu/arm1136/mx35/timer.c
+index d6f65cf..f18be9c 100644
+--- a/cpu/arm1136/mx35/timer.c
++++ b/cpu/arm1136/mx35/timer.c
+@@ -35,8 +35,10 @@
+ /* General purpose timers bitfields */
+ #define GPTCR_SWR       (1<<15)	/* Software reset */
+ #define GPTCR_FRR       (1<<9)	/* Freerun / restart */
+-#define GPTCR_CLKSOURCE_32 (4<<6)	/* Clock source */
++#define GPTCR_CLKSOURCE_32   (0x100<<6)	/* Clock source */
++#define GPTCR_CLKSOURCE_IPG (0x001<<6)	/* Clock source */
+ #define GPTCR_TEN       (1)	/* Timer enable */
++#define GPTPR_VAL	(66)
+ 
+ static inline void setup_gpt()
+ {
+@@ -52,9 +54,9 @@ static inline void setup_gpt()
+ 	GPTCR = GPTCR_SWR;
+ 	for (i = 0; i < 100; i++)
+ 		GPTCR = 0;      /* We have no udelay by now */
+-	GPTPR = 0;              /* 32Khz */
++	GPTPR = GPTPR_VAL;	/* 66Mhz / 66 */
+ 	/* Freerun Mode, PERCLK1 input */
+-	GPTCR |= GPTCR_CLKSOURCE_32 | GPTCR_TEN;
++	GPTCR |= GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
+ }
+ 
+ int timer_init(void)
+@@ -64,27 +66,37 @@ int timer_init(void)
+ 	return 0;
+ }
+ 
+-void reset_timer(void)
+-{
+-	reset_timer_masked();
+-}
+-
+ void reset_timer_masked(void)
+ {
+ 	GPTCR = 0;
+ 	/* Freerun Mode, PERCLK1 input */
+-	GPTCR = GPTCR_CLKSOURCE_32 | GPTCR_TEN;
++	GPTCR = GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
+ }
+ 
+-ulong get_timer_masked(void)
++inline ulong get_timer_masked(void)
+ {
+ 	ulong val = GPTCNT;
++
+ 	return val;
+ }
+ 
++void reset_timer(void)
++{
++	reset_timer_masked();
++}
++
+ ulong get_timer(ulong base)
+ {
+-	return get_timer_masked() - base;
++	ulong tmp;
++
++	tmp = get_timer_masked();
++
++	if (tmp <= (base * 1000)) {
++		/* Overflow */
++		tmp += (0xffffffff -  base);
++	}
++
++	return (tmp / 1000) - base;
+ }
+ 
+ void set_timer(ulong t)
+@@ -92,32 +104,25 @@ void set_timer(ulong t)
+ }
+ 
+ /* delay x useconds AND perserve advance timstamp value */
++/* GPTCNT is now supposed to tick 1 by 1 us. */
+ void udelay(unsigned long usec)
+ {
+-	ulong tmo, tmp;
++	ulong tmp;
+ 
+ 	setup_gpt();
+ 
+-	/* if "big" number, spread normalization to seconds */
+-	if (usec >= 1000) {
+-		/* start to normalize for usec to ticks per sec */
+-		tmo = usec / 1000;
+-		/* find number of "ticks" to wait to achieve target */
+-		tmo *= CONFIG_SYS_HZ;
+-		tmo /= 1000;	/* finish normalize. */
+-	} else {/* else small number, don't kill it prior to HZ multiply */
+-		tmo = usec * CONFIG_SYS_HZ;
+-		tmo /= (1000 * 1000);
+-	}
++	tmp = get_timer_masked();	/* get current timestamp */
+ 
+-	tmp = get_timer(0);	/* get current timestamp */
+ 	/* if setting this forward will roll time stamp */
+-	if ((tmo + tmp + 1) < tmp)
+-		 /* reset "advancing" timestamp to 0, set lastinc value */
++	if ((usec + tmp + 1) < tmp) {
++		/* reset "advancing" timestamp to 0, set lastinc value */
+ 		reset_timer_masked();
+-	else	/* else, set advancing stamp wake up time */
+-		tmo += tmp;
+-	while (get_timer_masked() < tmo)	/* loop till event */
++	} else {
++		/* else, set advancing stamp wake up time */
++		tmp += usec;
++	}
++
++	while (get_timer_masked() < tmp)	/* loop till event */
+ 		 /*NOP*/;
+ }
+ 
+diff --git a/cpu/arm926ejs/mx25/generic.c b/cpu/arm926ejs/mx25/generic.c
+index 5ee10d4..bda3fbe 100644
+--- a/cpu/arm926ejs/mx25/generic.c
++++ b/cpu/arm926ejs/mx25/generic.c
+@@ -97,6 +97,9 @@ unsigned int mxc_get_clock(enum mxc_clock clk)
+ 		return mx25_get_cspi_clk();
+ 	case MXC_UART_CLK:
+ 		break;
++	case MXC_ESDHC_CLK:
++		return mx25_get_ipg_clk();
++		break;
+ 	}
+ 	return -1;
+ }
+@@ -106,6 +109,7 @@ int print_cpuinfo(void)
+ {
+ 	printf("CPU:   Freescale i.MX25 at %d MHz\n",
+ 		mx25_get_mcu_main_clk() / 1000000);
++	mx25_dump_clocks();
+ 	return 0;
+ }
+ /*
+diff --git a/cpu/arm926ejs/mx25/timer.c b/cpu/arm926ejs/mx25/timer.c
+index 1900240..34c28e1 100644
+--- a/cpu/arm926ejs/mx25/timer.c
++++ b/cpu/arm926ejs/mx25/timer.c
+@@ -26,22 +26,19 @@
+ #include <common.h>
+ #include <asm/arch/mx25-regs.h>
+ 
+-#define TIMER_BASE 0x53f90000 /* General purpose timer 1 */
+-
+ /* General purpose timers registers */
+-#define GPTCR	__REG(TIMER_BASE) /* Control register */
+-#define GPTPR	__REG(TIMER_BASE + 0x4) /* Prescaler register */
+-#define GPTSR	__REG(TIMER_BASE + 0x8) /* Status register */
+-#define GPTCNT	__REG(TIMER_BASE + 0x24) /* Counter register */
++#define GPTCR   __REG(GPT1_BASE)	/* Control register */
++#define GPTPR  	__REG(GPT1_BASE + 0x4)	/* Prescaler register */
++#define GPTSR   __REG(GPT1_BASE + 0x8)	/* Status register */
++#define GPTCNT 	__REG(GPT1_BASE + 0x24)	/* Counter register */
+ 
+ /* General purpose timers bitfields */
+ #define GPTCR_SWR	(1<<15) /* Software reset */
+ #define GPTCR_FRR	(1<<9)  /* Freerun / restart */
+-#define GPTCR_CLKSOURCE_32	(4<<6)  /* Clock source */
++#define GPTCR_CLKSOURCE_32   (0x100<<6)	/* Clock source */
++#define GPTCR_CLKSOURCE_IPG (0x001<<6)	/* Clock source */
+ #define GPTCR_TEN	(1)	/* Timer enable */
+-
+-static ulong timestamp;
+-static ulong lastinc;
++#define GPTPR_VAL	(66)
+ 
+ static inline void setup_gpt()
+ {
+@@ -56,13 +53,12 @@ static inline void setup_gpt()
+ 	/* setup GP Timer 1 */
+ 	GPTCR = GPTCR_SWR;
+ 	for (i = 0; i < 100; i++)
+-		GPTCR = 0;      /* We have no udelay by now */
+-	GPTPR = 0;              /* 32Khz */
++		GPTCR = 0;      	/* We have no udelay by now */
++	GPTPR = GPTPR_VAL;	/* 66Mhz / 66 */
+ 	/* Freerun Mode, PERCLK1 input */
+-	GPTCR |= GPTCR_CLKSOURCE_32 | GPTCR_TEN;
++	GPTCR |= GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
+ }
+ 
+-/* nothing really to do with interrupts, just starts up a counter. */
+ int timer_init(void)
+ {
+ 	setup_gpt();
+@@ -72,27 +68,35 @@ int timer_init(void)
+ 
+ void reset_timer_masked(void)
+ {
+-	/* reset time */
+-	lastinc = GPTCNT; /* capture current incrementer value time */
+-	timestamp = 0; /* start "advancing" time stamp from 0 */
++	GPTCR = 0;
++	/* Freerun Mode, PERCLK1 input */
++	GPTCR = GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
+ }
+ 
+-void reset_timer(void)
++inline ulong get_timer_masked(void)
+ {
+-	reset_timer_masked();
++	ulong val = GPTCNT;
++
++	return val;
+ }
+ 
+-ulong get_timer_masked(void)
++void reset_timer(void)
+ {
+-	ulong now = GPTCNT;
+-	now = now * 1000 / CONFIG_SYS_HZ; /* current tick value */
+-
+-	return now;
++	reset_timer_masked();
+ }
+ 
+ ulong get_timer(ulong base)
+ {
+-	return get_timer_masked() - base;
++	ulong tmp;
++
++	tmp = get_timer_masked();
++
++	if (tmp <= (base * 1000)) {
++		/* Overflow */
++		tmp += (0xffffffff -  base);
++	}
++
++	return (tmp / 1000) - base;
+ }
+ 
+ void set_timer(ulong t)
+@@ -100,21 +104,26 @@ void set_timer(ulong t)
+ }
+ 
+ /* delay x useconds AND perserve advance timstamp value */
++/* GPTCNT is now supposed to tick 1 by 1 us. */
+ void udelay(unsigned long usec)
+ {
+-	ulong tmo, tmp;
++	ulong tmp;
+ 
+ 	setup_gpt();
+ 
+-	tmo = usec / 1000;		/* Current precision is Millisecond */
++	tmp = get_timer_masked();	/* get current timestamp */
++
++	/* if setting this forward will roll time stamp */
++	if ((usec + tmp + 1) < tmp) {
++		/* reset "advancing" timestamp to 0, set lastinc value */
++		reset_timer_masked();
++	} else {
++		/* else, set advancing stamp wake up time */
++		tmp += usec;
++	}
+ 
+-	tmp = get_timer(0);		/* get current timestamp */
+-	if ((tmo + tmp + 1) < tmp)	/* if overflow time stamp */
+-		reset_timer_masked();	/* reset "advancing" timestamp to 0 */
+-	else
+-		tmo += tmp;		/* else, set stamp wake up time */
+-	while (get_timer_masked() < tmo)/* loop till event */
+-		/*NOP*/;
++	while (get_timer_masked() < tmp)	/* loop till event */
++		 /*NOP*/;
+ }
+ 
+ void reset_cpu(ulong addr)
+diff --git a/cpu/arm_cortexa8/mx51/interrupts.c b/cpu/arm_cortexa8/mx51/interrupts.c
+index 1b5a4d1..9758bef 100644
+--- a/cpu/arm_cortexa8/mx51/interrupts.c
++++ b/cpu/arm_cortexa8/mx51/interrupts.c
+@@ -26,18 +26,6 @@
+ #include <common.h>
+ #include <asm/arch/mx51.h>
+ 
+-/* General purpose timers registers */
+-#define GPTCR   __REG(GPT1_BASE_ADDR)	/* Control register */
+-#define GPTPR  	__REG(GPT1_BASE_ADDR + 0x4)	/* Prescaler register */
+-#define GPTSR   __REG(GPT1_BASE_ADDR + 0x8)	/* Status register */
+-#define GPTCNT 	__REG(GPT1_BASE_ADDR + 0x24)	/* Counter register */
+-
+-/* General purpose timers bitfields */
+-#define GPTCR_SWR       (1<<15)	/* Software reset */
+-#define GPTCR_FRR       (1<<9)	/* Freerun / restart */
+-#define GPTCR_CLKSOURCE_32 (4<<6)	/* Clock source */
+-#define GPTCR_TEN       (1)	/* Timer enable */
+-
+ /* nothing really to do with interrupts, just starts up a counter. */
+ int interrupt_init(void)
+ {
+diff --git a/cpu/arm_cortexa8/mx51/timer.c b/cpu/arm_cortexa8/mx51/timer.c
+index ff982be..2fa04d6 100644
+--- a/cpu/arm_cortexa8/mx51/timer.c
++++ b/cpu/arm_cortexa8/mx51/timer.c
+@@ -2,7 +2,7 @@
+  * (C) Copyright 2007
+  * Sascha Hauer, Pengutronix
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -35,8 +35,10 @@
+ /* General purpose timers bitfields */
+ #define GPTCR_SWR       (1<<15)	/* Software reset */
+ #define GPTCR_FRR       (1<<9)	/* Freerun / restart */
+-#define GPTCR_CLKSOURCE_32 (4<<6)	/* Clock source */
++#define GPTCR_CLKSOURCE_32   (0x100<<6)	/* Clock source */
++#define GPTCR_CLKSOURCE_IPG (0x001<<6)	/* Clock source */
+ #define GPTCR_TEN       (1)	/* Timer enable */
++#define GPTPR_VAL	(66)
+ 
+ static inline void setup_gpt()
+ {
+@@ -51,13 +53,12 @@ static inline void setup_gpt()
+ 	/* setup GP Timer 1 */
+ 	GPTCR = GPTCR_SWR;
+ 	for (i = 0; i < 100; i++)
+-		GPTCR = 0;      /* We have no udelay by now */
+-	GPTPR = 0;              /* 32Khz */
++		GPTCR = 0;      	/* We have no udelay by now */
++	GPTPR = GPTPR_VAL;	/* 66Mhz / 66 */
+ 	/* Freerun Mode, PERCLK1 input */
+-	GPTCR |= GPTCR_CLKSOURCE_32 | GPTCR_TEN;
++	GPTCR |= GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
+ }
+ 
+-/* nothing really to do with interrupts, just starts up a counter. */
+ int timer_init(void)
+ {
+ 	setup_gpt();
+@@ -65,27 +66,37 @@ int timer_init(void)
+ 	return 0;
+ }
+ 
+-void reset_timer(void)
+-{
+-	reset_timer_masked();
+-}
+-
+ void reset_timer_masked(void)
+ {
+ 	GPTCR = 0;
+ 	/* Freerun Mode, PERCLK1 input */
+-	GPTCR = GPTCR_CLKSOURCE_32 | GPTCR_TEN;
++	GPTCR = GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
+ }
+ 
+-ulong get_timer_masked(void)
++inline ulong get_timer_masked(void)
+ {
+ 	ulong val = GPTCNT;
++
+ 	return val;
+ }
+ 
++void reset_timer(void)
++{
++	reset_timer_masked();
++}
++
+ ulong get_timer(ulong base)
+ {
+-	return get_timer_masked() - base;
++	ulong tmp;
++
++	tmp = get_timer_masked();
++
++	if (tmp <= (base * 1000)) {
++		/* Overflow */
++		tmp += (0xffffffff - base);
++	}
++
++	return (tmp / 1000) - base;
+ }
+ 
+ void set_timer(ulong t)
+@@ -93,31 +104,24 @@ void set_timer(ulong t)
+ }
+ 
+ /* delay x useconds AND perserve advance timstamp value */
++/* GPTCNT is now supposed to tick 1 by 1 us. */
+ void udelay(unsigned long usec)
+ {
+-	ulong tmo, tmp;
++	ulong tmp;
+ 
+ 	setup_gpt();
+ 
+-	/* if "big" number, spread normalization to seconds */
+-	if (usec >= 1000) {
+-		/* start to normalize for usec to ticks per sec */
+-		tmo = usec / 1000;
+-		/* find number of "ticks" to wait to achieve target */
+-		tmo *= CONFIG_SYS_HZ;
+-		tmo /= 1000;	/* finish normalize. */
+-	} else {/* else small number, don't kill it prior to HZ multiply */
+-		tmo = usec * CONFIG_SYS_HZ;
+-		tmo /= (1000 * 1000);
+-	}
++	tmp = get_timer_masked();	/* get current timestamp */
+ 
+-	tmp = get_timer(0);	/* get current timestamp */
+ 	/* if setting this forward will roll time stamp */
+-	if ((tmo + tmp + 1) < tmp)
+-		 /* reset "advancing" timestamp to 0, set lastinc value */
++	if ((usec + tmp + 1) < tmp) {
++		/* reset "advancing" timestamp to 0, set lastinc value */
+ 		reset_timer_masked();
+-	else	/* else, set advancing stamp wake up time */
+-		tmo += tmp;
+-	while (get_timer_masked() < tmo)	/* loop till event */
++	} else {
++		/* else, set advancing stamp wake up time */
++		tmp += usec;
++	}
++
++	while (get_timer_masked() < tmp)	/* loop till event */
+ 		 /*NOP*/;
+ }
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index 6181fca..5ee0efd 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -76,15 +76,15 @@ struct fsl_esdhc {
+ static inline void mdelay(unsigned long msec)
+ {
+ 	unsigned long i;
+-	for (i = 0; i < msec * 10; i++)
+-		udelay(100);
++	for (i = 0; i < msec; i++)
++		udelay(1000);
+ }
+ 
+ static inline void sdelay(unsigned long sec)
+ {
+ 	unsigned long i;
+-	for (i = 0; i < sec * 10; i++)
+-		mdelay(100);
++	for (i = 0; i < sec; i++)
++		mdelay(1000);
+ }
+ 
+ /* Return the XFERTYP flags for a given command and data packet */
+diff --git a/include/asm-arm/arch-mx25/mx25.h b/include/asm-arm/arch-mx25/mx25.h
+index a51b893..aa3dac0 100644
+--- a/include/asm-arm/arch-mx25/mx25.h
++++ b/include/asm-arm/arch-mx25/mx25.h
+@@ -36,7 +36,8 @@ enum mxc_clock {
+ 	MXC_IPG_CLK,
+ 	MXC_IPG_PERCLK,
+ 	MXC_UART_CLK,
+-	MXC_CSPI_CLK
++	MXC_CSPI_CLK,
++	MXC_ESDHC_CLK,
+ };
+ 
+ extern unsigned int mx25_get_ipg_clk(void);
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index aa24d53..5763b24 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -100,12 +100,11 @@
+ /* #define CONFIG_CMD_SPI */
+ /* #define CONFIG_CMD_DATE */
+ #define CONFIG_CMD_NAND
+-/* #define CONFIG_CMD_MMC */
++#define CONFIG_CMD_MMC
+ 
+ /*
+  * MMC Configs
+  * */
+-/*
+ #ifdef CONFIG_CMD_MMC
+ 	#define CONFIG_MMC				1
+ 	#define CONFIG_GENERIC_MMC
+@@ -113,7 +112,6 @@
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ #endif
+-*/
+ 
+ /* Disabled due to compilation errors in cmd_bootm.c (IMLS seems to require
+  * that CONFIG_NO_FLASH is undefined).
+@@ -145,6 +143,7 @@
+ 
+ #define CONFIG_HAS_ETH1
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_NET_MULTI
+ #define CONFIG_ETH_PRIME
+@@ -175,7 +174,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR	CONFIG_LOADADDR /* default load address */
+ 
+-#define CONFIG_SYS_HZ		CONFIG_MX25_CLK32
++#define CONFIG_SYS_HZ			1000
+ 
+ #define UBOOT_IMAGE_SIZE	0x40000
+ 
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 7b3f1db..f0d3d63 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -31,7 +31,6 @@
+ #define CONFIG_MXC		1
+ #define CONFIG_MX35		1	/* in a mx31 */
+ #define CONFIG_MX35_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-#define CONFIG_MX35_CLK32	32768
+ 
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+@@ -91,6 +90,7 @@
+ #define CONFIG_CMD_I2C
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ 
+ #define CONFIG_BOOTDELAY	3
+ 
+@@ -164,7 +164,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
+ 
+-#define CONFIG_SYS_HZ		CONFIG_MX35_CLK32/* use 32kHz clock as source */
++#define CONFIG_SYS_HZ				1000
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index 27b45c8..948bc91 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -31,7 +31,6 @@
+ #define CONFIG_MXC		1
+ #define CONFIG_MX35		1	/* in a mx31 */
+ #define CONFIG_MX35_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-#define CONFIG_MX35_CLK32	32768
+ 
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+@@ -91,6 +90,8 @@
+ 
+ #define CONFIG_CMD_I2C
+ #define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ 
+ #define CONFIG_BOOTDELAY	3
+ 
+@@ -148,6 +149,8 @@
+  */
+ #define CONFIG_SYS_LONGHELP	/* undef to save memory */
+ #define CONFIG_SYS_PROMPT	"MX35 U-Boot > "
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
+ #define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE	256	/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+@@ -162,7 +165,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
+ 
+-#define CONFIG_SYS_HZ		CONFIG_MX35_CLK32/* use 32kHz clock as source */
++#define CONFIG_SYS_HZ				1000
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 794ae83..29f30da 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -40,7 +40,7 @@
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-#define CONFIG_MX51_CLK32	32768
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+@@ -90,6 +90,7 @@
+ #undef CONFIG_CMD_IMLS
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ #define CONFIG_NET_MULTI
+ #define CONFIG_CMD_MMC
+ 
+@@ -173,7 +174,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
+ 
+-#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++#define CONFIG_SYS_HZ				1000
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 04bcbb8..bed1200 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -40,7 +40,7 @@
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-#define CONFIG_MX51_CLK32	32768
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+@@ -89,6 +89,7 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ /*
+ #define CONFIG_CMD_UBI
+ #define CONFIG_CMD_UBIFS
+@@ -242,7 +243,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
+ 
+-#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++#define CONFIG_SYS_HZ				1000
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index e00ae62..8ef891f 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -39,7 +39,7 @@
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-#define CONFIG_MX51_CLK32	32768
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+@@ -113,6 +113,7 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ #define CONFIG_CMD_SPI
+ #define CONFIG_CMD_SF
+ #define CONFIG_CMD_MMC
+@@ -213,7 +214,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
+ 
+-#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++#define CONFIG_SYS_HZ				1000
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 24ffc6c..ea1998c 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -40,7 +40,7 @@
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-#define CONFIG_MX51_CLK32	32768
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+@@ -73,6 +73,7 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT	100
+ 
+ /*
+  * Android support Configs
+@@ -201,7 +202,7 @@
+ 
+ #define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
+ 
+-#define CONFIG_SYS_HZ	CONFIG_MX51_CLK32/* use 32kHz clock as source */
++#define CONFIG_SYS_HZ				1000
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+-- 
+1.5.4.4
+

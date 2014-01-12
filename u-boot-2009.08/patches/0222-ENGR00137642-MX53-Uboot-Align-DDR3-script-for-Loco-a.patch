@@ -1,0 +1,63 @@
+From 5d92b32e22a49b32a35b5d456c8d38af04f53422 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Wed, 5 Jan 2011 11:48:14 -0600
+Subject: [PATCH] ENGR00137642 MX53 Uboot Align DDR3 script for Loco and SMD boards
+
+Changed the value of one register, offset 0x88, of the ESDCTL controller
+to match the official script for the boards, entitled "MX53_TO2_DDR3_LCB.inc",
+found at
+
+http://compass.freescale.net/livelink/livelink/221435668/
+MX53_TO2_DDR3_LCB.inc.txt?func=doc.Fetch&nodeid=221435668
+
+The register value sets read delay lines. The change is minor.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ board/freescale/mx53_loco/flash_header.S |    4 ++--
+ board/freescale/mx53_smd/flash_header.S  |    4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/board/freescale/mx53_loco/flash_header.S b/board/freescale/mx53_loco/flash_header.S
+index db056db..0ca3b85 100644
+--- a/board/freescale/mx53_loco/flash_header.S
++++ b/board/freescale/mx53_loco/flash_header.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -80,7 +80,7 @@ MXC_DCD_ITEM(21, IOMUXC_BASE_ADDR + 0x720, 0x00300000)
+ MXC_DCD_ITEM(22, IOMUXC_BASE_ADDR + 0x724, 0x04000000)
+ MXC_DCD_ITEM(23, IOMUXC_BASE_ADDR + 0x728, 0x00300000)
+ MXC_DCD_ITEM(24, IOMUXC_BASE_ADDR + 0x72c, 0x00300000)
+-MXC_DCD_ITEM(25, ESDCTL_BASE_ADDR + 0x088, 0x32383535)
++MXC_DCD_ITEM(25, ESDCTL_BASE_ADDR + 0x088, 0x35343535)
+ MXC_DCD_ITEM(26, ESDCTL_BASE_ADDR + 0x090, 0x4d444c44)
+ MXC_DCD_ITEM(27, ESDCTL_BASE_ADDR + 0x07c, 0x01370138)
+ MXC_DCD_ITEM(28, ESDCTL_BASE_ADDR + 0x080, 0x013b013c)
+diff --git a/board/freescale/mx53_smd/flash_header.S b/board/freescale/mx53_smd/flash_header.S
+index db056db..0ca3b85 100644
+--- a/board/freescale/mx53_smd/flash_header.S
++++ b/board/freescale/mx53_smd/flash_header.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -80,7 +80,7 @@ MXC_DCD_ITEM(21, IOMUXC_BASE_ADDR + 0x720, 0x00300000)
+ MXC_DCD_ITEM(22, IOMUXC_BASE_ADDR + 0x724, 0x04000000)
+ MXC_DCD_ITEM(23, IOMUXC_BASE_ADDR + 0x728, 0x00300000)
+ MXC_DCD_ITEM(24, IOMUXC_BASE_ADDR + 0x72c, 0x00300000)
+-MXC_DCD_ITEM(25, ESDCTL_BASE_ADDR + 0x088, 0x32383535)
++MXC_DCD_ITEM(25, ESDCTL_BASE_ADDR + 0x088, 0x35343535)
+ MXC_DCD_ITEM(26, ESDCTL_BASE_ADDR + 0x090, 0x4d444c44)
+ MXC_DCD_ITEM(27, ESDCTL_BASE_ADDR + 0x07c, 0x01370138)
+ MXC_DCD_ITEM(28, ESDCTL_BASE_ADDR + 0x080, 0x013b013c)
+-- 
+1.5.4.4
+

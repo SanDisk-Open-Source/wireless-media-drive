@@ -1,0 +1,28 @@
+From e5dace1cdba4d92aa38bc8b9c140b110073b583d Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Tue, 21 Sep 2010 18:01:11 -0500
+Subject: [PATCH] ENGR00131830 MX50 RDP Add DCP and RNG devices
+
+Enable these drivers by adding the devices to the board file
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index c0c0126..4b2dc3d 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -838,6 +838,8 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&lcd_wvga_device, &lcd_wvga_data);
+ 	mxc_register_device(&elcdif_device, &fb_data[0]);
+ 	mxc_register_device(&mxs_viim, NULL);
++	mxc_register_device(&mxc_rngb_device, NULL);
++	mxc_register_device(&dcp_device, NULL);
+ 
+ 	mx50_rdp_init_mc13892();
+ /*
+-- 
+1.5.4.4
+

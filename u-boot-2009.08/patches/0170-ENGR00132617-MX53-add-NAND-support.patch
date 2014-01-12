@@ -1,0 +1,858 @@
+From 9bbe28258c19c28f8f85c22c932bd119368cfacb Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 14 Oct 2010 16:42:19 +0800
+Subject: [PATCH] ENGR00132617 MX53: add NAND support
+
+Add NAND support for MX53 EVK and ARD.
+
+Need to use kobs-ng to flash U-Boot on MX53 TO1. Because
+MX51 TO1 ROM doesn't support bi swap solution and kernel
+enable bi swap, Must enable "ignore bad block" option when
+flashing U-Boot. The step is as following:
+echo 1 > /sys/devices/platform/mxc_nandv2_flash.0/ignorebad
+kobs-ng init --chip_0_device_path=/dev/mtd2 u-boot.bin
+echo 0 > /sys/devices/platform/mxc_nandv2_flash.0/ignorebad
+
+Since default configuration stores environment into SD
+card and U-Boot uses get_mmc_env_devno (Read SBMR register)
+to get MMC/SD slot information, you must insert SD card to
+bottom SD slot to get/store environment if you are using NAND
+boot on MX53 EVK.
+
+You must config boot dip setting well when doing NAND boot.
+For example, if you are using NAND 29F32G080AA NAND chip on
+MX53 EVK, you can set boot dips as the following for NAND
+boot: SW3: dip 7, 8 on; SW2: dip 3,5 on; SW1: dip 4,7,8 on.
+Other dips are off.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx53_rd/mx53_rd.c    |  182 ++++++++++++++++
+ cpu/arm_cortexa8/mx53/generic.c      |    7 +-
+ drivers/mtd/nand/mxc_nand.c          |   15 +-
+ drivers/mtd/nand/nand_device_info.c  |   22 ++-
+ drivers/mtd/nand/nand_ids.c          |    1 +
+ include/asm-arm/arch-mx53/mx53.h     |    3 +-
+ include/asm-arm/arch-mx53/mxc_nand.h |  379 ++++++++++++++++++++++++++++++++++
+ include/configs/mx53_ard.h           |   10 +
+ include/configs/mx53_evk.h           |   10 +
+ include/configs/mx53_evk_android.h   |   10 +
+ 10 files changed, 626 insertions(+), 13 deletions(-)
+
+diff --git a/board/freescale/mx53_rd/mx53_rd.c b/board/freescale/mx53_rd/mx53_rd.c
+index a4760b0..d88cb38 100644
+--- a/board/freescale/mx53_rd/mx53_rd.c
++++ b/board/freescale/mx53_rd/mx53_rd.c
+@@ -1021,6 +1021,183 @@ int board_mmc_init(bd_t *bis)
+ 
+ #endif
+ 
++#ifdef CONFIG_MXC_NAND
++void setup_nfc(void)
++{
++	u32 i, reg;
++	#define M4IF_GENP_WEIM_MM_MASK          0x00000001
++	#define WEIM_GCR2_MUX16_BYP_GRANT_MASK  0x00001000
++
++	reg = __raw_readl(M4IF_BASE_ADDR + 0xc);
++	reg &= ~M4IF_GENP_WEIM_MM_MASK;
++	__raw_writel(reg, M4IF_BASE_ADDR + 0xc);
++	for (i = 0x4; i < 0x94; i += 0x18) {
++		reg = __raw_readl(WEIM_BASE_ADDR + i);
++		reg &= ~WEIM_GCR2_MUX16_BYP_GRANT_MASK;
++		__raw_writel(reg, WEIM_BASE_ADDR + i);
++	}
++#if defined(CONFIG_MX53_ARD)
++	mxc_request_iomux(MX53_PIN_NANDF_CS0,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CS0,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_CS1,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CS1,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_RB0,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_RB0,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PULL |
++			PAD_CTL_100K_PU);
++	mxc_request_iomux(MX53_PIN_NANDF_CLE,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CLE,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_ALE,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_ALE,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_WP_B,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_WP_B,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PULL |
++			PAD_CTL_100K_PU);
++	mxc_request_iomux(MX53_PIN_NANDF_RE_B,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_RE_B,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_WE_B,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_WE_B,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA0,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA0,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA1,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA1,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA2,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA2,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA3,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA3,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA4,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA4,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA5,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA5,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA6,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA6,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA7,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA7,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++#else
++	mxc_request_iomux(MX53_PIN_NANDF_CS0,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CS0,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_CS1,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CS1,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_CS2,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CS2,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_CS3,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CS3,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_RB0,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_RB0,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PULL |
++			PAD_CTL_100K_PU);
++	mxc_request_iomux(MX53_PIN_NANDF_CLE,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_CLE,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_ALE,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_ALE,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_WP_B,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_WP_B,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PULL |
++			PAD_CTL_100K_PU);
++	mxc_request_iomux(MX53_PIN_NANDF_RE_B,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_RE_B,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_NANDF_WE_B,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_NANDF_WE_B,
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA0,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA0,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA1,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA1,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA2,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA2,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA3,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA3,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA4,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA4,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA5,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA5,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA6,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA6,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++	mxc_request_iomux(MX53_PIN_EIM_DA7,
++			IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX53_PIN_EIM_DA7,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU |
++			PAD_CTL_DRV_HIGH);
++#endif
++}
++#endif
++
+ int board_init(void)
+ {
+ #ifdef CONFIG_MFG
+@@ -1045,6 +1222,11 @@ int board_init(void)
+ 	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
+ 
+ 	setup_uart();
++
++#ifdef CONFIG_MXC_NAND
++	setup_nfc();
++#endif
++
+ #ifdef CONFIG_MXC_FEC
+ 	setup_fec();
+ #endif
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index d725bde..8904d9d 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -88,7 +88,7 @@ struct pll_param {
+ #define MAX_DDR_CLK     420000000
+ #define AHB_CLK_MAX     133333333
+ #define IPG_CLK_MAX     (AHB_CLK_MAX / 2)
+-#define NFC_CLK_MAX     25000000
++#define NFC_CLK_MAX     34000000
+ #define HSP_CLK_MAX     133333333
+ #endif
+ 
+@@ -311,7 +311,6 @@ static u32 __get_emi_slow_clk(void)
+ 	return  __get_periph_clk() / (pdf + 1);
+ }
+ 
+-/*
+ static u32 __get_nfc_clk(void)
+ {
+ 	u32 cbcdr =  __REG(MXC_CCM_CBCDR);
+@@ -320,7 +319,6 @@ static u32 __get_nfc_clk(void)
+ 
+ 	return  __get_emi_slow_clk() / (pdf + 1);
+ }
+-*/
+ 
+ static u32 __get_ddr_clk(void)
+ {
+@@ -479,6 +477,8 @@ unsigned int mxc_get_clock(enum mxc_clock clk)
+ 		return __get_esdhc4_clk();
+ 	case MXC_SATA_CLK:
+ 		return __get_ahb_clk();
++	case MXC_NFC_CLK:
++	  return __get_nfc_clk();
+ 	default:
+ 		break;
+ 	}
+@@ -507,6 +507,7 @@ void mxc_dump_clocks(void)
+ 	printf("esdhc2 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC2_CLK));
+ 	printf("esdhc3 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC3_CLK));
+ 	printf("esdhc4 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC4_CLK));
++	printf("nfc clock     : %dHz\n", mxc_get_clock(MXC_NFC_CLK));
+ }
+ 
+ #ifdef CONFIG_CMD_CLOCK
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index ccb7af1..89d4556 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -280,12 +280,9 @@ static int mxc_nand_ecc_status(struct mtd_info *mtd)
+ 	u32 ecc_stat, err;
+ 	int no_subpages = 1;
+ 	int ret = 0;
+-	u8 ecc_bit_mask, err_limit;
+ 	struct nand_chip *this = mtd->priv;
+ 	struct nand_info *info = this->priv;
+-
+-	ecc_bit_mask = (IS_4BIT_ECC ? 0x7 : 0xf);
+-	err_limit = (IS_4BIT_ECC ? 0x4 : 0x8);
++	u8 ecc_bit_mask = 0xf;
+ 
+ 	no_subpages = mtd->writesize >> 9;
+ 
+@@ -294,7 +291,7 @@ static int mxc_nand_ecc_status(struct mtd_info *mtd)
+ 	ecc_stat = GET_NFC_ECC_STATUS();
+ 	do {
+ 		err = ecc_stat & ecc_bit_mask;
+-		if (err > err_limit) {
++		if (err == ecc_bit_mask) {
+ 			printk(KERN_WARNING "UnCorrectable RS-ECC Error\n");
+ 			return -1;
+ 		} else {
+@@ -303,7 +300,7 @@ static int mxc_nand_ecc_status(struct mtd_info *mtd)
+ 		ecc_stat >>= 4;
+ 	} while (--no_subpages);
+ 
+-	MTDDEBUG(MTD_DEBUG_LEVEL3, "%d Symbol Correctable RS-ECC Error\n", ret);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "Correctable ECC Error(%d)\n", ret);
+ 
+ 	return ret;
+ }
+@@ -1238,15 +1235,17 @@ static void mxc_nfc_init(void)
+ 
+ 	/* Unlock the internal RAM Buffer */
+ 	raw_write(NFC_SET_BLS(NFC_BLS_UNLCOKED), REG_NFC_BLS);
+-
++#ifndef CONFIG_MX53
+ 	/* Blocks to be unlocked */
+ 	UNLOCK_ADDR(0x0, 0xFFFF);
+ 
+ 	/* Unlock Block Command for given address range */
+ 	raw_write(NFC_SET_WPC(NFC_WPC_UNLOCK), REG_NFC_WPC);
+-
++#endif
+ 	/* Enable hw ecc */
+ 	raw_write((raw_read(REG_NFC_ECC_EN) | NFC_ECC_EN), REG_NFC_ECC_EN);
++	raw_write(raw_read(REG_NFC_ONE_CYCLE) |
++		NFC_ONE_CYCLE, REG_NFC_ONE_CYCLE);
+ }
+ 
+ static int mxc_alloc_buf(struct nand_info *info)
+diff --git a/drivers/mtd/nand/nand_device_info.c b/drivers/mtd/nand/nand_device_info.c
+index 2f3bbb6..c840672 100644
+--- a/drivers/mtd/nand/nand_device_info.c
++++ b/drivers/mtd/nand/nand_device_info.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -496,6 +496,26 @@ static struct nand_device_info nand_device_info_table_type_2[] =
+ 	.tRHOH_in_ns              = -1,
+ 	NULL,
+ 	},
++	{
++	.end_of_table             = false,
++	.manufacturer_code        = 0x2c,
++	.device_code              = 0x48,
++	.cell_technology          = NAND_DEVICE_CELL_TECH_SLC,
++	.chip_size_in_bytes       = 2LL*SZ_1G,
++	.block_size_in_pages      = 128,
++	/*
++	 * TODO: The actual oob size for MT29F16G08ABACA is
++	 * 224 bytes. Use oob 218 bytes since MX53 NFC controller
++	 * mentions the spare area size must be less or equal 218
++	 * byte if ECC is enabled
++	 */
++	 .page_total_size_in_bytes = 4*SZ_1K + 218,
++	 .ecc_strength_in_bits     = 8,
++	 .ecc_size_in_bytes        = 512,
++	 .data_setup_in_ns         = 15,
++	 .data_hold_in_ns          = 10,
++	 .address_setup_in_ns      = 20,
++	},
+ 	{true}
+ };
+ 
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index e4be857..2ffaf54 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -107,6 +107,7 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 	{"NAND 2GiB 3,3V 8-bit",	0xD5, 0, 2048, 0, LP_OPTIONS},
+ 	{"NAND 2GiB 1,8V 16-bit",	0xB5, 0, 2048, 0, LP_OPTIONS16},
+ 	{"NAND 2GiB 3,3V 16-bit",	0xC5, 0, 2048, 0, LP_OPTIONS16},
++	{"NAND 2GiB 3,3V 8-bit",        0x48, 0, 2048, 0, LP_OPTIONS},
+ 
+ 	 /* 32 Gigabit ,only use 2G due to the linux mtd limitation*/
+ 	{"NAND 4GiB 3,3V 8-bit",        0xD7, 0, 2048, 0, LP_OPTIONS},
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index ab49a2f..a327b7f 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -418,7 +418,8 @@ enum mxc_clock {
+ 	MXC_ESDHC2_CLK,
+ 	MXC_ESDHC3_CLK,
+ 	MXC_ESDHC4_CLK,
+-	MXC_SATA_CLK
++	MXC_SATA_CLK,
++	MXC_NFC_CLK,
+ };
+ 
+ enum mxc_peri_clocks {
+diff --git a/include/asm-arm/arch-mx53/mxc_nand.h b/include/asm-arm/arch-mx53/mxc_nand.h
+new file mode 100644
+index 0000000..68c2dc6
+--- /dev/null
++++ b/include/asm-arm/arch-mx53/mxc_nand.h
+@@ -0,0 +1,379 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++/*!
++ * @file mxc_nand.h
++ *
++ * @brief This file contains the NAND Flash Controller register information.
++ *
++ *
++ * @ingroup NAND_MTD
++ */
++
++#ifndef __MXC_NAND_H__
++#define __MXC_NAND_H__
++
++#include <asm/arch/mx53.h>
++
++#define IS_2K_PAGE_NAND         ((mtd->writesize / info->num_of_intlv) \
++						== NAND_PAGESIZE_2KB)
++#define IS_4K_PAGE_NAND         ((mtd->writesize / info->num_of_intlv) \
++						== NAND_PAGESIZE_4KB)
++#define IS_LARGE_PAGE_NAND      ((mtd->writesize / info->num_of_intlv) > 512)
++
++#define GET_NAND_OOB_SIZE	(mtd->oobsize / info->num_of_intlv)
++#define GET_NAND_PAGE_SIZE      (mtd->writesize / info->num_of_intlv)
++
++/*
++ * main area for bad block marker is in the last data section
++ * the spare area for swapped bad block marker is the second
++ * byte of last spare section
++ */
++#define NAND_SECTIONS        (GET_NAND_PAGE_SIZE >> 9)
++#define NAND_OOB_PER_SECTION (((GET_NAND_OOB_SIZE / NAND_SECTIONS) >> 1) << 1)
++#define NAND_CHUNKS          (GET_NAND_PAGE_SIZE / (512 + NAND_OOB_PER_SECTION))
++
++#define BAD_BLK_MARKER_MAIN_OFFS \
++	(GET_NAND_PAGE_SIZE - NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_SP_OFFS (NAND_CHUNKS * SPARE_LEN)
++
++#define BAD_BLK_MARKER_OOB_OFFS (NAND_CHUNKS * NAND_OOB_PER_SECTION)
++
++#define BAD_BLK_MARKER_MAIN  \
++	((u32)MAIN_AREA0 + BAD_BLK_MARKER_MAIN_OFFS)
++
++#define BAD_BLK_MARKER_SP  \
++	((u32)SPARE_AREA0 + BAD_BLK_MARKER_SP_OFFS)
++
++#define NAND_PAGESIZE_2KB	2048
++#define NAND_PAGESIZE_4KB	4096
++
++#define NFC_AXI_BASE_ADDR		NFC_BASE_ADDR_AXI
++#define NFC_IP_BASE_ADDR		NFC_BASE_ADDR
++#define MXC_INT_NANDFC			MXC_INT_NFC
++#define CONFIG_MXC_NFC_SP_AUTO
++#define NFC_FLASH_CMD			(NFC_AXI_BASE_ADDR + 0x1E00)
++#define NFC_FLASH_ADDR0			(NFC_AXI_BASE_ADDR + 0x1E04)
++#define NFC_FLASH_ADDR8			(NFC_AXI_BASE_ADDR + 0x1E24)
++#define NFC_CONFIG1			(NFC_AXI_BASE_ADDR + 0x1E34)
++#define NFC_ECC_STATUS_RESULT		(NFC_AXI_BASE_ADDR + 0x1E38)
++#define NFC_ECC_STATUS_SUM		(NFC_AXI_BASE_ADDR + 0x1E3C)
++#define LAUNCH_NFC			(NFC_AXI_BASE_ADDR + 0x1E40)
++#define NFC_WRPROT			(NFC_IP_BASE_ADDR + 0x00)
++#define NFC_WRPROT_UNLOCK_BLK_ADD0	(NFC_IP_BASE_ADDR + 0x04)
++#define NFC_CONFIG2			(NFC_IP_BASE_ADDR + 0x24)
++#define NFC_CONFIG3			(NFC_IP_BASE_ADDR + 0x28)
++#define NFC_IPC				(NFC_IP_BASE_ADDR + 0x2C)
++/*!
++ * Addresses for NFC RAM BUFFER Main area 0
++ */
++#define MAIN_AREA0			((u16 *)(NFC_AXI_BASE_ADDR + 0x000))
++#define MAIN_AREA1			((u16 *)(NFC_AXI_BASE_ADDR + 0x200))
++
++/*!
++ * Addresses for NFC SPARE BUFFER Spare area 0
++ */
++#define SPARE_AREA0			((u16 *)(NFC_AXI_BASE_ADDR + 0x1000))
++#define SPARE_LEN			64
++#define SPARE_COUNT			8
++#define SPARE_SIZE			(SPARE_LEN * SPARE_COUNT)
++
++#define NFC_SPAS_WIDTH 8
++#define NFC_SPAS_SHIFT 16
++
++#define NFC_SET_SPAS(v)			\
++	raw_write((((raw_read(NFC_CONFIG2) & \
++	NFC_FIELD_RESET(NFC_SPAS_WIDTH, NFC_SPAS_SHIFT)) | ((v) << 16))), \
++	NFC_CONFIG2)
++
++#define NFC_SET_ECC_MODE(v)		\
++do { \
++	if ((v) == NFC_SPAS_218 || (v) == NFC_SPAS_112) \
++		raw_write(((raw_read(NFC_CONFIG2) & \
++				~(3 << 6)) | \
++				NFC_ECC_MODE_16), NFC_CONFIG2); \
++	else \
++		raw_write(((raw_read(NFC_CONFIG2) & \
++				~(3 << 6)) | \
++				NFC_ECC_MODE_4), NFC_CONFIG2); \
++} while (0)
++
++#define WRITE_NFC_IP_REG(val, reg)			\
++	do {						\
++		raw_write(NFC_IPC_CREQ, NFC_IPC);	\
++		while (!((raw_read(NFC_IPC) & NFC_IPC_ACK)>>1)) \
++			; \
++		raw_write(val, reg);			\
++		raw_write(0, NFC_IPC);			\
++	} while (0)
++
++#define GET_NFC_ECC_STATUS() raw_read(REG_NFC_ECC_STATUS_RESULT);
++
++/*!
++ * Set 1 to specific operation bit, rest to 0 in LAUNCH_NFC Register for
++ * Specific operation
++ */
++#define NFC_CMD				0x1
++#define NFC_ADDR			0x2
++#define NFC_INPUT			0x4
++#define NFC_OUTPUT			0x8
++#define NFC_ID				0x10
++#define NFC_STATUS			0x20
++#define NFC_AUTO_PROG			0x40
++#define NFC_AUTO_READ			0x80
++#define NFC_AUTO_ERASE			0x200
++#define NFC_COPY_BACK_0			0x400
++#define NFC_COPY_BACK_1			0x800
++#define NFC_AUTO_STATE			0x1000
++
++/* Bit Definitions for NFC_IPC*/
++#define NFC_OPS_STAT			(1 << 31)
++#define NFC_OP_DONE			(1 << 30)
++#define NFC_RB				(1 << 28)
++#define NFC_PS_WIDTH			2
++#define NFC_PS_SHIFT			0
++#define NFC_PS_512			0
++#define NFC_PS_2K			1
++#define NFC_PS_4K			2
++
++
++#define NFC_ONE_CYCLE			(1 << 2)
++#define NFC_INT_MSK			(1 << 15)
++#define NFC_AUTO_PROG_DONE_MSK		(1 << 14)
++#define NFC_NUM_ADDR_PHASE1_WIDTH	2
++#define NFC_NUM_ADDR_PHASE1_SHIFT	12
++#define NFC_NUM_ADDR_PHASE0_WIDTH	1
++#define NFC_NUM_ADDR_PHASE0_SHIFT	5
++#define NFC_ONE_LESS_PHASE1		0
++#define NFC_TWO_LESS_PHASE1		1
++#define NFC_FLASH_ADDR_SHIFT		0
++#define NFC_UNLOCK_END_ADDR_SHIFT	16
++
++/* Bit definition for NFC_CONFIGRATION_1 */
++#define NFC_SP_EN			(1 << 0)
++#define NFC_CE				(1 << 1)
++#define NFC_RST				(1 << 2)
++#define NFC_ECC_EN			(1 << 3)
++
++#define NFC_FIELD_RESET(width, shift) (~(((1 << (width)) - 1) << (shift)))
++
++#define NFC_RBA_SHIFT			4
++#define NFC_RBA_WIDTH			3
++
++#define NFC_ITERATION_SHIFT 8
++#define NFC_ITERATION_WIDTH 4
++#define NFC_ACTIVE_CS_SHIFT 12
++#define NFC_ACTIVE_CS_WIDTH 3
++/* bit definition for CONFIGRATION3 */
++#define NFC_NO_SDMA			(1 << 20)
++#define NFC_FMP_SHIFT			16
++#define NFC_FMP_WIDTH			4
++#define NFC_RBB_MODE			(1 << 15)
++#define NFC_NUM_OF_DEVICES_SHIFT	12
++#define NFC_NUM_OF_DEVICES_WIDTH	4
++#define NFC_DMA_MODE_SHIFT		11
++#define NFC_DMA_MODE_WIDTH		1
++#define NFC_SBB_SHIFT			8
++#define NFC_SBB_WIDTH			3
++#define NFC_BIG				(1 << 7)
++#define NFC_SB2R_SHIFT			4
++#define NFC_SB2R_WIDTH			3
++#define NFC_FW_SHIFT			3
++#define NFC_FW_WIDTH			1
++#define NFC_TOO				(1 << 2)
++#define NFC_ADD_OP_SHIFT		0
++#define NFC_ADD_OP_WIDTH		2
++#define NFC_FW_8			1
++#define NFC_FW_16			0
++#define NFC_ST_CMD_SHITF		24
++#define NFC_ST_CMD_WIDTH		8
++
++#define NFC_PPB_32			(0 << 7)
++#define NFC_PPB_64			(1 << 7)
++#define NFC_PPB_128			(2 << 7)
++#define NFC_PPB_256			(3 << 7)
++#define NFC_PPB_RESET			(~(3 << 7))
++
++#define NFC_BLS_LOCKED			(0 << 6)
++#define NFC_BLS_LOCKED_DEFAULT		(1 << 6)
++#define NFC_BLS_UNLCOKED		(2 << 6)
++#define NFC_BLS_RESET			(~(3 << 16))
++#define NFC_WPC_LOCK_TIGHT		1
++#define NFC_WPC_LOCK			(1 << 1)
++#define NFC_WPC_UNLOCK			(1 << 2)
++#define NFC_WPC_RESET			(~(7))
++#define NFC_ECC_MODE_4			(0x0 << 6)
++#define NFC_ECC_MODE_8			(0x1 << 6)
++#define NFC_ECC_MODE_16                 (0x3 << 6)
++#define NFC_SPAS_16			8
++#define NFC_SPAS_64			32
++#define NFC_SPAS_128			64
++#define NFC_SPAS_112			56
++#define NFC_SPAS_218			109
++#define NFC_IPC_CREQ			(1 << 0)
++#define NFC_IPC_ACK			(1 << 1)
++
++#define REG_NFC_OPS_STAT		NFC_IPC
++#define REG_NFC_INTRRUPT		NFC_CONFIG2
++#define REG_NFC_FLASH_ADDR		NFC_FLASH_ADDR0
++#define REG_NFC_FLASH_CMD		NFC_FLASH_CMD
++#define REG_NFC_OPS			LAUNCH_NFC
++#define REG_NFC_SET_RBA			NFC_CONFIG1
++#define REG_NFC_RB			NFC_IPC
++#define REG_NFC_ECC_EN			NFC_CONFIG2
++#define REG_NFC_ECC_STATUS_RESULT	NFC_ECC_STATUS_RESULT
++#define REG_NFC_CE			NFC_CONFIG1
++#define REG_NFC_RST			NFC_CONFIG1
++#define REG_NFC_PPB			NFC_CONFIG2
++#define REG_NFC_SP_EN			NFC_CONFIG1
++#define REG_NFC_BLS			NFC_WRPROT
++#define REG_UNLOCK_BLK_ADD0		NFC_WRPROT_UNLOCK_BLK_ADD0
++#define REG_UNLOCK_BLK_ADD1		NFC_WRPROT_UNLOCK_BLK_ADD1
++#define REG_UNLOCK_BLK_ADD2		NFC_WRPROT_UNLOCK_BLK_ADD2
++#define REG_UNLOCK_BLK_ADD3		NFC_WRPROT_UNLOCK_BLK_ADD3
++#define REG_NFC_WPC			NFC_WRPROT
++#define REG_NFC_ONE_CYCLE		NFC_CONFIG2
++
++/* NFC V3 Specific MACRO functions definitions */
++#define raw_write(v, a)		__raw_writel(v, a)
++#define raw_read(a)		__raw_readl(a)
++
++/* Explcit ack ops status (if any), before issue of any command  */
++#define ACK_OPS	\
++	raw_write((raw_read(REG_NFC_OPS_STAT) & ~NFC_OPS_STAT), \
++	REG_NFC_OPS_STAT);
++
++/* Set RBA buffer id*/
++#define NFC_SET_RBA(val)       \
++	raw_write((raw_read(REG_NFC_SET_RBA) & \
++	(NFC_FIELD_RESET(NFC_RBA_WIDTH, NFC_RBA_SHIFT))) | \
++	((val) << NFC_RBA_SHIFT), REG_NFC_SET_RBA);
++
++#define NFC_SET_PS(val)       \
++	raw_write((raw_read(NFC_CONFIG2) & \
++	(NFC_FIELD_RESET(NFC_PS_WIDTH, NFC_PS_SHIFT))) | \
++	((val) << NFC_PS_SHIFT), NFC_CONFIG2);
++
++#define UNLOCK_ADDR(start_addr, end_addr)     \
++{ \
++	int i = 0; \
++	for (; i < NAND_MAX_CHIPS; i++)  \
++		raw_write(start_addr | \
++		(end_addr << NFC_UNLOCK_END_ADDR_SHIFT), \
++		REG_UNLOCK_BLK_ADD0 + (i << 2)); \
++}
++
++#define NFC_SET_NFC_ACTIVE_CS(val) \
++	raw_write((raw_read(NFC_CONFIG1) & \
++	(NFC_FIELD_RESET(NFC_ACTIVE_CS_WIDTH, NFC_ACTIVE_CS_SHIFT))) | \
++	((val) << NFC_ACTIVE_CS_SHIFT), NFC_CONFIG1);
++
++#define NFC_GET_MAXCHIP_SP()		8
++
++#define NFC_SET_BLS(val) ((raw_read(REG_NFC_BLS) & NFC_BLS_RESET) | val)
++#define NFC_SET_WPC(val) ((raw_read(REG_NFC_WPC) & NFC_WPC_RESET) | val)
++#define CHECK_NFC_RB    (raw_read(REG_NFC_RB) & NFC_RB)
++
++#define NFC_SET_NFC_NUM_ADDR_PHASE1(val) \
++	raw_write((raw_read(NFC_CONFIG2) & \
++	(NFC_FIELD_RESET(NFC_NUM_ADDR_PHASE1_WIDTH, \
++	NFC_NUM_ADDR_PHASE1_SHIFT))) | \
++	((val) << NFC_NUM_ADDR_PHASE1_SHIFT), NFC_CONFIG2);
++
++#define NFC_SET_NFC_NUM_ADDR_PHASE0(val) \
++	raw_write((raw_read(NFC_CONFIG2) & \
++	(NFC_FIELD_RESET(NFC_NUM_ADDR_PHASE0_WIDTH, \
++	NFC_NUM_ADDR_PHASE0_SHIFT))) | \
++	((val) << NFC_NUM_ADDR_PHASE0_SHIFT), NFC_CONFIG2);
++
++#define NFC_SET_NFC_ITERATION(val) \
++	raw_write((raw_read(NFC_CONFIG1) & \
++	(NFC_FIELD_RESET(NFC_ITERATION_WIDTH, NFC_ITERATION_SHIFT))) | \
++	((val) << NFC_ITERATION_SHIFT), NFC_CONFIG1);
++
++#define NFC_SET_FW(val) \
++	raw_write((raw_read(NFC_CONFIG3) & \
++	(NFC_FIELD_RESET(NFC_FW_WIDTH, NFC_FW_SHIFT))) | \
++	((val) << NFC_FW_SHIFT), NFC_CONFIG3);
++
++#define NFC_SET_NUM_OF_DEVICE(val) \
++	raw_write((raw_read(NFC_CONFIG3) & \
++	(NFC_FIELD_RESET(NFC_NUM_OF_DEVICES_WIDTH, \
++	NFC_NUM_OF_DEVICES_SHIFT))) | \
++	((val) << NFC_NUM_OF_DEVICES_SHIFT), NFC_CONFIG3);
++
++#define NFC_SET_ADD_OP_MODE(val) \
++	 raw_write((raw_read(NFC_CONFIG3) & \
++	(NFC_FIELD_RESET(NFC_ADD_OP_WIDTH, NFC_ADD_OP_SHIFT))) | \
++	((val) << NFC_ADD_OP_SHIFT), NFC_CONFIG3);
++
++#define NFC_SET_ADD_CS_MODE(val) \
++{ \
++	NFC_SET_ADD_OP_MODE(val); \
++	NFC_SET_NUM_OF_DEVICE(this->numchips - 1); \
++}
++
++#define NFC_SET_ST_CMD(val) \
++	raw_write((raw_read(NFC_CONFIG2) & \
++	(NFC_FIELD_RESET(NFC_ST_CMD_WIDTH, \
++	NFC_ST_CMD_SHITF))) | \
++	((val) << NFC_ST_CMD_SHITF), NFC_CONFIG2);
++
++#define NFMS_NF_DWIDTH 0
++#define NFMS_NF_PG_SZ  1
++#define NFC_CMD_1_SHIFT 8
++
++#define NUM_OF_ADDR_CYCLE ((ffs(~(info->page_mask)) - 1) >> 3)
++
++/*should set the fw,ps,spas,ppb*/
++#define NFC_SET_NFMS(v)	\
++do {	\
++	if (!(v)) \
++		NFC_SET_FW(NFC_FW_8);   \
++	if (((v) & (1 << NFMS_NF_DWIDTH)))	\
++		NFC_SET_FW(NFC_FW_16);	\
++	if (((v) & (1 << NFMS_NF_PG_SZ))) {	\
++		if (IS_2K_PAGE_NAND) {	\
++			NFC_SET_PS(NFC_PS_2K);	\
++			NFC_SET_NFC_NUM_ADDR_PHASE1(NUM_OF_ADDR_CYCLE); \
++			NFC_SET_NFC_NUM_ADDR_PHASE0(NFC_TWO_LESS_PHASE1); \
++		} else if (IS_4K_PAGE_NAND) {       \
++			NFC_SET_PS(NFC_PS_4K);	\
++			NFC_SET_NFC_NUM_ADDR_PHASE1(NUM_OF_ADDR_CYCLE); \
++			NFC_SET_NFC_NUM_ADDR_PHASE0(NFC_TWO_LESS_PHASE1); \
++		} else {	\
++			NFC_SET_PS(NFC_PS_512);	\
++			NFC_SET_NFC_NUM_ADDR_PHASE1(NUM_OF_ADDR_CYCLE - 1); \
++			NFC_SET_NFC_NUM_ADDR_PHASE0(NFC_ONE_LESS_PHASE1); \
++		}	\
++		NFC_SET_ADD_CS_MODE(1); \
++		NFC_SET_SPAS(GET_NAND_OOB_SIZE >> 1);	\
++		NFC_SET_ECC_MODE(GET_NAND_OOB_SIZE >> 1); \
++		NFC_SET_ST_CMD(0x70); \
++		raw_write(raw_read(NFC_CONFIG3) | NFC_NO_SDMA, NFC_CONFIG3); \
++		raw_write(raw_read(NFC_CONFIG3) | NFC_RBB_MODE, NFC_CONFIG3); \
++	} \
++} while (0)
++
++#define READ_PAGE()	send_read_page(0)
++#define PROG_PAGE()	send_prog_page(0)
++
++#endif				/* __MXC_NAND_H__ */
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 17a1ba3..dfff7ad 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -93,6 +93,16 @@
+ #define CONFIG_BOOTP_SUBNETMASK
+ #define CONFIG_BOOTP_GATEWAY
+ #define CONFIG_BOOTP_DNS
++
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_NAND
++#define CONFIG_MXC_NAND
++/* NAND FLASH driver setup */
++#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
++#define CONFIG_NAND_FW_16BIT    0 /* 1: 16bit 0: 8bit */
++
+ #define CONFIG_CMD_IIM
+ #define CONFIG_CMD_MMC
+ #define CONFIG_CMD_ENV
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index da0ac7f..8b9a1df 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -93,6 +93,16 @@
+ #define CONFIG_BOOTP_SUBNETMASK
+ #define CONFIG_BOOTP_GATEWAY
+ #define CONFIG_BOOTP_DNS
++
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_NAND
++#define CONFIG_MXC_NAND
++/* NAND FLASH driver setup */
++#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
++#define CONFIG_NAND_FW_16BIT    0 /* 1: 16bit 0: 8bit */
++
+ #define CONFIG_CMD_IIM
+ #define CONFIG_CMD_MMC
+ #define CONFIG_CMD_ENV
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index d97a186..1dc2818 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -110,6 +110,16 @@
+ #define CONFIG_BOOTP_SUBNETMASK
+ #define CONFIG_BOOTP_GATEWAY
+ #define CONFIG_BOOTP_DNS
++
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_NAND
++#define CONFIG_MXC_NAND
++/* NAND FLASH driver setup */
++#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
++#define CONFIG_NAND_FW_16BIT    0 /* 1: 16bit 0: 8bit */
++
+ #define CONFIG_CMD_IIM
+ #define CONFIG_CMD_MMC
+ #define CONFIG_CMD_ENV
+-- 
+1.5.4.4
+

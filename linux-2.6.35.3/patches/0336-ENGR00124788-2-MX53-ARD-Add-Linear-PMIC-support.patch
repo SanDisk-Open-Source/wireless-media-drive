@@ -1,0 +1,319 @@
+From b2c430fa1a85636e9737f97313eb7ff391215514 Mon Sep 17 00:00:00 2001
+From: Nancy Chen <Nancy.Chen@freescale.com>
+Date: Mon, 11 Oct 2010 16:05:18 -0500
+Subject: [PATCH] ENGR00124788-2 MX53 ARD: Add Linear PMIC support
+
+MX53 ARD: Add Linear PMIC support.
+
+Signed-off-by: Nancy Chen <Nancy.Chen@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig           |    3 +
+ arch/arm/mach-mx5/Makefile                |    2 +-
+ arch/arm/mach-mx5/mx53_ard.c              |    8 +-
+ arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c |  228 +++++++++++++++++++++++++++++
+ 4 files changed, 234 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 1dcbff5..0de460c 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1259,6 +1259,8 @@ CONFIG_MFD_SUPPORT=y
+ # CONFIG_MFD_WM831X is not set
+ # CONFIG_MFD_WM8350_I2C is not set
+ # CONFIG_MFD_WM8994 is not set
++CONFIG_MFD_LTC3589=y
++CONFIG_MFD_LTC3589_I2C=y
+ # CONFIG_MFD_PCF50633 is not set
+ # CONFIG_MFD_MC13783 is not set
+ # CONFIG_ABX500_CORE is not set
+@@ -1279,6 +1281,7 @@ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_TPS65023 is not set
+ # CONFIG_REGULATOR_TPS6507X is not set
+ CONFIG_REGULATOR_MC13892=y
++CONFIG_REGULATOR_LTC3589=y
+ CONFIG_REGULATOR_MAX17135=y
+ CONFIG_MEDIA_SUPPORT=y
+ 
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index 44c6bf4..db0e2fe 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -13,7 +13,7 @@ obj-$(CONFIG_ARCH_MX50) += clock_mx50.o dmaengine.o dma-apbh.o mx50_suspend.o mx
+ obj-$(CONFIG_MACH_MX51_3DS) += mx51_3stack.o mx51_3stack_gpio.o mx51_3stack_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX51_BABBAGE) += mx51_babbage.o mx51_babbage_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX53_EVK) += mx53_evk.o mx53_evk_pmic_mc13892.o
+-obj-$(CONFIG_MACH_MX53_ARD) += mx53_ard.o
++obj-$(CONFIG_MACH_MX53_ARD) += mx53_ard.o mx53_ard_pmic_ltc3589.o
+ obj-$(CONFIG_MACH_MX50_ARM2) += mx50_arm2.o mx50_arm2_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX50_RDP) += mx50_rdp.o mx50_rdp_pmic_mc13892.o
+ 
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index d58015d..6a38f2b 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -712,7 +712,7 @@ static int __init mxc_init_fb(void)
+ device_initcall(mxc_init_fb);
+ 
+ static struct mxc_audio_codec_platform_data cs42888_data = {
+-	.analog_regulator = "VSD",
++	.analog_regulator = NULL,
+ };
+ 
+ static int mx53_ard_max7310_setup(struct i2c_client *client,
+@@ -751,10 +751,6 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	.platform_data = &cs42888_data,
+ 	},
+ 	{
+-	.type = "ltc3589",
+-	.addr = 0x34,
+-	},
+-	{
+ 	.type = "ipod",
+ 	.addr = 0x10,
+ 	},
+@@ -1039,7 +1035,7 @@ static struct platform_device ard_smsc_lan9220_device = {
+ };
+ 
+ static struct mxc_mlb_platform_data mlb_data = {
+-	.reg_nvcc = "VCAM",
++	.reg_nvcc = NULL,
+ 	.mlb_clk = "mlb_clk",
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+new file mode 100644
+index 0000000..fe3880e
+--- /dev/null
++++ b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+@@ -0,0 +1,228 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++/*
++ * mx53_ard_pmic_ltc3589.c  --  i.MX53 ARD Driver for Linear LTC3589
++ * PMIC
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/i2c.h>
++#include <linux/err.h>
++#include <linux/regulator/ltc3589.h>
++#include <linux/regulator/machine.h>
++#include <linux/mfd/ltc3589/core.h>
++#include <mach/iomux-mx53.h>
++#include <mach/irqs.h>
++
++#define ARD_PMIC_INT			(4*32 + 7)	/* GPIO_5_7 */
++
++/* CPU */
++static struct regulator_consumer_supply sw1_consumers[] = {
++	{
++		.supply = "cpu_vcc",
++	}
++};
++
++struct ltc3589;
++
++static struct regulator_init_data sw1_init = {
++	.constraints = {
++		.name = "SW1",
++		.min_uV = 564000,
++		.max_uV = 1167000,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_modes_mask = 0,
++		.always_on = 1,
++		.boot_on = 1,
++		.initial_state = PM_SUSPEND_MEM,
++		.state_mem = {
++			.uV = 950000,
++			.mode = REGULATOR_MODE_NORMAL,
++			.enabled = 1,
++		},
++	},
++	.num_consumer_supplies = ARRAY_SIZE(sw1_consumers),
++	.consumer_supplies = sw1_consumers,
++};
++
++static struct regulator_init_data sw2_init = {
++	.constraints = {
++		.name = "SW2",
++		.min_uV = 644000,
++		.max_uV = 1331000,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++		.initial_state = PM_SUSPEND_MEM,
++		.state_mem = {
++			.uV = 950000,
++			.mode = REGULATOR_MODE_NORMAL,
++			.enabled = 1,
++		},
++	},
++};
++
++static struct regulator_init_data sw3_init = {
++	.constraints = {
++		.name = "SW3",
++		.min_uV = 1342000,
++		.max_uV = 2775000,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++	},
++};
++
++static struct regulator_init_data sw4_init = {
++	.constraints = {
++		.name = "SW4",
++		.apply_uV = 1,
++		.boot_on = 1,
++	}
++};
++
++static struct regulator_init_data ldo1_init = {
++	.constraints = {
++		.name = "LDO1_STBY",
++		.apply_uV = 1,
++		.boot_on = 1,
++		},
++};
++
++static struct regulator_init_data ldo2_init = {
++	.constraints = {
++		.name = "LDO2",
++		.min_uV = 644000,
++		.max_uV = 1331000,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_modes_mask = REGULATOR_MODE_NORMAL,
++		.always_on = 1,
++		.boot_on = 1,
++	},
++};
++
++static struct regulator_init_data ldo3_init = {
++	.constraints = {
++			.name = "LDO3",
++			.apply_uV = 1,
++			.boot_on = 1,
++			},
++};
++
++static struct regulator_init_data ldo4_init = {
++	.constraints = {
++			.name = "LDO4",
++			.min_uV = 1800000,
++			.max_uV = 3300000,
++			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++			.valid_modes_mask = REGULATOR_MODE_NORMAL,
++			.always_on = 1,
++			.boot_on = 1,
++			},
++};
++
++static void ltc3589_nop_release(struct device *dev)
++{
++	/* Nothing */
++}
++
++static struct platform_device ltc3589_regulator_device[] = {
++	{
++	.name = "ltc3589-dev",
++	.id = 0,
++	.dev = {
++		.release = ltc3589_nop_release,
++		},
++			},
++};
++
++static int mx53_ltc3589_init(struct ltc3589 *ltc3589)
++{
++	int i;
++
++	printk(KERN_INFO "Initializing regulators for ARD\n");
++	for (i = 0; i < ARRAY_SIZE(ltc3589_regulator_device); i++) {
++		if (platform_device_register(&ltc3589_regulator_device[i]) < 0)
++			dev_err(&ltc3589_regulator_device[i].dev,
++				"Unable to register LTC3589 device\n");
++	}
++
++	ltc3589_register_regulator(ltc3589, LTC3589_SW1, &sw1_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_SW2, &sw2_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_SW3, &sw3_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_SW4, &sw4_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_LDO1, &ldo1_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_LDO2, &ldo2_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_LDO3, &ldo3_init);
++	ltc3589_register_regulator(ltc3589, LTC3589_LDO4, &ldo4_init);
++
++	return 0;
++}
++
++static struct ltc3589_platform_data __initdata ltc3589_plat = {
++	.init = mx53_ltc3589_init,
++};
++
++static struct i2c_board_info __initdata ltc3589_i2c_device = {
++	I2C_BOARD_INFO("ltc3589", 0x34),
++	.irq = IOMUX_TO_IRQ_V3(ARD_PMIC_INT),
++	.platform_data = &ltc3589_plat,
++};
++
++static __init int mx53_init_i2c(void)
++{
++	return i2c_register_board_info(1, &ltc3589_i2c_device, 1);
++}
++
++subsys_initcall(mx53_init_i2c);
++
++static __init int ltc3589_pmic_init(void)
++{
++	int i = 0;
++	int ret = 0;
++	struct regulator *regulator;
++
++	char *ltc3589_global_regulator[] = {
++		"SW1",
++		"SW2",
++		"SW3",
++		"SW4",
++		"LDO1_STBY",
++		"LDO2",
++		"LDO3",
++		"LDO4",
++	};
++
++	while ((i < ARRAY_SIZE(ltc3589_global_regulator)) &&
++		!IS_ERR_VALUE(
++			(unsigned long)(regulator =
++					regulator_get(NULL,
++						ltc3589_global_regulator
++						[i])))) {
++		regulator_enable(regulator);
++		i++;
++	}
++
++	return ret;
++}
++
++late_initcall(ltc3589_pmic_init);
++
+-- 
+1.5.4.4
+

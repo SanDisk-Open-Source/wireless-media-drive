@@ -1,0 +1,30 @@
+From 80426bc69f49f8aba415a73115bb33697e8b1cf6 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 29 Mar 2011 21:08:40 +0800
+Subject: [PATCH] ENGR00141335-1: Use bypass way to set ddr dll in mx53
+
+Usually dll setup for eMMC4.4 DDR is required to polling SLV_LOCK status
+bit. However the system hangs when polling for SLV_LOCK bit.
+The temporary workaround is to force slave override mode to bypass it.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/mmc/imx_esdhc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index fa32827..ced336a 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -343,7 +343,7 @@ static void esdhc_dll_setup(struct mmc *mmc)
+ 
+ 	/* For i.MX50 TO1, need to force slave override mode */
+ 	if (get_board_rev() == (0x50000 | CHIP_REV_1_0) ||
+-			get_board_rev() == 0x53000) {
++			((get_board_rev() & 0xff000) == 0x53000)) {
+ 		dll_control = readl(&regs->dllctrl);
+ 
+ 		dll_control &= ~(ESDHC_DLLCTRL_SLV_OVERRIDE_VAL_MASK |
+-- 
+1.5.4.4
+

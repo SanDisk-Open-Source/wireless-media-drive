@@ -1,0 +1,16 @@
+<HEAD>
+<TITLE>FAQ MaraDNS</TITLE>
+<BODYFLAGS>bgcolor="#FFFFCC" text="#660000" link=#888888 vlink=#888888
+</BODYFLAGS>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+</HEAD>
+<BODY>
+
+<A href=/>Voltar a página principal</A><P>
+
+<!-- This embeds the faq.embed document; making it look pretty when 
+     converted to HTML -->
+
+<INCLUDE "source/faq.embed">
+
+</BODY>

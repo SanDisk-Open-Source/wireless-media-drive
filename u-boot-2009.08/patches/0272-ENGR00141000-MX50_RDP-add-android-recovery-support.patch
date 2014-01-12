@@ -1,0 +1,187 @@
+From 76562a907cf88d852eaebbba6cb7aad13bb2c9df Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Wed, 23 Mar 2011 16:09:28 +0800
+Subject: [PATCH] ENGR00141000 MX50_RDP: add android recovery support.
+
+Add android recovery related config and code.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ board/freescale/mx50_rdp/mx50_rdp.c |  118 +++++++++++++++++++++++++++++++++++
+ include/asm-arm/arch-mx50/mx50.h    |    3 +-
+ include/configs/mx50_rdp_android.h  |    9 +++
+ 3 files changed, 129 insertions(+), 1 deletions(-)
+
+diff --git a/board/freescale/mx50_rdp/mx50_rdp.c b/board/freescale/mx50_rdp/mx50_rdp.c
+index 554bdae..9d90fd3 100644
+--- a/board/freescale/mx50_rdp/mx50_rdp.c
++++ b/board/freescale/mx50_rdp/mx50_rdp.c
+@@ -56,6 +56,16 @@
+ #include <lcd.h>
+ #endif
+ 
++#ifdef CONFIG_ANDROID_RECOVERY
++#include "../common/recovery.h"
++#include <part.h>
++#include <ext2fs.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <ubi_uboot.h>
++#include <jffs2/load_kernel.h>
++#endif
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
+@@ -1188,6 +1198,114 @@ int board_init(void)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_ANDROID_RECOVERY
++struct reco_envs supported_reco_envs[BOOT_DEV_NUM] = {
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++	{
++	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC,
++	 },
++	{
++	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC,
++	 },
++	{
++	 .cmd = NULL,
++	 .args = NULL,
++	 },
++};
++
++int check_recovery_cmd_file(void)
++{
++	disk_partition_t info;
++	ulong part_length;
++	int filelen;
++
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++	case SD_BOOT:
++		{
++			block_dev_desc_t *dev_desc = NULL;
++			struct mmc *mmc = find_mmc_device(0);
++
++			dev_desc = get_dev("mmc", 0);
++
++			if (NULL == dev_desc) {
++				puts("** Block device MMC 0 not supported\n");
++				return 0;
++			}
++
++			mmc_init(mmc);
++
++			if (get_partition_info(dev_desc,
++					CONFIG_ANDROID_CACHE_PARTITION_MMC,
++					&info)) {
++				printf("** Bad partition %d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				return 0;
++			}
++
++			part_length = ext2fs_set_blk_dev(dev_desc,
++							CONFIG_ANDROID_CACHE_PARTITION_MMC);
++			if (part_length == 0) {
++				printf("** Bad partition - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			if (!ext2fs_mount(part_length)) {
++				printf("** Bad ext2 partition or disk - mmc 0:%d **\n",
++					CONFIG_ANDROID_CACHE_PARTITION_MMC);
++				ext2fs_close();
++				return 0;
++			}
++
++			filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
++
++			ext2fs_close();
++		}
++		break;
++	case NAND_BOOT:
++		return 0;
++		break;
++	case SPI_NOR_BOOT:
++		return 0;
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		return 0;
++		break;
++	}
++
++	return (filelen > 0) ? 1 : 0;
++
++}
++#endif
++
+ int board_late_init(void)
+ {
+ #ifdef CONFIG_IMX_CSPI
+diff --git a/include/asm-arm/arch-mx50/mx50.h b/include/asm-arm/arch-mx50/mx50.h
+index b912040..9c905e5 100644
+--- a/include/asm-arm/arch-mx50/mx50.h
++++ b/include/asm-arm/arch-mx50/mx50.h
+@@ -293,7 +293,8 @@ enum boot_device {
+ 	SD_BOOT,
+ 	MMC_BOOT,
+ 	NAND_BOOT,
+-	UNKNOWN_BOOT
++	UNKNOWN_BOOT,
++	BOOT_DEV_NUM = UNKNOWN_BOOT,
+ };
+ 
+ enum mxc_clock {
+diff --git a/include/configs/mx50_rdp_android.h b/include/configs/mx50_rdp_android.h
+index d1bf934..ac4cc80 100644
+--- a/include/configs/mx50_rdp_android.h
++++ b/include/configs/mx50_rdp_android.h
+@@ -312,6 +312,15 @@
+ #define CONFIG_FASTBOOT_TRANSFER_BUF    0x80000000
+ #define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x8000000 /* 128M byte */
+ 
++#define CONFIG_ANDROID_RECOVERY
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4"	\
++	"rootfs=ext4 keypad"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
++	"run bootargs_base bootargs_android_recovery;"  \
++	"mmc read 0 ${loadaddr} 0x800 0x2000;bootm"
++#define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
++
+ #define CONFIG_MTD_DEVICE
+ #define CONFIG_MTD_PARTITIONS
+ 
+-- 
+1.5.4.4
+

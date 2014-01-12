@@ -1,0 +1,544 @@
+From 59adb2eaaa68a5820cb2d12c2bbd0cbc054a9629 Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Mon, 8 Nov 2010 10:22:58 +0800
+Subject: [PATCH] ENGR00133478-1 IMX USB:move clk_enable from irq context to thread context
+
+MSL Part
+move the usb clk_enable from irq context to a kernel thread context, so
+that the voltage can be changed in clk_enable function.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ arch/arm/mach-mx5/devices.c    |   53 +++++++++++
+ arch/arm/mach-mx5/devices.h    |    6 +-
+ arch/arm/mach-mx5/usb_dr.c     |   40 ++++++++-
+ arch/arm/mach-mx5/usb_h1.c     |   18 ++++-
+ arch/arm/mach-mx5/usb_h2.c     |   18 ++++-
+ arch/arm/plat-mxc/Makefile     |    2 +-
+ arch/arm/plat-mxc/usb_common.c |    3 +-
+ arch/arm/plat-mxc/usb_wakeup.c |  201 ++++++++++++++++++++++++++++++++++++++++
+ 8 files changed, 333 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 741694e..a997139 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1183,6 +1183,17 @@ static struct resource usbotg_xcvr_resources[] = {
+ 	},
+ };
+ 
++static struct resource usbotg_wakeup_resources[] = {
++	{
++		.start = MXC_INT_USB_OTG,/* wakeup irq */
++		.flags = IORESOURCE_IRQ,
++	},
++	{
++		.start = MXC_INT_USB_OTG,/* usb core irq , may be equel to wakeup irq for some imx chips */
++		.flags = IORESOURCE_IRQ,
++	},
++};
++
+ struct platform_device mxc_usbdr_udc_device = {
+ 	.name		= "fsl-usb2-udc",
+ 	.id		= -1,
+@@ -1216,6 +1227,13 @@ struct platform_device mxc_usbdr_host_device = {
+ 	},
+ };
+ 
++struct platform_device mxc_usbdr_wakeup_device = {
++	.name = "usb_wakeup",
++	.id   = 0,
++	.num_resources = ARRAY_SIZE(usbotg_wakeup_resources),
++	.resource = usbotg_wakeup_resources,
++};
++
+ static struct resource usbh1_resources[] = {
+ 	{
+ 		.start = OTG_BASE_ADDR + 0x200,
+@@ -1228,6 +1246,17 @@ static struct resource usbh1_resources[] = {
+ 	},
+ };
+ 
++static struct resource usbh1_wakeup_resources[] = {
++	{
++		.start = MXC_INT_USB_H1, /*wakeup irq*/
++		.flags = IORESOURCE_IRQ,
++	},
++	{
++		.start = MXC_INT_USB_H1,
++		.flags = IORESOURCE_IRQ,/* usb core irq */
++	},
++};
++
+ struct platform_device mxc_usbh1_device = {
+ 	.name = "fsl-ehci",
+ 	.id = 1,
+@@ -1239,6 +1268,13 @@ struct platform_device mxc_usbh1_device = {
+ 	},
+ };
+ 
++struct platform_device mxc_usbh1_wakeup_device = {
++	.name = "usb_wakeup",
++	.id   = 1,
++	.num_resources = ARRAY_SIZE(usbh1_wakeup_resources),
++	.resource = usbh1_wakeup_resources,
++};
++
+ static struct resource usbh2_resources[] = {
+ 	{
+ 		.start = OTG_BASE_ADDR + 0x400,
+@@ -1251,6 +1287,16 @@ static struct resource usbh2_resources[] = {
+ 	},
+ };
+ 
++static struct resource usbh2_wakeup_resources[] = {
++	{
++		.start = MXC_INT_USB_H2,
++		.flags = IORESOURCE_IRQ,/* wakeup irq */
++	},
++	{
++		.start = MXC_INT_USB_H2,
++		.flags = IORESOURCE_IRQ,/* usb core irq */
++	},
++};
+ struct platform_device mxc_usbh2_device = {
+ 	.name = "fsl-ehci",
+ 	.id = 2,
+@@ -1262,6 +1308,13 @@ struct platform_device mxc_usbh2_device = {
+ 	},
+ };
+ 
++struct platform_device mxc_usbh2_wakeup_device = {
++	.name = "usb_wakeup",
++	.id   = 2,
++	.num_resources = ARRAY_SIZE(usbh2_wakeup_resources),
++	.resource = usbh2_wakeup_resources,
++};
++
+ static struct resource mxc_gpu_resources[] = {
+ 	{
+ 		.start = MXC_INT_GPU2_IRQ,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 1a596ef..83a5cd5 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -22,9 +22,6 @@ extern struct platform_device mxc_uart_device1;
+ extern struct platform_device mxc_uart_device2;
+ extern struct platform_device mxc_fec_device;
+ extern struct platform_device mxc_ptp_device;
+-extern struct platform_device mxc_usbdr_host_device;
+-extern struct platform_device mxc_usbh1_device;
+-extern struct platform_device mxc_usbdr_udc_device;
+ extern struct platform_device mxc_dma_device;
+ extern struct platform_device mxc_w1_master_device;
+ extern struct platform_device mxc_keypad_device;
+@@ -73,8 +70,11 @@ extern struct platform_device gpu_device;
+ extern struct platform_device mxc_usbdr_udc_device;
+ extern struct platform_device mxc_usbdr_otg_device;
+ extern struct platform_device mxc_usbdr_host_device;
++extern struct platform_device mxc_usbdr_wakeup_device;
+ extern struct platform_device mxc_usbh1_device;
++extern struct platform_device mxc_usbh1_wakeup_device;
+ extern struct platform_device mxc_usbh2_device;
++extern struct platform_device mxc_usbh2_wakeup_device;
+ extern struct platform_device mxc_mlb_device;
+ extern struct platform_device mxc_nandv2_mtd_device;
+ extern struct platform_device mxc_pxp_device;
+diff --git a/arch/arm/mach-mx5/usb_dr.c b/arch/arm/mach-mx5/usb_dr.c
+index 7863e38..9ab9851 100644
+--- a/arch/arm/mach-mx5/usb_dr.c
++++ b/arch/arm/mach-mx5/usb_dr.c
+@@ -44,7 +44,10 @@ static struct fsl_usb2_platform_data dr_utmi_config = {
+ 	.usb_clock_for_pm  = usbotg_clock_gate,
+ 	.transceiver       = "utmi",
+ };
+-
++static struct fsl_usb2_wakeup_platform_data dr_wakeup_config = {
++	.name = "DR wakeup",
++	.usb_clock_for_pm  = usbotg_clock_gate,
++};
+ /* Notes: configure USB clock*/
+ static int usbotg_init_ext(struct platform_device *pdev)
+ {
+@@ -170,6 +173,35 @@ static void _device_phy_lowpower_suspend(bool enable)
+ 	__phy_lowpower_suspend(enable, ENABLED_BY_DEVICE);
+ }
+ 
++static bool _is_host_wakeup(void)
++{
++	int wakeup_req = USBCTRL & UCTRL_OWIR;
++	int otgsc = UOG_OTGSC;
++	/* if ID change sts, it is a host wakeup event */
++	if (wakeup_req && (otgsc & OTGSC_IS_USB_ID)) {
++		printk(KERN_INFO "otg host ID wakeup\n");
++		/* if host ID wakeup, we must clear the b session change sts */
++		UOG_OTGSC = otgsc & (~OTGSC_IS_USB_ID);
++		return true;
++	}
++	if (wakeup_req && /*(UOG_USBSTS & (1<<2)) && */(!((otgsc & OTGSC_IS_B_SESSION_VALID)))) {
++		printk(KERN_INFO "otg host Remote wakeup\n");
++		return true;
++	}
++	return false;
++}
++static bool _is_device_wakeup(void)
++{
++	int wakeup_req = USBCTRL & UCTRL_OWIR;
++
++	/* if not ID change sts, it is a device wakeup event */
++	if (wakeup_req && !(UOG_OTGSC & OTGSC_IS_USB_ID) && (UOG_OTGSC & OTGSC_IS_B_SESSION_VALID)) {
++		printk(KERN_INFO "otg udc wakeup\n");
++		return true;
++	}
++	return false;
++
++}
+ static void usbotg_clock_gate(bool on)
+ {
+ 	pr_debug("%s: on is %d\n", __func__, on);
+@@ -197,19 +229,25 @@ void __init mx5_usb_dr_init(void)
+ 	dr_utmi_config.operating_mode = FSL_USB2_DR_OTG;
+ 	platform_device_add_data(&mxc_usbdr_otg_device, &dr_utmi_config, sizeof(dr_utmi_config));
+ 	platform_device_register(&mxc_usbdr_otg_device);
++	dr_wakeup_config.usb_pdata[0] = mxc_usbdr_otg_device.dev.platform_data;
+ #endif
+ #ifdef CONFIG_USB_EHCI_ARC_OTG
+ 	dr_utmi_config.operating_mode = DR_HOST_MODE;
+ 	dr_utmi_config.wake_up_enable = _host_wakeup_enable;
+ 	dr_utmi_config.phy_lowpower_suspend = _host_phy_lowpower_suspend;
++	dr_utmi_config.is_wakeup_event = _is_host_wakeup;
+ 	platform_device_add_data(&mxc_usbdr_host_device, &dr_utmi_config, sizeof(dr_utmi_config));
+ 	platform_device_register(&mxc_usbdr_host_device);
++	dr_wakeup_config.usb_pdata[1] = mxc_usbdr_host_device.dev.platform_data;
+ #endif
+ #ifdef CONFIG_USB_GADGET_ARC
+ 	dr_utmi_config.operating_mode = DR_UDC_MODE;
+ 	dr_utmi_config.wake_up_enable = _device_wakeup_enable;
+ 	dr_utmi_config.phy_lowpower_suspend = _device_phy_lowpower_suspend;
++	dr_utmi_config.is_wakeup_event = _is_device_wakeup;
+ 	platform_device_add_data(&mxc_usbdr_udc_device, &dr_utmi_config, sizeof(dr_utmi_config));
+ 	platform_device_register(&mxc_usbdr_udc_device);
++	dr_wakeup_config.usb_pdata[2] = mxc_usbdr_udc_device.dev.platform_data;
+ #endif
++	mxc_register_device(&mxc_usbdr_wakeup_device, &dr_wakeup_config);
+ }
+diff --git a/arch/arm/mach-mx5/usb_h1.c b/arch/arm/mach-mx5/usb_h1.c
+index 439cf54..d39ddd9 100644
+--- a/arch/arm/mach-mx5/usb_h1.c
++++ b/arch/arm/mach-mx5/usb_h1.c
+@@ -106,6 +106,16 @@ static void usbh1_clock_gate(bool on)
+ 	}
+ }
+ 
++static bool _is_usbh1_wakeup(void)
++{
++	int wakeup_req = USBCTRL & UCTRL_H1WIR;
++
++	if (wakeup_req)
++		return true;
++
++	return false;
++}
++
+ static int fsl_usb_host_init_ext(struct platform_device *pdev)
+ {
+ 	int ret;
+@@ -176,9 +186,14 @@ static struct fsl_usb2_platform_data usbh1_config = {
+ 	.wake_up_enable = _wake_up_enable,
+ 	.usb_clock_for_pm  = usbh1_clock_gate,
+ 	.phy_lowpower_suspend = _phy_lowpower_suspend,
++	.is_wakeup_event = _is_usbh1_wakeup,
+ 	.transceiver = "utmi",
+ };
+-
++static struct fsl_usb2_wakeup_platform_data usbh1_wakeup_config = {
++		.name = "USBH1 wakeup",
++		.usb_clock_for_pm  = usbh1_clock_gate,
++		.usb_pdata = {&usbh1_config, NULL, NULL},
++};
+ void mx5_set_host1_vbus_func(driver_vbus_func driver_vbus)
+ {
+ 	usbh1_config.platform_driver_vbus = driver_vbus;
+@@ -192,5 +207,6 @@ void __init mx5_usbh1_init(void)
+ 		usbh1_config.gpio_usb_inactive = gpio_usbh1_inactive;
+ 	}
+ 	mxc_register_device(&mxc_usbh1_device, &usbh1_config);
++	mxc_register_device(&mxc_usbh1_wakeup_device, &usbh1_wakeup_config);
+ }
+ 
+diff --git a/arch/arm/mach-mx5/usb_h2.c b/arch/arm/mach-mx5/usb_h2.c
+index 9acbbf1..40b87fc 100644
+--- a/arch/arm/mach-mx5/usb_h2.c
++++ b/arch/arm/mach-mx5/usb_h2.c
+@@ -89,6 +89,16 @@ static void fsl_usbh2_clock_gate(bool on)
+ 	}
+ }
+ 
++static bool _is_usbh2_wakeup(void)
++{
++	int wakeup_req = USBCTRL & UCTRL_H2WIR;
++
++	if (wakeup_req)
++		return true;
++
++	return false;
++}
++
+ static int fsl_usb_host_init_ext(struct platform_device *pdev)
+ {
+ 	int ret = 0;
+@@ -143,10 +153,16 @@ static struct fsl_usb2_platform_data usbh2_config = {
+ 	.phy_lowpower_suspend = _phy_lowpower_suspend,
+ 	.gpio_usb_active = gpio_usbh2_active,
+ 	.gpio_usb_inactive = gpio_usbh2_inactive,
++	.is_wakeup_event = _is_usbh2_wakeup,
+ 	.transceiver = "isp1504",
+ };
+-
++static struct fsl_usb2_wakeup_platform_data usbh2_wakeup_config = {
++	.name = "USBH2 wakeup",
++	.usb_clock_for_pm  = fsl_usbh2_clock_gate,
++	.usb_pdata = {&usbh2_config, NULL, NULL},
++};
+ void __init mx5_usbh2_init(void)
+ {
+ 	mxc_register_device(&mxc_usbh2_device, &usbh2_config);
++	mxc_register_device(&mxc_usbh2_wakeup_device, &usbh2_wakeup_config);
+ }
+diff --git a/arch/arm/plat-mxc/Makefile b/arch/arm/plat-mxc/Makefile
+index 8760afa..0c07107 100644
+--- a/arch/arm/plat-mxc/Makefile
++++ b/arch/arm/plat-mxc/Makefile
+@@ -3,7 +3,7 @@
+ #
+ 
+ # Common support
+-obj-y :=cpu.o cpu_common.o system.o gpio.o clock.o snoop.o io.o time.o devices.o usb_common.o
++obj-y :=cpu.o cpu_common.o system.o gpio.o clock.o snoop.o io.o time.o devices.o usb_common.o usb_wakeup.o
+ 
+ obj-$(CONFIG_IRAM_ALLOC) += iram.o
+ 
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index 76c1fcd..573c159 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -909,7 +909,8 @@ int usb_host_wakeup_irq(struct device *wkup_dev)
+ 		/*if only host mode is enabled, the wakeup event
+ 		 * must be host wakeup event */
+ #ifdef CONFIG_USB_OTG
+-		if (wakeup_req && (UOG_OTGSC & OTGSC_STS_USB_ID))
++		/* if ID change status, it is host wakeup event */
++		if (wakeup_req && (UOG_OTGSC & OTGSC_IS_USB_ID))
+ 			wakeup_req = 0;
+ #endif
+ 	}
+diff --git a/arch/arm/plat-mxc/usb_wakeup.c b/arch/arm/plat-mxc/usb_wakeup.c
+new file mode 100644
+index 0000000..830c2f1
+--- /dev/null
++++ b/arch/arm/plat-mxc/usb_wakeup.c
+@@ -0,0 +1,201 @@
++/*
++ * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ *  The code contained herein is licensed under the GNU General Public
++ *  License. You may obtain a copy of the GNU General Public License
++ *  Version 2 or later at the following locations:
++ *  *
++ *  http://www.opensource.org/licenses/gpl-license.html
++ *  http://www.gnu.org/copyleft/gpl.html
++*/
++
++#include <linux/sched.h>
++#include <linux/delay.h>
++#include <linux/interrupt.h>
++#include <linux/irq.h>
++#include <linux/slab.h>
++#include <linux/kthread.h>
++#include <linux/platform_device.h>
++#include <linux/mutex.h>
++#include <linux/fsl_devices.h>
++#include <linux/suspend.h>
++
++struct wakeup_ctrl {
++	int wakeup_irq;
++	int usb_irq;
++	struct fsl_usb2_wakeup_platform_data *pdata;
++	struct task_struct *thread;
++	struct completion  event;
++};
++static struct wakeup_ctrl *g_ctrl;
++
++extern int usb_event_is_otg_wakeup(void);
++extern void usb_debounce_id_pin(void);
++
++static void wakeup_clk_gate(struct fsl_usb2_wakeup_platform_data *pdata, bool on)
++{
++	if (pdata->usb_clock_for_pm)
++		pdata->usb_clock_for_pm(on);
++}
++
++static bool usb2_is_in_lowpower(struct wakeup_ctrl *ctrl)
++{
++	int i;
++	struct fsl_usb2_wakeup_platform_data *pdata = ctrl->pdata;
++	/* all the usb module related the wakeup is in lowpower mode */
++	for (i = 0; i < 3; i++) {
++		if (pdata->usb_pdata[i]) {
++			if (pdata->usb_pdata[i]->phy_lowpower_suspend && !pdata->usb_pdata[i]->lowpower)
++				return false;
++		}
++	}
++	return true;
++}
++
++static void delay_process_wakeup(struct wakeup_ctrl *ctrl)
++{
++	int i;
++	struct fsl_usb2_wakeup_platform_data *pdata = ctrl->pdata;
++	disable_irq_nosync(ctrl->wakeup_irq);
++	if ((ctrl->usb_irq > 0) && (ctrl->wakeup_irq != ctrl->usb_irq))
++		disable_irq_nosync(ctrl->usb_irq);
++
++	for (i = 0; i < 3; i++) {
++		if (pdata->usb_pdata[i]) {
++			pdata->usb_pdata[i]->irq_delay = 1;
++		}
++	}
++	complete(&ctrl->event);
++}
++
++static irqreturn_t usb_wakeup_handler(int irq, void *_dev)
++{
++	struct wakeup_ctrl *ctrl = (struct wakeup_ctrl *)_dev;
++	irqreturn_t ret = IRQ_NONE;
++	if (usb2_is_in_lowpower(ctrl)) {
++		printk(KERN_INFO "usb wakeup is here\n");
++		delay_process_wakeup(ctrl);
++		ret = IRQ_HANDLED;
++	}
++	return ret;
++}
++
++static bool is_wakeup(struct fsl_usb2_platform_data *pdata)
++{
++	if (pdata->is_wakeup_event)
++		return pdata->is_wakeup_event();
++	return false;
++}
++static void wakeup_event_handler(struct wakeup_ctrl *ctrl)
++{
++	struct fsl_usb2_wakeup_platform_data *pdata = ctrl->pdata;
++	int i;
++
++	wakeup_clk_gate(ctrl->pdata, true);
++	/* if this is an wakeup event, we should debounce ID pin
++	 * so we can get the correct ID value(ID status) here
++	 * */
++	if (usb_event_is_otg_wakeup())
++		usb_debounce_id_pin();
++
++	for (i = 0; i < 3; i++) {
++		struct fsl_usb2_platform_data *usb_pdata = pdata->usb_pdata[i];
++		if (usb_pdata) {
++			usb_pdata->irq_delay = 0;
++			if (is_wakeup(usb_pdata)) {
++				usb_pdata->wakeup_event = 1;
++				if (usb_pdata->usb_clock_for_pm)
++					usb_pdata->usb_clock_for_pm(true);
++				usb_pdata->lowpower = 0;
++			}
++		}
++	}
++	wakeup_clk_gate(ctrl->pdata, false);
++}
++
++static int wakeup_event_thread(void *param)
++{
++	struct wakeup_ctrl *ctrl = (struct wakeup_ctrl *)param;
++	struct sched_param sch_param = {.sched_priority = 1};
++
++	sched_setscheduler(current, SCHED_RR, &sch_param);
++	while (1) {
++		wait_for_completion(&ctrl->event);
++		if (kthread_should_stop())
++			break;
++		wakeup_event_handler(ctrl);
++		enable_irq(ctrl->wakeup_irq);
++		if ((ctrl->usb_irq > 0) && (ctrl->wakeup_irq != ctrl->usb_irq))
++			enable_irq(ctrl->usb_irq);
++	}
++	return 0;
++}
++
++static int  wakeup_dev_probe(struct platform_device *pdev)
++{
++	struct fsl_usb2_wakeup_platform_data *pdata;
++	struct wakeup_ctrl *ctrl = NULL;
++	int status;
++
++	printk(KERN_INFO "IMX usb wakeup probe\n");
++
++	if (!pdev || !pdev->dev.platform_data)
++		return -ENODEV;
++	ctrl = kzalloc(sizeof(*ctrl), GFP_KERNEL);
++	if (!ctrl)
++		return -ENOMEM;
++	pdata = pdev->dev.platform_data;
++	ctrl->pdata = pdata;
++	init_completion(&ctrl->event);
++	ctrl->wakeup_irq = platform_get_irq(pdev, 0);
++	status = request_irq(ctrl->wakeup_irq, usb_wakeup_handler, IRQF_SHARED, "usb_wakeup", (void *)ctrl);
++	if (status)
++		goto error1;
++	ctrl->usb_irq = platform_get_irq(pdev, 1);
++
++	ctrl->thread = kthread_run(wakeup_event_thread, (void *)ctrl, "usb_wakeup thread");
++	status = IS_ERR(ctrl->thread) ? -1 : 0;
++	if (status)
++		goto error2;
++	g_ctrl = ctrl;
++
++	return 0;
++error2:
++	free_irq(ctrl->wakeup_irq, (void *)ctrl);
++error1:
++	kfree(ctrl);
++	return status;
++}
++
++static int  wakeup_dev_exit(struct platform_device *pdev)
++{
++	if (g_ctrl->thread) {
++		complete(&g_ctrl->event);
++		kthread_stop(g_ctrl->thread);
++	}
++	free_irq(g_ctrl->wakeup_irq, (void *)g_ctrl);
++	kfree(g_ctrl);
++	return 0;
++}
++static struct platform_driver wakeup_d = {
++	.probe   = wakeup_dev_probe,
++	.remove  = wakeup_dev_exit,
++	.driver = {
++		.name = "usb_wakeup",
++	},
++};
++
++static int __init wakeup_dev_init(void)
++{
++	return platform_driver_register(&wakeup_d);
++}
++static void __exit wakeup_dev_uninit(void)
++{
++	platform_driver_unregister(&wakeup_d);
++}
++
++subsys_initcall(wakeup_dev_init);
++module_exit(wakeup_dev_uninit);
++
+-- 
+1.5.4.4
+

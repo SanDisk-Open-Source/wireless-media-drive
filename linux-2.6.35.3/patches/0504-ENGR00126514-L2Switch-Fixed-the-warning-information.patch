@@ -1,0 +1,53 @@
+From 18deb78901f6513a4f6131bd8d2c0187ff0cc823 Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Thu, 2 Dec 2010 17:54:39 +0800
+Subject: [PATCH] ENGR00126514 L2Switch: Fixed the warning information report issue
+
+When boot one mx28 board through another mx28 as switch, the former
+would report warning information "FEC ENET: rcv is not + last error".
+
+Signed-off-by: Fan zhicheng <B32736@freescale.com>
+Signed-off-by: Xie Xiaobo <X.Xie@freescale.com>
+---
+ drivers/net/fec_switch.c |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/fec_switch.c b/drivers/net/fec_switch.c
+index cdb6b2d..7cd0cc6 100644
+--- a/drivers/net/fec_switch.c
++++ b/drivers/net/fec_switch.c
+@@ -163,10 +163,10 @@ static void switch_set_mii(struct net_device *dev)
+ 	fecp = (struct switch_t *)fep->hwp;
+ 
+ 	writel(MCF_FEC_RCR_PROM | MCF_FEC_RCR_RMII_MODE |
+-			MCF_FEC_RCR_MAX_FL(1522),
++			MCF_FEC_RCR_MAX_FL(1522) | MCF_FEC_RCR_CRC_FWD,
+ 			fep->enet_addr + MCF_FEC_RCR0);
+ 	writel(MCF_FEC_RCR_PROM | MCF_FEC_RCR_RMII_MODE |
+-			MCF_FEC_RCR_MAX_FL(1522),
++			MCF_FEC_RCR_MAX_FL(1522) | MCF_FEC_RCR_CRC_FWD,
+ 			fep->enet_addr + MCF_FEC_RCR1);
+ 	/* TCR */
+ 	writel(MCF_FEC_TCR_FDEN, fep->enet_addr + MCF_FEC_TCR0);
+@@ -3047,15 +3047,15 @@ while (!((status = bdp->cbd_sc) & BD_ENET_RX_EMPTY)) {
+ 	 * include that when passing upstream as it messes up
+ 	 * bridging applications.
+ 	 */
+-	skb = dev_alloc_skb(pkt_len - 4 + NET_IP_ALIGN);
++	skb = dev_alloc_skb(pkt_len + NET_IP_ALIGN);
+ 	if (unlikely(!skb)) {
+ 		printk("%s: Memory squeeze, dropping packet.\n",
+ 			dev->name);
+ 		dev->stats.rx_dropped++;
+ 	} else {
+ 		skb_reserve(skb, NET_IP_ALIGN);
+-		skb_put(skb, pkt_len - 4);      /* Make room */
+-		skb_copy_to_linear_data(skb, data, pkt_len - 4);
++		skb_put(skb, pkt_len);      /* Make room */
++		skb_copy_to_linear_data(skb, data, pkt_len);
+ 		skb->protocol = eth_type_trans(skb, dev);
+ 		netif_rx(skb);
+ 	}
+-- 
+1.5.4.4
+

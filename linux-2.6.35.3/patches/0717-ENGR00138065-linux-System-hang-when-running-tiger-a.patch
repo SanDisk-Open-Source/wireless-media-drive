@@ -1,0 +1,27 @@
+From c6fbfc5857e1fc1b543d043ddb82187a744750f2 Mon Sep 17 00:00:00 2001
+From: Dennis Wenzel <b21659@freescale.com>
+Date: Thu, 20 Jan 2011 14:51:15 -0600
+Subject: [PATCH] ENGR00138065 linux: System hang when running tiger and then moving usb mouse
+
+Problem fixed so remove warning message not to run OpenVG apps with X accel.
+
+Signed-off-by: Dennis Wenzel <b21659@freescale.com>
+---
+ drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c b/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
+index c2b26d3..6b8af4b 100644
+--- a/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
++++ b/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
+@@ -830,7 +830,6 @@ static int gpu_probe(struct platform_device *pdev)
+ 	    printk(KERN_ERR "DO NOT use uio_pdrv_genirq kernel module for X acceleration!\n");
+ 	    gpu_2d_irq = 0;
+ 	}
+-        printk(KERN_ERR "Do NOT run OpenVG apps while also running imx-drv X device driver!\n");
+     }
+ 
+     if (kgsl_driver_init() != GSL_SUCCESS) {
+-- 
+1.5.4.4
+

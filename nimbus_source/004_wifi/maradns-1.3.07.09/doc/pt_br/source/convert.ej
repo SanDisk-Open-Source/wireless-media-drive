@@ -1,0 +1,85 @@
+<HEAD><TITLE>Migrando para MaraDNS</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005-2006 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<h1>Migrando de outro servidor de DNS para MaraDNS</h1>
+
+O procedimento para migração de outro servidor de DNS para MaraDNS 
+é o seguinte:
+
+<ul>
+<li>Tenha certeza que os nomes de todas as zonas que o outro servidor 
+de DNS tem, estão no arquivo mararc em questão.
+<li>Configure o outro servidor de DNS para permitir que o IP da máquina 
+que rodar o MaraDNS possa executar transferências de zona.
+<li>Use o cliente <TT>fetchzone</TT> para transferir as zonas. 
+</ul>
+
+Assumindo que precisa-se transferir as zonas example.com, maradns.org, e 
+heaven.af.mil, o procedimento seria este:
+
+<ul>
+<li>Acrescente as seguintes linhas ao arquivo mararc: 
+
+<blockquote>
+<pre>
+csv2["example.com."] = "db.example.com"
+csv2["maradns.org."] = "db.maradns.org"
+csv2["heaven.af.mil."] = "db.heaven.af.mil"
+</pre>
+</blockquote>
+
+<li>Lendo a documentação do servidor de DNS que está atualmente em uso,
+configure-o para permitir transferências de zona para exmaple.com, maradns.org,
+e heaven.af.mil,
+<li>Execute fetchzone três vezes.  Assumindo que o IP do servidor atual de DNS
+seja IP 127.0.0.1:
+<blockquote>
+<pre>
+cd /etc/maradns
+fetchzone example.com 127.0.0.1 db.example.com
+fetchzone maradns.org 127.0.0.1 db.maradns.org
+fetchzone heaven.af.mil 127.0.0.1 db.heaven.af.mil
+</pre>
+</blockquote>
+</ul>
+
+<hr>
+
+Se algum estiver sendo convertido de um outro servidor DNS, 
+é provavelmente melhor ter o MaraDNS atuando de uma 
+maneira estritamente RFC-FC-compatível.  Em particular, os registros 
+estrela devem provavelmente ser manipulados na exata maneira 
+descrita na seção 4.3.3 do RFC1034, e MaraDNS deve ser 
+configurarado para ter completo suporte do DNS sobre o TCP.
+
+<p>
+
+Para fazer um registro estrela manipular estritamente como no RFC, 
+adicione a seguinte linha ao arquivo de configuração <tt>mararc</tt >:
+
+<blockquote>
+<tt>bind_star_handling = 1</tt>
+</blockquote>
+
+Para dar ao MaraDNS suporte completo do DNS sobre TCP, siga as instruções
+contidas no documento <A href=dnstcp.html>dnstcp</A>.
+
+</body>

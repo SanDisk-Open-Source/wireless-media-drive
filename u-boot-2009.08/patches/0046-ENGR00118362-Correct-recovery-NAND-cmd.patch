@@ -1,0 +1,442 @@
+From a5c3bc03d12c2ed6b2627ea99f20d05b184d00d6 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 12 Nov 2009 14:25:13 +0800
+Subject: [PATCH] ENGR00118362: Correct recovery NAND cmd
+
+This patch will fix three issues:
+1. Add boot device detection.
+2. Use right nand command in anroid for recovery mode.
+3. Recovery mode code clean.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/lowlevel_init.S |    1 -
+ board/freescale/mx51_3stack/mx51_3stack.c   |   31 +++++---
+ board/freescale/mx51_bbg/mx51_bbg.c         |  100 +++++----------------------
+ common/Makefile                             |    1 +
+ drivers/input/mxc_keyb.c                    |    6 +-
+ drivers/spi/imx_spi_pmic.c                  |    2 +-
+ include/asm-arm/arch-mx51/imx_spi_pmic.h    |    2 +-
+ include/asm-arm/arch-mx51/mx51.h            |    2 +-
+ include/configs/mx51_3stack_android.h       |   20 ++++--
+ include/configs/mx51_bbg.h                  |   13 +---
+ include/configs/mx51_bbg_android.h          |   16 ++---
+ include/mxc_keyb.h                          |    2 +-
+ 12 files changed, 66 insertions(+), 130 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/lowlevel_init.S b/board/freescale/mx51_3stack/lowlevel_init.S
+index 1710b88..42130fd 100644
+--- a/board/freescale/mx51_3stack/lowlevel_init.S
++++ b/board/freescale/mx51_3stack/lowlevel_init.S
+@@ -84,7 +84,6 @@
+ 
+ 	ldr r1, =0x001901A3
+ 	str r1, [r0, #0x48]
+-	str r1, [r0, #0x40]
+ .endm /* init_m4if */
+ 
+ /* To support 133MHz DDR */
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 067e653..72df29c 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -609,23 +609,20 @@ inline int waiting_for_func_key_pressing(void)
+ 
+ inline int switch_to_recovery_mode(void)
+ {
++	char *env = NULL;
++	char *boot_args = NULL;
++	char *boot_cmd = NULL;
++
+ 	printf("Boot mode switched to recovery mode!\n");
+ 
+ 	switch (get_boot_device()) {
+ 	case MMC_BOOT:
+-		/* Set env to recovery mode */
+-		setenv("bootargs_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC);
+-		setenv("bootcmd_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC);
+-		setenv("bootcmd", "run bootcmd_android");
++		boot_args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC;
++		boot_cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC;
+ 		break;
+ 	case NAND_BOOT:
+-		setenv("bootargs_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND);
+-		setenv("bootcmd_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND);
+-		setenv("bootcmd", "run bootcmd_android");
++		boot_args = CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND;
++		boot_cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND;
+ 		break;
+ 	case SPI_NOR_BOOT:
+ 		printf("Recovery mode not supported in SPI NOR boot\n");
+@@ -638,6 +635,16 @@ inline int switch_to_recovery_mode(void)
+ 		break;
+ 	}
+ 
++	env = getenv("bootargs_android_recovery");
++	/* Set env to recovery mode */
++	if (!env)
++		setenv("bootargs_android_recovery", boot_args);
++	env = getenv("bootcmd_android_recovery");
++	if (!env)
++		setenv("bootcmd_android_recovery", boot_cmd);
++	setenv("bootcmd", "run bootcmd_android_recovery");
++
++
+ 	return 0;
+ }
+ 
+@@ -783,7 +790,7 @@ int board_late_init(void)
+ 		switch_to_recovery_mode();
+ 	else {
+ 		if (check_recovery_cmd_file()) {
+-			puts("Recovery command file founded!\n");
++			puts("Recovery command file detected!\n");
+ 			switch_to_recovery_mode();
+ 		}
+ 	}
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 289e8c8..ca60b32 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -695,23 +695,20 @@ inline int waiting_for_func_key_pressing(void)
+ 
+ inline int switch_to_recovery_mode(void)
+ {
++	char *env = NULL;
++	char *boot_args = NULL;
++	char *boot_cmd = NULL;
++
+ 	printf("Boot mode switched to recovery mode!\n");
+ 
+ 	switch (get_boot_device()) {
+ 	case MMC_BOOT:
+-		/* Set env to recovery mode */
+-		setenv("bootargs_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC);
+-		setenv("bootcmd_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC);
+-		setenv("bootcmd", "run bootcmd_android");
++		boot_args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC;
++		boot_cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC;
+ 		break;
+ 	case NAND_BOOT:
+-		setenv("bootargs_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND);
+-		setenv("bootcmd_android", \
+-			CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND);
+-		setenv("bootcmd", "run bootcmd_android");
++		printf("Recovery mode not supported in NAND boot\n");
++		return -1;
+ 		break;
+ 	case SPI_NOR_BOOT:
+ 		printf("Recovery mode not supported in SPI NOR boot\n");
+@@ -724,6 +721,16 @@ inline int switch_to_recovery_mode(void)
+ 		break;
+ 	}
+ 
++	env = getenv("bootargs_android_recovery");
++	/* Set env to recovery mode */
++	if (!env)
++		setenv("bootargs_android_recovery", boot_args);
++	env = getenv("bootcmd_android_recovery");
++	if (!env)
++		setenv("bootcmd_android_recovery", boot_cmd);
++	setenv("bootcmd", "run bootcmd_android_recovery");
++
++
+ 	return 0;
+ }
+ 
+@@ -778,76 +785,7 @@ inline int check_recovery_cmd_file(void)
+ 		}
+ 		break;
+ 	case NAND_BOOT:
+-		{
+-			#if 0
+-			struct mtd_device *dev_desc = NULL;
+-			struct part_info *part = NULL;
+-			struct mtd_partition mtd_part;
+-			struct mtd_info *mtd_info;
+-			char mtd_dev[16] = { 0 };
+-			char mtd_buffer[80] = { 0 };
+-			u8 pnum;
+-			int err;
+-			u8 read_test;
+-
+-			/* ========== ubi and mtd operations ========== */
+-			if (mtdparts_init() != 0) {
+-				printf("Error initializing mtdparts!\n");
+-				return 0;
+-			}
+-
+-			if (find_dev_and_part("nand", &dev_desc, &pnum, &part)) {
+-				printf("Partition %s not found!\n", "nand");
+-				return 0;
+-			}
+-			sprintf(mtd_dev, "%s%d",
+-					MTD_DEV_TYPE(dev_desc->id->type),
+-					dev_desc->id->num);
+-			mtd_info = get_mtd_device_nm(mtd_dev);
+-			if (IS_ERR(mtd_info)) {
+-				printf("Partition %s not found on device %s!\n",
+-					"nand", mtd_dev);
+-				return 0;
+-			}
+-
+-			sprintf(mtd_buffer, "mtd=%d", pnum);
+-			memset(&mtd_part, 0, sizeof(mtd_part));
+-			mtd_part.name = mtd_buffer;
+-			mtd_part.size = part->size;
+-			mtd_part.offset = part->offset;
+-			add_mtd_partitions(&info, &mtd_part, 1);
+-
+-			err = ubi_mtd_param_parse(mtd_buffer, NULL);
+-			if (err) {
+-				del_mtd_partitions(&info);
+-				return 0;
+-			}
+-
+-			err = ubi_init();
+-			if (err) {
+-				del_mtd_partitions(&info);
+-				return 0;
+-			}
+-
+-			/* ========== ubifs operations ========== */
+-			/* Init ubifs */
+-			ubifs_init();
+-
+-			if (ubifs_mount(CONFIG_ANDROID_CACHE_PARTITION_NAND)) {
+-				printf("Mount ubifs volume %s fail!\n",
+-						CONFIG_ANDROID_CACHE_PARTITION_NAND);
+-				return 0;
+-			}
+-
+-			/* Try to read one byte for a read test. */
+-			if (ubifs_load(CONFIG_ANDROID_RECOVERY_CMD_FILE,
+-						&read_test, 1)) {
+-				/* File not found */
+-				filelen = 0;
+-			} else
+-				filelen = 1;
+-		#endif
+-		}
++		return 0;
+ 		break;
+ 	case SPI_NOR_BOOT:
+ 		return 0;
+diff --git a/common/Makefile b/common/Makefile
+index 118569a..37629a7 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -57,6 +57,7 @@ COBJS-$(CONFIG_ENV_IS_IN_FLASH) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_NVRAM) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_MMC) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_NAND) += env_embedded.o
++COBJS-$(CONFIG_ENV_IS_IN_SPI_FLASH) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_FLASH) += env_flash.o
+ COBJS-$(CONFIG_ENV_IS_IN_MG_DISK) += env_mgdisk.o
+ COBJS-$(CONFIG_ENV_IS_IN_NAND) += env_nand.o
+diff --git a/drivers/input/mxc_keyb.c b/drivers/input/mxc_keyb.c
+index 8682b79..ec65ab5 100644
+--- a/drivers/input/mxc_keyb.c
++++ b/drivers/input/mxc_keyb.c
+@@ -122,7 +122,7 @@ extern void setup_mxc_kpd(void);
+  *
+  * @result    Number of key pressed/released.
+  */
+-static int mxc_kpp_scan_matrix()
++static int mxc_kpp_scan_matrix(void)
+ {
+ 	unsigned short reg_val;
+ 	int col, row;
+@@ -289,7 +289,7 @@ static int mxc_kpp_scan_matrix()
+ 	return keycnt;
+ }
+ 
+-static int mxc_kpp_reset()
++static int mxc_kpp_reset(void)
+ {
+ 	unsigned short reg_val;
+ 	int i;
+@@ -485,7 +485,7 @@ static void mxc_kpp_free_allocated(void)
+  * @return  The function returns 0 on successful registration. Otherwise returns
+  *          specific error code.
+  */
+-int mxc_kpp_init()
++int mxc_kpp_init(void)
+ {
+ 	int i;
+ 	int retval;
+diff --git a/drivers/spi/imx_spi_pmic.c b/drivers/spi/imx_spi_pmic.c
+index 2ed795f..678f0b4 100644
+--- a/drivers/spi/imx_spi_pmic.c
++++ b/drivers/spi/imx_spi_pmic.c
+@@ -119,7 +119,7 @@ void show_pmic_info(struct spi_slave *slave)
+ 	printf("]\n");
+ }
+ 
+-struct spi_slave *spi_pmic_probe()
++struct spi_slave *spi_pmic_probe(void)
+ {
+ 	return spi_setup_slave(0, CONFIG_IMX_SPI_PMIC_CS, 2500000, 0);
+ }
+diff --git a/include/asm-arm/arch-mx51/imx_spi_pmic.h b/include/asm-arm/arch-mx51/imx_spi_pmic.h
+index acd8cbf..21e6cd2 100644
+--- a/include/asm-arm/arch-mx51/imx_spi_pmic.h
++++ b/include/asm-arm/arch-mx51/imx_spi_pmic.h
+@@ -25,7 +25,7 @@
+ 
+ #include <linux/types.h>
+ 
+-extern struct spi_slave *spi_pmic_probe();
++extern struct spi_slave *spi_pmic_probe(void);
+ extern void spi_pmic_free(struct spi_slave *slave);
+ extern u32 pmic_reg(struct spi_slave *slave,
+ 				u32 reg, u32 val, u32 write);
+diff --git a/include/asm-arm/arch-mx51/mx51.h b/include/asm-arm/arch-mx51/mx51.h
+index 19097b9..6554b56 100644
+--- a/include/asm-arm/arch-mx51/mx51.h
++++ b/include/asm-arm/arch-mx51/mx51.h
+@@ -451,7 +451,7 @@ enum mxc_peri_clocks {
+ extern unsigned int mxc_get_clock(enum mxc_clock clk);
+ extern unsigned int get_board_rev(void);
+ extern int is_soc_rev(int rev);
+-extern enum boot_device get_boot_device();
++extern enum boot_device get_boot_device(void);
+ 
+ #endif /* __ASSEMBLER__*/
+ 
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index a875dcb..7661713 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -89,7 +89,12 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+-/* #define CONFIG_CMD_UBIFS */
++/*
++#define CONFIG_CMD_UBI
++#define CONFIG_CMD_UBIFS
++#define CONFIG_RBTREE
++#define CONFIG_LZO
++*/
+ 
+ /*
+  * Android support Configs
+@@ -108,11 +113,14 @@
+ 	}
+ #define CONFIG_MXC_KPD_COLMAX 6
+ #define CONFIG_MXC_KPD_ROWMAX 4
+-#define CONFIG_ANDROID_NORMAL_BOOTARGS "ip=dhcp mem=480M init=/init wvga calibration"
+-#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
+-#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  "run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
+-#define CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND "setenv bootargs ${bootargs} root=/dev/mtdblock2 ip=dhcp init=/init rootfstype=ext3 wvga"
+-#define CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND  "run bootargs_base bootargs_android;nand read ${loadaddr} 0x300000 0x250000;bootm"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
++	"setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=off init=/init rootfstype=ext3"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
++	"run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND \
++	"setenv bootargs ${bootargs} ip=off rootfstype=ubifs root=ubi1:recovery init=/init ubi.mtd=3 ubi.mtd=2"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND  \
++	"run bootargs_base bootargs_android;nand read ${loadaddr} 0x300000 0x250000;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ #define CONFIG_ANDROID_BOOTMOD_DELAY 3
+ #define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 1634e0e..64f0e2b 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -238,25 +238,14 @@
+  */
+ #define CONFIG_SYS_NO_FLASH
+ 
+-/*-----------------------------------------------------------------------
+- * NAND FLASH driver setup
+- */
+-#define NAND_MAX_CHIPS         8
+-#define CONFIG_SYS_MAX_NAND_DEVICE    1
+-#define CONFIG_SYS_NAND_BASE          0x40000000
+-
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_SF
+ /* #define CONFIG_FSL_ENV_IN_MMC */
+-/* #define CONFIG_FSL_ENV_IN_NAND */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
+ 
+-#if defined(CONFIG_FSL_ENV_IN_NAND)
+-	#define CONFIG_ENV_IS_IN_NAND 1
+-	#define CONFIG_ENV_OFFSET	0x100000
+-#elif defined(CONFIG_FSL_ENV_IN_MMC)
++#if defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	#define CONFIG_ENV_OFFSET	(768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 14a9ce3..f791f4d 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -73,10 +73,6 @@
+ #define CONFIG_CMD_DHCP
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+-/*
+-#define CONFIG_CMD_UBI
+-#define CONFIG_CMD_UBIFS
+-*/
+ 
+ /*
+  * Android support Configs
+@@ -97,7 +93,7 @@
+ 		KEY_7, KEY_8, KEY_9, KEY_F3, KEY_DOWN, KEY_F4, \
+ 		KEY_0, KEY_OK, KEY_ESC, KEY_ENTER, KEY_MENU, KEY_BACK, \
+ 	}
+-/*
++	/*
+ 	{	\
+ 		KEY_3,         KEY_2,        KEY_0, KEY_OK, KEY_ESC, KEY_ENTER,
+ 		KEY_F1,	KEY_4, KEY_6, KEY_5,
+@@ -106,15 +102,13 @@
+ 	*/
+ #define CONFIG_MXC_KPD_COLMAX 6
+ #define CONFIG_MXC_KPD_ROWMAX 4
+-#define CONFIG_ANDROID_NORMAL_BOOTARGS "ip=dhcp mem=480M init=/init wvga calibration"
+-#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC "setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=dhcp init=/init rootfstype=ext3 wvga"
+-#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  "run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
+-#define CONFIG_ANDROID_RECOVERY_BOOTARGS_NAND "setenv bootargs ${bootargs} root=/dev/mtdblock2 ip=dhcp init=/init rootfstype=ext3 wvga"
+-#define CONFIG_ANDROID_RECOVERY_BOOTCMD_NAND  "run bootargs_base bootargs_android;nand read ${loadaddr} 0x300000 0x250000;bootm"
++#define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
++	"setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=off init=/init rootfstype=ext3 wvga"
++#define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
++	"run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ #define CONFIG_ANDROID_BOOTMOD_DELAY 3
+ #define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
+-#define CONFIG_ANDROID_CACHE_PARTITION_NAND "cache"
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/include/mxc_keyb.h b/include/mxc_keyb.h
+index 50c6a20..a4b0a4e 100644
+--- a/include/mxc_keyb.h
++++ b/include/mxc_keyb.h
+@@ -195,7 +195,7 @@ struct kpp_key_info {
+ 	unsigned short val;
+ };
+ 
+-int mxc_kpp_init();
++int mxc_kpp_init(void);
+ int mxc_kpp_getc(struct kpp_key_info *);
+ 
+ #endif				/* __MXC_KEYB_H__ */
+-- 
+1.5.4.4
+

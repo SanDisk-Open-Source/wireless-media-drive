@@ -1,0 +1,92 @@
+From d5bb7414e385f2ac8ad5cf842633325a1aafb6ba Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Fri, 1 Oct 2010 17:00:19 -0500
+Subject: [PATCH] ENGR00132250 - MAX17135: dynamically detect polarity of PWRGOOD signal
+
+We have multiple extension boards with some using positive polarity (EPD boards)
+and others using negative polarity (E-book add-on boards). Thus, we need to
+dynamically detect the polarity of this signal and factor it in later when
+testing whether power is good.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/regulator/max17135-regulator.c |   26 +++++++++++++++++++++++---
+ 1 files changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/regulator/max17135-regulator.c b/drivers/regulator/max17135-regulator.c
+index 933ac90..f4f1dc2 100644
+--- a/drivers/regulator/max17135-regulator.c
++++ b/drivers/regulator/max17135-regulator.c
+@@ -232,17 +232,25 @@ struct max17135 {
+ 	int gpio_pmic_wakeup;
+ 	int gpio_pmic_intr;
+ 
++	/* MAX17135 part variables */
+ 	int pass_num;
+ 	int vcom_uV;
+ 
++	/* One-time VCOM setup counter */
+ 	bool vcom_setup;
+ 
++	/* powerup/powerdown wait time */
+ 	int max_wait;
++
++	/* Dynamically determined polarity for PWRGOOD */
++	int pwrgood_polarity;
+ };
+ 
+ static int max17135_pass_num = { 1 };
+ static int max17135_vcom = { -1250000 };
+ 
++static int max17135_is_power_good(struct max17135 *max17135);
++
+ /*
+  * Regulator operations
+  */
+@@ -369,8 +377,7 @@ static int max17135_vcom_enable(struct regulator_dev *reg)
+ 	 * Should only be done one time. And, we can
+ 	 * only change vcom voltage if we have been enabled.
+ 	 */
+-	if (!max17135->vcom_setup
+-		&& gpio_get_value(max17135->gpio_pmic_pwrgood)) {
++	if (!max17135->vcom_setup && max17135_is_power_good(max17135)) {
+ 		max17135_vcom_set_voltage(reg,
+ 			max17135->vcom_uV,
+ 			max17135->vcom_uV);
+@@ -434,12 +441,22 @@ static int max17135_vcom_is_enabled(struct regulator_dev *reg)
+ 	}
+ }
+ 
++static int max17135_is_power_good(struct max17135 *max17135)
++{
++	/*
++	 * XOR of polarity (starting value) and current
++	 * value yields whether power is good.
++	 */
++	return gpio_get_value(max17135->gpio_pmic_pwrgood) ^
++		max17135->pwrgood_polarity;
++}
++
+ static int max17135_wait_power_good(struct max17135 *max17135)
+ {
+ 	int i;
+ 
+ 	for (i = 0; i < max17135->max_wait * 3; i++) {
+-		if (gpio_get_value(max17135->gpio_pmic_pwrgood))
++		if (max17135_is_power_good(max17135))
+ 			return 0;
+ 
+ 		msleep(1);
+@@ -796,6 +813,9 @@ static int max17135_i2c_probe(struct i2c_client *client,
+ 	 */
+ 	max17135_setup_timings(max17135);
+ 
++	max17135->pwrgood_polarity =
++		gpio_get_value(max17135->gpio_pmic_pwrgood);
++
+ 	/* Initialize the PMIC device */
+ 	dev_info(&client->dev, "PMIC MAX17135 for eInk display\n");
+ 
+-- 
+1.5.4.4
+

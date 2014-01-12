@@ -1,0 +1,1365 @@
+From c859d5932f8da3b4b20e6b9c207e301a1ebd4acd Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 16 Feb 2011 14:24:31 -0600
+Subject: [PATCH] ENGR00139054-2: MX50- Simplify DDR frequency change code.
+
+The DDR init code is changing frequently and is modified based on the
+memory vendor. Change the DDR frequency code in the BSP so that is
+reads the DDR settings initialized by the bootlader. Use these settings
+when switching between 24Mhz and 200/266MHz.
+Also simplify the bus frequency driver, move MX50 DDR freq change to a
+different file.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/Makefile        |    2 +-
+ arch/arm/mach-mx5/bus_freq.c      |   94 ++-----
+ arch/arm/mach-mx5/cpu.c           |   47 +---
+ arch/arm/mach-mx5/mx50_ddr_freq.S |  531 ++++---------------------------------
+ arch/arm/mach-mx5/mx50_freq.c     |  434 ++++++++++++++++++++++++++++++
+ 5 files changed, 508 insertions(+), 600 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index 2ef2ceb..417f790 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -8,7 +8,7 @@ sdram_autogating.o bus_freq.o usb_dr.o usb_h1.o usb_h2.o dummy_gpio.o  early_set
+ 
+ obj-$(CONFIG_ARCH_MX51) += clock.o suspend.o
+ obj-$(CONFIG_ARCH_MX53) += clock.o suspend.o mx53_wp.o pm_da9053.o
+-obj-$(CONFIG_ARCH_MX50) += clock_mx50.o dmaengine.o dma-apbh.o mx50_suspend.o mx50_ddr_freq.o mx50_wfi.o
++obj-$(CONFIG_ARCH_MX50) += clock_mx50.o dmaengine.o dma-apbh.o mx50_suspend.o mx50_freq.o mx50_ddr_freq.o mx50_wfi.o
+ 
+ obj-$(CONFIG_MACH_MX51_3DS) += mx51_3stack.o mx51_3stack_gpio.o mx51_3stack_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX51_BABBAGE) += mx51_babbage.o mx51_babbage_pmic_mc13892.o
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index ddcd83f..055b9ae 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -51,21 +51,22 @@
+ #define EMI_SLOW_CLK_NORMAL_DIV		AXI_B_CLK_NORMAL_DIV
+ #define NFC_CLK_NORMAL_DIV      	4
+ #define SPIN_DELAY	1000000 /* in nanoseconds */
+-#define HW_QOS_DISABLE		0x70
+-#define HW_QOS_DISABLE_SET		0x74
+-#define HW_QOS_DISABLE_CLR		0x78
+ #define DDR_TYPE_DDR3		0x0
+ #define DDR_TYPE_DDR2		0x1
+ 
+ DEFINE_SPINLOCK(ddr_freq_lock);
+ 
+-static unsigned long lp_normal_rate;
+-static unsigned long lp_med_rate;
+-static unsigned long ddr_normal_rate;
+-static unsigned long ddr_med_rate;
+-static unsigned long ddr_low_rate;
++unsigned long lp_normal_rate;
++unsigned long lp_med_rate;
++unsigned long ddr_normal_rate;
++unsigned long ddr_med_rate;
++unsigned long ddr_low_rate;
+ static int cur_ddr_rate;
+ static unsigned char mx53_ddr_type;
++static struct cpu_wp *cpu_wp_tbl;
++static struct device *busfreq_dev;
++static int busfreq_suspended;
++static int cpu_podf;
+ 
+ static struct clk *ddr_clk;
+ static struct clk *pll1_sw_clk;
+@@ -84,13 +85,9 @@ static struct clk *periph_apm_clk;
+ static struct clk *lp_apm;
+ static struct clk *gpc_dvfs_clk;
+ static struct clk *emi_garb_clk;
+-static struct clk *epdc_clk;
+-
+ static void __iomem *pll1_base;
+ static void __iomem *pll4_base;
+ 
+-static void __iomem *qosc_base;
+-
+ struct regulator *pll_regulator;
+ 
+ struct regulator *lp_regulator;
+@@ -102,10 +99,6 @@ int bus_freq_scaling_initialized;
+ char *gp_reg_id;
+ char *lp_reg_id;
+ 
+-static struct cpu_wp *cpu_wp_tbl;
+-static struct device *busfreq_dev;
+-static int busfreq_suspended;
+-static int cpu_podf;
+ /* True if bus_frequency is scaled not using DVFS-PER */
+ int bus_freq_scaling_is_active;
+ 
+@@ -126,15 +119,13 @@ void exit_lpapm_mode_mx51(void);
+ void exit_lpapm_mode_mx53(void);
+ int low_freq_bus_used(void);
+ void set_ddr_freq(int ddr_freq);
+-void *ddr_freq_change_iram_base;
+-void (*change_ddr_freq)(void *ccm_addr, void *databahn_addr, u32 freq) = NULL;
+ 
+-extern void mx50_ddr_freq_change(u32 ccm_base,
+-					u32 databahn_addr, u32 freq);
+ extern int dvfs_core_is_active;
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void __iomem *ccm_base;
+ extern void __iomem *databahn_base;
++extern int update_ddr_freq(int ddr_rate);
++extern unsigned int mx50_ddr_type;
+ 
+ static DEFINE_SPINLOCK(voltage_lock);
+ struct mutex bus_freq_mutex;
+@@ -716,40 +707,19 @@ void exit_lpapm_mode_mx53()
+ 	} */
+ }
+ 
+-int can_change_ddr_freq(void)
+-{
+-	if (clk_get_usecount(epdc_clk) == 0)
+-		return 1;
+-	return 0;
+-}
+-
+ void set_ddr_freq(int ddr_rate)
+ {
+-	u32 reg;
+ 	unsigned long flags;
+-
+-	if (!can_change_ddr_freq())
+-		return;
++	unsigned int ret = 0;
+ 
+ 	spin_lock_irqsave(&ddr_freq_lock, flags);
+-	local_flush_tlb_all();
+-	flush_cache_all();
+ 
+-	/* Disable all masters from accessing the DDR. */
+-	reg = __raw_readl(qosc_base + HW_QOS_DISABLE);
+-	reg |= 0xFFE;
+-	__raw_writel(reg, qosc_base + HW_QOS_DISABLE_SET);
+-	udelay(100);
+-
+-	/* Set the DDR to default freq.
+-	 */
+-	change_ddr_freq(ccm_base, databahn_base, ddr_rate);
+-
+-	/* Enable all masters to access the DDR. */
+-	__raw_writel(reg, qosc_base + HW_QOS_DISABLE_CLR);
++	if (cpu_is_mx50())
++		ret = update_ddr_freq(ddr_rate);
+ 
+ 	spin_unlock_irqrestore(&ddr_freq_lock, flags);
+-	cur_ddr_rate = ddr_rate;
++	if (!ret)
++		cur_ddr_rate = ddr_rate;
+ 	udelay(100);
+ }
+ 
+@@ -834,7 +804,6 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ {
+ 	int err = 0;
+ 	unsigned long pll2_rate, pll1_rate;
+-	unsigned long iram_paddr;
+ 	struct mxc_bus_freq_platform_data *p_bus_freq_data;
+ 
+ 	p_bus_freq_data = pdev->dev.platform_data;
+@@ -991,7 +960,11 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 			ddr_normal_rate = clk_get_rate(ddr_clk);
+ 			lp_med_rate = pll2_rate / 6;
+ 			ddr_low_rate = LP_APM_CLK;
+-			ddr_med_rate = pll2_rate / 3;
++			if (mx50_ddr_type == MX50_LPDDR2)
++				ddr_med_rate = pll2_rate / 3;
++			else
++				/* mDDR @ 133Mhz currently does not work */
++				ddr_med_rate = ddr_normal_rate;
+ 		}
+ 	}
+ 
+@@ -1018,15 +991,6 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	if (cpu_is_mx50()) {
+-		u32 reg;
+-
+-		iram_alloc(SZ_8K, &iram_paddr);
+-		/* Need to remap the area here since we want the memory region
+-			 to be executable. */
+-		ddr_freq_change_iram_base = __arm_ioremap(iram_paddr,
+-							SZ_8K, MT_HIGH_VECTORS);
+-		memcpy(ddr_freq_change_iram_base, mx50_ddr_freq_change, SZ_8K);
+-		change_ddr_freq = (void *)ddr_freq_change_iram_base;
+ 		cur_ddr_rate = ddr_normal_rate;
+ 
+ 		lp_regulator = regulator_get(NULL, lp_reg_id);
+@@ -1035,24 +999,10 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 			"%s: failed to get lp regulator\n", __func__);
+ 			return PTR_ERR(lp_regulator);
+ 		}
+-
+-		qosc_base = ioremap(QOSC_BASE_ADDR, SZ_4K);
+-		/* Enable the QoSC */
+-		reg = __raw_readl(qosc_base);
+-		reg &= ~0xC0000000;
+-		__raw_writel(reg, qosc_base);
+-
+ 		voltage_wq = create_rt_workqueue("voltage_change");
+ 		INIT_WORK(&voltage_change_handler, voltage_work_handler);
+ 
+ 		init_completion(&voltage_change_cmpl);
+-
+-		epdc_clk = clk_get(NULL, "epdc_axi");
+-		if (IS_ERR(epdc_clk)) {
+-			printk(KERN_DEBUG "%s: failed to get epdc_axi_clk\n",
+-				__func__);
+-			return PTR_ERR(epdc_clk);
+-		}
+ 	}
+ 	cpu_wp_tbl = get_cpu_wp(&cpu_wp_nr);
+ 	low_bus_freq_mode = 0;
+diff --git a/arch/arm/mach-mx5/cpu.c b/arch/arm/mach-mx5/cpu.c
+index abb3378..70df35f 100644
+--- a/arch/arm/mach-mx5/cpu.c
++++ b/arch/arm/mach-mx5/cpu.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * The code contained herein is licensed under the GNU General Public
+  * License. You may obtain a copy of the GNU General Public License
+@@ -37,11 +37,7 @@
+ void __iomem *arm_plat_base;
+ void __iomem *gpc_base;
+ void __iomem *ccm_base;
+-void __iomem *databahn_base;
+-void *wait_in_iram_base;
+-void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
+-
+-extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
++extern void init_ddr_settings(void);
+ 
+ static int cpu_silicon_rev = -1;
+ 
+@@ -239,42 +235,9 @@ static int __init post_cpu_init(void)
+ 		iounmap(base);
+ 	}
+ 
+-	databahn_base = ioremap(MX50_DATABAHN_BASE_ADDR, SZ_16K);
+-
+-	if (cpu_is_mx50()) {
+-		struct clk *ddr_clk = clk_get(NULL, "ddr_clk");
+-		unsigned long iram_paddr;
+-
+-		iram_alloc(SZ_4K, &iram_paddr);
+-		/* Need to remap the area here since we want the memory region
+-			 to be executable. */
+-		wait_in_iram_base = __arm_ioremap(iram_paddr,
+-							SZ_4K, MT_HIGH_VECTORS);
+-		memcpy(wait_in_iram_base, mx50_wait, SZ_4K);
+-		wait_in_iram = (void *)wait_in_iram_base;
+-
+-		clk_enable(ddr_clk);
+-
+-		/* Set the DDR to enter automatic self-refresh. */
+-		/* Set the DDR to automatically enter lower power mode 4. */
+-		reg = __raw_readl(databahn_base + DATABAHN_CTL_REG22);
+-		reg &= ~LOWPOWER_AUTOENABLE_MASK;
+-		reg |= 1 << 1;
+-		__raw_writel(reg, databahn_base + DATABAHN_CTL_REG22);
+-
+-		/* set the counter for entering mode 4. */
+-		reg = __raw_readl(databahn_base + DATABAHN_CTL_REG21);
+-		reg &= ~LOWPOWER_EXTERNAL_CNT_MASK;
+-		reg = 128 << LOWPOWER_EXTERNAL_CNT_OFFSET;
+-		__raw_writel(reg, databahn_base + DATABAHN_CTL_REG21);
+-
+-		/* Enable low power mode 4 */
+-		reg = __raw_readl(databahn_base + DATABAHN_CTL_REG20);
+-		reg &= ~LOWPOWER_CONTROL_MASK;
+-		reg |= 1 << 1;
+-		__raw_writel(reg, databahn_base + DATABAHN_CTL_REG20);
+-		clk_disable(ddr_clk);
+-	}
++	if (cpu_is_mx50())
++		init_ddr_settings();
++
+ 	return 0;
+ }
+ 
+diff --git a/arch/arm/mach-mx5/mx50_ddr_freq.S b/arch/arm/mach-mx5/mx50_ddr_freq.S
+index 3831767..06bb4fa 100644
+--- a/arch/arm/mach-mx5/mx50_ddr_freq.S
++++ b/arch/arm/mach-mx5/mx50_ddr_freq.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -26,11 +26,12 @@
+  *  IRQs are already disabled.
+  */
+ ENTRY(mx50_ddr_freq_change)
+-    stmfd   sp!, {r3,r4,r5,r6, r7}      @ Save registers
++    stmfd   sp!, {r4,r5,r6, r7, r8, r9}      @ Save registers
+ 
+     mov    r6, r0                       @save CCM address
+     mov    r5, r1                       @save DataBahn address
+     mov    r4, r2                       @save new freq requested
++    mov    r8, r3                       @save the DRAM settings array
+ 
+     /* Make sure no TLB miss will occur when the DDR is in self refresh. */
+     /* Invalidate TLB single entry to ensure that the address is not
+@@ -43,6 +44,9 @@ ENTRY(mx50_ddr_freq_change)
+                                              @ is not already in TLB.
+     mcr   p15, 0, r5, c8, c7, 1      @ make sure Databahn address
+                                              @ is not already in TLB.
++    mcr   p15, 0, r8, c8, c7, 1      @ make sure Databahn settings
++                                             @ arrayis not already in TLB.
++
+     mrc   p15, 0, r0, c10, c0, 0    @ Read the TLB lockdown register
+     orr    r0, r0, #1                    @ Set the Preserve bit.
+     mcr   p15, 0, r0, c10, c0, 0    @ Write to the lockdown register
+@@ -50,6 +54,9 @@ ENTRY(mx50_ddr_freq_change)
+                                              @CCM address will be loaded
+     ldr    r2, [r5]                        @ TLB will miss,
+                                              @Databahn address will be loaded
++    ldr    r2, [r8]                        @ TLB will miss,
++                                             @Databahn settings will be loaded
++
+     ldr    r2, [r3]                        @ TLB will miss
+     mrc  p15, 0, r0, c10, c0, 0      @ Read the lockdown register
+                                              @ (victim will be incremented)
+@@ -57,8 +64,8 @@ ENTRY(mx50_ddr_freq_change)
+     mcr   p15, 0, r0, c10, c0, 0     @ Write to the lockdown register.
+ 
+     /* If Databahn is in LPM4, exit that mode first. */
+-    ldr     r1,[r5, #0x50]             @Store LPM mode in r1.
+-    mov   r0, r1
++    ldr     r9,[r5, #0x50]             @Store LPM mode in r9
++    mov   r0, r9
+     bic     r0, #0x1F
+     str     r0,[r5, #0x50]
+ 
+@@ -177,246 +184,18 @@ Div_Found:
+     b       Ddr_not_24
+ 
+ databahn_ddr_24:
++    /* Restore from the ddr settings array */
++    ldr    r1, [r8]             @size of array
++    add  r8, r8, #8          @skip first eight bytes in array
++update_ddr:
++    ldr    r0, [r8, #0x0]   @ offset
++    ldr    r3, [r8, #0x4]   @ value
++    str    r3, [r5, r0]
++    add   r8, r8, #8
++    sub   r1, r1, #1
++    cmp  r1, #0
++    bgt   update_ddr
+ 
+-    /* Check for mDDR v LPDDR2 memory type */
+-    ldr    r0, [r5]
+-    ldr    r2, =0x100
+-    and   r0, r0, #0xF00
+-    cmp   r0, r2
+-    beq    mddr_24
+-
+-    /* LPDDR2 settings */
+-    ldr    r0, =0x00000003
+-    str    r0, [r5, #0x08]
+-    ldr    r0, =0x000012c0
+-    str    r0, [r5, #0x0c]
+-    ldr    r0, =0x00000018
+-
+-    str    r0, [r5, #0x10]
+-    ldr    r0, =0x000000f0
+-    str    r0, [r5, #0x14]
+-    ldr    r0, =0x02030b0c
+-    str    r0, [r5, #0x18]
+-    ldr    r0, =0x02020104
+-    str    r0, [r5, #0x1c]
+-
+-    ldr    r0, =0x05010102
+-    str    r0, [r5, #0x20]
+-    ldr    r0, =0x00068005
+-    str    r0, [r5, #0x24]
+-    ldr    r0, =0x01000103
+-    str    r0, [r5, #0x28]
+-    ldr    r0, =0x04030101
+-    str    r0, [r5, #0x2c]
+-
+-    ldr    r0, =0x00000202
+-    str    r0, [r5, #0x34]
+-    ldr    r0, =0x00000001
+-    str    r0, [r5, #0x38]
+-    ldr    r0, =0x00000401
+-    str    r0, [r5, #0x3c]
+-
+-    /* Set TREF. */
+-    ldr    r0, =0x00030050
+-    str    r0, [r5, #0x40]
+-    ldr    r0, =0x00040004
+-    str    r0, [r5, #0x48]
+-
+-    ldr    r0, =0x00040022
+-    str    r0, [r5, #0x6c]
+-
+-    ldr    r0, =0x00040022
+-    str    r0, [r5, #0x78]
+-
+-    ldr    r0, =0x00180000
+-    str    r0, [r5, #0x80]
+-    ldr    r0, =0x00000009
+-    str    r0, [r5, #0x84]
+-    ldr    r0, =0x02400003
+-    str    r0, [r5, #0x88]
+-    ldr    r0, =0x01000200
+-    str    r0, [r5, #0x8c]
+-
+-    ldr    r0, =0x00000000
+-    str    r0, [r5, #0xcc]
+-
+-    ldr    r0, =0x01010301
+-    str    r0, [r5, #0xd4]
+-    ldr    r0, =0x00000101
+-    str    r0, [r5, #0xd8]
+-
+-    ldr    r0, =0x02000602
+-    str    r0, [r5, #0x104]
+-    ldr    r0, =0x00560000
+-    str    r0, [r5, #0x108]
+-    ldr    r0, =0x00560056
+-    str    r0, [r5, #0x10c]
+-
+-    ldr    r0, =0x00560056
+-    str    r0, [r5, #0x110]
+-    ldr    r0, =0x03060056
+-    str    r0, [r5, #0x114]
+-
+-    /* Set the Databahn DLL in bypass mode */
+-    /* PHY Register settings. */
+-    ldr    r0, =0x0
+-    str    r0, [r5, #0x200]
+-    ldr    r0, =0x0
+-    str    r0, [r5, #0x204]
+-    ldr    r0, =0xf3003a27
+-    str    r0, [r5, #0x208]
+-    ldr    r0, =0x074002c1
+-    str    r0, [r5, #0x20c]
+-
+-    ldr    r0, =0xf3003a27
+-    str    r0, [r5, #0x210]
+-    ldr    r0, =0x074002c1
+-    str    r0, [r5, #0x214]
+-    ldr    r0, =0xf3003a27
+-    str    r0, [r5, #0x218]
+-    ldr    r0, =0x074002c1
+-    str    r0, [r5, #0x21c]
+-
+-    ldr    r0, =0xf3003a27
+-    str    r0, [r5, #0x220]
+-    ldr    r0, =0x074002c1
+-    str    r0, [r5, #0x224]
+-    ldr    r0, =0xf3003a27
+-    str    r0, [r5, #0x228]
+-    ldr    r0, =0x074002c1
+-    str    r0, [r5, #0x22c]
+-
+-    ldr    r0, =0x00810004
+-    str    r0, [r5, #0x234]
+-    ldr     r0, =0x30219fd3
+-    str    r0, [r5, #0x238]
+-    ldr    r0, =0x00219fc1
+-    str    r0, [r5, #0x23c]
+-
+-    ldr     r0, =0x30219fd3
+-    str    r0, [r5, #0x240]
+-    ldr    r0, =0x00219fc1
+-    str    r0, [r5, #0x244]
+-    ldr     r0, =0x30219fd3
+-    str    r0, [r5, #0x248]
+-    ldr    r0, =0x00219fc1
+-    str    r0, [r5, #0x24c]
+-
+-    ldr     r0, =0x30219fd3
+-    str    r0, [r5, #0x250]
+-    ldr    r0, =0x00219fc1
+-    str    r0, [r5, #0x254]
+-    ldr     r0, =0x30219fd3
+-    str    r0, [r5, #0x258]
+-    ldr    r0, =0x00219fc1
+-    str    r0, [r5, #0x25c]
+-
+-    b clocking
+-
+-/* mDDR settings */
+-mddr_24:
+-    ldr    r0, =0x000012c0
+-    str    r0, [r5, #0x08]
+-    ldr    r0, =0x02000000
+-    str    r0, [r5, #0x14]
+-    ldr    r0, =0x01010506
+-    str    r0, [r5, #0x18]
+-    ldr    r0, =0x01020101
+-    str    r0, [r5, #0x1c]
+-
+-    ldr    r0, =0x02000103
+-    str    r0, [r5, #0x20]
+-    ldr    r0, =0x01069002
+-    str    r0, [r5, #0x24]
+-    ldr    r0, =0x01000101
+-    str    r0, [r5, #0x28]
+-    ldr    r0, =0x02010101
+-    str    r0, [r5, #0x2c]
+-
+-    ldr    r0, =0x00000602
+-    str    r0, [r5, #0x34]
+-    ldr    r0, =0x00000001
+-    str    r0, [r5, #0x38]
+-    ldr    r0, =0x00000301
+-    str    r0, [r5, #0x3c]
+-
+-    /* Set TREF. */
+-    ldr    r0, =0x000500b0
+-    str    r0, [r5, #0x40]
+-    ldr    r0, =0x00030003
+-    str    r0, [r5, #0x48]
+-
+-    ldr    r0, =0x00000000
+-    str    r0, [r5, #0x6c]
+-
+-    ldr    r0, =0x00000200
+-    str    r0, [r5, #0xd4]
+-
+-    ldr    r0, =0x00b30000
+-    str    r0, [r5, #0x108]
+-    ldr    r0, =0x00b300b3
+-    str    r0, [r5, #0x10c]
+-
+-    ldr    r0, =0x00b300b3
+-    str    r0, [r5, #0x110]
+-    ldr    r0, =0x010300b3
+-    str    r0, [r5, #0x114]
+-
+-    /* Set the Databahn DLL in bypass mode */
+-    /* PHY Register settings. */
+-    ldr    r0, =0x00000100
+-    str    r0, [r5, #0x200]
+-    ldr    r0, =0x0
+-    str    r0, [r5, #0x204]
+-    ldr    r0, =0xf4003a27
+-    str    r0, [r5, #0x208]
+-    ldr    r0, =0x074002c0
+-    str    r0, [r5, #0x20c]
+-
+-    ldr    r0, =0xf4003a27
+-    str    r0, [r5, #0x210]
+-    ldr    r0, =0x074002c0
+-    str    r0, [r5, #0x214]
+-    ldr    r0, =0xf4003a27
+-    str    r0, [r5, #0x218]
+-    ldr    r0, =0x074002c0
+-    str    r0, [r5, #0x21c]
+-
+-    ldr    r0, =0xf4003a27
+-    str    r0, [r5, #0x220]
+-    ldr    r0, =0x074002c0
+-    str    r0, [r5, #0x224]
+-    ldr    r0, =0xf4003a27
+-    str    r0, [r5, #0x228]
+-    ldr    r0, =0x074002c0
+-    str    r0, [r5, #0x22c]
+-
+-    ldr    r0, =0x00800005
+-    str    r0, [r5, #0x234]
+-    ldr     r0, =0x30319f14
+-    str    r0, [r5, #0x238]
+-    ldr    r0, =0x00319f01
+-    str    r0, [r5, #0x23c]
+-
+-    ldr     r0, =0x30319f14
+-    str    r0, [r5, #0x240]
+-    ldr    r0, =0x00319f01
+-    str    r0, [r5, #0x244]
+-    ldr     r0, =0x30319f14
+-    str    r0, [r5, #0x248]
+-    ldr    r0, =0x00319f01
+-    str    r0, [r5, #0x24c]
+-
+-    ldr     r0, =0x30319f14
+-    str    r0, [r5, #0x250]
+-    ldr    r0, =0x00319f01
+-    str    r0, [r5, #0x254]
+-    ldr     r0, =0x30319f14
+-    str    r0, [r5, #0x258]
+-    ldr    r0, =0x00319f01
+-    str    r0, [r5, #0x25c]
+-
+-clocking:
+     /* Set SYS_CLK to be sourced from 24MHz. */
+     /* Set the SYS_XTAL_DIV */
+     ldr    r0, [r6, #0x94]
+@@ -440,6 +219,7 @@ clocking:
+     str    r0, [r6, #0x94]
+     b       Setup_Done
+ 
++Ddr_not_24:
+ Async_Mode:
+     /* If SYS_CLK is running at 24MHz, increase
+       * it to 200MHz.
+@@ -519,48 +299,32 @@ Div_Found1:
+     cmp   r4, r0
+     beq    databahn_ddr_24
+ 
+-Ddr_not_24:
++    cmp    r7, #1
++    beq    just_set_tref
++
++    /* Restore from the ddr settings array */
++    ldr    r1, [r8]              @size of array
++    add  r8, r8, #8           @skip first eight bytes in array
++update_ddr1:
++    ldr    r0, [r8, #0x0]   @ offset
++    ldr    r3, [r8, #0x4]   @ value
++    str    r3, [r5, r0]
++    add   r8, r8, #8
++    sub   r1, r1, #1
++    cmp  r1, #0
++    bgt   update_ddr1
++
++    b     Setup_Done
++
++just_set_tref:
+     /* Check for mDDR v LPDDR2 memory type */
+     ldr    r0, [r5]
+     ldr    r2, =0x100
+     and    r0, r0, #0xF00
+     cmp   r0, r2
+-    beq    mddr_not_24
+-
+-    cmp    r7, #1
+-    beq    just_set_tref
+-
+-    ldr     r0, =0x0000001b
+-    str     r0, [r5, #0x8]
+-    ldr     r0, =0x0000d056
+-    str     r0, [r5, #0xc]
+-
+-    ldr     r0, =0x0000010b
+-    str     r0, [r5, #0x10]
+-    ldr     r0, =0x00000a6b
+-    str     r0, [r5, #0x14]
+-    ldr     r0, =0x02030d0c
+-    str     r0, [r5, #0x18]
+-    ldr     r0, =0x0c110304
+-    str     r0, [r5, #0x1c]
+-
+-    ldr     r0, =0x05020503
+-    str     r0, [r5, #0x20]
+-    ldr     r0, =0x0048D005
+-    str     r0, [r5, #0x24]
+-    ldr     r0, =0x01000403
+-    str     r0, [r5, #0x28]
+-    ldr     r0, =0x09040501
+-    str     r0, [r5, #0x2c]
+-
+-    ldr     r0, =0x00000e02
+-    str     r0, [r5, #0x34]
+-    ldr     r0, =0x00000006
+-    str     r0, [r5, #0x38]
+-    ldr     r0, =0x00002301
+-    str     r0, [r5, #0x3c]
++    beq    mddr_133_200
+ 
+-just_set_tref:
++lpddr2_133_266:
+     ldr     r0, =133333333
+     cmp   r4, r0
+     bgt    ddr_266
+@@ -570,136 +334,9 @@ ddr_266:
+     ldr     r0, =0x00050300
+ tref_done:
+     str     r0, [r5, #0x40]
+-
+-    cmp    r7, #1
+-    beq    Setup_Done
+-
+-    ldr     r0, =0x00260026
+-    str     r0, [r5, #0x48]
+-
+-    ldr     r0, =0x00040042
+-    str     r0, [r5, #0x6c]
+-
+-    ldr     r0, =0x00040042
+-    str     r0, [r5, #0x78]
+-
+-    ldr     r0, =0x010b0000
+-    str     r0, [r5, #0x80]
+-    ldr     r0, =0x00000060
+-    str     r0, [r5, #0x84]
+-    ldr     r0, =0x02400018
+-    str     r0, [r5, #0x88]
+-    ldr     r0, =0x01000e00
+-    str     r0, [r5, #0x8c]
+-
+-    ldr     r0, =0x01000000
+-    str     r0, [r5, #0xcc]
+-
+-    ldr     r0, =0x00000200
+-    str     r0, [r5, #0xd4]
+-    ldr     r0, =0x00000102
+-    str     r0, [r5, #0xd8]
+-
+-    ldr     r0, =0x02000802
+-    str     r0, [r5, #0x104]
+-    ldr     r0, =0x04080000
+-    str     r0, [r5, #0x108]
+-    ldr     r0, =0x04080408
+-    str     r0, [r5, #0x10c]
+-
+-    ldr     r0, =0x04080408
+-    str     r0, [r5, #0x110]
+-    ldr     r0, =0x03060408
+-    str     r0, [r5, #0x114]
+-
+-    /* PHY setting for 266MHz */
+-    ldr     r0, =0x00000000
+-    str     r0, [r5, #0x200]
+-    ldr     r0, =0x00000000
+-    str     r0, [r5, #0x204]
+-    ldr     r0, =0xf5003a27
+-    str     r0, [r5, #0x208]
+-
+-    ldr     r0, =0xf5003a27
+-    str     r0, [r5, #0x210]
+-    ldr     r0, =0xf5003a27
+-    str     r0, [r5, #0x218]
+-
+-    ldr     r0, =0xf5003a27
+-    str     r0, [r5, #0x220]
+-    ldr     r0, =0xf5003a27
+-    str     r0, [r5, #0x228]
+-
+-    ldr     r0, =0x074002e1
+-    str     r0, [r5, #0x20c]
+-    ldr     r0, =0x074002e1
+-    str     r0, [r5, #0x214]
+-    ldr     r0, =0x074002e1
+-    str     r0, [r5, #0x21c]
+-    ldr     r0, =0x074002e1
+-    str     r0, [r5, #0x224]
+-    ldr     r0, =0x074002e1
+-    str     r0, [r5, #0x22c]
+-
+-    ldr     r0, =0x00810006
+-    str     r0, [r5, #0x234]
+-    ldr     r0, =0x60099414
+-    str     r0, [r5, #0x238]
+-    ldr     r0, =0x000a0b01
+-    str     r0, [r5, #0x23c]
+-
+-    ldr     r0, =0x60099414
+-    str     r0, [r5, #0x240]
+-    ldr     r0, =0x000a0b01
+-    str     r0, [r5, #0x244]
+-    ldr     r0, =0x60099414
+-    str     r0, [r5, #0x248]
+-    ldr     r0, =0x000a0b01
+-    str     r0, [r5, #0x24c]
+-
+-    ldr     r0, =0x60099414
+-    str     r0, [r5, #0x250]
+-    ldr     r0, =0x000a0b01
+-    str     r0, [r5, #0x254]
+-    ldr     r0, =0x60099414
+-    str     r0, [r5, #0x258]
+-    ldr     r0, =0x000a0b01
+-    str     r0, [r5, #0x25c]
+-
+     b       Setup_Done
+ 
+-mddr_not_24:
+-    /* mDDR settings */
+-    cmp    r7, #1
+-    beq    just_set_tref_mddr
+-
+-    ldr     r0, =0x00009c40
+-    str     r0, [r5, #0x8]
+-
+-    ldr     r0, =0x02000000
+-    str     r0, [r5, #0x14]
+-    ldr     r0, =0x01010706
+-    str     r0, [r5, #0x18]
+-    ldr     r0, =0x080b0201
+-    str     r0, [r5, #0x1c]
+-
+-    ldr     r0, =0x02000303
+-    str     r0, [r5, #0x20]
+-    ldr     r0, =0x0136b002
+-    str     r0, [r5, #0x24]
+-    ldr     r0, =0x01000101
+-    str     r0, [r5, #0x28]
+-    ldr     r0, =0x06030301
+-    str     r0, [r5, #0x2c]
+-
+-    ldr     r0, =0x00000a02
+-    str     r0, [r5, #0x34]
+-    ldr     r0, =0x00000003
+-    str     r0, [r5, #0x38]
+-    ldr     r0, =0x00001401
+-    str     r0, [r5, #0x3c]
+-
+-just_set_tref_mddr:
++mddr_133_200:
+     ldr     r0, =133333333
+     cmp   r4, r0
+     bgt    mddr_200
+@@ -710,82 +347,6 @@ mddr_200:
+ tref_done1:
+     str     r0, [r5, #0x40]
+ 
+-    cmp    r7, #1
+-    beq    Setup_Done
+-
+-    ldr     r0, =0x00180018
+-    str     r0, [r5, #0x48]
+-
+-    ldr     r0, =0x00800000
+-    str     r0, [r5, #0x6c]
+-
+-    ldr     r0, =0x02030302
+-    str     r0, [r5, #0xd4]
+-
+-    ldr     r0, =0x06120000
+-    str     r0, [r5, #0x108]
+-    ldr     r0, =0x06120612
+-    str     r0, [r5, #0x10c]
+-
+-    ldr     r0, =0x06120612
+-    str     r0, [r5, #0x110]
+-    ldr     r0, =0x01030612
+-    str     r0, [r5, #0x114]
+-
+-    /* PHY setting for 200 MHz */
+-    ldr     r0, =0x00000000
+-    str     r0, [r5, #0x200]
+-    ldr     r0, =0x00000000
+-    str     r0, [r5, #0x204]
+-    ldr     r0, =0xf5002725
+-    str     r0, [r5, #0x208]
+-
+-    ldr     r0, =0xf5002725
+-    str     r0, [r5, #0x210]
+-    ldr     r0, =0xf5002725
+-    str     r0, [r5, #0x218]
+-
+-    ldr     r0, =0xf5002725
+-    str     r0, [r5, #0x220]
+-    ldr     r0, =0xf5002725
+-    str     r0, [r5, #0x228]
+-
+-    ldr     r0, =0x070002d0
+-    str     r0, [r5, #0x20c]
+-    ldr     r0, =0x074002d0
+-    str     r0, [r5, #0x214]
+-    ldr     r0, =0x074002d0
+-    str     r0, [r5, #0x21c]
+-    ldr     r0, =0x074002d0
+-    str     r0, [r5, #0x224]
+-    ldr     r0, =0x074002d0
+-    str     r0, [r5, #0x22c]
+-
+-    ldr     r0, =0x00800006
+-    str     r0, [r5, #0x234]
+-    ldr     r0, =0x200e1014
+-    str     r0, [r5, #0x238]
+-    ldr     r0, =0x000d9f01
+-    str     r0, [r5, #0x23c]
+-
+-    ldr     r0, =0x200e1014
+-    str     r0, [r5, #0x240]
+-    ldr     r0, =0x000d9f01
+-    str     r0, [r5, #0x244]
+-    ldr     r0, =0x200e1014
+-    str     r0, [r5, #0x248]
+-    ldr     r0, =0x000d9f01
+-    str     r0, [r5, #0x24c]
+-
+-    ldr     r0, =0x200e1014
+-    str     r0, [r5, #0x250]
+-    ldr     r0, =0x000d9f01
+-    str     r0, [r5, #0x254]
+-    ldr     r0, =0x200e1014
+-    str     r0, [r5, #0x258]
+-    ldr     r0, =0x000d9f01
+-    str     r0, [r5, #0x25c]
+-
+ Setup_Done:
+     /* Start controller */
+     ldr     r0,[r5]
+@@ -820,10 +381,10 @@ LoopCKE1:
+     bne     LoopCKE1
+ 
+     /* Put the databahn back to into the LPM mode. */
+-    str     r1,[r5, #0x50]
++    str     r9,[r5, #0x50]
+ 
+     /* Restore registers */
+-    ldmfd sp!, {r3,r4,r5,r6, r7}
++    ldmfd sp!, {r4,r5,r6, r7, r8, r9}
+     mov     pc, lr
+ 
+     .type   mx50_do_ddr_freq_change, #object
+diff --git a/arch/arm/mach-mx5/mx50_freq.c b/arch/arm/mach-mx5/mx50_freq.c
+new file mode 100644
+index 0000000..9cbdfc9
+--- /dev/null
++++ b/arch/arm/mach-mx5/mx50_freq.c
+@@ -0,0 +1,434 @@
++/*
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @file mx50_ddr.c
++ *
++ * @brief MX50 DDR specific information file.
++ *
++ *
++ *
++ * @ingroup PM
++ */
++#include <asm/io.h>
++#include <linux/sched.h>
++#include <linux/proc_fs.h>
++#include <linux/clk.h>
++#include <linux/platform_device.h>
++#include <linux/iram_alloc.h>
++#include <linux/mutex.h>
++#include <linux/delay.h>
++#include <mach/hardware.h>
++#include <mach/clock.h>
++#include <asm/mach/map.h>
++#include <asm/mach-types.h>
++#include <asm/cacheflush.h>
++#include <asm/tlb.h>
++
++#define LP_APM_CLK				24000000
++#define HW_QOS_DISABLE			0x70
++#define HW_QOS_DISABLE_SET	0x74
++#define HW_QOS_DISABLE_CLR	0x78
++
++static struct clk *epdc_clk;
++
++/* DDR settings */
++unsigned long (*iram_ddr_settings)[2];
++unsigned long (*normal_databahn_settings)[2];
++unsigned int mx50_ddr_type;
++void *ddr_freq_change_iram_base;
++void __iomem *databahn_base;
++
++void (*change_ddr_freq)(void *ccm_addr, void *databahn_addr,
++			u32 freq, void *iram_ddr_settings) = NULL;
++void *wait_in_iram_base;
++void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
++
++extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
++extern int ddr_med_rate;
++extern void __iomem *ccm_base;
++extern void __iomem *databahn_base;
++extern void mx50_ddr_freq_change(u32 ccm_base,
++					u32 databahn_addr, u32 freq);
++
++static void __iomem *qosc_base;
++static int ddr_settings_size;
++
++unsigned long lpddr2_databhan_regs_offsets[][2] = {
++	{0x8, 0x0},
++	{0xc, 0x0},
++	{0x10, 0x0},
++	{0x14, 0x0},
++	{0x18, 0x0},
++	{0x1c, 0x0},
++	{0x20, 0x0},
++	{0x24, 0x0},
++	{0x28, 0x0},
++	{0x2c, 0x0},
++	{0x34, 0x0},
++	{0x38, 0x0},
++	{0x3c, 0x0},
++	{0x40, 0x0},
++	{0x48, 0x0},
++	{0x6c, 0x0},
++	{0x78, 0x0},
++	{0x80, 0x0},
++	{0x84, 0x0},
++	{0x88, 0x0},
++	{0x8c, 0x0},
++	{0xcc, 0x0},
++	{0xd4, 0x0},
++	{0xd8, 0x0},
++	{0x104, 0x0},
++	{0x108, 0x0},
++	{0x10c, 0x0},
++	{0x110, 0x0},
++	{0x114, 0x0},
++	{0x200, 0x0},
++	{0x204, 0x0},
++	{0x208, 0x0},
++	{0x20c, 0x0},
++	{0x210, 0x0},
++	{0x214, 0x0},
++	{0x218, 0x0},
++	{0x21c, 0x0},
++	{0x220, 0x0},
++	{0x224, 0x0},
++	{0x228, 0x0},
++	{0x22c, 0x0},
++	{0x234, 0x0},
++	{0x238, 0x0},
++	{0x23c, 0x0},
++	{0x240, 0x0},
++	{0x244, 0x0},
++	{0x248, 0x0},
++	{0x24c, 0x0},
++	{0x250, 0x0},
++	{0x254, 0x0},
++	{0x258, 0x0},
++	{0x25c, 0x0} };
++
++unsigned long lpddr2_24[][2] = {
++		{0x08, 0x00000003},
++		{0x0c, 0x000012c0},
++		{0x10, 0x00000018},
++		{0x14, 0x000000f0},
++		{0x18, 0x02030b0c},
++		{0x1c, 0x02020104},
++		{0x20, 0x05010102},
++		{0x24, 0x00068005},
++		{0x28, 0x01000103},
++		{0x2c, 0x04030101},
++		{0x34, 0x00000202},
++		{0x38, 0x00000001},
++		{0x3c, 0x00000401},
++		{0x40, 0x00030050},
++		{0x48, 0x00040004},
++		{0x6c, 0x00040022},
++		{0x78, 0x00040022},
++		{0x80, 0x00180000},
++		{0x84, 0x00000009},
++		{0x88, 0x02400003},
++		{0x8c, 0x01000200},
++		{0xcc, 0x00000000},
++		{0xd4, 0x01010301},
++		{0xd8, 0x00000101},
++		{0x104, 0x02000602},
++		{0x108, 0x00560000},
++		{0x10c, 0x00560056},
++		{0x110, 0x00560056},
++		{0x114, 0x03060056},
++		{0x200, 0x00000000},
++		{0x204, 0x00000000},
++		{0x208, 0xf3003a27},
++		{0x20c, 0x074002c1},
++		{0x210, 0xf3003a27},
++		{0x214, 0x074002c1},
++		{0x218, 0xf3003a27},
++		{0x21c, 0x074002c1},
++		{0x220, 0xf3003a27},
++		{0x224, 0x074002c1},
++		{0x228, 0xf3003a27},
++		{0x22c, 0x074002c1},
++		{0x234, 0x00810004},
++		{0x238, 0x30219fd3},
++		{0x23c, 0x00219fc1},
++		{0x240, 0x30219fd3},
++		{0x244, 0x00219fc1},
++		{0x248, 0x30219fd3},
++		{0x24c, 0x00219fc1},
++		{0x250, 0x30219fd3},
++		{0x254, 0x00219fc1},
++		{0x258, 0x30219fd3},
++		{0x25c, 0x00219fc1} };
++
++unsigned long mddr_databhan_regs_offsets[][2] = {
++	{0x08, 0x0},
++	{0x14, 0x0},
++	{0x18, 0x0},
++	{0x1c, 0x0},
++	{0x20, 0x0},
++	{0x24, 0x0},
++	{0x28, 0x0},
++	{0x2c, 0x0},
++	{0x34, 0x0},
++	{0x38, 0x0},
++	{0x3c, 0x0},
++	{0x40, 0x0},
++	{0x48, 0x0},
++	{0x6c, 0x0},
++	{0xd4, 0x0},
++	{0x108, 0x0},
++	{0x10c, 0x0},
++	{0x110, 0x0},
++	{0x114, 0x0},
++	{0x200, 0x0},
++	{0x204, 0x0},
++	{0x208, 0x0},
++	{0x20c, 0x0},
++	{0x210, 0x0},
++	{0x214, 0x0},
++	{0x218, 0x0},
++	{0x21c, 0x0},
++	{0x220, 0x0},
++	{0x224, 0x0},
++	{0x228, 0x0},
++	{0x22c, 0x0},
++	{0x234, 0x0},
++	{0x238, 0x0},
++	{0x23c, 0x0},
++	{0x240, 0x0},
++	{0x244, 0x0},
++	{0x248, 0x0},
++	{0x24c, 0x0},
++	{0x250, 0x0},
++	{0x254, 0x0},
++	{0x258, 0x0},
++	{0x25c, 0x0} };
++
++
++unsigned long mddr_24[][2] = {
++		{0x08, 0x000012c0},
++		{0x14, 0x02000000},
++		{0x18, 0x01010506},
++		{0x1c, 0x01020101},
++		{0x20, 0x02000103},
++		{0x24, 0x01069002},
++		{0x28, 0x01000101},
++		{0x2c, 0x02010101},
++		{0x34, 0x00000602},
++		{0x38, 0x00000001},
++		{0x3c, 0x00000301},
++		{0x40, 0x000500b0},
++		{0x48, 0x00030003},
++		{0x6c, 0x00000000},
++		{0xd4, 0x00000200},
++		{0x108, 0x00b30000},
++		{0x10c, 0x00b300b3},
++		{0x110, 0x00b300b3},
++		{0x114, 0x010300b3},
++		{0x200, 0x00000100},
++		{0x204, 0x00000000},
++		{0x208, 0xf4003a27},
++		{0x20c, 0x074002c0},
++		{0x210, 0xf4003a27},
++		{0x214, 0x074002c0},
++		{0x218, 0xf4003a27},
++		{0x21c, 0x074002c0},
++		{0x220, 0xf4003a27},
++		{0x224, 0x074002c0},
++		{0x228, 0xf4003a27},
++		{0x22c, 0x074002c0},
++		{0x234, 0x00800005},
++		{0x238, 0x30319f14},
++		{0x23c, 0x00319f01},
++		{0x240, 0x30319f14},
++		{0x244, 0x00319f01},
++		{0x248, 0x30319f14},
++		{0x24c, 0x00319f01},
++		{0x250, 0x30319f14},
++		{0x254, 0x00319f01},
++		{0x258, 0x30319f14},
++		{0x25c, 0x00319f01} };
++
++int can_change_ddr_freq(void)
++{
++	if (clk_get_usecount(epdc_clk) == 0)
++		return 1;
++	return 0;
++}
++
++int update_ddr_freq(int ddr_rate)
++{
++	int i;
++	unsigned int reg;
++
++	if (!can_change_ddr_freq())
++		return -1;
++
++	local_flush_tlb_all();
++	flush_cache_all();
++
++	iram_ddr_settings[0][0] = ddr_settings_size;
++	if (ddr_rate == LP_APM_CLK) {
++		if (mx50_ddr_type == MX50_LPDDR2) {
++			for (i = 0; i < iram_ddr_settings[0][0]; i++) {
++				iram_ddr_settings[i + 1][0] =
++								lpddr2_24[i][0];
++				iram_ddr_settings[i + 1][1] =
++								lpddr2_24[i][1];
++			}
++		} else {
++			for (i = 0; i < iram_ddr_settings[0][0]; i++) {
++				iram_ddr_settings[i + 1][0]
++								= mddr_24[i][0];
++				iram_ddr_settings[i + 1][1]
++								= mddr_24[i][1];
++			}
++		}
++	} else {
++		for (i = 0; i < iram_ddr_settings[0][0]; i++) {
++			iram_ddr_settings[i + 1][0] =
++					normal_databahn_settings[i][0];
++			iram_ddr_settings[i + 1][1] =
++					normal_databahn_settings[i][1];
++		}
++		if (ddr_rate == ddr_med_rate) {
++			/*Change the tref setting */
++			for (i = 0; i < iram_ddr_settings[0][0]; i++) {
++				if (iram_ddr_settings[i + 1][0] == 0x40) {
++					if (mx50_ddr_type == MX50_LPDDR2)
++						/* LPDDR2 133MHz. */
++						iram_ddr_settings[i + 1][1] =
++								0x00050180;
++					else
++						/* mDDR 133MHz. */
++						iram_ddr_settings[i + 1][1] =
++								0x00050208;
++					break;
++				}
++			}
++		}
++	}
++	/* Disable all masters from accessing the DDR. */
++	reg = __raw_readl(qosc_base + HW_QOS_DISABLE);
++	reg |= 0xFFE;
++	__raw_writel(reg, qosc_base + HW_QOS_DISABLE_SET);
++	udelay(100);
++
++	/* Set the DDR to default freq. */
++	change_ddr_freq(ccm_base, databahn_base, ddr_rate,
++					iram_ddr_settings);
++
++	/* Enable all masters to access the DDR. */
++	__raw_writel(reg, qosc_base + HW_QOS_DISABLE_CLR);
++
++	return 0;
++}
++
++void init_ddr_settings(void)
++{
++	unsigned long iram_paddr;
++	unsigned int reg;
++	int i;
++	struct clk *ddr_clk = clk_get(NULL, "ddr_clk");
++
++	databahn_base = ioremap(MX50_DATABAHN_BASE_ADDR, SZ_16K);
++
++	/* Find the memory type, LPDDR2 or mddr. */
++	mx50_ddr_type = __raw_readl(databahn_base) & 0xF00;
++	if (mx50_ddr_type == MX50_LPDDR2) {
++		normal_databahn_settings = lpddr2_databhan_regs_offsets;
++		ddr_settings_size = ARRAY_SIZE(lpddr2_databhan_regs_offsets);
++		}
++	else if (mx50_ddr_type == MX50_MDDR) {
++		normal_databahn_settings = mddr_databhan_regs_offsets;
++		ddr_settings_size = ARRAY_SIZE(mddr_databhan_regs_offsets);
++	} else {
++		printk(KERN_DEBUG
++		"%s: Unsupported memory type\n", __func__);
++		return;
++	}
++
++	/* Copy the databhan settings into the iram location. */
++	for (i = 0; i < ddr_settings_size; i++) {
++			normal_databahn_settings[i][1] =
++				__raw_readl(databahn_base
++				+ normal_databahn_settings[i][0]);
++		}
++	/* Store the size of the array in iRAM also,
++	 * increase the size by 8 bytes.
++	 */
++	iram_ddr_settings = iram_alloc(ddr_settings_size + 8, &iram_paddr);
++	if (iram_ddr_settings == NULL) {
++			printk(KERN_DEBUG
++			"%s: failed to allocate iRAM memory for ddr settings\n",
++			__func__);
++			return;
++	}
++
++	/* Allocate IRAM for the DDR freq change code. */
++	iram_alloc(SZ_8K, &iram_paddr);
++	/* Need to remap the area here since we want the memory region
++		 to be executable. */
++	ddr_freq_change_iram_base = __arm_ioremap(iram_paddr,
++						SZ_8K, MT_HIGH_VECTORS);
++	memcpy(ddr_freq_change_iram_base, mx50_ddr_freq_change, SZ_8K);
++	change_ddr_freq = (void *)ddr_freq_change_iram_base;
++
++	qosc_base = ioremap(QOSC_BASE_ADDR, SZ_4K);
++	/* Enable the QoSC */
++	reg = __raw_readl(qosc_base);
++	reg &= ~0xC0000000;
++	__raw_writel(reg, qosc_base);
++
++	/* Allocate IRAM to run the WFI code from iram, since
++	 * we can turn off the DDR clocks when ARM is in WFI.
++	 */
++	iram_alloc(SZ_4K, &iram_paddr);
++	/* Need to remap the area here since we want the memory region
++		 to be executable. */
++	wait_in_iram_base = __arm_ioremap(iram_paddr,
++						SZ_4K, MT_HIGH_VECTORS);
++	memcpy(wait_in_iram_base, mx50_wait, SZ_4K);
++	wait_in_iram = (void *)wait_in_iram_base;
++
++	clk_enable(ddr_clk);
++
++	/* Set the DDR to enter automatic self-refresh. */
++	/* Set the DDR to automatically enter lower power mode 4. */
++	reg = __raw_readl(databahn_base + DATABAHN_CTL_REG22);
++	reg &= ~LOWPOWER_AUTOENABLE_MASK;
++	reg |= 1 << 1;
++	__raw_writel(reg, databahn_base + DATABAHN_CTL_REG22);
++
++	/* set the counter for entering mode 4. */
++	reg = __raw_readl(databahn_base + DATABAHN_CTL_REG21);
++	reg &= ~LOWPOWER_EXTERNAL_CNT_MASK;
++	reg = 128 << LOWPOWER_EXTERNAL_CNT_OFFSET;
++	__raw_writel(reg, databahn_base + DATABAHN_CTL_REG21);
++
++	/* Enable low power mode 4 */
++	reg = __raw_readl(databahn_base + DATABAHN_CTL_REG20);
++	reg &= ~LOWPOWER_CONTROL_MASK;
++	reg |= 1 << 1;
++	__raw_writel(reg, databahn_base + DATABAHN_CTL_REG20);
++	clk_disable(ddr_clk);
++
++	epdc_clk = clk_get(NULL, "epdc_axi");
++	if (IS_ERR(epdc_clk)) {
++		printk(KERN_DEBUG "%s: failed to get epdc_axi_clk\n",
++			__func__);
++		return;
++	}
++}
+-- 
+1.5.4.4
+

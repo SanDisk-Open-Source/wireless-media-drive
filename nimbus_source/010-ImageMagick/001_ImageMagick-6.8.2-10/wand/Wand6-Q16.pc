@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include/ImageMagick
+
+Name: Wand
+Version: 6.8.2
+Description:  MagickWand - C API for ImageMagick (ABI Q16)
+Requires: ImageMagick
+Libs: -L${libdir} -lMagickWand6-Q16 -lMagickCore6-Q16
+Cflags: -I${includedir} -DMAGICKCORE_HDRI_ENABLE=0 -DMAGICKCORE_QUANTUM_DEPTH=16

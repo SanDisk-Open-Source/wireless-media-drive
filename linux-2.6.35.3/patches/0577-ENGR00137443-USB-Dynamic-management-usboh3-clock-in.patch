@@ -1,0 +1,70 @@
+From 673c1ebfb50c6a3c04bbeaab13ffe3d0b874b73b Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Wed, 29 Dec 2010 13:50:27 +0800
+Subject: [PATCH] ENGR00137443 USB: Dynamic management usboh3 clock in suspend/resume
+
+Move MX51 USBOH3 clock management from usb_common to usb_h1
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ arch/arm/mach-mx5/usb_h1.c     |    7 +++++++
+ arch/arm/plat-mxc/usb_common.c |   11 -----------
+ 2 files changed, 7 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/usb_h1.c b/arch/arm/mach-mx5/usb_h1.c
+index 1a86ae2..f7b1014 100644
+--- a/arch/arm/mach-mx5/usb_h1.c
++++ b/arch/arm/mach-mx5/usb_h1.c
+@@ -136,6 +136,10 @@ static int fsl_usb_host_init_ext(struct platform_device *pdev)
+ 		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_enable(usb_clk);
+ 		usb_phy2_clk = usb_clk;
++	} else if (cpu_is_mx51()) {
++		usb_clk = clk_get(NULL, "usboh3_clk");
++		clk_enable(usb_clk);
++		usb_oh3_clk = usb_clk;
+ 	}
+ 
+ 	ret = fsl_usb_host_init(pdev);
+@@ -169,6 +173,9 @@ static void fsl_usb_host_uninit_ext(struct fsl_usb2_platform_data *pdata)
+ 	} else if (cpu_is_mx50()) {
+ 		clk_disable(usb_phy2_clk);
+ 		clk_put(usb_phy2_clk);
++	} else if (cpu_is_mx51()) {
++		clk_disable(usb_oh3_clk);
++		clk_put(usb_oh3_clk);
+ 	}
+ 
+ 	fsl_usb_host_uninit(pdata);
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index 573c159..8cf601f 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -486,12 +486,6 @@ int fsl_usb_host_init(struct platform_device *pdev)
+ 		return -EINVAL;
+ 	}
+ 
+-	if (cpu_is_mx51()) {
+-		struct clk *usboh3_clk = clk_get(NULL, "usboh3_clk");
+-		clk_enable(usboh3_clk);
+-		clk_put(usboh3_clk);
+-	}
+-
+ 	if (cpu_is_mx50())
+ 		/* Turn on AHB CLK for H1*/
+ 		USB_CLKONOFF_CTRL &= ~H1_AHBCLK_OFF;
+@@ -564,11 +558,6 @@ void fsl_usb_host_uninit(struct fsl_usb2_platform_data *pdata)
+ 			regulator_disable(pdata->xcvr_pwr->regu2);
+ 	}
+ 
+-	if (cpu_is_mx51()) {
+-		usb_clk = clk_get(NULL, "usboh3_clk");
+-		clk_disable(usb_clk);
+-		clk_put(usb_clk);
+-	}
+ 	clk_disable(usb_ahb_clk);
+ }
+ EXPORT_SYMBOL(fsl_usb_host_uninit);
+-- 
+1.5.4.4
+

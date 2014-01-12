@@ -1,0 +1,45 @@
+From e603b390ad854ee85f9b0d3adfa0095ee8658d02 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 25 Nov 2010 09:55:20 +0800
+Subject: [PATCH] ENGR00134018 v4l2 output: get exact di fmt for DC format.
+
+Get exact di fmt for DC format.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/media/video/mxc/output/mxc_v4l2_output.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/video/mxc/output/mxc_v4l2_output.c b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+index debf204..d45b4a1 100644
+--- a/drivers/media/video/mxc/output/mxc_v4l2_output.c
++++ b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+@@ -1243,6 +1243,7 @@ static int mxc_v4l2out_streamon(vout_data *vout)
+ 	u16 out_height;
+ 	mm_segment_t old_fs;
+ 	unsigned int ipu_ch = CHAN_NONE;
++	unsigned int fb_fmt;
+ 	int rc = 0;
+ 
+ 	dev_dbg(dev, "mxc_v4l2out_streamon: field format=%d\n",
+@@ -1331,7 +1332,7 @@ static int mxc_v4l2out_streamon(vout_data *vout)
+ 	vout->yres = fbvar.yres;
+ 
+ 	if (vout->cur_disp_output == 3 || vout->cur_disp_output == 5) {
+-		unsigned int fb_fmt = vout->v2f.fmt.pix.pixelformat;
++		fb_fmt = vout->v2f.fmt.pix.pixelformat;
+ 
+ 		/* DC channel can not use CSC */
+ 		if (vout->cur_disp_output == 5) {
+@@ -1380,7 +1381,7 @@ static int mxc_v4l2out_streamon(vout_data *vout)
+ #else
+ 	/* DC channel needs IC to do CSC */
+ 	if ((format_is_yuv(vout->v2f.fmt.pix.pixelformat) !=
+-	    format_is_yuv(bpp_to_fmt(fbi))) &&
++	    format_is_yuv(fb_fmt)) &&
+ 		(vout->cur_disp_output == 5))
+ 		vout->ic_bypass = 0;
+ #endif
+-- 
+1.5.4.4
+

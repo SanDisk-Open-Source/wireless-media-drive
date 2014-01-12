@@ -1,0 +1,46 @@
+From 8f0f71c99250214922fa7ae51931da9774a3853d Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Thu, 4 Nov 2010 15:51:29 +0800
+Subject: [PATCH] ENGR00127010-2 mxs: change i2c device address
+
+The original defined i2c device address has been shifted 1 to left
+because i2c bus driver's limitation.
+This doesn't make much sense.
+
+After driver fix, we define its real address now.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx23/mx23evk.c |    2 +-
+ arch/arm/mach-mx28/mx28evk.c |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx23/mx23evk.c b/arch/arm/mach-mx23/mx23evk.c
+index 44e1e22..961cda5 100644
+--- a/arch/arm/mach-mx23/mx23evk.c
++++ b/arch/arm/mach-mx23/mx23evk.c
+@@ -49,7 +49,7 @@ static struct mxs_mma7450_platform_data mma7450_platdata = {
+ };
+ 
+ static struct i2c_board_info __initdata mma7450_i2c_device = {
+-	I2C_BOARD_INFO("mma7450", 0x3A),
++	I2C_BOARD_INFO("mma7450", 0x1d),
+ 	.platform_data = (void *)&mma7450_platdata,
+ };
+ 
+diff --git a/arch/arm/mach-mx28/mx28evk.c b/arch/arm/mach-mx28/mx28evk.c
+index f7dff04..308cace 100644
+--- a/arch/arm/mach-mx28/mx28evk.c
++++ b/arch/arm/mach-mx28/mx28evk.c
+@@ -42,7 +42,7 @@
+ #include "mx28evk.h"
+ 
+ static struct i2c_board_info __initdata mxs_i2c_device[] = {
+-	{ I2C_BOARD_INFO("sgtl5000-i2c", 0x14), .flags = I2C_M_TEN }
++	{ I2C_BOARD_INFO("sgtl5000-i2c", 0xa), .flags = I2C_M_TEN }
+ };
+ 
+ static void __init i2c_device_init(void)
+-- 
+1.5.4.4
+

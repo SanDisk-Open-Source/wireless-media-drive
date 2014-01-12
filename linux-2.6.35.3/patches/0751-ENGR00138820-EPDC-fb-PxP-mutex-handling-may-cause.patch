@@ -1,0 +1,40 @@
+From 0fdb81774efe465c608533d08ebc18e0f3a328ab Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Fri, 4 Feb 2011 14:16:42 -0600
+Subject: [PATCH] ENGR00138820 - EPDC fb: PxP mutex handling may cause race condition
+
+PxP mutex was being released and retaken while EPDC power turned on.
+This provides opportunity for a race condition where another thread
+attempts to being a PxP operation and corrupts the PxP data
+structures of the EPDC.  PxP mutex now held through the EPDC
+powerup sequence.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |    4 ----
+ 1 files changed, 0 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index a26e1bc..94f2100 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -1705,16 +1705,12 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
+ 		return ret;
+ 	}
+ 
+-	mutex_unlock(&fb_data->pxp_mutex);
+-
+ 	/* If needed, enable EPDC HW while ePxP is processing */
+ 	if ((fb_data->power_state == POWER_STATE_OFF)
+ 		|| fb_data->powering_down) {
+ 		epdc_powerup(fb_data);
+ 	}
+ 
+-	mutex_lock(&fb_data->pxp_mutex);
+-
+ 	/* This is a blocking call, so upon return PxP tx should be done */
+ 	ret = pxp_complete_update(fb_data, &hist_stat);
+ 	if (ret) {
+-- 
+1.5.4.4
+

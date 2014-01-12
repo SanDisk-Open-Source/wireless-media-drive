@@ -1,0 +1,98 @@
+<HEAD>
+<TITLE>Arquivos no diretório fonte do MaraDNS</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+<DTWIDTH>4</DTWIDTH>
+</HEAD>
+<BODY>
+Este documento descreve cada arquivo ou diretório encontrado no pacote 
+fonte do MaraDNS. 
+<DL>
+<DT>00README.FIRST
+<DD>Retratação legal.
+
+<DT>0QuickStart
+<DD>Guia instantâneo; para administrados UNIX experientes.
+
+<DT>build/
+<DD>Arquivos usados para compilar, instalar, e fazer arquivos RPMs para
+o MaraDNS.  Isto também incluirá patchs e scripts que atualizam uma 
+liberação estável do MaraDNS.
+
+<DT>CHANGELOG
+<DD>Link para uma versão ASCII do documento de changelog.
+
+<DT>configure
+<DD>Script que monta o Makefile; usando uname para descobrir o sistema que 
+    está sendo usado. Sem autoconf, porque um sistema com autoconf requer  
+    a presença de códigos não lincesiados no BSD.
+    
+<DT>CRÉDITOS
+<DD>Lista de pessoas que ajudaram no desenvolvimento do MaraDNS.
+
+<DT>dns/
+<DD>Código fonte com funções que manipulam dados raw de DNS.
+
+<DT>doc/
+<DD>Documentação.
+
+<DT>FAQ
+<DD>Link para uma versão ASCII do FAQ do MaraDNS.
+
+<DT>libs/
+<DD>As bibliotecas para as funções de overflow-resistant string, e para núcleo
+    hashing usado por MaraDNS.
+
+<DT>locale.de
+<DD>Shell script no qual muda algumas mensagens de saída do Inglês para o
+Alemão. É preciso que seja executado <i>antes</i> de compilar o MaraDNS.
+
+<DT>locale.en
+<DD>Shell script no qual muda algumas mensagens de saída para o Inglês (idioma
+padrão). É preciso que seja executado <i>antes</i> de compilar o MaraDNS.
+
+<DT>locale.es
+<DD>Shell script no qual muda algumas mensagens de saída do Inglês para o
+Espanhol. É preciso que seja executado <i>antes</i> de compilar o MaraDNS.
+
+<DT>Makefile
+<DD>Inicia com um wrapper no qual executa o configure para gerar o arquivo 
+makefile, então executa o 'make'  naquele Makefile.
+
+<DT>MaraDNS.h
+<DD>Arquivo de cabeçalho que define algumas das estruturas do MaraDNS; 
+este arquivo é usado por arquivos fontes em diferentes diretorio do maradns.
+
+<DT>maradns.gpg.key
+<DD>A chave GPG usada para assinar liberaçoes do MaraDNS.
+
+<DT>parse/
+<DD>Rotinas para analise do arquivo mararc e zonas csv1.
+
+<DT>qual/
+<DD>Y2038 compliant timestamp routines.
+
+<DT>rng/
+<DD>Rotinas usadas pelo seguro gerador de numeros aleatorios
+
+<DT>server/
+<DD>O núcleo do servidor maradns.
+
+<DT>sqa/
+<DD>Rotinas usadas para teste no MaraDNS; não compiladas por padrão.
+
+<DT>tcp/
+<DD>A zona de domínio TCP e servidor TCP e o cliente da zona de domínio getzone.
+
+<DT>test/
+<DD>Rotinas usadas para testar algumas bibliotecas no MaraDNS; não compiladas por padrão.
+
+<DT>tools/
+<DD>askmara; ferramentas "ej" usadas para processar a documentação do MaraDNS; e 
+outros scripts relativos ao desenvolvimento do MaraDNS.
+
+<DT>utf8/
+<DD>Algumas rotinas para conversão de 8859-1 para utf-8; atualmente sem uso no MaraDNS.
+
+</DL>
+</BODY>
+

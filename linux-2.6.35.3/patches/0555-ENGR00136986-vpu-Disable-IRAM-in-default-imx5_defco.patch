@@ -1,0 +1,38 @@
+From 244185dfd52e02a151d90b83316556c19bc11d25 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Mon, 20 Dec 2010 18:23:39 +0800
+Subject: [PATCH] ENGR00136986 vpu: Disable IRAM in default imx5_defconfig
+
+Disable IRAM in default imx5_defconfig to workaround system hang
+issue when vpu/gun running simultaneously.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index fc5c317..1e3e2d4 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Fri Dec  3 09:49:37 2010
++# Mon Dec 20 18:23:05 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -2074,7 +2074,7 @@ CONFIG_MXC_MC13892_POWER=y
+ # MXC VPU(Video Processing Unit) support
+ #
+ CONFIG_MXC_VPU=y
+-CONFIG_MXC_VPU_IRAM=y
++# CONFIG_MXC_VPU_IRAM is not set
+ # CONFIG_MXC_VPU_DEBUG is not set
+ 
+ #
+-- 
+1.5.4.4
+

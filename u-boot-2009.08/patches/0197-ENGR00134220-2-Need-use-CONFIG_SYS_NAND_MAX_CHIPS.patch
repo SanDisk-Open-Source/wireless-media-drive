@@ -1,0 +1,85 @@
+From bbce7d8adba225c94aaa595eee55a138f51247b0 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Thu, 2 Dec 2010 16:52:16 +0800
+Subject: [PATCH] ENGR00134220-2 Need use CONFIG_SYS_NAND_MAX_CHIPS
+
+Need use CONFIG_SYS_NAND_MAX_CHIPS instead of
+NAND_MAX_CHIPS
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ include/configs/mx51_3stack.h         |    2 +-
+ include/configs/mx51_3stack_android.h |    2 +-
+ include/configs/mx53_ard.h            |    2 +-
+ include/configs/mx53_evk.h            |    2 +-
+ include/configs/mx53_evk_android.h    |    2 +-
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index e39565b..98dbcbd 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -238,7 +238,7 @@
+ /*-----------------------------------------------------------------------
+  * NAND FLASH driver setup
+  */
+-#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_NAND_MAX_CHIPS     8
+ #define CONFIG_SYS_MAX_NAND_DEVICE    1
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ #define CONFIG_NAND_FW_16BIT	0 /* 1: 16bit 0: 8bit */
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index a18944a..7339a24 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -289,7 +289,7 @@
+ /*-----------------------------------------------------------------------
+  * NAND FLASH driver setup
+  */
+-#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_NAND_MAX_CHIPS     8
+ #define CONFIG_SYS_MAX_NAND_DEVICE    1
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ 
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 65fd892..d47635d 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -95,7 +95,7 @@
+ #define CONFIG_CMD_NAND
+ #define CONFIG_MXC_NAND
+ /* NAND FLASH driver setup */
+-#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_NAND_MAX_CHIPS     8
+ #define CONFIG_SYS_MAX_NAND_DEVICE    1
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ #define CONFIG_NAND_FW_16BIT    0 /* 1: 16bit 0: 8bit */
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index 6cecaaa..0da41dc 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -95,7 +95,7 @@
+ #define CONFIG_CMD_NAND
+ #define CONFIG_MXC_NAND
+ /* NAND FLASH driver setup */
+-#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_NAND_MAX_CHIPS     8
+ #define CONFIG_SYS_MAX_NAND_DEVICE    1
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ #define CONFIG_NAND_FW_16BIT    0 /* 1: 16bit 0: 8bit */
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index 91d8b82..95734a3 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -131,7 +131,7 @@
+ #define CONFIG_CMD_NAND
+ #define CONFIG_MXC_NAND
+ /* NAND FLASH driver setup */
+-#define NAND_MAX_CHIPS         8
++#define CONFIG_SYS_NAND_MAX_CHIPS     8
+ #define CONFIG_SYS_MAX_NAND_DEVICE    1
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ #define CONFIG_NAND_FW_16BIT    0 /* 1: 16bit 0: 8bit */
+-- 
+1.5.4.4
+

@@ -1,0 +1,39 @@
+From 3a7b5e95af2989247c77db8932ff6351ca7f9fe8 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Wed, 8 Dec 2010 13:50:17 +0800
+Subject: [PATCH] ENGR00136101-2 MX50: Only kick the clock off timer in irq handler.
+
+Here 'kick' means start the timer or postpone the timer.
+By only kicking the timer in irq handler only when no task pending
+in the queue, rather than each time we submit a new task, it should
+perform better.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index d87b1d2..1545682 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -767,8 +767,6 @@ static void pxpdma_dostart_work(struct pxps *pxp)
+ 
+ 	pxp_start(pxp);
+ 
+-	mod_timer(&pxp->clk_timer, jiffies + msecs_to_jiffies(timeout_in_ms));
+-
+ 	spin_unlock_irqrestore(&pxp->lock, flags);
+ }
+ 
+@@ -956,6 +954,7 @@ static irqreturn_t pxp_irq(int irq, void *dev_id)
+ 
+ 	wake_up(&pxp->done);
+ 	pxp->pxp_ongoing = 0;
++	mod_timer(&pxp->clk_timer, jiffies + msecs_to_jiffies(timeout_in_ms));
+ 
+ 	spin_unlock_irqrestore(&pxp->lock, flags);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,28 @@
+From 51cca4a315ee575e0acd63310f5fe70b6ddc09c1 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Thu, 8 Jul 2010 02:45:35 +0800
+Subject: [PATCH] ENGR00124953 Uboot:Fix the build break for MX51 BBG board
+
+Fix the build break for MX51 BBG board
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ board/freescale/mx51_bbg/mx51_bbg.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index dadc4e9..f615589 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -31,7 +31,7 @@
+ #include <i2c.h>
+ #include <asm/arch/keypad.h>
+ #include "board-imx51.h"
+-#ifdef #ifdef CONFIG_IMX_ECSPI
++#ifdef CONFIG_IMX_ECSPI
+ #include <imx_spi.h>
+ #include <asm/arch/imx_spi_pmic.h>
+ #endif
+-- 
+1.5.4.4
+

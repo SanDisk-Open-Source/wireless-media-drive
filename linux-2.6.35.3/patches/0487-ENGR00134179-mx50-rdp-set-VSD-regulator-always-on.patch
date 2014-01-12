@@ -1,0 +1,45 @@
+From cef38ac2cda4375936c59386d22fa4c7845c1523 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Tue, 30 Nov 2010 21:36:20 +0800
+Subject: [PATCH] ENGR00134179 mx50 rdp: set VSD regulator always on
+
+This is required by SD2 card detection function.
+
+The root cause is that the power for SD2 card detection pull up
+is the same as the SD2 I/O power, they are all supplied by VSD
+regulator. If we disable VSD dynamically, the card will never be
+able to be detected again.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c              |    1 -
+ arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c |    1 +
+ 2 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 17c8960..39b36e1 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1035,7 +1035,6 @@ static struct mxc_mmc_platform_data mmc2_data = {
+ 	.status = sdhc_get_card_det_status,
+ 	.wp_status = sdhc_write_protect,
+ 	.clock_mmc = "esdhc_clk",
+-	.power_mmc = "VSD",
+ };
+ 
+ static struct mxc_mmc_platform_data mmc3_data = {
+diff --git a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+index 4a14f1c..1efe514 100644
+--- a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+@@ -269,6 +269,7 @@ static struct regulator_init_data vsd_init = {
+ 		.max_uV = mV_to_uV(3150),
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
+ 			REGULATOR_CHANGE_STATUS,
++		.always_on = 1,
+ 	}
+ };
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,168 @@
+From b80d46486d2d8024f720ea8e3f053ad11ba7b435 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Fri, 18 Feb 2011 10:49:44 -0600
+Subject: [PATCH] ENGR00139455 Add support for pad settings in groups
+
+On MX50 and MX53, there are a group of registers that
+control a pad setting for a whole group of pins. This commit
+adds:
+
+1-A new define for mapping these pins: IOMUX_PAD_GRP(offset, shift).
+The offset is the register offset of the IOMUXC base and the shift
+is the bit(s) to be set in the register.
+
+2-A new bitmap, iomux_grp_cfg_t, this is a 32-bit bitmap. The upper
+16 bits hold the register offset and the lower 16 bits hold the
+shift value.
+
+3-A new function, mxc_iomux_set_pad_groups(iomux_grp_cfg_t pad_grp,
+int value). The sample usage is:
+  a) in iomux-mx50.h,
+   #define MX50_IOMUXC_SW_PAD_CTL_GRP_ADDDS
+  b) Call the function like this:
+    mxc_iomux_set_pad_groups(MX50_IOMUXC_SW_PAD_CTL_GRP_ADDDS, 0x5);
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com
+---
+ arch/arm/plat-mxc/include/mach/iomux-mx50.h |   32 +++++++++++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/iomux-mx53.h |   22 ++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/iomux-v3.h   |   11 +++++++++
+ arch/arm/plat-mxc/iomux-v3.c                |   11 +++++++++
+ 4 files changed, 76 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx50.h b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+index d92fd16..2314a8d 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx50.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+@@ -249,6 +249,38 @@
+ #define MX50_PAD_EIM_LBA__GPIO_1_26	IOMUX_PAD(0x660, 0x2C4, 1, 0x0, 0, 0)
+ #define MX50_PAD_EIM_CRE__GPIO_1_27	IOMUX_PAD(0x664, 0x2C8, 1, 0x0, 0, 0)
+ 
++#define PUE_GRP_SHIFT			6
++#define PKE_GRP_SHIFT			7
++#define HYS_GRP_SHIFT			8
++#define DDR_INPUT_GRP_SHIFT		9
++#define HVE_GRP_SHIFT			13
++#define DSE_GRP_SHIFT			19
++#define DDR_SEL_GRP_SHIFT		25
++
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_ADDDS		IOMUX_PAD_GRP(0x668, DSE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_DDRMODE_CTL		IOMUX_PAD_GRP(0x66C, DDR_INPUT_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_DDRPKE		IOMUX_PAD_GRP(0x670, PKE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_EIM		IOMUX_PAD_GRP(0x674, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_EPDC		IOMUX_PAD_GRP(0x678, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_UART		IOMUX_PAD_GRP(0x67C, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_DDRPK		IOMUX_PAD_GRP(0x680, PUE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_DDRHYS		IOMUX_PAD_GRP(0x684, HYS_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_KEYPAD		IOMUX_PAD_GRP(0x688, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_DDRMODE	IOMUX_PAD_GRP(0x68C, DDR_INPUT_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_SSI		IOMUX_PAD_GRP(0x690, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_SD1		IOMUX_PAD_GRP(0x694, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_B0DS		IOMUX_PAD_GRP(0x698, DSE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_SD2		IOMUX_PAD_GRP(0x69C, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_B1DS		IOMUX_PAD_GRP(0x6A0, DSE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_CTLDS		IOMUX_PAD_GRP(0x6A4, DSE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_B2DS		IOMUX_PAD_GRP(0x6A8, DSE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_DDR_TYPE	IOMUX_PAD_GRP(0x6AC, DDR_SEL_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_LCD		IOMUX_PAD_GRP(0x6B0, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_B3DS		IOMUX_PAD_GRP(0x6B4, DSE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_MISC		IOMUX_PAD_GRP(0x6B8, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_SPI		IOMUX_PAD_GRP(0x6BC, HVE_GRP_SHIFT)
++#define MX50_IOMUXC_SW_PAD_CTL_GRP_NANDF		IOMUX_PAD_GRP(0x6C0, HVE_GRP_SHIFT)
++
+ /* SD1 */
+ #define MX50_PAD_SD1_CMD__SD1_CMD	IOMUX_PAD(0x394, 0xE8, \
+ 					IOMUX_CONFIG_SION, 0x0, 0, \
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx53.h b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+index 5581a2a..03a2a09 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx53.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+@@ -2407,5 +2407,27 @@
+ #define MX53_PAD_GPIO_18__ESDHC1_LCTL		(_MX53_PAD_GPIO_18__ESDHC1_LCTL | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX53_PAD_GPIO_18__SRC_SYSTEM_RST		(_MX53_PAD_GPIO_18__SRC_SYSTEM_RST | MUX_PAD_CTRL(NO_PAD_CTRL))
+ 
++#define PUE_GRP_SHIFT			6
++#define PKE_GRP_SHIFT			7
++#define HYS_GRP_SHIFT			8
++#define DDR_INPUT_GRP_SHIFT		9
++#define HVE_GRP_SHIFT			13
++#define DSE_GRP_SHIFT			19
++#define ODT_GRP_SHIFT			22
++#define DDR_SEL_GRP_SHIFT		25
++
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_ADDDS		IOMUX_PAD_GRP(0x6F0, DSE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_DDRMODE_CTL		IOMUX_PAD_GRP(0x6F4, DDR_INPUT_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_DDRPKE		IOMUX_PAD_GRP(0x6FC, PKE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_DDRPK		IOMUX_PAD_GRP(0x708, PUE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_TERM_CTL3	IOMUX_PAD_GRP(0x70C, ODT_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_DDRHYS		IOMUX_PAD_GRP(0x71O, HYS_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_DDRMODE	IOMUX_PAD_GRP(0x714, DDR_INPUT_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_B0DS		IOMUX_PAD_GRP(0x718, DSE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_B1DS		IOMUX_PAD_GRP(0x71C, DSE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_CTLDS		IOMUX_PAD_GRP(0x720, DSE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_DDR_TYPE	IOMUX_PAD_GRP(0x724, DDR_SEL_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_B2DS		IOMUX_PAD_GRP(0x728, DSE_GRP_SHIFT)
++#define MX53_IOMUXC_SW_PAD_CTL_GRP_B3DS		IOMUX_PAD_GRP(0x72C, DSE_GRP_SHIFT)
+ 
+ #endif /* __MACH_IOMUX_MX53_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-v3.h b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+index e33ef21..4258cd2 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-v3.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+@@ -55,6 +55,7 @@
+ */
+ 
+ typedef u64 iomux_v3_cfg_t;
++typedef u32 iomux_grp_cfg_t;
+ 
+ #define MUX_CTRL_OFS_SHIFT	0
+ #define MUX_CTRL_OFS_MASK	((iomux_v3_cfg_t)0xfff << MUX_CTRL_OFS_SHIFT)
+@@ -82,6 +83,14 @@ typedef u64 iomux_v3_cfg_t;
+ 		((iomux_v3_cfg_t)(_sel_input_ofs) << MUX_SEL_INPUT_OFS_SHIFT) | \
+ 		((iomux_v3_cfg_t)(_sel_input) << MUX_SEL_INPUT_SHIFT))
+ 
++#define MUX_PAD_GRP_CTRL_SHIFT		16
++#define MUX_PAD_GRP_CTRL_MASK		((iomux_grp_cfg_t)0xFFF << MUX_PAD_GRP_CTRL_SHIFT)
++#define MUX_PAD_GRP_SHIFT_SHIFT	0
++#define MUX_PAD_GRP_SHIFT_MASK	((iomux_grp_cfg_t)0xFF << MUX_PAD_GRP_SHIFT_SHIFT)
++#define IOMUX_PAD_GRP(_pad_ctrl_ofs, _pad_ctrl_shift) \
++	(((iomux_grp_cfg_t)(_pad_ctrl_ofs) << MUX_PAD_GRP_CTRL_SHIFT) |	\
++		((iomux_grp_cfg_t)(_pad_ctrl_shift) << MUX_PAD_GRP_SHIFT_SHIFT))
++
+ /*
+  * Use to set PAD control
+  */
+@@ -110,6 +119,8 @@ typedef u64 iomux_v3_cfg_t;
+ 
+ #define IOMUX_CONFIG_SION		(0x1 << 4)
+ 
++void mxc_iomux_set_pad_groups(iomux_grp_cfg_t pad_grp, int value);
++
+ /*
+  * read/write a single pad in the iomuxer
+  */
+diff --git a/arch/arm/plat-mxc/iomux-v3.c b/arch/arm/plat-mxc/iomux-v3.c
+index 5bde754..e540aad 100644
+--- a/arch/arm/plat-mxc/iomux-v3.c
++++ b/arch/arm/plat-mxc/iomux-v3.c
+@@ -31,6 +31,17 @@
+ 
+ static void __iomem *base;
+ 
++void mxc_iomux_set_pad_groups(iomux_grp_cfg_t pad_grp, int value)
++{
++	u32 pad_ctrl_ofs = (pad_grp & MUX_PAD_GRP_CTRL_MASK) >> MUX_PAD_GRP_CTRL_SHIFT;
++	u32 pad_ctrl_shift = (pad_grp & MUX_PAD_GRP_SHIFT_MASK) >> MUX_PAD_GRP_SHIFT_SHIFT;
++	u32 pad_ctrl_val;
++
++	pad_ctrl_val = (value << pad_ctrl_shift);
++	__raw_writel(pad_ctrl_val, base + pad_ctrl_ofs);
++}
++EXPORT_SYMBOL(mxc_iomux_set_pad_groups);
++
+ /*
+  * Read a single pad in the iomuxer
+  */
+-- 
+1.5.4.4
+

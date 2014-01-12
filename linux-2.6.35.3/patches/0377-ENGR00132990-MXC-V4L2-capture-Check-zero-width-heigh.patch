@@ -1,0 +1,47 @@
+From 40a72bed068e55b641a41cab3b17cd04999f7d8c Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 27 Oct 2010 09:48:21 +0800
+Subject: [PATCH] ENGR00132990 MXC V4L2 capture:Check zero width/height in VIDIOC_S_FMT
+
+This patch checks zero width/height parameters provided by user
+in ioctrl VIDIOC_S_FMT. It can fix the issue of division by zero
+in kernel in this case.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.c |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+index 8616cfe..0cb8a95 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+@@ -498,6 +498,12 @@ static int verify_preview(cam_data *cam, struct v4l2_window *win)
+ 		height = &win->w.height;
+ 	}
+ 
++	if (*width == 0 || *height == 0) {
++		pr_err("ERROR: v4l2 capture: width or height"
++			" too small.\n");
++		return -EINVAL;
++	}
++
+ 	if ((cam->crop_bounds.width / *width > 8) ||
+ 	    ((cam->crop_bounds.width / *width == 8) &&
+ 	     (cam->crop_bounds.width % *width))) {
+@@ -727,6 +733,12 @@ static int mxc_v4l2_s_fmt(cam_data *cam, struct v4l2_format *f)
+ 		*width -= *width % 8;
+ 		*height -= *height % 8;
+ 
++		if (*width == 0 || *height == 0) {
++			pr_err("ERROR: v4l2 capture: width or height"
++				" too small.\n");
++			return -EINVAL;
++		}
++
+ 		if ((cam->crop_current.width / *width > 8) ||
+ 		    ((cam->crop_current.width / *width == 8) &&
+ 		     (cam->crop_current.width % *width))) {
+-- 
+1.5.4.4
+

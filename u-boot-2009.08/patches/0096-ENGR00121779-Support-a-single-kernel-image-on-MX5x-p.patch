@@ -1,0 +1,36 @@
+From e84eaf4df6db1f4038580ec88d3e4a49624363eb Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Fri, 19 Mar 2010 13:15:13 -0500
+Subject: [PATCH] ENGR00121779 Support a single kernel image on MX5x parts
+
+This change is required by kernel change ENGR00121762
+(enables a single kernel image on MX5x parts using run-time phys_offset).
+Load address and Entry points are set for MX53 parts(0x7xxxxxxx).
+So the bootloader must add the offset 0x20000000 for MX51 parts.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ common/cmd_bootm.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/common/cmd_bootm.c b/common/cmd_bootm.c
+index 86c8122..f43b472 100644
+--- a/common/cmd_bootm.c
++++ b/common/cmd_bootm.c
+@@ -713,6 +713,13 @@ static image_header_t *image_get_kernel (ulong img_addr, int verify)
+ 		return NULL;
+ 	}
+ 
++#if defined(CONFIG_MX51_BBG) || defined(CONFIG_MX51_3DS)
++	if (image_get_load(hdr) < 0x90000000)
++		image_set_load(hdr, image_get_load(hdr)+0x20000000);
++	if (image_get_ep(hdr) < 0x90000000)
++		image_set_ep(hdr, image_get_ep(hdr)+0x20000000);
++#endif
++
+ 	show_boot_progress (3);
+ 	image_print_contents (hdr);
+ 
+-- 
+1.5.4.4
+

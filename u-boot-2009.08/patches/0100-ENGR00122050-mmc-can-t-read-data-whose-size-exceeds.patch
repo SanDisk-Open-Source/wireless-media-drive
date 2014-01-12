@@ -1,0 +1,325 @@
+From 76ca5d255b4920986c66c1a66e826420719f433c Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 25 Mar 2010 18:34:40 +0800
+Subject: [PATCH] ENGR00122050: mmc can't read data whose size exceeds 32M
+
+mmc can't read data whose size exceeds 32M.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/mmc/imx_esdhc.c |   32 +++---------
+ drivers/mmc/mmc.c       |  126 ++++++++++++++++++++++++++--------------------
+ include/fsl_esdhc.h     |    5 +-
+ 3 files changed, 83 insertions(+), 80 deletions(-)
+
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index 95eee80..f9b35ea 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -72,21 +72,6 @@ struct fsl_esdhc {
+ 	uint	scr;
+ };
+ 
+-
+-static inline void mdelay(unsigned long msec)
+-{
+-	unsigned long i;
+-	for (i = 0; i < msec; i++)
+-		udelay(1000);
+-}
+-
+-static inline void sdelay(unsigned long sec)
+-{
+-	unsigned long i;
+-	for (i = 0; i < sec; i++)
+-		mdelay(1000);
+-}
+-
+ /* Return the XFERTYP flags for a given command and data packet */
+ uint esdhc_xfertyp(struct mmc_cmd *cmd, struct mmc_data *data)
+ {
+@@ -144,7 +129,7 @@ static int esdhc_setup_data(struct mmc *mmc, struct mmc_data *data)
+ 
+ 	/* Calculate the timeout period for data transactions */
+ 	/*
+-	timeout = __ilog2(mmc->tran_speed/10);
++	timeout = fls(mmc->tran_speed / 10) - 1;
+ 	timeout -= 13;
+ 
+ 	if (timeout > 14)
+@@ -193,7 +178,7 @@ esdhc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 	 * Note: This is way more than 8 cycles, but 1ms seems to
+ 	 * resolve timing issues with some cards
+ 	 */
+-	udelay(1000);
++	udelay(10000);
+ 
+ 	/* Set up for a data transfer if we have one */
+ 	if (data) {
+@@ -321,7 +306,7 @@ void set_sysctl(struct mmc *mmc, uint clock)
+ 	tmp = (readl(&regs->sysctl) & (~SYSCTL_CLOCK_MASK)) | clk;
+ 	writel(tmp, &regs->sysctl);
+ 
+-	mdelay(100);
++	udelay(10000);
+ 
+ #ifdef CONFIG_IMX_ESDHC_V1
+ 	tmp = readl(&regs->sysctl) | SYSCTL_PEREN;
+@@ -358,7 +343,9 @@ static void esdhc_set_ios(struct mmc *mmc)
+ static int esdhc_init(struct mmc *mmc)
+ {
+ 	struct fsl_esdhc *regs = mmc->priv;
++	/*
+ 	int timeout = 1000;
++	*/
+ 	u32 tmp;
+ 
+ 	/* Reset the eSDHC by writing 1 to RSTA bit of SYSCTRL Register */
+@@ -366,7 +353,7 @@ static int esdhc_init(struct mmc *mmc)
+ 	writel(tmp, &regs->sysctl);
+ 
+ 	while (readl(&regs->sysctl) & SYSCTL_RSTA)
+-	    mdelay(1);
++		;
+ 
+ #ifdef CONFIG_IMX_ESDHC_V1
+ 	tmp = readl(&regs->sysctl) | (SYSCTL_HCKEN | SYSCTL_IPGEN);
+@@ -382,7 +369,7 @@ static int esdhc_init(struct mmc *mmc)
+ 	/* FIXME: For our CINS bit doesn't work. So this section is disabled. */
+ 	/*
+ 	while (!(readl(&regs->prsstat) & PRSSTAT_CINS) && --timeout)
+-		mdelay(1);
++		;
+ 
+ 	if (timeout <= 0) {
+ 		printf("No MMC card detected!\n");
+@@ -395,7 +382,7 @@ static int esdhc_init(struct mmc *mmc)
+ 	writel(tmp, &regs->sysctl);
+ 
+ 	while (readl(&regs->sysctl) & SYSCTL_INITA)
+-		mdelay(1);
++		;
+ #endif
+ 
+ 	return 0;
+@@ -423,9 +410,8 @@ static int esdhc_initialize(bd_t *bis)
+ 	mmc->set_ios = esdhc_set_ios;
+ 	mmc->init = esdhc_init;
+ 
+-	/*
+ 	caps = regs->hostcapblt;
+-
++	/*
+ 	if (caps & ESDHC_HOSTCAPBLT_VS18)
+ 		mmc->voltages |= MMC_VDD_165_195;
+ 	if (caps & ESDHC_HOSTCAPBLT_VS30)
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 422c6ed..01d3210 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -35,6 +35,7 @@
+ #include <linux/list.h>
+ #include <mmc.h>
+ #include <div64.h>
++#include <fsl_esdhc.h>
+ 
+ static struct list_head mmc_devices;
+ static int cur_dev_num = -1;
+@@ -82,6 +83,7 @@ mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void*src)
+ 	int stoperr = 0;
+ 	struct mmc *mmc = find_mmc_device(dev_num);
+ 	int blklen;
++	lbaint_t blk_offset = 0, blk_left = blkcnt;
+ 
+ 	if (!mmc)
+ 		return -1;
+@@ -95,38 +97,45 @@ mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void*src)
+ 		return err;
+ 	}
+ 
+-	if (blkcnt > 1)
+-		cmd.cmdidx = MMC_CMD_WRITE_MULTIPLE_BLOCK;
+-	else
+-		cmd.cmdidx = MMC_CMD_WRITE_SINGLE_BLOCK;
++	do {
++		cmd.cmdidx = (blk_left > 1) \
++				? MMC_CMD_WRITE_MULTIPLE_BLOCK \
++				: MMC_CMD_WRITE_SINGLE_BLOCK;
+ 
+-	if (mmc->high_capacity)
+-		cmd.cmdarg = start;
+-	else
+-		cmd.cmdarg = start * blklen;
++		cmd.cmdarg = (mmc->high_capacity) \
++				? (start + blk_offset) \
++				: ((start + blk_offset) * blklen);
+ 
+-	cmd.resp_type = MMC_RSP_R1;
+-	cmd.flags = 0;
++		cmd.resp_type = MMC_RSP_R1;
++		cmd.flags = 0;
+ 
+-	data.src = src;
+-	data.blocks = blkcnt;
+-	data.blocksize = blklen;
+-	data.flags = MMC_DATA_WRITE;
++		data.src = src + blk_offset * blklen;
++		data.blocks = (blk_left > MAX_BLK_CNT) \
++					  ? MAX_BLK_CNT : blk_left;
++		data.blocksize = blklen;
++		data.flags = MMC_DATA_WRITE;
+ 
+-	err = mmc_send_cmd(mmc, &cmd, &data);
++		err = mmc_send_cmd(mmc, &cmd, &data);
+ 
+-	if (err) {
+-		puts("mmc write failed\n\r");
+-		return err;
+-	}
++		if (err) {
++			puts("mmc write failed\n\r");
++			return err;
++		}
+ 
+-	if (blkcnt > 1) {
+-		cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
+-		cmd.cmdarg = 0;
+-		cmd.resp_type = MMC_RSP_R1b;
+-		cmd.flags = 0;
+-		stoperr = mmc_send_cmd(mmc, &cmd, NULL);
+-	}
++		if (blk_left > 1) {
++			cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
++			cmd.cmdarg = 0;
++			cmd.resp_type = MMC_RSP_R1b;
++			cmd.flags = 0;
++			stoperr = mmc_send_cmd(mmc, &cmd, NULL);
++		}
++
++		if (blk_left > MAX_BLK_CNT) {
++			blk_left -= MAX_BLK_CNT;
++			blk_offset += MAX_BLK_CNT;
++		} else
++			break;
++	} while (blk_left > 0);
+ 
+ 	return blkcnt;
+ }
+@@ -214,6 +223,7 @@ static ulong mmc_bread(int dev_num, ulong start, lbaint_t blkcnt, void *dst)
+ 	int stoperr = 0;
+ 	struct mmc *mmc = find_mmc_device(dev_num);
+ 	int blklen;
++	lbaint_t blk_offset = 0, blk_left = blkcnt;
+ 
+ 	if (!mmc)
+ 		return -1;
+@@ -227,38 +237,44 @@ static ulong mmc_bread(int dev_num, ulong start, lbaint_t blkcnt, void *dst)
+ 		return err;
+ 	}
+ 
+-	if (blkcnt > 1)
+-		cmd.cmdidx = MMC_CMD_READ_MULTIPLE_BLOCK;
+-	else
+-		cmd.cmdidx = MMC_CMD_READ_SINGLE_BLOCK;
++	do {
++		cmd.cmdidx = (blk_left > 1) \
++				? MMC_CMD_READ_MULTIPLE_BLOCK \
++				: MMC_CMD_READ_SINGLE_BLOCK;
+ 
+-	if (mmc->high_capacity)
+-		cmd.cmdarg = start;
+-	else
+-		cmd.cmdarg = start * blklen;
++		cmd.cmdarg = (mmc->high_capacity) \
++				? (start + blk_offset) \
++				: ((start + blk_offset) * blklen);
+ 
+-	cmd.resp_type = MMC_RSP_R1;
+-	cmd.flags = 0;
++		cmd.resp_type = MMC_RSP_R1;
++		cmd.flags = 0;
+ 
+-	data.dest = dst;
+-	data.blocks = blkcnt;
+-	data.blocksize = blklen;
+-	data.flags = MMC_DATA_READ;
++		data.dest = dst + blk_offset * blklen;
++		data.blocks = (blk_left > MAX_BLK_CNT) ? MAX_BLK_CNT : blk_left;
++		data.blocksize = blklen;
++		data.flags = MMC_DATA_READ;
+ 
+-	err = mmc_send_cmd(mmc, &cmd, &data);
++		err = mmc_send_cmd(mmc, &cmd, &data);
+ 
+-	if (err) {
+-		puts("mmc read failed\n\r");
+-		return err;
+-	}
++		if (err) {
++			puts("mmc read failed\n\r");
++			return err;
++		}
+ 
+-	if (blkcnt > 1) {
+-		cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
+-		cmd.cmdarg = 0;
+-		cmd.resp_type = MMC_RSP_R1b;
+-		cmd.flags = 0;
+-		stoperr = mmc_send_cmd(mmc, &cmd, NULL);
+-	}
++		if (blk_left > 1) {
++			cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
++			cmd.cmdarg = 0;
++			cmd.resp_type = MMC_RSP_R1b;
++			cmd.flags = 0;
++			stoperr = mmc_send_cmd(mmc, &cmd, NULL);
++		}
++
++		if (blk_left > MAX_BLK_CNT) {
++			blk_left -= MAX_BLK_CNT;
++			blk_offset += MAX_BLK_CNT;
++		} else
++			break;
++	} while (blk_left > 0);
+ 
+ 	return blkcnt;
+ }
+@@ -901,9 +917,9 @@ int mmc_startup(struct mmc *mmc)
+ 			break;
+ 		}
+ 	} else {
+-		csize = (mmc->csd[1] & 0x3f) << 16
+-			| (mmc->csd[2] & 0xffff0000) >> 16;
+-		cmult = 8;
++		csize = (mmc->csd[1] & 0x3ff) << 2
++			| (mmc->csd[2] & 0xc0000000) >> 30;
++		cmult = (mmc->csd[2] & 0x00038000) >> 15;
+ 	}
+ 
+ 	mmc->capacity = (csize + 1) << (cmult + 2);
+diff --git a/include/fsl_esdhc.h b/include/fsl_esdhc.h
+index f3c38e6..d921b3d 100644
+--- a/include/fsl_esdhc.h
++++ b/include/fsl_esdhc.h
+@@ -2,7 +2,8 @@
+  * FSL SD/MMC Defines
+  *-------------------------------------------------------------------
+  *
+- * Copyright 2007-2008, Freescale Semiconductor, Inc
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ * Copyright 2007-2010, Freescale Semiconductor, Inc
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+@@ -137,7 +138,7 @@
+ #define BLKATTR		0x2e004
+ #define BLKATTR_CNT(x)	((x & 0xffff) << 16)
+ #define BLKATTR_SIZE(x)	(x & 0x1fff)
+-#define MAX_BLK_CNT	0x7fff	/* so malloc will have enough room with 32M */
++#define MAX_BLK_CNT	0xffff	/* so malloc will have enough room with 32M */
+ 
+ #define ESDHC_HOSTCAPBLT_VS18	0x04000000
+ #define ESDHC_HOSTCAPBLT_VS30	0x02000000
+-- 
+1.5.4.4
+

@@ -1,0 +1,106 @@
+From 05a4055d2f48a9941c1b47528dcc015d10e979e5 Mon Sep 17 00:00:00 2001
+From: Jason <r64343@freescale.com>
+Date: Mon, 8 Jun 2009 20:13:39 +0800
+Subject: [PATCH] ENGR00113148 Add build option to uboot for different media type
+
+1. Add build option to uboot for different media type
+2. fix the spi-nor link error
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ config.mk                     |    6 ++++++
+ drivers/mtd/spi/imx_spi_nor.c |    2 +-
+ include/configs/imx51.h       |   14 ++++++--------
+ tools/Makefile                |    5 +++++
+ 4 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/config.mk b/config.mk
+index 8852157..02d204a 100644
+--- a/config.mk
++++ b/config.mk
+@@ -124,6 +124,12 @@ gccincdir := $(shell $(CC) -print-file-name=include)
+ 
+ CPPFLAGS := $(DBGFLAGS) $(OPTFLAGS) $(RELFLAGS)		\
+ 	-D__KERNEL__
++
++ifneq ($(BOOT_MEDIA),)
++	BOOT_MEDIA_MACRO = BOOT_MEDIA_$(shell echo $(BOOT_MEDIA) | tr '[a-z]' '[A-Z]')
++	CPPFLAGS += -D$(BOOT_MEDIA_MACRO)
++endif
++
+ ifneq ($(TEXT_BASE),)
+ CPPFLAGS += -DTEXT_BASE=$(TEXT_BASE)
+ endif
+diff --git a/drivers/mtd/spi/imx_spi_nor.c b/drivers/mtd/spi/imx_spi_nor.c
+index 24af8b2..a912a3f 100644
+--- a/drivers/mtd/spi/imx_spi_nor.c
++++ b/drivers/mtd/spi/imx_spi_nor.c
+@@ -321,7 +321,7 @@ static int spi_nor_flash_write(struct spi_flash *flash, u32 offset,
+ 	if (len == 0)
+ 		return 0;
+ 
+-	write("%s(flash addr=0x%08x, ram=%p, len=0x%x)\n",
++	debug("%s(flash addr=0x%08x, ram=%p, len=0x%x)\n",
+ 			__func__, offset, buf, len);
+ 
+ 	if (ENABLE_WRITE_STATUS(flash) != 0 ||
+diff --git a/include/configs/imx51.h b/include/configs/imx51.h
+index 1808b67..238457e 100644
+--- a/include/configs/imx51.h
++++ b/include/configs/imx51.h
+@@ -68,10 +68,10 @@
+ #define CONFIG_MX51_UART	1
+ #define CONFIG_MX51_UART1	1
+ 
++#if defined(BOOT_MEDIA_SPI_NOR)
+ /*
+  * SPI Configs
+- * */
+-/*
++ */
+ #define CONFIG_FSL_SF		1
+ #define CONFIG_CMD_SPI
+ #define CONFIG_CMD_SF
+@@ -80,19 +80,17 @@
+ #define CONFIG_IMX_SPI
+ #define CONFIG_IMX_SPI_PMIC
+ #define CONFIG_IMX_SPI_PMIC_CS 0
+-
+ #define MAX_SPI_BYTES		(64 * 4)
+-*/
+ 
++#elif defined(BOOT_MEDIA_MMC)
+ /*
+  * MMC Configs
+- * */
+-
+-/*
++ */
+ #define CONFIG_FSL_MMC		1
+ #define CONFIG_DOS_PARTITION	1
+ #define CONFIG_CMD_FAT		1
+-*/
++
++#endif
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+diff --git a/tools/Makefile b/tools/Makefile
+index b5a1e39..9d4cf3a 100644
+--- a/tools/Makefile
++++ b/tools/Makefile
+@@ -150,6 +150,11 @@ CPPFLAGS   = -idirafter $(SRCTREE)/include \
+ 		-D__KERNEL_STRICT_NAMES
+ CFLAGS     = $(HOSTCFLAGS) $(CPPFLAGS) -O
+ 
++ifneq ($(BOOT_MEDIA),)
++        BOOT_MEDIA_MACRO := BOOT_MEDIA_$(shell echo $(BOOT_MEDIA) | tr '[a-z]' '[A-Z]')
++        CPPFLAGS += -D$(BOOT_MEDIA_MACRO)
++endif
++
+ # No -pedantic switch to avoid libfdt compilation warnings
+ FIT_CFLAGS = -Wall $(CPPFLAGS) -O
+ 
+-- 
+1.5.4.4
+

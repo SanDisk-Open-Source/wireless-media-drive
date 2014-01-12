@@ -1,0 +1,49 @@
+From 76180b6276e4ee8bbf6714a868c84d053f35eda6 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 31 Mar 2011 16:38:57 +0800
+Subject: [PATCH] ENGR00141410 MX50 RD3: Set GPIO4_16 to Enable DCDC_3V15
+
+This is needed for FEC to work properly, since FEC3V15 is supplied by DCDC_3V15.
+
+In addition, corrected the pin name for FEC_EN.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ board/freescale/mx50_rdp/mx50_rdp.c |   14 ++++++++++++--
+ 1 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/board/freescale/mx50_rdp/mx50_rdp.c b/board/freescale/mx50_rdp/mx50_rdp.c
+index 9d90fd3..340157f 100644
+--- a/board/freescale/mx50_rdp/mx50_rdp.c
++++ b/board/freescale/mx50_rdp/mx50_rdp.c
+@@ -643,8 +643,8 @@ static void setup_fec(void)
+ 	writel(reg, GPIO6_BASE_ADDR + 0x4);
+ 
+ #elif defined(CONFIG_MX50_RD3)
+-	/* FEC_EN: gpio4-15 set to 0 to enable FEC */
+-	mxc_request_iomux(MX50_PIN_I2C3_SDA, IOMUX_CONFIG_ALT1);
++	/* FEC_EN: gpio4-15 set to 1 to enable FEC */
++	mxc_request_iomux(MX50_PIN_ECSPI1_SS0, IOMUX_CONFIG_ALT1);
+ 
+ 	reg = readl(GPIO4_BASE_ADDR + 0x0);
+ 	reg |= (1 << 15);
+@@ -653,6 +653,16 @@ static void setup_fec(void)
+ 	reg = readl(GPIO4_BASE_ADDR + 0x4);
+ 	reg |= (1 << 15);
+ 	writel(reg, GPIO4_BASE_ADDR + 0x4);
++
++	/* DCDC_PWREN(GP4_16) set to 0 to enable DCDC_3V15 */
++	mxc_request_iomux(MX50_PIN_ECSPI2_SCLK, IOMUX_CONFIG_ALT1);
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg &= ~(1 << 16);
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x4);
++	reg |= (1 << 16);
++	writel(reg, GPIO4_BASE_ADDR + 0x4);
+ #endif
+ 
+ 	/*FEC_MDIO*/
+-- 
+1.5.4.4
+

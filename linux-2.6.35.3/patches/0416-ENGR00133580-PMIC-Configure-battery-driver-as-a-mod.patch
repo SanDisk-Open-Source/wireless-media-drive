@@ -1,0 +1,28 @@
+From 07a7ed9e73a8a814afab1db55f642cf1ca715654 Mon Sep 17 00:00:00 2001
+From: Nancy Chen <Nancy.Chen@freescale.com>
+Date: Wed, 10 Nov 2010 18:29:54 -0600
+Subject: [PATCH] ENGR00133580 PMIC: Configure battery driver as a module
+
+PMIC: Configure battery driver as a loadable module.
+
+Signed-off-by: Nancy Chen <Nancy.Chen@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index d4d06de..0a3e1a6 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -2031,7 +2031,7 @@ CONFIG_MXC_PMIC_SPI=y
+ CONFIG_MXC_MC13892_ADC=y
+ CONFIG_MXC_MC13892_RTC=y
+ CONFIG_MXC_MC13892_LIGHT=y
+-CONFIG_MXC_MC13892_BATTERY=y
++CONFIG_MXC_MC13892_BATTERY=m
+ CONFIG_MXC_MC13892_CONNECTIVITY=y
+ CONFIG_MXC_MC13892_POWER=y
+ # CONFIG_MXC_PMIC_MC9S08DZ60 is not set
+-- 
+1.5.4.4
+

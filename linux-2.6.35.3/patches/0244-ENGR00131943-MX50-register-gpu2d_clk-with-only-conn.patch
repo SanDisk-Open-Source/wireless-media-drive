@@ -1,0 +1,28 @@
+From 1e737c7c2fe75584ab2a3ee86d59987b0825551b Mon Sep 17 00:00:00 2001
+From: Jie Zhou <b30303@freescale.com>
+Date: Sun, 26 Sep 2010 12:41:44 +0800
+Subject: [PATCH] ENGR00131943 MX50: register gpu2d_clk with only connection ID
+
+In GPU driver, connection ID is used to look up gpu2d_clk
+
+Signed-off-by: Jie Zhou <b30303@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 026255d..9d0c901 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -3097,7 +3097,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "ddr_clk", ddr_clk),
+ 	_REGISTER_CLOCK("mxc_rtc.0", NULL, rtc_clk),
+ 	_REGISTER_CLOCK("mxc_w1.0", NULL, owire_clk),
+-	_REGISTER_CLOCK("mxc_gpu.0", "gpu2d_clk", gpu2d_clk),
++	_REGISTER_CLOCK(NULL, "gpu2d_clk", gpu2d_clk),
+ 	_REGISTER_CLOCK(NULL, "cko1", cko1_clk),
+ 	_REGISTER_CLOCK(NULL, "gpt", gpt_clk[0]),
+ 	_REGISTER_CLOCK("fec.0", NULL, fec_clk[0]),
+-- 
+1.5.4.4
+

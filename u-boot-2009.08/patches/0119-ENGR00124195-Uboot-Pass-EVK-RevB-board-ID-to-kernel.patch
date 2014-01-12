@@ -1,0 +1,32 @@
+From ddb3f2723eaa7ad9e6c7e3cb57c3cdcc6c635f95 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Mon, 7 Jun 2010 14:23:54 +0800
+Subject: [PATCH] ENGR00124195 Uboot:Pass EVK RevB board ID to kernel
+
+Pass EVK RevB board ID to kernel by system_rev[11:8]
+2 -->RevB,
+1--->ARM2,
+0--->RevA,
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ board/freescale/mx53_evk/mx53_evk.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 2741088..24fc9c5 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -433,6 +433,9 @@ static int _identify_board_fix_up(int id0, int id1)
+ 		ret = clk_config(CONFIG_REF_CLK_FREQ, 400, DDR_CLK);
+ 		if (ret < 0)
+ 			return ret;
++
++		/* set up rev #2 for EVK RevB board */
++		setup_board_rev(2);
+ 	}
+ #endif
+ 	return ret;
+-- 
+1.5.4.4
+

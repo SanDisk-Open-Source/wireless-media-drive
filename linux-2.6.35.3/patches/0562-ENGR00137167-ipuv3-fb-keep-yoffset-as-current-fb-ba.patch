@@ -1,0 +1,106 @@
+From ef45d723f3df88638968ed8033f7f224c3308805 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 23 Dec 2010 11:29:10 +0800
+Subject: [PATCH] ENGR00137167 ipuv3 fb: keep yoffset as current fb base addr
+
+After we set pan offset of fb, call blank/unblank or
+suspend/resume will lost the offset value.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c |    8 ++++++++
+ drivers/media/video/mxc/output/mxc_v4l2_output.c |    8 ++++++++
+ drivers/video/mxc/mxc_ipuv3_fb.c                 |   12 ++++++++----
+ 3 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c b/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
+index 490dcd2..c70dd07 100644
+--- a/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
++++ b/drivers/media/video/mxc/capture/ipu_prp_vf_sdc.c
+@@ -90,6 +90,7 @@ static int prpvf_start(void *private)
+ 	fbvar.xres = fbvar.xres_virtual = cam->win.w.width;
+ 	fbvar.yres = cam->win.w.height;
+ 	fbvar.yres_virtual = cam->win.w.height * 2;
++	fbvar.yoffset = 0;
+ 	fbvar.activate |= FB_ACTIVATE_FORCE;
+ 	fb_set_var(fbi, &fbvar);
+ 
+@@ -100,6 +101,13 @@ static int prpvf_start(void *private)
+ 	fb_blank(fbi, FB_BLANK_UNBLANK);
+ 	release_console_sem();
+ 
++	/* correct display ch buffer address */
++	ipu_update_channel_buffer(MEM_FG_SYNC, IPU_INPUT_BUFFER,
++				0, fbi->fix.smem_start +
++				(fbi->fix.line_length * fbvar.yres));
++	ipu_update_channel_buffer(MEM_FG_SYNC, IPU_INPUT_BUFFER,
++					1, fbi->fix.smem_start);
++
+ 	memset(&vf, 0, sizeof(ipu_channel_params_t));
+ 	ipu_csi_get_window_size(&vf.csi_prp_vf_mem.in_width,
+ 				&vf.csi_prp_vf_mem.in_height, cam->csi);
+diff --git a/drivers/media/video/mxc/output/mxc_v4l2_output.c b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+index e4f788b..064baba 100644
+--- a/drivers/media/video/mxc/output/mxc_v4l2_output.c
++++ b/drivers/media/video/mxc/output/mxc_v4l2_output.c
+@@ -1421,6 +1421,7 @@ static int mxc_v4l2out_streamon(vout_data *vout)
+ 	}
+ 
+ 	/* Init display channel through fb API */
++	fbvar.yoffset = 0;
+ 	fbvar.activate |= FB_ACTIVATE_FORCE;
+ 	acquire_console_sem();
+ 	fbi->flags |= FBINFO_MISC_USEREVENT;
+@@ -1552,6 +1553,13 @@ static int mxc_v4l2out_streamon(vout_data *vout)
+ 	} else {
+ 		ipu_enable_channel(vout->display_ch);
+ 	}
++
++	/* correct display ch buffer address */
++	ipu_update_channel_buffer(vout->display_ch, IPU_INPUT_BUFFER,
++					0, vout->display_bufs[0]);
++	ipu_update_channel_buffer(vout->display_ch, IPU_INPUT_BUFFER,
++					1, vout->display_bufs[1]);
++
+ 	if (!vout->ic_bypass) {
+ #ifndef CONFIG_MXC_IPU_V1
+ 		ipu_enable_channel(vout->post_proc_ch);
+diff --git a/drivers/video/mxc/mxc_ipuv3_fb.c b/drivers/video/mxc/mxc_ipuv3_fb.c
+index e26f870..6d574c3 100644
+--- a/drivers/video/mxc/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc/mxc_ipuv3_fb.c
+@@ -215,6 +215,7 @@ static int _setup_disp_channel2(struct fb_info *fbi)
+ 	int retval = 0;
+ 	struct mxcfb_info *mxc_fbi = (struct mxcfb_info *)fbi->par;
+ 	int fb_stride;
++	unsigned long base;
+ 
+ 	switch (bpp_to_pixfmt(fbi)) {
+ 	case IPU_PIX_FMT_YUV420P2:
+@@ -235,16 +236,19 @@ static int _setup_disp_channel2(struct fb_info *fbi)
+ 		mxc_fbi->cur_ipu_alpha_buf = 1;
+ 		sema_init(&mxc_fbi->alpha_flip_sem, 1);
+ 	}
+-	fbi->var.xoffset = fbi->var.yoffset = 0;
++	fbi->var.xoffset = 0;
++
++	base = (fbi->var.yoffset * fbi->var.xres_virtual + fbi->var.xoffset);
++	base = (fbi->var.bits_per_pixel) * base / 8;
++	base += fbi->fix.smem_start;
+ 
+ 	retval = ipu_init_channel_buffer(mxc_fbi->ipu_ch, IPU_INPUT_BUFFER,
+ 					 bpp_to_pixfmt(fbi),
+ 					 fbi->var.xres, fbi->var.yres,
+ 					 fb_stride,
+ 					 IPU_ROTATE_NONE,
+-					 fbi->fix.smem_start +
+-					 (fbi->fix.line_length * fbi->var.yres),
+-					 fbi->fix.smem_start,
++					 base,
++					 base,
+ 					 0, 0);
+ 	if (retval) {
+ 		dev_err(fbi->device,
+-- 
+1.5.4.4
+

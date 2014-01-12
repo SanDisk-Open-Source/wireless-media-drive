@@ -1,0 +1,92 @@
+From 81915375667b6aa19f3ac1e93661007fde4b089a Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Mon, 17 Jan 2011 13:58:44 +0800
+Subject: [PATCH] ENGR00138040-3 Protect splashimage related stuffs by config
+
+This patch protects splashimge related stuffs by config
+option for mx51 bbg, mx53 ard and mx53 smd.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ board/freescale/mx51_bbg/mx51_bbg.c |    4 +++-
+ board/freescale/mx53_ard/mx53_ard.c |    2 +-
+ board/freescale/mx53_smd/mx53_smd.c |    2 +-
+ 3 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 256fdf6..400d520 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -29,11 +29,13 @@
+ #include <asm/arch/iomux.h>
+ #include <asm/errno.h>
+ #include <i2c.h>
++#if defined(CONFIG_VIDEO_MX5)
+ #include <linux/list.h>
+ #include <ipu.h>
+ #include <lcd.h>
+ #include <linux/fb.h>
+ #include <linux/mxcfb.h>
++#endif
+ #include "board-imx51.h"
+ #ifdef CONFIG_IMX_ECSPI
+ #include <imx_spi.h>
+@@ -83,7 +85,6 @@ short colormap[65536];
+ #else
+ short colormap[16777216];
+ #endif
+-#endif
+ 
+ extern int ipuv3_fb_init(struct fb_videomode *mode, int di,
+ 			int interface_pix_fmt,
+@@ -99,6 +100,7 @@ static struct fb_videomode claa_wvga = {
+ };
+ 
+ vidinfo_t panel_info;
++#endif
+ 
+ static inline void setup_boot_device(void)
+ {
+diff --git a/board/freescale/mx53_ard/mx53_ard.c b/board/freescale/mx53_ard/mx53_ard.c
+index 01087be..94be65b 100755
+--- a/board/freescale/mx53_ard/mx53_ard.c
++++ b/board/freescale/mx53_ard/mx53_ard.c
+@@ -99,7 +99,6 @@ struct pwm_device pwm1 = {
+ };
+ 
+ static int di = 1;
+-#endif
+ 
+ extern int ipuv3_fb_init(struct fb_videomode *mode, int di,
+ 			int interface_pix_fmt,
+@@ -114,6 +113,7 @@ static struct fb_videomode lvds_xga = {
+ };
+ 
+ vidinfo_t panel_info;
++#endif
+ 
+ static inline void setup_boot_device(void)
+ {
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index 1b44b3c..2675046 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -96,7 +96,6 @@ struct pwm_device pwm1 = {
+ };
+ 
+ static int di = 1;
+-#endif
+ 
+ extern int ipuv3_fb_init(struct fb_videomode *mode, int di,
+ 			int interface_pix_fmt,
+@@ -111,6 +110,7 @@ static struct fb_videomode lvds_xga = {
+ };
+ 
+ vidinfo_t panel_info;
++#endif
+ 
+ static inline void setup_boot_device(void)
+ {
+-- 
+1.5.4.4
+

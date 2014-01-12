@@ -1,0 +1,28 @@
+From 9d259a01d7998150a87cc03d1460428b36fbde31 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 8 Sep 2010 13:43:30 +0800
+Subject: [PATCH] ENGR00127265-5 NAND: fix build warning
+
+Fix build warning after 2.6.35 kernel upgrade
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nd2.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nd2.c b/drivers/mtd/nand/mxc_nd2.c
+index 2f7bebf..07eb120 100644
+--- a/drivers/mtd/nand/mxc_nd2.c
++++ b/drivers/mtd/nand/mxc_nd2.c
+@@ -1380,7 +1380,7 @@ static void manage_sysfs_files(int create)
+  *
+  * @return  The function always returns 0.
+  */
+-static int __init mxcnd_probe(struct platform_device *pdev)
++static int __devinit mxcnd_probe(struct platform_device *pdev)
+ {
+ 	struct nand_chip *this;
+ 	struct mtd_info *mtd;
+-- 
+1.5.4.4
+

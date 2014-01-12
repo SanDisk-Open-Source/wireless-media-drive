@@ -1,0 +1,41 @@
+From 9a75b3c9a9a09f6ffeecf5b617b1a3c72d4aa1b9 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Wed, 27 Oct 2010 13:52:16 +0800
+Subject: [PATCH] ENGR00132538 MX53: Get the CAN clk via dev_id and con_id
+
+Use both dev_id and con_id to get enable the CAN clock.
+Only use the con_id can't get the can_clk2, which is the
+root cause for CAN2 hang.
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 6bcc6ad..f726cc0 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -3485,7 +3485,7 @@ static struct clk can2_clk[] = {
+ 	 },
+ 	{
+ 	.id = 1,
+-	.parent = &lp_apm_clk,
++	.parent = &ipg_clk,
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR4,
+ 	.enable_shift = MXC_CCM_CCGRx_CG3_OFFSET,
+@@ -4319,8 +4319,8 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "ieee_1588_clk", ieee_1588_clk),
+ 	_REGISTER_CLOCK(NULL, "ieee_rtc_clk", ieee_rtc_clk),
+ 	_REGISTER_CLOCK("mxc_mlb.0", NULL, mlb_clk[0]),
+-	_REGISTER_CLOCK(NULL, "can_clk", can1_clk[0]),
+-	_REGISTER_CLOCK(NULL, "can_clk", can2_clk[0]),
++	_REGISTER_CLOCK("FlexCAN.0", "can_clk", can1_clk[0]),
++	_REGISTER_CLOCK("FlexCAN.1", "can_clk", can2_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ldb_di0_clk", ldb_di_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ldb_di1_clk", ldb_di_clk[1]),
+ 	_REGISTER_CLOCK(NULL, "esai_clk", esai_clk[0]),
+-- 
+1.5.4.4
+

@@ -1,0 +1,79 @@
+From b938cd302d0075df9b167a8ca72bfa0f4ad3d1c9 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Mon, 9 Aug 2010 10:11:15 -0500
+Subject: [PATCH] ENGR00126057-2 MX50 Add RNGB support
+
+Machine layer modifications for RNGB device
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ arch/arm/mach-mx5/Kconfig      |    1 +
+ arch/arm/mach-mx5/clock_mx50.c |    9 +++++++++
+ arch/arm/mach-mx5/devices.h    |    1 +
+ arch/arm/mach-mx5/mx50_arm2.c  |    2 ++
+ 4 files changed, 13 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/Kconfig b/arch/arm/mach-mx5/Kconfig
+index 7ae1b1e..cf48d62 100644
+--- a/arch/arm/mach-mx5/Kconfig
++++ b/arch/arm/mach-mx5/Kconfig
+@@ -14,6 +14,7 @@ config ARCH_MX53
+ 
+ config ARCH_MX50
+ 	bool
++	select ARCH_HAS_RNGC
+ 
+ config FORCE_MAX_ZONEORDER
+     int "MAX_ORDER"
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index e2bd02e..7db4b88 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2305,6 +2305,14 @@ static struct clk rtc_clk = {
+ 	.disable = _clk_disable,
+ };
+ 
++struct clk rng_clk = {
++	.parent = &ipg_clk,
++	.enable = _clk_enable,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG1_OFFSET,
++	.disable = _clk_disable,
++};
++
+ static struct clk owire_clk = {
+ 	.parent = &ipg_perclk,
+ 	.enable = _clk_enable,
+@@ -2986,6 +2994,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "gpmi-apb", gpmi_nfc_clk[1]),
+ 	_REGISTER_CLOCK(NULL, "bch", gpmi_nfc_clk[2]),
+ 	_REGISTER_CLOCK(NULL, "bch-apb", gpmi_nfc_clk[3]),
++	_REGISTER_CLOCK(NULL, "rng_clk", rng_clk),
+ };
+ 
+ static void clk_tree_init(void)
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index e73a34b..1d0f1e7 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -81,3 +81,4 @@ extern struct platform_device mxc_v4l2out_device;
+ extern struct platform_device mxs_viim;
+ extern struct platform_device mxs_dma_apbh_device;
+ extern struct platform_device gpmi_nfc_device;
++extern struct platform_device mxc_rngb_device;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 479c80f..30559e9 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -863,6 +863,8 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpmi_nfc_device, &gpmi_nfc_platform_data);
+ 	mx5_usb_dr_init();
+ 	mx5_usbh1_init();
++
++	mxc_register_device(&mxc_rngb_device, NULL);
+ }
+ 
+ static void __init mx50_arm2_timer_init(void)
+-- 
+1.5.4.4
+

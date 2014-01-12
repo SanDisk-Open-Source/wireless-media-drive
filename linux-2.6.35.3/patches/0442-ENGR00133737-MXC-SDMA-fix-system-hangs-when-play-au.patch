@@ -1,0 +1,56 @@
+From fa07d5782279842b69dd0ef2d0055ec783337fb0 Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Wed, 17 Nov 2010 16:06:49 +0800
+Subject: [PATCH] ENGR00133737 MXC SDMA: fix system hangs when play audio with irq threaded
+
+When apply rt patch or turn on hardirq threaded in kernel,
+play audio by application with realtime schedule policy hangs the system.
+
+It is caused by:
+Requesting SDMA channel, a specific channel is used to load script
+and context from memory.
+
+This load phase also uses sdma to transfer, then poll
+a complete flag within a while(1) loop.
+
+When application with realtime schedule policy request sdma channel,
+it will preempt threaded irqs and prevent complete flag to be set.
+
+So a deadlock appears.
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ arch/arm/plat-mxc/sdma/iapi/src/iapiLow.c |   10 ++++++++--
+ 1 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/sdma/iapi/src/iapiLow.c b/arch/arm/plat-mxc/sdma/iapi/src/iapiLow.c
+index 92d3fa4..47611fe 100644
+--- a/arch/arm/plat-mxc/sdma/iapi/src/iapiLow.c
++++ b/arch/arm/plat-mxc/sdma/iapi/src/iapiLow.c
+@@ -33,6 +33,8 @@
+ /* ****************************************************************************
+  * Include File Section
+  *****************************************************************************/
++#include <linux/preempt.h>
++#include <linux/hardirq.h>
+ #include "epm.h"
+ #include "iapiLow.h"
+ 
+@@ -118,8 +120,12 @@ iapi_ChangeCallbackISR(channelDescriptor *cd_p,
+  */
+ void iapi_lowSynchChannel(unsigned char channel)
+ {
+-	while (!((1UL << channel) & iapi_SDMAIntr))
+-		;
++	if (preempt_count() || in_interrupt()) {
++		 while (!((1UL << channel) & iapi_SDMAIntr))
++			 ;
++	} else
++		GOTO_SLEEP(channel);
++
+ 	iapi_SDMAIntr &= ~(1UL << channel);
+ }
+ 
+-- 
+1.5.4.4
+

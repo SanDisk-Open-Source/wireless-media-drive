@@ -1,0 +1,106 @@
+From bd61bb1657b0c44595b4d06b020c8c1c5db9cfb6 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Mon, 27 Sep 2010 10:25:41 +0800
+Subject: [PATCH] ENGR00131616-3 usb: restructure lower power mode and wakeup function
+
+1. The disconnect exception will call do_set_config, and therefore will
+visit controller registers. However it is a delayed event, and will be
+handled at another process, so the controller maybe have already closed the
+usb clock.
+2. Add gadget chip for fsl arc udc chip
+3. No print error message if host is suspended during suspend/resume
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ drivers/usb/core/driver.c         |    9 ++++++++-
+ drivers/usb/gadget/file_storage.c |   11 ++++++++++-
+ drivers/usb/gadget/gadget_chips.h |    8 ++++++++
+ 3 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/core/driver.c b/drivers/usb/core/driver.c
+index a6bd53a..52aad63 100644
+--- a/drivers/usb/core/driver.c
++++ b/drivers/usb/core/driver.c
+@@ -1313,6 +1313,13 @@ int usb_resume(struct device *dev, pm_message_t msg)
+ 	struct usb_device	*udev = to_usb_device(dev);
+ 	int			status;
+ 
++	/*
++	 * At otg mode, it should not call host resume for usb gadget device
++	 * Otherwise, this usb device can't be recognized as a gadget
++	 */
++	if (udev->bus->is_b_host)
++		return 0;
++
+ 	/* For PM complete calls, all we do is rebind interfaces */
+ 	if (msg.event == PM_EVENT_ON) {
+ 		if (udev->state != USB_STATE_NOTATTACHED)
+@@ -1337,7 +1344,7 @@ int usb_resume(struct device *dev, pm_message_t msg)
+ 	/* Avoid PM error messages for devices disconnected while suspended
+ 	 * as we'll display regular disconnect messages just a bit later.
+ 	 */
+-	if (status == -ENODEV)
++	if (status == -ENODEV || status == -ESHUTDOWN)
+ 		status = 0;
+ 	return status;
+ }
+diff --git a/drivers/usb/gadget/file_storage.c b/drivers/usb/gadget/file_storage.c
+index ed5ea4b..526abbe 100644
+--- a/drivers/usb/gadget/file_storage.c
++++ b/drivers/usb/gadget/file_storage.c
+@@ -490,7 +490,7 @@ struct fsg_dev {
+ #ifdef CONFIG_FSL_UTP
+ #include "fsl_updater.h"
+ #endif
+-
++static int do_set_interface(struct fsg_dev *fsg, int altsetting);
+ typedef void (*fsg_routine_t)(struct fsg_dev *);
+ 
+ static int exception_in_progress(struct fsg_dev *fsg)
+@@ -669,6 +669,15 @@ static void fsg_disconnect(struct usb_gadget *gadget)
+ 	struct fsg_dev		*fsg = get_gadget_data(gadget);
+ 
+ 	DBG(fsg, "disconnect or port reset\n");
++	/*
++	 * The disconnect exception will call do_set_config, and therefore will
++	 * visit controller registers. However it is a delayed event, and will be
++	 * handled at another process, so the controller maybe have already closed the
++	 * usb clock.
++	 */
++	if (fsg->new_config)
++		do_set_interface(fsg, -1);/* disable the interface */
++
+ 	raise_exception(fsg, FSG_STATE_DISCONNECT);
+ }
+ 
+diff --git a/drivers/usb/gadget/gadget_chips.h b/drivers/usb/gadget/gadget_chips.h
+index e511fec..9820bf0 100644
+--- a/drivers/usb/gadget/gadget_chips.h
++++ b/drivers/usb/gadget/gadget_chips.h
+@@ -142,6 +142,12 @@
+ #define gadget_is_s3c_hsotg(g)    0
+ #endif
+ 
++#ifdef CONFIG_USB_GADGET_ARC
++#define gadget_is_arcotg(g)     (!strcmp("fsl-usb2-udc", (g)->name))
++#else
++#define gadget_is_arcotg(g)     0
++#endif
++
+ 
+ /**
+  * usb_gadget_controller_number - support bcdDevice id convention
+@@ -200,6 +206,8 @@ static inline int usb_gadget_controller_number(struct usb_gadget *gadget)
+ 		return 0x25;
+ 	else if (gadget_is_s3c_hsotg(gadget))
+ 		return 0x26;
++	else if (gadget_is_arcotg(gadget))
++		return 0x26;
+ 	return -ENOENT;
+ }
+ 
+-- 
+1.5.4.4
+

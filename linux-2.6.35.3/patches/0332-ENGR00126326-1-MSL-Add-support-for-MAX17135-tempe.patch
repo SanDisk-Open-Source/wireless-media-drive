@@ -1,0 +1,230 @@
+From 5e82f13a0ee796f00ac5ad075acb6d1abfc417ab Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 7 Oct 2010 16:04:23 -0500
+Subject: [PATCH] ENGR00126326-1 - MSL: Add support for MAX17135 temperature sensor driver
+
+- Support added for MAX17135 temperature sensor driver for both
+MX50 ARM2 and RDP platforms.
+- MAX17135 driver re-architected with init() callback function
+in MSL layer which registers regulators.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    3 +-
+ arch/arm/mach-mx5/mx50_arm2.c   |   50 ++++++++++++++++++++++++++++++++++++++-
+ arch/arm/mach-mx5/mx50_rdp.c    |   50 ++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 100 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index fe01fcf..1dcbff5 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,6 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Tue Oct 12 13:56:09 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -1185,6 +1184,7 @@ CONFIG_HWMON=y
+ # CONFIG_SENSORS_LM95241 is not set
+ # CONFIG_SENSORS_MAX1111 is not set
+ # CONFIG_SENSORS_MAX1619 is not set
++CONFIG_SENSORS_MAX17135=y
+ # CONFIG_SENSORS_MAX6650 is not set
+ # CONFIG_SENSORS_PC87360 is not set
+ # CONFIG_SENSORS_PC87427 is not set
+@@ -1264,6 +1264,7 @@ CONFIG_MFD_SUPPORT=y
+ # CONFIG_ABX500_CORE is not set
+ # CONFIG_EZX_PCAP is not set
+ # CONFIG_AB8500_CORE is not set
++CONFIG_MFD_MAX17135=y
+ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_DEBUG is not set
+ # CONFIG_REGULATOR_DUMMY is not set
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index eb5801b..28e6cf8 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -38,7 +38,7 @@
+ #include <linux/mtd/partitions.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/regulator/machine.h>
+-#include <linux/regulator/max17135.h>
++#include <linux/mfd/max17135.h>
+ #include <linux/pmic_external.h>
+ #include <linux/pmic_status.h>
+ #include <linux/videodev2.h>
+@@ -108,6 +108,7 @@
+ extern int __init mx50_arm2_init_mc13892(void);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void (*set_num_cpu_wp)(int num);
++static int max17135_regulator_init(struct max17135 *max17135);
+ static int num_cpu_wp = 2;
+ 
+ static struct pad_desc  mx50_armadillo2[] = {
+@@ -704,6 +705,11 @@ static struct mxc_epdc_fb_platform_data epdc_data = {
+ 	.disable_pins = epdc_disable_pins,
+ };
+ 
++static struct platform_device max17135_sensor_device = {
++	.name = "max17135_sensor",
++	.id = 0,
++};
++
+ static struct max17135_platform_data max17135_pdata __initdata = {
+ 	.vneg_pwrup = 1,
+ 	.gvee_pwrup = 1,
+@@ -718,8 +724,49 @@ static struct max17135_platform_data max17135_pdata __initdata = {
+ 	.gpio_pmic_wakeup = EPDC_PMIC_WAKE,
+ 	.gpio_pmic_intr = EPDC_PMIC_INT,
+ 	.regulator_init = max17135_init_data,
++	.init = max17135_regulator_init,
+ };
+ 
++static int max17135_regulator_init(struct max17135 *max17135)
++{
++	struct max17135_platform_data *pdata = &max17135_pdata;
++	int i, ret;
++
++	max17135->gvee_pwrup = pdata->gvee_pwrup;
++	max17135->vneg_pwrup = pdata->vneg_pwrup;
++	max17135->vpos_pwrup = pdata->vpos_pwrup;
++	max17135->gvdd_pwrup = pdata->gvdd_pwrup;
++	max17135->gvdd_pwrdn = pdata->gvdd_pwrdn;
++	max17135->vpos_pwrdn = pdata->vpos_pwrdn;
++	max17135->vneg_pwrdn = pdata->vneg_pwrdn;
++	max17135->gvee_pwrdn = pdata->gvee_pwrdn;
++
++	max17135->max_wait = pdata->vpos_pwrup + pdata->vneg_pwrup +
++		pdata->gvdd_pwrup + pdata->gvee_pwrup;
++
++	max17135->gpio_pmic_pwrgood = pdata->gpio_pmic_pwrgood;
++	max17135->gpio_pmic_vcom_ctrl = pdata->gpio_pmic_vcom_ctrl;
++	max17135->gpio_pmic_wakeup = pdata->gpio_pmic_wakeup;
++	max17135->gpio_pmic_intr = pdata->gpio_pmic_intr;
++
++	max17135->vcom_setup = false;
++	max17135->init_done = false;
++
++	for (i = 0; i <= MAX17135_VPOS; i++) {
++		ret = max17135_register_regulator(max17135, i,
++			&pdata->regulator_init[i]);
++		if (ret != 0) {
++			printk(KERN_ERR"max17135 regulator init failed: %d\n",
++				ret);
++			return ret;
++		}
++	}
++
++	regulator_has_full_constraints();
++
++	return 0;
++}
++
+ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	 .type = "sgtl5000-i2c",
+@@ -1113,6 +1160,7 @@ static void __init mxc_board_init(void)
+ 	i2c_register_board_info(2, mxc_i2c2_board_info,
+ 				ARRAY_SIZE(mxc_i2c2_board_info));
+ 
++	mxc_register_device(&max17135_sensor_device, NULL);
+ 	mxc_register_device(&epdc_device, &epdc_data);
+ 	mxc_register_device(&lcd_wvga_device, &lcd_wvga_data);
+ 	mxc_register_device(&elcdif_device, &fb_data[0]);
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 45274b2..c12fa10 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -38,7 +38,7 @@
+ #include <linux/mtd/partitions.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/regulator/machine.h>
+-#include <linux/regulator/max17135.h>
++#include <linux/mfd/max17135.h>
+ #include <linux/pmic_external.h>
+ #include <linux/pmic_status.h>
+ #include <linux/videodev2.h>
+@@ -118,6 +118,7 @@
+ extern int __init mx50_rdp_init_mc13892(void);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void (*set_num_cpu_wp)(int num);
++static int max17135_regulator_init(struct max17135 *max17135);
+ static int num_cpu_wp = 2;
+ 
+ static struct pad_desc  mx50_rdp[] = {
+@@ -778,6 +779,11 @@ static struct mxc_epdc_fb_platform_data epdc_data = {
+ 	.disable_pins = epdc_disable_pins,
+ };
+ 
++static struct platform_device max17135_sensor_device = {
++	.name = "max17135_sensor",
++	.id = 0,
++};
++
+ static struct max17135_platform_data max17135_pdata __initdata = {
+ 	.vneg_pwrup = 1,
+ 	.gvee_pwrup = 1,
+@@ -792,8 +798,49 @@ static struct max17135_platform_data max17135_pdata __initdata = {
+ 	.gpio_pmic_wakeup = EPDC_PMIC_WAKE,
+ 	.gpio_pmic_intr = EPDC_PMIC_INT,
+ 	.regulator_init = max17135_init_data,
++	.init = max17135_regulator_init,
+ };
+ 
++static int max17135_regulator_init(struct max17135 *max17135)
++{
++	struct max17135_platform_data *pdata = &max17135_pdata;
++	int i, ret;
++
++	max17135->gvee_pwrup = pdata->gvee_pwrup;
++	max17135->vneg_pwrup = pdata->vneg_pwrup;
++	max17135->vpos_pwrup = pdata->vpos_pwrup;
++	max17135->gvdd_pwrup = pdata->gvdd_pwrup;
++	max17135->gvdd_pwrdn = pdata->gvdd_pwrdn;
++	max17135->vpos_pwrdn = pdata->vpos_pwrdn;
++	max17135->vneg_pwrdn = pdata->vneg_pwrdn;
++	max17135->gvee_pwrdn = pdata->gvee_pwrdn;
++
++	max17135->max_wait = pdata->vpos_pwrup + pdata->vneg_pwrup +
++		pdata->gvdd_pwrup + pdata->gvee_pwrup;
++
++	max17135->gpio_pmic_pwrgood = pdata->gpio_pmic_pwrgood;
++	max17135->gpio_pmic_vcom_ctrl = pdata->gpio_pmic_vcom_ctrl;
++	max17135->gpio_pmic_wakeup = pdata->gpio_pmic_wakeup;
++	max17135->gpio_pmic_intr = pdata->gpio_pmic_intr;
++
++	max17135->vcom_setup = false;
++	max17135->init_done = false;
++
++	for (i = 0; i <= MAX17135_VPOS; i++) {
++		ret = max17135_register_regulator(max17135, i,
++			&pdata->regulator_init[i]);
++		if (ret != 0) {
++			printk(KERN_ERR"max17135 regulator init failed: %d\n",
++				ret);
++			return ret;
++		}
++	}
++
++	regulator_has_full_constraints();
++
++	return 0;
++}
++
+ static struct imxi2c_platform_data mxci2c_data = {
+        .bitrate = 100000,
+ };
+@@ -1226,6 +1273,7 @@ static void __init mxc_board_init(void)
+ 	i2c_register_board_info(1, mxc_i2c1_board_info,
+ 				ARRAY_SIZE(mxc_i2c1_board_info));
+ 
++	mxc_register_device(&max17135_sensor_device, NULL);
+ 	mxc_register_device(&epdc_device, &epdc_data);
+ 	mxc_register_device(&lcd_wvga_device, &lcd_wvga_data);
+ 	mxc_register_device(&elcdif_device, &fb_data[0]);
+-- 
+1.5.4.4
+

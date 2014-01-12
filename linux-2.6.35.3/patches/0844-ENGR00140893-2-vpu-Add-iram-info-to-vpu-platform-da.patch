@@ -1,0 +1,132 @@
+From 6b9325df0716ef20a7767bc2a33be84187832aa5 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Tue, 22 Mar 2011 18:41:45 +0800
+Subject: [PATCH] ENGR00140893-2 vpu: Add iram info to vpu platform data for each platform
+
+Add iram info to vpu platform data for each platform in linux/arch folder.
+Disable iram on MX51 and Enable iram on MX53 platforms.
+And remove VPU_IRAM_SIZE usage.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/mach-mx5/mx51_3stack.c       |    2 ++
+ arch/arm/mach-mx5/mx51_babbage.c      |    2 ++
+ arch/arm/mach-mx5/mx53_ard.c          |    2 ++
+ arch/arm/mach-mx5/mx53_evk.c          |    2 ++
+ arch/arm/mach-mx5/mx53_loco.c         |    2 ++
+ arch/arm/mach-mx5/mx53_smd.c          |    2 ++
+ arch/arm/plat-mxc/include/mach/mx35.h |    2 --
+ arch/arm/plat-mxc/include/mach/mx5x.h |    6 ------
+ 8 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index bb767af..a516e87 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -193,6 +193,8 @@ static struct mxc_ipu_config mxc_ipu_data = {
+ 
+ extern void mx5_vpu_reset(void);
+ static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.iram_enable = false,
++	.iram_size = 0x14000,
+ 	.reset = mx5_vpu_reset,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 52bcdbf..bfae2d9 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -342,6 +342,8 @@ static struct mxc_ipu_config mxc_ipu_data = {
+ 
+ extern void mx5_vpu_reset(void);
+ static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.iram_enable = false,
++	.iram_size = 0x14000,
+ 	.reset = mx5_vpu_reset,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 43dfa0e..0f28942 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -491,6 +491,8 @@ static struct mxc_ipu_config mxc_ipu_data = {
+ 
+ extern void mx5_vpu_reset(void);
+ static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.iram_enable = true,
++	.iram_size = 0x14000,
+ 	.reset = mx5_vpu_reset,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index f6c4b4f..ebe9629 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -501,6 +501,8 @@ static struct mxc_ipu_config mxc_ipu_data = {
+ 
+ extern void mx5_vpu_reset(void);
+ static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.iram_enable = true,
++	.iram_size = 0x14000,
+ 	.reset = mx5_vpu_reset,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 4e57436..4179328 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -287,6 +287,8 @@ static struct mxc_ipu_config mxc_ipu_data = {
+ 
+ extern void mx5_vpu_reset(void);
+ static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.iram_enable = true,
++	.iram_size = 0x14000,
+ 	.reset = mx5_vpu_reset,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index bcc3fe2..75480c1 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -449,6 +449,8 @@ static struct mxc_ipu_config mxc_ipu_data = {
+ 
+ extern void mx5_vpu_reset(void);
+ static struct mxc_vpu_platform_data mxc_vpu_data = {
++	.iram_enable = true,
++	.iram_size = 0x14000,
+ 	.reset = mx5_vpu_reset,
+ };
+ 
+diff --git a/arch/arm/plat-mxc/include/mach/mx35.h b/arch/arm/plat-mxc/include/mach/mx35.h
+index 9dbe06d..8d78c2f 100644
+--- a/arch/arm/plat-mxc/include/mach/mx35.h
++++ b/arch/arm/plat-mxc/include/mach/mx35.h
+@@ -18,8 +18,6 @@
+ #define SND_RAM_SIZE 0
+ #endif
+ 
+-#define VPU_IRAM_SIZE 0
+-
+ #define MX35_L2CC_BASE_ADDR		0x30000000
+ #define MX35_L2CC_SIZE			SZ_1M
+ 
+diff --git a/arch/arm/plat-mxc/include/mach/mx5x.h b/arch/arm/plat-mxc/include/mach/mx5x.h
+index 8ecd236..5c16710 100644
+--- a/arch/arm/plat-mxc/include/mach/mx5x.h
++++ b/arch/arm/plat-mxc/include/mach/mx5x.h
+@@ -98,12 +98,6 @@
+ #define SND_RAM_SIZE 0
+ #endif
+ 
+-#ifdef CONFIG_MXC_VPU_IRAM
+-#define VPU_IRAM_SIZE  0x14000
+-#else
+-#define VPU_IRAM_SIZE 0
+-#endif
+-
+ #if defined(CONFIG_USB_STATIC_IRAM) \
+     || defined(CONFIG_USB_STATIC_IRAM_PPH)
+ #define USB_IRAM_SIZE	SZ_8K
+-- 
+1.5.4.4
+

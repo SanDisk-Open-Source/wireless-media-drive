@@ -1,0 +1,233 @@
+From f146e2a90cb91f2b867e40fec4f44aa20b7aa933 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 10 Nov 2010 18:10:28 +0800
+Subject: [PATCH] ENGR00133318-1 IPUv3 CSI:Support SMFC channel interlaced scan order
+
+This patch supports interlaced scan order for CSI->SMFCx->MEM
+channels.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/mxc/ipu/ipu_csi.c      |   13 +++++++++
+ drivers/mxc/ipu3/ipu_capture.c |   59 +++++++++++++++++++++++++++++++++------
+ drivers/mxc/ipu3/ipu_common.c  |   12 +++++++-
+ drivers/mxc/ipu3/ipu_disp.c    |    2 +-
+ drivers/mxc/ipu3/ipu_prv.h     |    2 +-
+ drivers/mxc/ipu3/ipu_regs.h    |    1 +
+ include/linux/ipu.h            |    5 +++-
+ 7 files changed, 80 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/mxc/ipu/ipu_csi.c b/drivers/mxc/ipu/ipu_csi.c
+index 268f7a0..6c8dd6f 100644
+--- a/drivers/mxc/ipu/ipu_csi.c
++++ b/drivers/mxc/ipu/ipu_csi.c
+@@ -215,6 +215,19 @@ void ipu_csi_set_window_pos(uint32_t left, uint32_t top, uint32_t dummy)
+ 	__raw_writel(temp, CSI_OUT_FRM_CTRL);
+ }
+ 
++/*!
++ * ipu_csi_get_sensor_protocol
++ *
++ * @param	csi         csi 0 or csi 1
++ *
++ * @return	Returns sensor protocol
++ */
++int32_t ipu_csi_get_sensor_protocol(uint32_t csi)
++{
++	/* TODO */
++}
++EXPORT_SYMBOL(ipu_csi_get_sensor_protocol);
++
+ /* Exported symbols for modules. */
+ EXPORT_SYMBOL(ipu_csi_set_window_pos);
+ EXPORT_SYMBOL(ipu_csi_set_window_size);
+diff --git a/drivers/mxc/ipu3/ipu_capture.c b/drivers/mxc/ipu3/ipu_capture.c
+index 8bb729a..700b32b 100644
+--- a/drivers/mxc/ipu3/ipu_capture.c
++++ b/drivers/mxc/ipu3/ipu_capture.c
+@@ -112,14 +112,39 @@ ipu_csi_init_interface(uint16_t width, uint16_t height, uint32_t pixel_fmt,
+ 		__raw_writel(0x40030, CSI_CCIR_CODE_1(csi));
+ 		__raw_writel(0xFF0000, CSI_CCIR_CODE_3(csi));
+ 	} else if (cfg_param.clk_mode == IPU_CSI_CLK_MODE_CCIR656_INTERLACED) {
++		if (width == 720 && height == 625) {
++			/* PAL case */
++			/*
++			 * Field0BlankEnd = 0x6, Field0BlankStart = 0x2,
++			 * Field0ActiveEnd = 0x4, Field0ActiveStart = 0
++			 */
++			__raw_writel(0x40596, CSI_CCIR_CODE_1(csi));
++			/*
++			 * Field1BlankEnd = 0x7, Field1BlankStart = 0x3,
++			 * Field1ActiveEnd = 0x5, Field1ActiveStart = 0x1
++			 */
++			__raw_writel(0xD07DF, CSI_CCIR_CODE_2(csi));
++			__raw_writel(0xFF0000, CSI_CCIR_CODE_3(csi));
++		} else if (width == 720 && height == 525) {
++			/* NTSC case */
++			/*
++			 * Field0BlankEnd = 0x7, Field0BlankStart = 0x3,
++			 * Field0ActiveEnd = 0x5, Field0ActiveStart = 0x1
++			 */
++			__raw_writel(0xD07DF, CSI_CCIR_CODE_1(csi));
++			/*
++			 * Field1BlankEnd = 0x6, Field1BlankStart = 0x2,
++			 * Field1ActiveEnd = 0x4, Field1ActiveStart = 0
++			 */
++			__raw_writel(0x40596, CSI_CCIR_CODE_2(csi));
++			__raw_writel(0xFF0000, CSI_CCIR_CODE_3(csi));
++		} else {
++			spin_unlock_irqrestore(&ipu_lock, lock_flags);
++			dev_err(g_ipu_dev, "Unsupported CCIR656 interlaced "
++					"video mode\n");
++			return -EINVAL;
++		}
+ 		_ipu_csi_ccir_err_detection_enable(csi);
+-		/* Field0BlankEnd = 0x7, Field0BlankStart = 0x3,
+-		   Field0ActiveEnd = 0x5, Field0ActiveStart = 0x1 */
+-		__raw_writel(0xD07DF, CSI_CCIR_CODE_1(csi));
+-		/* Field1BlankEnd = 0x6, Field1BlankStart = 0x2,
+-		   Field1ActiveEnd = 0x4, Field1ActiveStart = 0 */
+-		__raw_writel(0x40596, CSI_CCIR_CODE_2(csi));
+-		__raw_writel(0xFF0000, CSI_CCIR_CODE_3(csi));
+ 	} else if ((cfg_param.clk_mode ==
+ 			IPU_CSI_CLK_MODE_CCIR1120_PROGRESSIVE_DDR) ||
+ 		(cfg_param.clk_mode ==
+@@ -128,9 +153,9 @@ ipu_csi_init_interface(uint16_t width, uint16_t height, uint32_t pixel_fmt,
+ 			IPU_CSI_CLK_MODE_CCIR1120_INTERLACED_DDR) ||
+ 		(cfg_param.clk_mode ==
+ 			IPU_CSI_CLK_MODE_CCIR1120_INTERLACED_SDR)) {
+-		_ipu_csi_ccir_err_detection_enable(csi);
+ 		__raw_writel(0x40030, CSI_CCIR_CODE_1(csi));
+ 		__raw_writel(0xFF0000, CSI_CCIR_CODE_3(csi));
++		_ipu_csi_ccir_err_detection_enable(csi);
+ 	} else if ((cfg_param.clk_mode == IPU_CSI_CLK_MODE_GATED_CLK) ||
+ 		   (cfg_param.clk_mode == IPU_CSI_CLK_MODE_NONGATED_CLK)) {
+ 		_ipu_csi_ccir_err_detection_disable(csi);
+@@ -147,7 +172,23 @@ ipu_csi_init_interface(uint16_t width, uint16_t height, uint32_t pixel_fmt,
+ }
+ EXPORT_SYMBOL(ipu_csi_init_interface);
+ 
+-/*! _ipu_csi_mclk_set
++/*!
++ * ipu_csi_get_sensor_protocol
++ *
++ * @param	csi         csi 0 or csi 1
++ *
++ * @return	Returns sensor protocol
++ */
++int32_t ipu_csi_get_sensor_protocol(uint32_t csi)
++{
++	return (__raw_readl(CSI_SENS_CONF(csi)) &
++		CSI_SENS_CONF_SENS_PRTCL_MASK) >>
++		CSI_SENS_CONF_SENS_PRTCL_SHIFT;
++}
++EXPORT_SYMBOL(ipu_csi_get_sensor_protocol);
++
++/*!
++ * _ipu_csi_mclk_set
+  *
+  * @param	pixel_clk   desired pixel clock frequency in Hz
+  * @param	csi         csi 0 or csi 1
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index 87a7cf2..73e22cd 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -55,6 +55,7 @@ int g_ipu_irq[2];
+ int g_ipu_hw_rev;
+ bool g_sec_chan_en[24];
+ bool g_thrd_chan_en[24];
++bool g_chan_is_interlaced[52];
+ uint32_t g_channel_init_mask;
+ uint32_t g_channel_enable_mask;
+ DEFINE_SPINLOCK(ipu_lock);
+@@ -497,6 +498,13 @@ int32_t ipu_init_channel(ipu_channel_t channel, ipu_channel_params_t *params)
+ 			goto err;
+ 		}
+ 
++		if (params->csi_mem.interlaced)
++			g_chan_is_interlaced[channel_2_dma(channel,
++				IPU_OUTPUT_BUFFER)] = true;
++		else
++			g_chan_is_interlaced[channel_2_dma(channel,
++				IPU_OUTPUT_BUFFER)] = false;
++
+ 		ipu_smfc_use_count++;
+ 		g_ipu_csi_channel[params->csi_mem.csi] = channel;
+ 
+@@ -1084,9 +1092,9 @@ int32_t ipu_init_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
+ 		spin_unlock_irqrestore(&ipu_lock, lock_flags);
+ 	}
+ 
+-	if (_ipu_chan_is_interlaced(channel)) {
++	if (_ipu_disp_chan_is_interlaced(channel) ||
++		g_chan_is_interlaced[dma_chan])
+ 		_ipu_ch_param_set_interlaced_scan(dma_chan);
+-	}
+ 
+ 	if (_ipu_is_ic_chan(dma_chan) || _ipu_is_irt_chan(dma_chan)) {
+ 		burst_size = _ipu_ch_param_get_burst_size(dma_chan);
+diff --git a/drivers/mxc/ipu3/ipu_disp.c b/drivers/mxc/ipu3/ipu_disp.c
+index ba58470..77f2fb9 100644
+--- a/drivers/mxc/ipu3/ipu_disp.c
++++ b/drivers/mxc/ipu3/ipu_disp.c
+@@ -645,7 +645,7 @@ void _ipu_dc_uninit(int dc_chan)
+ 	}
+ }
+ 
+-int _ipu_chan_is_interlaced(ipu_channel_t channel)
++int _ipu_disp_chan_is_interlaced(ipu_channel_t channel)
+ {
+ 	if (channel == MEM_DC_SYNC)
+ 		return !!(__raw_readl(DC_WR_CH_CONF_1) &
+diff --git a/drivers/mxc/ipu3/ipu_prv.h b/drivers/mxc/ipu3/ipu_prv.h
+index d3bc23b..d9c4296 100644
+--- a/drivers/mxc/ipu3/ipu_prv.h
++++ b/drivers/mxc/ipu3/ipu_prv.h
+@@ -66,7 +66,7 @@ void _ipu_dp_dc_enable(ipu_channel_t channel);
+ void _ipu_dp_dc_disable(ipu_channel_t channel, bool swap);
+ void _ipu_dmfc_init(int dmfc_type, int first);
+ void _ipu_dmfc_set_wait4eot(int dma_chan, int width);
+-int _ipu_chan_is_interlaced(ipu_channel_t channel);
++int _ipu_disp_chan_is_interlaced(ipu_channel_t channel);
+ 
+ void _ipu_ic_enable_task(ipu_channel_t channel);
+ void _ipu_ic_disable_task(ipu_channel_t channel);
+diff --git a/drivers/mxc/ipu3/ipu_regs.h b/drivers/mxc/ipu3/ipu_regs.h
+index e393699..e8b067a 100644
+--- a/drivers/mxc/ipu3/ipu_regs.h
++++ b/drivers/mxc/ipu3/ipu_regs.h
+@@ -470,6 +470,7 @@ enum {
+ 	CSI_SENS_CONF_HSYNC_POL_SHIFT = 1,
+ 	CSI_SENS_CONF_DATA_POL_SHIFT = 2,
+ 	CSI_SENS_CONF_PIX_CLK_POL_SHIFT = 3,
++	CSI_SENS_CONF_SENS_PRTCL_MASK = 0x00000070L,
+ 	CSI_SENS_CONF_SENS_PRTCL_SHIFT = 4,
+ 	CSI_SENS_CONF_PACK_TIGHT_SHIFT = 7,
+ 	CSI_SENS_CONF_DATA_WIDTH_SHIFT = 11,
+diff --git a/include/linux/ipu.h b/include/linux/ipu.h
+index e060d37..493a4ce 100644
+--- a/include/linux/ipu.h
++++ b/include/linux/ipu.h
+@@ -304,8 +304,9 @@ typedef enum {
+ typedef union {
+ 	struct {
+ 		uint32_t csi;
+-		bool mipi_en;
+ 		uint32_t mipi_id;
++		bool mipi_en;
++		bool interlaced;
+ 	} csi_mem;
+ 	struct {
+ 		uint32_t in_width;
+@@ -1003,6 +1004,8 @@ int32_t ipu_adc_init_ifc_timing(display_port_t disp, bool read,
+ int32_t ipu_csi_init_interface(uint16_t width, uint16_t height,
+ 			       uint32_t pixel_fmt, ipu_csi_signal_cfg_t sig);
+ 
++int32_t ipu_csi_get_sensor_protocol(uint32_t csi);
++
+ int32_t ipu_csi_enable_mclk(int src, bool flag, bool wait);
+ 
+ static inline int32_t ipu_csi_enable_mclk_if(int src, uint32_t csi,
+-- 
+1.5.4.4
+

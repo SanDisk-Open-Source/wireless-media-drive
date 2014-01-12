@@ -1,0 +1,118 @@
+From 23aae3a2f7c071810f20094c40b54592c16bf556 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 30 Nov 2010 12:35:50 +0800
+Subject: [PATCH] ENGR00134154-1 MSL: add sync between usb resume and usb wakeup thread for mx28
+
+The usb wakeup thread should be prior to usb system resume
+during usb wakeup process. It adds wait_event_interruptible
+at usb resume process, and the usb wakeup irq will set event,
+and the usb wakeup thread will clear event.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/mach-mx28/usb_dr.c    |    5 ++++-
+ arch/arm/mach-mx28/usb_h1.c    |    5 ++++-
+ arch/arm/plat-mxs/usb_wakeup.c |    8 ++++++++
+ 3 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/usb_dr.c b/arch/arm/mach-mx28/usb_dr.c
+index ba3af8c..05eb706 100644
+--- a/arch/arm/mach-mx28/usb_dr.c
++++ b/arch/arm/mach-mx28/usb_dr.c
+@@ -29,8 +29,8 @@
+ #include <mach/arc_otg.h>
+ #include "usb.h"
+ #include "mx28_pins.h"
+-
+ #define USB_POWER_ENABLE MXS_PIN_TO_GPIO(PINID_AUART2_TX)
++
+ extern int clk_get_usecount(struct clk *clk);
+ static struct clk *usb_clk;
+ static struct clk *usb_phy_clk;
+@@ -464,6 +464,7 @@ static int __init usb_dr_init(void)
+ 	/* wake_up_enalbe is useless, just for usb_register_remote_wakeup execution*/
+ 	dr_utmi_config.wake_up_enable = _device_wakeup_enable;
+ 	dr_utmi_config.irq_delay = 0;
++	dr_utmi_config.wakeup_pdata = &usbdr_wakeup_config;
+ 
+ 	if (platform_device_register(&dr_otg_device))
+ 		printk(KERN_ERR "usb DR: can't register otg device\n");
+@@ -479,6 +480,7 @@ static int __init usb_dr_init(void)
+ 	dr_utmi_config.phy_lowpower_suspend = _host_phy_lowpower_suspend;
+ 	dr_utmi_config.is_wakeup_event = _is_host_wakeup;
+ 	dr_utmi_config.irq_delay = 0;
++	dr_utmi_config.wakeup_pdata = &usbdr_wakeup_config;
+ 	pdev = host_pdev_register(otg_resources,
+ 			ARRAY_SIZE(otg_resources), &dr_utmi_config);
+ 	if (pdev)
+@@ -493,6 +495,7 @@ static int __init usb_dr_init(void)
+ 	dr_utmi_config.phy_lowpower_suspend = _device_phy_lowpower_suspend;
+ 	dr_utmi_config.is_wakeup_event = _is_device_wakeup;
+ 	dr_utmi_config.irq_delay = 0;
++	dr_utmi_config.wakeup_pdata = &usbdr_wakeup_config;
+ 
+ 	if (platform_device_register(&dr_udc_device))
+ 		printk(KERN_ERR "usb DR: can't register udc device\n");
+diff --git a/arch/arm/mach-mx28/usb_h1.c b/arch/arm/mach-mx28/usb_h1.c
+index 8bb5a16..f4d5ba4 100644
+--- a/arch/arm/mach-mx28/usb_h1.c
++++ b/arch/arm/mach-mx28/usb_h1.c
+@@ -235,7 +235,10 @@ struct platform_device mxs_usbh1_wakeup_device = {
+ 
+ static int __init usbh1_init(void)
+ {
+-	struct platform_device *pdev = host_pdev_register(usbh1_resources,
++	struct platform_device *pdev;
++
++	usbh1_config.wakeup_pdata = &usbh1_wakeup_config;
++	pdev = host_pdev_register(usbh1_resources,
+ 			ARRAY_SIZE(usbh1_resources), &usbh1_config);
+ 
+ 	pr_debug("%s: \n", __func__);
+diff --git a/arch/arm/plat-mxs/usb_wakeup.c b/arch/arm/plat-mxs/usb_wakeup.c
+index 1f619f1..c5b37ed 100644
+--- a/arch/arm/plat-mxs/usb_wakeup.c
++++ b/arch/arm/plat-mxs/usb_wakeup.c
+@@ -59,10 +59,12 @@ static bool usb2_is_in_lowpower(struct wakeup_ctrl *ctrl)
+ 
+ static void delay_process_wakeup(struct wakeup_ctrl *ctrl)
+ {
++	struct fsl_usb2_wakeup_platform_data *pdata = ctrl->pdata;
+ 	disable_irq_nosync(ctrl->wakeup_irq);
+ 	if ((ctrl->usb_irq > 0) && (ctrl->wakeup_irq != ctrl->usb_irq))
+ 		disable_irq_nosync(ctrl->usb_irq);
+ 
++	pdata->usb_wakeup_is_pending = true;
+ 	complete(&ctrl->event);
+ }
+ 
+@@ -111,6 +113,8 @@ static void wakeup_event_handler(struct wakeup_ctrl *ctrl)
+ 		}
+ 	}
+ 	wakeup_clk_gate(ctrl->pdata, false);
++	pdata->usb_wakeup_is_pending = false;
++	wake_up(&pdata->wq);
+ }
+ 
+ static int wakeup_event_thread(void *param)
+@@ -147,6 +151,9 @@ static int wakeup_dev_probe(struct platform_device *pdev)
+ 		return -ENOMEM;
+ 	pdata = pdev->dev.platform_data;
+ 	ctrl->pdata = pdata;
++	init_waitqueue_head(&pdata->wq);
++	pdata->usb_wakeup_is_pending = false;
++
+ 	init_completion(&ctrl->event);
+ 	ctrl->wakeup_irq = platform_get_irq(pdev, 0);
+ 	ctrl->usb_irq = platform_get_irq(pdev, 1);
+@@ -164,6 +171,7 @@ static int wakeup_dev_probe(struct platform_device *pdev)
+ 		goto error2;
+ 	g_ctrl = ctrl;
+ 
++	printk(KERN_DEBUG "the wakeup pdata is 0x%p\n", pdata);
+ 	return 0;
+ error2:
+ 	free_irq(ctrl->wakeup_irq, (void *)ctrl);
+-- 
+1.5.4.4
+

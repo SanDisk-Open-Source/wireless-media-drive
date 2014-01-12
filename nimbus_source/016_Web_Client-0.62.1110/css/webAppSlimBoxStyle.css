@@ -1,0 +1,24 @@
+@charset "utf-8";
+/* CSS Document */
+
+/*body{ margin:0; padding:0; background:#000; color:#FFF; font-family: Arial, Helvetica, sans-serif; font-size:11px;}*/
+#slimBoxContainer{ position: absolute, margin:0 auto; padding:0 20px; background-color: #000; }
+#slimBoxContainer .closed{ text-align:right; height:145px; padding:75px 0 0 0;  }
+#slimBoxContainer .closed a{ color:#FFF; text-decoration:none;}
+#slimBoxContainer .closed a:hover{  color:#33b5e5;}
+#slimBoxContainer .showImg{ text-align:center;  margin:0 auto;}
+
+.btnContainer{ position:relative; vertical-align:top;}
+/*a.clickLeft{ background: url(../images/icons/graySlimBoxArrowLeft.png) no-repeat; width:31px; height:62px; display:block; float:left; margin-left:80px; margin-top:300px;}*/
+a.clickLeft{ background: url(../images/icons/graySlimBoxArrowLeft.png) no-repeat; width:31px; height:62px; display: block;}
+a:hover.clickLeft{ background:url(../images/icons/whiteSlimBoxArrowLeft.png) no-repeat;}
+
+/*a.clcikRight{ background: url(../images/icons/graySlimBoxArrowRight.png) no-repeat; width:31px; height:62px;  display:block; float:right;right:0px; margin-right:80px; margin-top:300px;}*/
+a.clickRight{ background: url(../images/icons/graySlimBoxArrowRight.png) no-repeat; width:31px; height:62px; display: block;}
+a:hover.clickRight{ background:url(../images/icons/whiteSlimBoxArrowRight.png) no-repeat;}
+
+.pages{ text-align:center; margin-top:40px; height:110px; }
+
+.functions{ text-align:right; }
+.functions a{color:#FFF; text-decoration:none;  margin-right:20px;}
+.functions a:hover{ color:#33b5e5;}

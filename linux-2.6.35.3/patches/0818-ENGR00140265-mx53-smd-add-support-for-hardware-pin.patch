@@ -1,0 +1,318 @@
+From 53d43f944d200f0490616c80a0de7896e45f5df7 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Thu, 24 Feb 2011 15:31:32 +0800
+Subject: [PATCH] ENGR00140265 mx53 smd: add support for hardware pin controlled suspend
+
+Add support for hardware pin controlled suspend for mx53 smd revB,
+Also reduce DRAM_SDCLK drive strength for both mx51 and mx53 on suspend
+
+1)First need to rework revB to connect pmic_stdby_req with DA9053 sys_en_gpio8
+to support hardware pin suspend
+2)for revB with new OTP DA9053 chip, any irq can wake up the system reliably
+3)for revB with old OTP DA9053 chip, need to rework pwron key and only pwron
+key irq can wake up the system reliably
+4)for mx53 smd revA and loco board still use sw command to suspend, and resume
+it not stable
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/pm.c                    |   20 +++++--
+ arch/arm/mach-mx5/pm_da9053.c             |   80 ++++++++++++++++++++++++++++-
+ arch/arm/mach-mx5/suspend.S               |   57 ++++++++++++++++++---
+ arch/arm/plat-mxc/include/mach/hardware.h |    4 +-
+ 4 files changed, 146 insertions(+), 15 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index fd4b3ec..dc2954c 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -61,7 +61,9 @@ extern void cpu_do_suspend_workaround(u32 sdclk_iomux_addr);
+ extern void mx50_suspend(u32 databahn_addr);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void __iomem *databahn_base;
+-extern void da9053_suspend_cmd(void);
++extern void da9053_suspend_cmd_hw(void);
++extern void da9053_suspend_cmd_sw(void);
++extern void da9053_resume_dump(void);
+ extern void pm_da9053_i2c_init(u32 base_addr);
+ 
+ extern int iram_ready;
+@@ -89,7 +91,7 @@ static void mx53_smd_loco_irq_wake_fixup(void)
+ 	/* only enable irq wakeup for da9053 */
+ 	__raw_writel(GPIO7_0_11_IRQ_BIT, tzic_base + TZIC_WAKEUP3_OFFSET);
+ 	iounmap(tzic_base);
+-	pr_debug("only da9053 irq is wakeup-enabled\n");
++	pr_info("only da9053 irq is wakeup-enabled\n");
+ }
+ 
+ static int mx5_suspend_enter(suspend_state_t state)
+@@ -119,8 +121,12 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 		if (cpu_is_mx51() || cpu_is_mx53()) {
+ 			if (machine_is_mx53_smd() ||
+ 				machine_is_mx53_loco()) {
+-				mx53_smd_loco_irq_wake_fixup();
+-				da9053_suspend_cmd();
++				if (board_is_rev(BOARD_REV_4) ||
++					machine_is_mx53_loco()) {
++					mx53_smd_loco_irq_wake_fixup();
++					da9053_suspend_cmd_sw();
++				} else
++					da9053_suspend_cmd_hw();
+ 			}
+ 			/* Run the suspend code from iRAM. */
+ 			suspend_in_iram(suspend_param1);
+@@ -237,6 +243,8 @@ static struct platform_driver mx5_pm_driver = {
+ 	.probe = mx5_pm_probe,
+ };
+ 
++#define SUSPEND_ID_MX51 1
++#define SUSPEND_ID_MX53 3
+ static int __init pm_init(void)
+ {
+ 	unsigned long iram_paddr;
+@@ -246,6 +254,7 @@ static int __init pm_init(void)
+ 		printk(KERN_ERR "mx5_pm_driver register failed\n");
+ 		return -ENODEV;
+ 	}
++	suspend_param1 = 0;
+ 	suspend_set_ops(&mx5_suspend_ops);
+ 	/* Move suspend routine into iRAM */
+ 	iram_alloc(SZ_4K, &iram_paddr);
+@@ -255,7 +264,8 @@ static int __init pm_init(void)
+ 					  MT_HIGH_VECTORS);
+ 
+ 	if (cpu_is_mx51() || cpu_is_mx53()) {
+-		suspend_param1 = IO_ADDRESS(IOMUXC_BASE_ADDR + 0x4b8);
++		suspend_param1 =
++			cpu_is_mx51() ? SUSPEND_ID_MX51 : SUSPEND_ID_MX53;
+ 		memcpy(suspend_iram_base, cpu_do_suspend_workaround,
+ 				SZ_4K);
+ 	} else if (cpu_is_mx50()) {
+diff --git a/arch/arm/mach-mx5/pm_da9053.c b/arch/arm/mach-mx5/pm_da9053.c
+index 6e24fb2..435e286 100644
+--- a/arch/arm/mach-mx5/pm_da9053.c
++++ b/arch/arm/mach-mx5/pm_da9053.c
+@@ -30,6 +30,7 @@
+ #include <linux/clk.h>
+ #include <linux/mfd/da9052/reg.h>
+ 
++#include <asm/mach-types.h>
+ #include <mach/hardware.h>
+ #include <mach/i2c.h>
+ 
+@@ -319,8 +320,23 @@ static void pm_da9053_preset_voltage(void)
+ 	pm_da9053_write_reg(DA9052_LDO10_REG, iLDO10_SUSPEND_PRESET);
+ }
+ 
++void pm_da9053_dump(int start, int end)
++{
++	u8 reg, data;
++	for (reg = start; reg <= end; reg++) {
++		pm_da9053_read_reg(reg, &data);
++		pr_info("reg %u = 0x%2x\n",
++			reg, data);
++	}
++}
++
+ #define DA9053_SLEEP_DELAY 0x1f
+-int da9053_suspend_cmd(void)
++
++#define DA9052_CONTROLC_SMD_SET 0x62
++#define DA9052_GPIO0809_SMD_SET 0x18
++#define DA9052_ID1415_SMD_SET 0x1
++
++int da9053_suspend_cmd_sw(void)
+ {
+ 	unsigned char buf[2] = {0, 0};
+ 	struct clk *i2c_clk;
+@@ -351,6 +367,45 @@ int da9053_suspend_cmd(void)
+ 	return 0;
+ }
+ 
++
++int da9053_suspend_cmd_hw(void)
++{
++	unsigned char buf[2] = {0, 0};
++	struct clk *i2c_clk;
++	u8 data;
++	buf[0] = 29;
++
++	i2c_clk = clk_get(NULL, "i2c_clk");
++	if (IS_ERR(i2c_clk)) {
++		pr_err("unable to get i2c clk\n");
++		return PTR_ERR(i2c_clk);
++	}
++	clk_enable(i2c_clk);
++
++	pm_da9053_preset_voltage();
++	pm_da9053_write_reg(DA9052_CONTROLC_REG,
++				DA9052_CONTROLC_SMD_SET);
++
++	pm_da9053_read_reg(DA9052_ID01_REG, &data);
++	data &= ~(DA9052_ID01_DEFSUPPLY | DA9052_ID01_nRESMODE);
++	pm_da9053_write_reg(DA9052_ID01_REG, data);
++
++	pm_da9053_write_reg(DA9052_GPIO0809_REG,
++			DA9052_GPIO0809_SMD_SET);
++
++	pm_da9053_read_reg(DA9052_ID1415_REG, &data);
++	data &= 0xf0;
++	data |= DA9052_ID1415_SMD_SET;
++	pm_da9053_write_reg(DA9052_ID1415_REG, data);
++
++	pm_da9053_write_reg(DA9052_SEQTIMER_REG, 0);
++	/* pm_da9053_write_reg(DA9052_SEQB_REG, 0x1f); */
++
++	clk_disable(i2c_clk);
++	clk_put(i2c_clk);
++	return 0;
++}
++
+ void da9053_restore_volt_settings(void)
+ {
+ 	u8 reg;
+@@ -383,3 +438,26 @@ int da9053_poweroff_cmd(void)
+ 	return 0;
+ }
+ 
++int da9053_resume_dump(void)
++{
++	unsigned char buf[2] = {0, 0};
++	struct clk *i2c_clk;
++	buf[0] = 29;
++
++	i2c_clk = clk_get(NULL, "i2c_clk");
++	if (IS_ERR(i2c_clk)) {
++		pr_err("unable to get i2c clk\n");
++		return PTR_ERR(i2c_clk);
++	}
++	clk_enable(i2c_clk);
++
++	pm_da9053_dump(46, 59);
++	pm_da9053_dump(25, 25);
++	pm_da9053_dump(29, 29);
++	pm_da9053_dump(36, 36);
++
++	clk_disable(i2c_clk);
++	clk_put(i2c_clk);
++	return 0;
++}
++
+diff --git a/arch/arm/mach-mx5/suspend.S b/arch/arm/mach-mx5/suspend.S
+index f5aa1cc..2e5525c 100644
+--- a/arch/arm/mach-mx5/suspend.S
++++ b/arch/arm/mach-mx5/suspend.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ /*
+  * The code contained herein is licensed under the GNU General Public
+@@ -11,11 +11,37 @@
+  */
+ 
+ #include <linux/linkage.h>
++#include <mach/hardware.h>
++#include <mach/mx5x.h>
+ 
+ #define ARM_CTRL_DCACHE  1 << 2
+ #define ARM_CTRL_ICACHE  1 << 12
+ #define ARM_AUXCR_L2EN   1 << 1
+ 
++.macro PM_SET_AND_BACKUP_REG, addr, bitmask, val, num
++	mov	r0, #(\addr & 0x000000FF)
++	orr	r0, r0, #(\addr & 0x0000FF00)
++	orr	r0, r0, #(\addr & 0x00FF0000)
++	orr	r0, r0, #(\addr & 0xFF000000)
++	ldr	r1, [r0]
++	str r1, __mx5x_temp_stack + \num * 4
++	bic r1, r1, #(\bitmask)
++	orr r1, r1, #(\val)
++	str r1, [r0]
++.endm
++
++.macro PM_SET_RESTORE_REG, addr, num
++	mov	r0, #(\addr & 0x000000FF)
++	orr	r0, r0, #(\addr & 0x0000FF00)
++	orr	r0, r0, #(\addr & 0x00FF0000)
++	orr	r0, r0, #(\addr & 0xFF000000)
++	ldr r1, __mx5x_temp_stack + \num * 4
++	str r1, [r0]
++.endm
++
++#define MX51_DRAM_SDCLK_PAD_CTRL_ADDR AIPS1_IO_ADDRESS(0x73FA84B8)
++#define MX53_DRAM_SDCLK0_PAD_CTRL_ADDR AIPS1_IO_ADDRESS(0x73FA8578)
++#define MX53_DRAM_SDCLK1_PAD_CTRL_ADDR AIPS1_IO_ADDRESS(0x73FA8570)
+ 
+ /*
+  *	cpu_do_suspend_workaround()
+@@ -79,16 +105,29 @@ FinishedClean:
+     mcr     p15, 0, r0, c1, c0, 1   @ Update aux control reg
+ 
+ 	/*Set the DDR drive strength to low */
+-	ldr        r10, [r6]
+-	and       r10, r10, #0xF1        @ clear bits 2-1
+-	str        r10, [r6]
+-
++    cmp     r6, #1
++    bne     mx53_reduce_ddr_drive_strength
++    PM_SET_AND_BACKUP_REG MX51_DRAM_SDCLK_PAD_CTRL_ADDR, 0x6, 0, 0
++mx53_reduce_ddr_drive_strength:
++    cmp     r6, #3
++    bne     mx5x_wfi
++    PM_SET_AND_BACKUP_REG MX53_DRAM_SDCLK0_PAD_CTRL_ADDR, 0x380000, 0, 0
++    PM_SET_AND_BACKUP_REG MX53_DRAM_SDCLK1_PAD_CTRL_ADDR, 0x380000, 0, 1
++
++mx5x_wfi:
+     .long     0xe320f003              @ Opcode for WFI
+ 
+ 	/*Set the DDR drive strength to max */
+-	orr       r10, r10, #0x06        @ set bits 2-1
+-	str        r10, [r6]
+-
++    cmp     r6, #1
++    bne     mx53_restore_ddr_drive_strength
++    PM_SET_RESTORE_REG MX51_DRAM_SDCLK_PAD_CTRL_ADDR, 0
++mx53_restore_ddr_drive_strength:
++    cmp     r6, #3
++    bne     mx5x_post_wfi
++    PM_SET_RESTORE_REG MX53_DRAM_SDCLK0_PAD_CTRL_ADDR, 0
++    PM_SET_RESTORE_REG MX53_DRAM_SDCLK1_PAD_CTRL_ADDR, 1
++
++mx5x_post_wfi:
+     mov     r0, #0
+     mcr     p15, 0, r0, c7, c5, 0   @ Invalidate inst cache
+ 
+@@ -146,6 +185,8 @@ FinishedInvalidate:
+     /* Restore registers */
+     ldmfd sp!, {r4,r5,r6,r7,r9,r10,r11}
+     mov		pc, lr
++__mx5x_temp_stack:
++	.space 32
+ 
+ 	.type	cpu_do_suspend, #object
+ ENTRY(cpu_do_suspend)
+diff --git a/arch/arm/plat-mxc/include/mach/hardware.h b/arch/arm/plat-mxc/include/mach/hardware.h
+index 9f6b617..3138260 100644
+--- a/arch/arm/plat-mxc/include/mach/hardware.h
++++ b/arch/arm/plat-mxc/include/mach/hardware.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc.
+  * Copyright 2008 Juergen Beisert, kernel@pengutronix.de
+  *
+  * This program is free software; you can redistribute it and/or
+@@ -42,6 +42,8 @@
+ #define BOARD_REV_1		0x000
+ #define BOARD_REV_2		0x100
+ #define BOARD_REV_3		0x200
++#define BOARD_REV_4		0x300
++#define BOARD_REV_5		0x400
+ 
+ #define IMX_IO_ADDRESS(addr, module)					\
+ 	((void __force __iomem *)					\
+-- 
+1.5.4.4
+

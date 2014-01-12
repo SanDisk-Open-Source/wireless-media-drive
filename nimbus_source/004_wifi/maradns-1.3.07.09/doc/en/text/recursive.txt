@@ -1,0 +1,342 @@
+               Using MaraDNS as a recursive DNS server
+
+   This document is a step-by-step guide to setting up MaraDNS as a
+   recursive DNS server. It assumes that MaraDNS is already
+   compiled and installed.
+
+Table of contents
+
+     * Basic configuration
+     * Using MaraDNS on a slow network
+     * Using other recursive DNS servers
+     * Using different root servers
+     * Having private host names
+     * Using authoritative records for private names
+     * Private names with custom root servers
+     * Customizing the resolution of some names
+
+Basic configuration
+
+   Once MaraDNS is installed, the mararc file needs to be set up
+   before MaraDNS will function as a recursive DNS server. This
+   file only needs to be three lines long:
+
+ ipv4_bind_addresses = "127.0.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "127.0.0.1"
+
+   This three-line file needs to be called /etc/mararc.
+
+   The first line is the IP address or addresses MaraDNS will use.
+   Here, it has the address 127.0.0.1, which means that only the
+   machine running MaraDNS will be able to access the MaraDNS
+   server--other machines will not be able to see it.
+
+   If the machine running MaraDNS will be accessed by other
+   machines, this IP needs to be changed to an IP that the machine
+   running MaraDNS has.
+
+   It is possible to have MaraDNS run on multiple IP addresses:
+
+ ipv4_bind_addresses = "10.1.3.2, 192.168.0.1, 127.0.0.1"
+
+   The second line, chroot_dir is the directory MaraDNS will be run
+   from. When MaraDNS is being used as a recursive DNS server, this
+   just has to be an empty directory, ideally owned by the root
+   user.
+
+   The third line, recursive_acl, determines the range of IPs that
+   can access the recursive DNS server. This is in IP/netmask
+   format. For example, if one has an office which uses IPs in the
+   form 192.168.1.1, 192.168.1.2, etc., and wishes to have only
+   192.168.1.any be allowed to make recursive queries:
+
+ recursive_acl = "192.168.1.0/24"
+
+   Here the "/24" indicates that we ignore the fourth number in an
+   IP when determining who can contact MaraDNS.
+
+   Once this is done, other machines can contact the MaraDNS server
+   to perform DNS queries. For example, MaraDNS is now a DNS server
+   which Windows 98 can use in "Control Panel -> Network -> TCP/IP
+   -> DNS configuration", or a UNIX system can point to from
+   /etc/resolv.conf.
+
+Using MaraDNS on a slow network
+
+   MaraDNS, on a slow network, may time out. MaraDNS normally only
+   waits two seconds for a reply from a remote DNS server. This is
+   not enough time to process queries on some slow networks. This
+   can be changed by increasing the timeout_seconds value.
+
+   Here is a mararc file which waits six seconds (instead of the
+   default two) for a reply from a remote DNS server:
+
+ ipv4_bind_addresses = "127.0.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "127.0.0.1"
+ timeout_seconds = 6
+
+Using other recursive DNS servers
+
+   It is possible to have MaraDNS contact other recursive name
+   servers, instead of contacting the actual root servers to
+   process recursive queries by using the variable upstream_servers
+   in the mararc file.
+
+   In other words, one can use one's, say, ISP's DNS servers to
+   resolve the names, and have MaraDNS act as a cache for the ISP's
+   DNS servers. Supposing that the ISP name servers have the IPs
+   10.66.77.88 and 10.99.11.22, the mararc file will look like
+   this:
+
+ ipv4_bind_addresses = "127.0.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "127.0.0.1"
+ upstream_servers = {}
+ upstream_servers["."] = "10.66.77.88, 10.99.11.22"
+
+Using different root servers
+
+   MaraDNS, by default, uses the ICANN name servers as the root
+   name servers. The reason for this default is practical: In my
+   experience, the ICANN root name servers are the ones which least
+   frequently change their IP addresses. They are the best name
+   servers for simple "set and forget" recursive environments.
+
+   It is possible, however, to change the root DNS servers used by
+   setting the root_servers variable in the mararc file. Here is
+   what such a recursive configuration (this example uses the ICANN
+   root servers; change this example to use another set of root
+   servers as needed) looks like:
+
+ ipv4_bind_addresses = "127.0.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "127.0.0.1"
+ ipv4_alias = {}
+ ipv4_alias["icann"]  = "198.41.0.4,"
+ ipv4_alias["icann"] += "192.228.79.201,"
+ ipv4_alias["icann"] += "192.33.4.12,"
+ ipv4_alias["icann"] += "128.8.10.90,"
+ ipv4_alias["icann"] += "192.203.230.10,"
+ ipv4_alias["icann"] += "192.5.5.241,"
+ ipv4_alias["icann"] += "192.112.36.4,"
+ ipv4_alias["icann"] += "128.63.2.53,"
+ ipv4_alias["icann"] += "192.36.148.17,"
+ ipv4_alias["icann"] += "192.58.128.30,"
+ ipv4_alias["icann"] += "193.0.14.129,"
+ ipv4_alias["icann"] += "199.7.83.42,"
+ ipv4_alias["icann"] += "202.12.27.33"
+ root_servers["."] = "icann"
+
+   This file will do the exact same thing as the following mararc
+   file:
+
+ ipv4_bind_addresses = "127.0.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "127.0.0.1"
+
+   The ICANN servers listed above are the ones that MaraDNS uses
+   when no root servers are specified.
+
+   As an aside, the ipv4_alias variable is a general purpose way of
+   giving names to any set of IPs in a mararc file. We can use
+   shortcuts like this, in fact:
+
+ ipv4_alias = {}
+ ipv4_alias["localhost"] = "127.0.0.1"
+ ipv4_bind_addresses = "localhost"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "localhost"
+ ipv4_alias["icann-a"] = "198.41.0.4"
+ ipv4_alias["icann-b"] = "192.228.79.201"
+ ipv4_alias["icann-c"] = "192.33.4.12"
+ ipv4_alias["icann-d"] = "128.8.10.90"
+ ipv4_alias["icann-e"] = "192.203.230.10"
+ ipv4_alias["icann-f"] = "192.5.5.241"
+ ipv4_alias["icann-g"] = "192.112.36.4"
+ ipv4_alias["icann-h"] = "128.63.2.53"
+ ipv4_alias["icann-i"] = "192.36.148.17"
+ ipv4_alias["icann-j"] = "192.58.128.30"
+ ipv4_alias["icann-k"] = "193.0.14.129"
+ ipv4_alias["icann-l"] = "199.7.83.42"
+ ipv4_alias["icann-m"] = "202.12.27.33"
+ ipv4_alias["icann"] = "icann-a,icann-b,icann-c,icann-d,icann-e,icann-f,"
+ ipv4_alias["icann"] += "icann-g,icann-h,icann-i,icann-j,icann-k,icann-l,"
+ ipv4_alias["icann"] += "icann-m"
+ root_servers["."] = "icann"
+
+   This works the same as the above two examples. The reason why we
+   don't have commas in any of the aliases besides icann is because
+   the comma before the quote is only needed on a line before a
+   line that uses the += operator.
+
+   Here is what a configuration file which uses OpenNIC's glue root
+   servers as the root servers. This list is current as of February
+   22, 2006; note that OpenNIC frequently changes these IPs and you
+   need to verify that these IPs are current at
+   http://www.opennic.unrated.net/. A number of alternate root
+   server organizations no longer exist; please make sure these
+   people still exist before using this list.
+
+ ipv4_bind_addresses = "127.0.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "127.0.0.1"
+ ipv4_alias = {}
+ # This ends with a comma because the next line is a += line
+ ipv4_alias["opennic"]  = "131.161.247.232,"
+ ipv4_alias["opennic"] += "208.185.249.250,"
+ ipv4_alias["opennic"] += "66.227.42.140,"
+ ipv4_alias["opennic"] += "66.227.42.149,"
+ ipv4_alias["opennic"] += "64.81.44.251,"
+ ipv4_alais["opennic"] += "216.87.84.214,"
+ ipv4_alias["opennic"] += "208.185.249.251,"
+ ipv4_alias["opennic"] += "131.161.247.231,"
+ # This is the last line, so no comma at the end
+ ipv4_alias["opennic"] += "65.243.92.254"
+ # Considering how often alternate root DNS server lists change or disappear,
+ # we will have the ICANN list on hand as a backup.
+ ipv4_alias["icann"]  = "198.41.0.4,"
+ ipv4_alias["icann"] += "192.228.79.201,"
+ ipv4_alias["icann"] += "192.33.4.12,"
+ ipv4_alias["icann"] += "128.8.10.90,"
+ ipv4_alias["icann"] += "192.203.230.10,"
+ ipv4_alias["icann"] += "192.5.5.241,"
+ ipv4_alias["icann"] += "192.112.36.4,"
+ ipv4_alias["icann"] += "128.63.2.53,"
+ ipv4_alias["icann"] += "192.36.148.17,"
+ ipv4_alias["icann"] += "192.58.128.30,"
+ ipv4_alias["icann"] += "193.0.14.129,"
+ ipv4_alias["icann"] += "198.32.64.12,"
+ ipv4_alias["icann"] += "202.12.27.33"
+ # Now, set the root servers; chance this to icann if you want to use the
+ # icann servers instead.
+ root_servers["."] = "opennic"
+
+Having private host names
+
+   One may wish to have private host names when running MaraDNS as
+   a recursive name server. These are names that are not attached
+   to the root servers, but will resolve on the recursive name
+   server. For example, it might make sense to have
+   "router.office." resolve to the IP of a router in an office.
+
+   There are two ways to do this with MaraDNS: By using a custom
+   root server for only names that end in "office", or by having
+   the authoritative half of MaraDNS handle custom name
+   resolutions.
+
+Using authoritative records for private names
+
+   We can have local names by taking advantage of the fact that
+   MaraDNS can act as both a recursive and authoritative name
+   server on the same IP. MaraDNS first looks up authoritative
+   names before performing recursion. For example, if
+   www.google.com is defined in a MaraDNS zone file, MaraDNS will
+   use the value in the zone file instead of contacting nameservers
+   on the internet to get the IP for www.google.com.
+
+   The procedure to do this is as follows:
+
+     * Have an authoritative and recursive DNS server share the
+       same IP. Make sure this DNS server is not accessible from
+       the public internet.
+     * For this authoritative server, have zone files for the zones
+       which one wants to have non-public information. Recursive
+       queries will be resolved as usual (since the authoritative
+       server is also a recursive server); authoritative queries
+       for the special zones will get the special data.
+     * The maradns man page has a section on firewall
+       configuration which describes how to set up an IP filter to
+       allow MaraDNS to send packets. Basically, don't allow
+       outside IPs to hit this combined server on port 53 (UDP);
+       instead allow UDP connections to ports 15000-19095.
+
+   Here is how the configuration may look:
+
+ ipv4_bind_addresses = "192.168.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "192.168.0.0/24"
+ csv2 = {}
+ csv2["office."] = "db.office"
+
+   Replace 192.168.0.1 with the IP of the machine running the
+   recursive MaraDNS; replace 192.168.0.0/24 (This means "anything
+   that begins with 192.168.0") with the IP range allowed to access
+   the recursive DNS server.
+
+   The file "db.example.com." will be a csv2 zone file with records
+   for the bogus example.com domain, such as router.example.com.
+
+   If you want to have some of these private names be CNAMES for
+   hostnames on the internet (e.g. "google.example.com. CNAME
+   www.google.com."), please read the dangling CNAME document.
+
+   More information on having host names for an internal network is
+   available in the network section of the authoritative
+   document.
+
+Private names with custom root servers
+
+   MaraDNS, starting with version 1.3.02, can have custom root name
+   servers that only resolve names in a subtree of the DNS space.
+   In other words, we can tell MaraDNS to have 192.168.0.7 resolve
+   all names ending in office by having a line like this in one's
+   mararc file:
+
+ root_servers["office."] = "192.168.0.7"
+
+   Here is how a configuration may look on 192.168.0.1, the
+   recursive server:
+
+ ipv4_bind_addresses = "192.168.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "192.168.0.0/24"
+ root_servers = {}
+ root_servers["office."] = "192.168.0.7"
+
+   And the configuration on 192.168.0.7, the authoritative server:
+
+ ipv4_bind_addresses = "192.168.0.7"
+ chroot_dir = "/etc/maradns"
+ csv2 = {}
+ csv2["office."] = "db.office"
+
+Customizing the resolution of some names
+
+   One may wish to customize the resolution of certain names when
+   using MaraDNS as both an authoritative and recursive name
+   server. For example, if a high-profile domain is hijacked (such
+   as what happened with panix.com in January of 2005), it may be
+   desirable to have the correct name for the domain be temporarily
+   locally set. This is also useful for a list of blocked sites (so
+   the user gets a friendly "this site is blocked" instead of just
+   being unable to connect to the site in question), and for setups
+   where some machines need special DNS resolution for names that
+   other machines do not need DNS resolution for.
+
+   The procedure for doing this is almost identical to the
+   procedure for having private host names as described above. Here
+   is an example relevant mararc file:
+
+ ipv4_bind_addresses = "192.168.0.1"
+ chroot_dir = "/etc/maradns"
+ recursive_acl = "192.168.0.0/24"
+ csv2 = {}
+ csv2["example.com."] = "db.example.com"
+
+   The only things that need to be changed in this mararc file are
+   the ipv4_bind_addresses and the recursive_acl parameters. The
+   csv2["example.com."] is not changed.
+
+   Now, let us suppose we want to have the A records for
+   "www.phishsite.foo" and "phishsite.foo" resolve to an IP address
+   that we control the web site for. We would add the following
+   records (lines) to the file /etc/maradns/db.example.com
+
+ www.phishsite.foo. 192.168.0.2
+ phishsite.foo. 192.168.0.2
+
+   We can also add a star record:
+
+ *.phishsite.foo. 192.168.0.2

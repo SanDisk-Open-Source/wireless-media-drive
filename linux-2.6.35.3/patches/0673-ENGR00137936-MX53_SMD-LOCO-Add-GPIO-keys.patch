@@ -1,0 +1,151 @@
+From 98d847051dac765a59146d4ca84fa5c6adffd886 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Thu, 13 Jan 2011 16:37:19 +0800
+Subject: [PATCH] ENGR00137936 MX53_SMD/LOCO Add GPIO keys.
+
+- Add LOCO GPIO keys, add power key to SMD board.
+- Enable GPIO key in default config.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 +-
+ arch/arm/mach-mx5/mx53_loco.c   |   44 +++++++++++++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/mx53_smd.c    |    9 ++++---
+ 3 files changed, 50 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 997e26d..c78929b 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -919,7 +919,7 @@ CONFIG_INPUT_KEYBOARD=y
+ # CONFIG_KEYBOARD_ATKBD is not set
+ # CONFIG_KEYBOARD_QT2160 is not set
+ # CONFIG_KEYBOARD_LKKBD is not set
+-# CONFIG_KEYBOARD_GPIO is not set
++CONFIG_KEYBOARD_GPIO=y
+ # CONFIG_KEYBOARD_TCA6416 is not set
+ # CONFIG_KEYBOARD_MATRIX is not set
+ # CONFIG_KEYBOARD_LM8323 is not set
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 5237436..5d55c5f 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -44,6 +44,7 @@
+ #include <linux/pwm_backlight.h>
+ #include <linux/fec.h>
+ #include <linux/ahci_platform.h>
++#include <linux/gpio_keys.h>
+ #include <mach/common.h>
+ #include <mach/hardware.h>
+ #include <asm/irq.h>
+@@ -81,6 +82,7 @@
+ #define MIC_DEC_B			(1*32 + 6)	/* GPIO_2_6 */
+ #define USER_UI1			(1*32 + 14)	/* GPIO_2_14 */
+ #define USER_UI2			(1*32 + 15)	/* GPIO_2_15 */
++#define MX53_nONKEY			(0*32 + 8)	/* GPIO_1_8 */
+ 
+ #define SD3_CD				(2*32 + 11)	/* GPIO_3_11 */
+ #define SD3_WP				(2*32 + 12)	/* GPIO_3_12 */
+@@ -246,6 +248,7 @@ static struct pad_desc mx53_loco_pads[] = {
+ 	MX53_PAD_NANDF_CS3__GPIO_6_16,
+ 	MX53_PAD_GPIO_5__GPIO_1_5,
+ 	MX53_PAD_GPIO_16__GPIO_7_11,
++	MX53_PAD_GPIO_8__GPIO_1_8,
+ };
+ 
+ /* working point(wp)*/
+@@ -712,6 +715,46 @@ static void mx53_loco_usbh1_vbus(bool on)
+ 		gpio_set_value(USB_PWREN, 0);
+ }
+ 
++#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
++#define GPIO_BUTTON(gpio_num, ev_code, act_low, descr, wake)	\
++{								\
++	.gpio		= gpio_num,				\
++	.type		= EV_KEY,				\
++	.code		= ev_code,				\
++	.active_low	= act_low,				\
++	.desc		= "btn " descr,				\
++	.wakeup		= wake,					\
++}
++
++static struct gpio_keys_button loco_buttons[] = {
++	GPIO_BUTTON(MX53_nONKEY, KEY_POWER, 1, "power", 1),
++	GPIO_BUTTON(USER_UI1, KEY_VOLUMEUP, 1, "volume-up", 0),
++	GPIO_BUTTON(USER_UI2, KEY_VOLUMEDOWN, 1, "volume-down", 0),
++};
++
++static struct gpio_keys_platform_data loco_button_data = {
++	.buttons	= loco_buttons,
++	.nbuttons	= ARRAY_SIZE(loco_buttons),
++};
++
++static struct platform_device loco_button_device = {
++	.name		= "gpio-keys",
++	.id		= -1,
++	.num_resources  = 0,
++	.dev		= {
++		.platform_data = &loco_button_data,
++	}
++};
++
++static void __init loco_add_device_buttons(void)
++{
++	platform_device_register(&loco_button_device);
++}
++#else
++static void __init loco_add_device_buttons(void) {}
++#endif
++
++
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -894,6 +937,7 @@ static void __init mxc_board_init(void)
+ 	mx5_usbh1_init();
+ 	mxc_register_device(&mxc_v4l2_device, NULL);
+ 	mxc_register_device(&mxc_v4l2out_device, NULL);
++	loco_add_device_buttons();
+ }
+ 
+ static void __init mx53_loco_timer_init(void)
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index a59a77d..19c17d5 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -45,6 +45,7 @@
+ #include <linux/pwm_backlight.h>
+ #include <linux/fec.h>
+ #include <linux/ahci_platform.h>
++#include <linux/gpio_keys.h>
+ #include <mach/common.h>
+ #include <mach/hardware.h>
+ #include <asm/irq.h>
+@@ -801,7 +802,7 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ };
+ 
+ #if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_MODULE)
+-#define GPIO_BUTTON(gpio_num, ev_code, act_low, descr, wake, debounce) \
++#define GPIO_BUTTON(gpio_num, ev_code, act_low, descr, wake)	\
+ {								\
+ 	.gpio		= gpio_num,				\
+ 	.type		= EV_KEY,				\
+@@ -809,12 +810,12 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	.active_low	= act_low,				\
+ 	.desc		= "btn " descr,				\
+ 	.wakeup		= wake,					\
+-	.debounce_interval = debounce,				\
+ }
+ 
+ static struct gpio_keys_button smd_buttons[] = {
+-	GPIO_BUTTON(MX53_SMD_KEY_VOL_UP, KEY_VOLUMEUP, 1, "volume-up", 0, 0),
+-	GPIO_BUTTON(MX53_SMD_KEY_VOL_DOWN, KEY_VOLUMEDOWN, 1, "volume-down", 0, 0),
++	GPIO_BUTTON(MX53_SMD_PMIC_ON_OFF_REQ, KEY_POWER, 0, "power", 1),
++	GPIO_BUTTON(MX53_SMD_KEY_VOL_UP, KEY_VOLUMEUP, 1, "volume-up", 0),
++	GPIO_BUTTON(MX53_SMD_KEY_VOL_DOWN, KEY_VOLUMEDOWN, 1, "volume-down", 0),
+ };
+ 
+ static struct gpio_keys_platform_data smd_button_data = {
+-- 
+1.5.4.4
+

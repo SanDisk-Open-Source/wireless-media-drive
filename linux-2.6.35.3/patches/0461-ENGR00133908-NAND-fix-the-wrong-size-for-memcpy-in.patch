@@ -1,0 +1,32 @@
+From 09d42460af9406f289cc997c6c3ada2a89151b7d Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 22 Nov 2010 11:31:47 +0800
+Subject: [PATCH] ENGR00133908 NAND : fix the wrong size for memcpy in mil_ecc_write_page()
+
+The buffer mil->auxiliary_virt only have nfc_goe->auxiliary_size_in_bytes bytes
+in size which is mostly very small(e.g 10 + 8).
+
+But the mtd->oobsize maybe more then one hundred. So the memcpy is overflow.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index 9dfd76e..5774e27 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -764,7 +764,8 @@ static void mil_ecc_write_page(struct mtd_info *mtd,
+ 		payload_virt = mil->payload_virt;
+ 		payload_phys = mil->payload_phys;
+ 
+-		memcpy(mil->auxiliary_virt, nand->oob_poi, mtd->oobsize);
++		memcpy(mil->auxiliary_virt, nand->oob_poi,
++				nfc_geo->auxiliary_size_in_bytes);
+ 		auxiliary_virt = mil->auxiliary_virt;
+ 		auxiliary_phys = mil->auxiliary_phys;
+ 
+-- 
+1.5.4.4
+

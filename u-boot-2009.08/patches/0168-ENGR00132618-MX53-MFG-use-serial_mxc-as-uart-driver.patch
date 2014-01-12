@@ -1,0 +1,31 @@
+From 43c5ab3e0b8c30dc95ac35a9716c6a15a3504dca Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 14 Oct 2010 20:06:27 +0800
+Subject: [PATCH] ENGR00132618 MX53 MFG:use serial_mxc as uart driver
+
+Use serial_mxc as uart driver for MX53 MFG.
+This change is required by ENGR00131779.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ include/configs/mx53_evk_mfg.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mx53_evk_mfg.h b/include/configs/mx53_evk_mfg.h
+index b2b9f4f..71f403b 100755
+--- a/include/configs/mx53_evk_mfg.h
++++ b/include/configs/mx53_evk_mfg.h
+@@ -70,8 +70,8 @@
+ /*
+  * Hardware drivers
+  */
+-#define CONFIG_MX53_UART	1
+-#define CONFIG_MX53_UART1	1
++#define CONFIG_MXC_UART 1
++#define CONFIG_UART_BASE_ADDR   UART1_BASE_ADDR
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+-- 
+1.5.4.4
+

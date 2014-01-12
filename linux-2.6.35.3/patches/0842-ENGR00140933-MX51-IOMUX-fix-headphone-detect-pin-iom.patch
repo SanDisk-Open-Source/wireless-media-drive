@@ -1,0 +1,45 @@
+From e99165a454c88e633f3f53510a6c4d2aefbc6e47 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Tue, 22 Mar 2011 10:44:55 +0800
+Subject: [PATCH] ENGR00140933 MX51 IOMUX fix headphone detect pin iomux.
+
+After iomux upgrade, this pin's iomux change to a PULL up
+100K, but not PUE bit, this will cause the pin can't work.
+
+This patch fix this.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/iomux-mx51.h |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx51.h b/arch/arm/plat-mxc/include/mach/iomux-mx51.h
+index 4c10b00..7cf2775 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx51.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx51.h
+@@ -29,6 +29,7 @@
+ 				PAD_CTL_SRE_FAST)
+ #define MX51_GPIO_PAD_CTRL2	(PAD_CTL_PKE | PAD_CTL_PUE | PAD_CTL_DSE_HIGH | \
+ 				PAD_CTL_SRE_FAST)
++#define MX51_GPIO_PAD_CTRL_PULL	(PAD_CTL_DSE_HIGH | PAD_CTL_PKE | PAD_CTL_PUE)
+ 
+ #define MX51_ECSPI_PAD_CTRL	(PAD_CTL_PKE | PAD_CTL_HYS | \
+ 				PAD_CTL_DSE_HIGH | PAD_CTL_SRE_FAST)
+@@ -1083,12 +1084,12 @@
+ #define MX51_PAD_NANDF_RDY_INT__NANDF_RDY_INT	(_MX51_PAD_NANDF_RDY_INT__NANDF_RDY_INT | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_RDY_INT__SD3_CMD		(_MX51_PAD_NANDF_RDY_INT__SD3_CMD | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_D15__ECSPI2_MOSI		(_MX51_PAD_NANDF_D15__ECSPI2_MOSI | MUX_PAD_CTRL(MX51_ECSPI_PAD_CTRL))
+-#define MX51_PAD_NANDF_D15__GPIO3_25		(_MX51_PAD_NANDF_D15__GPIO3_25 | MUX_PAD_CTRL(MX51_GPIO_PAD_CTRL))
++#define MX51_PAD_NANDF_D15__GPIO3_25		(_MX51_PAD_NANDF_D15__GPIO3_25 | MUX_PAD_CTRL(MX51_GPIO_PAD_CTRL_PULL | PAD_CTL_PUS_100K_UP))
+ #define MX51_PAD_NANDF_D15__NANDF_D15		(_MX51_PAD_NANDF_D15__NANDF_D15 | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_D15__PATA_DATA15		(_MX51_PAD_NANDF_D15__PATA_DATA15 | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_D15__SD3_DAT7		(_MX51_PAD_NANDF_D15__SD3_DAT7 | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_D14__ECSPI2_SS3		(_MX51_PAD_NANDF_D14__ECSPI2_SS3 | MUX_PAD_CTRL(MX51_ECSPI_PAD_CTRL))
+-#define MX51_PAD_NANDF_D14__GPIO3_26		(_MX51_PAD_NANDF_D14__GPIO3_26 | MUX_PAD_CTRL(MX51_GPIO_PAD_CTRL | PAD_CTL_PUS_100K_UP))
++#define MX51_PAD_NANDF_D14__GPIO3_26		(_MX51_PAD_NANDF_D14__GPIO3_26 | MUX_PAD_CTRL(MX51_GPIO_PAD_CTRL_PULL | PAD_CTL_PUS_100K_UP))
+ #define MX51_PAD_NANDF_D14__NANDF_D14		(_MX51_PAD_NANDF_D14__NANDF_D14 | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_D14__PATA_DATA14		(_MX51_PAD_NANDF_D14__PATA_DATA14 | MUX_PAD_CTRL(NO_PAD_CTRL))
+ #define MX51_PAD_NANDF_D14__SD3_DAT6		(_MX51_PAD_NANDF_D14__SD3_DAT6 | MUX_PAD_CTRL(NO_PAD_CTRL))
+-- 
+1.5.4.4
+

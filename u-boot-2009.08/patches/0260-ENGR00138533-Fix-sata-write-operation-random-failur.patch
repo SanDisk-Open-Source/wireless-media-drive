@@ -1,0 +1,45 @@
+From efe14fe5ca3a4bb199abbe6739f08121496d98f1 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 28 Feb 2011 17:55:32 +0800
+Subject: [PATCH] ENGR00138533: Fix sata write operation random failure issue
+
+Parameter of calling to memalign is wrong.
+Thus need to modify it.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/block/dwc_ahsata.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/block/dwc_ahsata.c b/drivers/block/dwc_ahsata.c
+index d0dc838..8b31ae9 100644
+--- a/drivers/block/dwc_ahsata.c
++++ b/drivers/block/dwc_ahsata.c
+@@ -118,6 +118,7 @@ static inline void sdelay(u32 sec)
+ 		mdelay(1000);
+ }
+ 
++#ifdef DWC_AHSATA_DEBUG
+ void dprint_buffer(u8 *buf, s32 len)
+ {
+ 	s32 i, j;
+@@ -136,6 +137,7 @@ void dprint_buffer(u8 *buf, s32 len)
+ 	}
+ 	printf("\n\r");
+ }
++#endif
+ 
+ static inline u32 ahci_port_base(u32 base, u32 port)
+ {
+@@ -408,7 +410,7 @@ static int ahci_init_one(int pdev)
+ 	ahci_print_info(probe_ent);
+ 
+ #ifdef CONFIG_ARCH_MMU
+-	dma_buf = (u8 *)memalign(ATA_MAX_SECTORS * ATA_SECT_SIZE, 4);
++	dma_buf = (u8 *)memalign(4, ATA_MAX_SECTORS * ATA_SECT_SIZE);
+ 	if (NULL == dma_buf) {
+ 		printf("Fail to alloc buf for dma access!\n");
+ 		return 0;
+-- 
+1.5.4.4
+

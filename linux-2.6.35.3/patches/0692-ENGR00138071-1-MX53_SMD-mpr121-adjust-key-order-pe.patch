@@ -1,0 +1,28 @@
+From 4227cd969fe4be5035c37a9153cb2fe6757bda91 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Mon, 17 Jan 2011 20:10:36 +0800
+Subject: [PATCH] ENGR00138071-1 MX53_SMD: mpr121: adjust key order per hardware design.
+
+Change key order per MX53 SMD board design.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 1517a1a..a9f0c4e 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -731,7 +731,7 @@ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
+ };
+ 
+ static u16 smd_touchkey_martix[4] = {
+-	KEY_SEARCH, KEY_BACK, KEY_HOME, KEY_MENU
++	KEY_BACK, KEY_HOME, KEY_MENU, KEY_SEARCH,
+ };
+ 
+ static struct mpr121_platform_data mpr121_keyboard_platdata = {
+-- 
+1.5.4.4
+

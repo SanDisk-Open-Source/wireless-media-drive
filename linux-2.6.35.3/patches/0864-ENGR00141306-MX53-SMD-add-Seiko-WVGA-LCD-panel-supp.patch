@@ -1,0 +1,43 @@
+From 9266381d6dd58e9dd9ee07d88d0b59a04449dd0a Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 29 Mar 2011 15:06:20 +0800
+Subject: [PATCH] ENGR00141306 MX53 SMD: add Seiko WVGA LCD panel support
+
+This patch adds Seiko WVGA LCD panel support in MX53 SMD
+board. The video mode setting is:
+video=mxcdi0fb:RGB24,SEIKO-WVGA di0_primary
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 110264f..5e0d18b 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -424,6 +424,12 @@ static struct fb_videomode video_modes[] = {
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
++	/* 800x480 @ 60 Hz , pixel clk @ 32MHz */
++	"SEIKO-WVGA", 60, 800, 480, 29850, 89, 164, 23, 10, 10, 10,
++	FB_SYNC_CLK_LAT_FALL,
++	FB_VMODE_NONINTERLACED,
++	0,},
++	{
+ 	/* 1600x1200 @ 60 Hz 162M pixel clk*/
+ 	"UXGA", 60, 1600, 1200, 6172,
+ 	304, 64,
+@@ -1134,6 +1140,8 @@ static void __init mx53_smd_io_init(void)
+ 	gpio_request(MX53_SMD_ALS_INT, "als int");
+ 	gpio_direction_input(MX53_SMD_ALS_INT);
+ 
++	gpio_request(MX53_SMD_LCD_PWR_EN, "lcd-pwr-en");
++	gpio_direction_output(MX53_SMD_LCD_PWR_EN, 1);
+ }
+ 
+ /*!
+-- 
+1.5.4.4
+

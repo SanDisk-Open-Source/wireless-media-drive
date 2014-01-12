@@ -1,0 +1,29 @@
+From a9aa0c26a39ef9d281c2ab717f604aa006940cff Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Mon, 18 Apr 2011 15:25:53 +0800
+Subject: [PATCH] ENGR00142258 isolate EIM signals and boot configuration signals
+
+Fix the previous setting for GP6_11.
+set UART2_RXD (GP6_11) to high level, not low.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 6e0cd88..6f4255a 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1854,7 +1854,7 @@ static void __init mx50_rdp_io_init(void)
+ 		gpio_direction_output(UART1_RTS, 1);
+ 		/* isolate EIM signals and boot configuration signals. */
+ 		gpio_request(UART2_RX, "eim-bootcfg-iso");
+-		gpio_direction_output(UART2_RX, 0);
++		gpio_direction_output(UART2_RX, 1);
+ 	}
+ 
+ 	/* Sii902x HDMI controller */
+-- 
+1.5.4.4
+

@@ -1,0 +1,595 @@
+From 5ceff9165b3d259f82e5ea181fee9bd6be25bf28 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 18 May 2010 16:43:51 +0800
+Subject: [PATCH] ENGR00123551: Add mx25 splash screen support
+
+Add mx25 splash screen support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+Signed-off-by: Renato Frias <renato.frias@freescale.com>
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx25_3stack/mx25_3stack.c |  112 +++++++++++++++++++++++++-
+ common/lcd.c                              |   48 ++++++++---
+ drivers/video/Makefile                    |    1 +
+ drivers/video/mx2fb.c                     |  125 +++++++++++++++++++++++++++++
+ include/configs/mx25_3stack.h             |   32 +++++++-
+ include/lcd.h                             |   22 +++++
+ include/mx2fb.h                           |   47 +++++++++++
+ 7 files changed, 373 insertions(+), 14 deletions(-)
+
+diff --git a/board/freescale/mx25_3stack/mx25_3stack.c b/board/freescale/mx25_3stack/mx25_3stack.c
+index 66e4779..db16c32 100644
+--- a/board/freescale/mx25_3stack/mx25_3stack.c
++++ b/board/freescale/mx25_3stack/mx25_3stack.c
+@@ -33,6 +33,11 @@
+ #include <asm/arch/gpio.h>
+ #include <imx_spi.h>
+ 
++#ifdef CONFIG_LCD
++#include <mx2fb.h>
++#include <lcd.h>
++#endif
++
+ #ifdef CONFIG_CMD_MMC
+ #include <mmc.h>
+ #include <fsl_esdhc.h>
+@@ -41,6 +46,9 @@
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ static u32 system_rev;
++#ifdef CONFIG_LCD
++char lcd_cmap[256];
++#endif
+ 
+ u32 get_board_rev(void)
+ {
+@@ -198,11 +206,104 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ 	}
+ }
+ 
++#ifdef CONFIG_LCD
++
++vidinfo_t panel_info = {
++	vl_refresh:60,
++	vl_col:640,
++	vl_row:480,
++	vl_pixclock:39683,
++	vl_left_margin:45,
++	vl_right_margin:114,
++	vl_upper_margin:33,
++	vl_lower_margin:11,
++	vl_hsync:1,
++	vl_vsync:1,
++	vl_sync : FB_SYNC_CLK_LAT_FALL,
++	vl_mode:0,
++	vl_flag:0,
++	vl_bpix:4,
++	cmap : (void *)lcd_cmap,
++};
++
++void lcdc_hw_init(void)
++{
++	/* Set VSTBY_REQ as GPIO3[17] on ALT5 */
++	mxc_request_iomux(MX25_PIN_VSTBY_REQ, MUX_CONFIG_ALT5);
++
++	/* Set GPIO3[17] as output */
++	writel(0x20000, GPIO3_BASE + 0x04);
++
++	/* Set GPIOE as LCDC_LD[16] on ALT2 */
++	mxc_request_iomux(MX25_PIN_GPIO_E, MUX_CONFIG_ALT2);
++
++	/* Set GPIOF as LCDC_LD[17] on ALT2 */
++	mxc_request_iomux(MX25_PIN_GPIO_F, MUX_CONFIG_ALT2);
++
++	/* Enable pull up on LCDC_LD[16]	*/
++	mxc_iomux_set_pad(MX25_PIN_GPIO_E,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU);
++
++	/* Enable pull up on LCDC_LD[17]	*/
++	mxc_iomux_set_pad(MX25_PIN_GPIO_F,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_100K_PU);
++
++	/* Enable Pull/Keeper for pad LSCKL */
++	mxc_iomux_set_pad(MX25_PIN_LSCLK,
++			PAD_CTL_PKE_ENABLE | PAD_CTL_PUE_PUD |
++			PAD_CTL_100K_PU | PAD_CTL_SRE_FAST);
++
++	gd->fb_base = CONFIG_FB_BASE;
++}
++
++#ifdef CONFIG_SPLASH_SCREEN
++int setup_splash_img()
++{
++#ifdef CONFIG_SPLASH_IS_IN_MMC
++	int mmc_dev = CONFIG_SPLASH_IMG_MMC_DEV;
++	ulong offset = CONFIG_SPLASH_IMG_OFFSET;
++	ulong size = CONFIG_SPLASH_IMG_SIZE;
++	ulong addr = 0;
++	char *s = NULL;
++	struct mmc *mmc = find_mmc_device(mmc_dev);
++	uint blk_start, blk_cnt, n;
++
++	s = getenv("splashimage");
++
++	if (NULL == s) {
++		puts("env splashimage not found!\n");
++		return -1;
++	}
++	addr = simple_strtoul(s, NULL, 16);
++
++	if (!mmc) {
++		printf("MMC Device %d not found\n",
++			mmc_dev);
++		return -1;
++	}
++
++	if (mmc_init(mmc)) {
++		puts("MMC init failed\n");
++		return  -1;
++	}
++
++	blk_start = ALIGN(offset, mmc->read_bl_len) / mmc->read_bl_len;
++	blk_cnt   = ALIGN(size, mmc->read_bl_len) / mmc->read_bl_len;
++	n = mmc->block_dev.block_read(mmc_dev, blk_start,
++					blk_cnt, (u_char *)addr);
++	flush_cache((ulong)addr, blk_cnt * mmc->read_bl_len);
++
++	return (n == blk_cnt) ? 0 : -1;
++#endif
++}
++#endif
++#endif
++
+ int board_init(void)
+ {
+ 
+ #ifdef CONFIG_MFG
+-/* MFG firmware need reset usb to avoid host crash firstly */
++	/* MFG firmware need reset usb to avoid host crash firstly */
+ #define USBCMD 0x140
+ 	int val = readl(USB_BASE + USBCMD);
+ 	val &= ~0x1; /*RS bit*/
+@@ -291,6 +392,10 @@ int board_init(void)
+ 	mxc_iomux_set_pad(MX25_PIN_I2C1_CLK, 0x1E8);
+ 	mxc_iomux_set_pad(MX25_PIN_I2C1_DAT, 0x1E8);
+ 
++#ifdef CONFIG_LCD
++	lcdc_hw_init();
++#endif
++
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX25_3DS;    /* board id for linux */
+ 	gd->bd->bi_boot_params = 0x80000100;    /* address of boot parameters */
+ 
+@@ -314,6 +419,11 @@ int board_late_init(void)
+ 	mxc_cpld_spi_init();
+ #endif
+ 
++#ifdef CONFIG_SPLASH_SCREEN
++	if (!setup_splash_img())
++		printf("Read splash screen failed!\n");
++#endif
++
+ 	return 0;
+ }
+ #endif
+diff --git a/common/lcd.c b/common/lcd.c
+index dc8fea6..85969ff 100644
+--- a/common/lcd.c
++++ b/common/lcd.c
+@@ -477,7 +477,7 @@ ulong lcd_setmem (ulong addr)
+ 
+ static void lcd_setfgcolor (int color)
+ {
+-#ifdef CONFIG_ATMEL_LCD
++#if defined(CONFIG_ATMEL_LCD) || defined(CONFIG_MXC2_LCD)
+ 	lcd_color_fg = color;
+ #else
+ 	lcd_color_fg = color & 0x0F;
+@@ -488,7 +488,7 @@ static void lcd_setfgcolor (int color)
+ 
+ static void lcd_setbgcolor (int color)
+ {
+-#ifdef CONFIG_ATMEL_LCD
++#if defined(CONFIG_ATMEL_LCD) || defined(CONFIG_MXC2_LCD)
+ 	lcd_color_bg = color;
+ #else
+ 	lcd_color_bg = color & 0x0F;
+@@ -649,14 +649,20 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ 
+ 	bpix = NBITS(panel_info.vl_bpix);
+ 
+-	if ((bpix != 1) && (bpix != 8) && (bpix != 16)) {
++	if ((bpix != 1) && (bpix != 8) && (bpix != 16) && (bpix != 24)) {
+ 		printf ("Error: %d bit/pixel mode, but BMP has %d bit/pixel\n",
+ 			bpix, bmp_bpix);
+ 		return 1;
+ 	}
+ 
++#if defined(CONFIG_BMP_24BPP)
++	/* We support displaying 24bpp BMPs on 16bpp LCDs */
++	if (bpix != bmp_bpix && (bmp_bpix != 24 || bpix != 16) &&
++		(bmp_bpix != 8 || bpix != 16)) {
++#else
+ 	/* We support displaying 8bpp BMPs on 16bpp LCDs */
+ 	if (bpix != bmp_bpix && (bmp_bpix != 8 || bpix != 16)) {
++#endif
+ 		printf ("Error: %d bit/pixel mode, but BMP has %d bit/pixel\n",
+ 			bpix,
+ 			le16_to_cpu(bmp->header.bit_count));
+@@ -676,7 +682,6 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ #elif !defined(CONFIG_ATMEL_LCD)
+ 		cmap = panel_info.cmap;
+ #endif
+-
+ 		cmap_base = cmap;
+ 
+ 		/* Set color map */
+@@ -705,12 +710,12 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ #endif
+ 
+ 	/*
+-	 *  BMP format for Monochrome assumes that the state of a
++	 * BMP format for Monochrome assumes that the state of a
+ 	 * pixel is described on a per Bit basis, not per Byte.
+-	 *  So, in case of Monochrome BMP we should align widths
++	 * So, in case of Monochrome BMP we should align widths
+ 	 * on a byte boundary and convert them from Bit to Byte
+ 	 * units.
+-	 *  Probably, PXA250 and MPC823 process 1bpp BMP images in
++	 * Probably, PXA250 and MPC823 process 1bpp BMP images in
+ 	 * their own ways, so make the converting to be MCC200
+ 	 * specific.
+ 	 */
+@@ -722,9 +727,7 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ 		pwidth= ((pwidth + 7) & ~7) >> 3;
+ 	}
+ #endif
+-
+ 	padded_line = (width&0x3) ? ((width&~0x3)+4) : (width);
+-
+ #ifdef CONFIG_SPLASH_SCREEN_ALIGN
+ 	if (x == BMP_ALIGN_CENTER)
+ 		x = max(0, (pwidth - width) / 2);
+@@ -743,8 +746,7 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ 		height = panel_info.vl_row - y;
+ 
+ 	bmap = (uchar *)bmp + le32_to_cpu (bmp->header.data_offset);
+-	fb   = (uchar *) (lcd_base +
+-		(y + height - 1) * lcd_line_length + x);
++	fb   = (uchar *) (lcd_base + (y + height - 1) * lcd_line_length + x);
+ 
+ 	switch (bmp_bpix) {
+ 	case 1: /* pass through */
+@@ -794,7 +796,28 @@ int lcd_display_bitmap(ulong bmp_image, int x, int y)
+ 		}
+ 		break;
+ #endif /* CONFIG_BMP_16BPP */
+-
++#if defined(CONFIG_BMP_24BPP)
++	case 24:
++		if (bpix != 16) {
++			printf("Error: %d bit/pixel mode,"
++				"but BMP has %d bit/pixel\n",
++				bpix, bmp_bpix);
++			break;
++		}
++		for (i = 0; i < height; ++i) {
++			WATCHDOG_RESET();
++			for (j = 0; j < width; j++) {
++				*(uint16_t *)fb = ((*(bmap + 2) << 8) & 0xf800)
++						| ((*(bmap + 1) << 3) & 0x07e0)
++						| ((*(bmap) >> 3) & 0x001f);
++				bmap += 3;
++				fb += sizeof(uint16_t) / sizeof(*fb);
++			}
++			bmap += (width - padded_line);
++			fb   -= ((2*width) + lcd_line_length);
++		}
++		break;
++#endif /* CONFIG_BMP_24BPP */
+ 	default:
+ 		break;
+ 	};
+@@ -815,6 +838,7 @@ static void *lcd_logo (void)
+ 		do_splash = 0;
+ 
+ 		addr = simple_strtoul (s, NULL, 16);
++
+ #ifdef CONFIG_SPLASH_SCREEN_ALIGN
+ 		if ((s = getenv ("splashpos")) != NULL) {
+ 			if (s[0] == 'm')
+diff --git a/drivers/video/Makefile b/drivers/video/Makefile
+index bb6b5a0..c140312 100644
+--- a/drivers/video/Makefile
++++ b/drivers/video/Makefile
+@@ -28,6 +28,7 @@ LIB	:= $(obj)libvideo.a
+ COBJS-$(CONFIG_ATI_RADEON_FB) += ati_radeon_fb.o
+ COBJS-$(CONFIG_ATMEL_LCD) += atmel_lcdfb.o
+ COBJS-$(CONFIG_CFB_CONSOLE) += cfb_console.o
++COBJS-$(CONFIG_MXC2_LCD) += mx2fb.o
+ COBJS-$(CONFIG_S6E63D6) += s6e63d6.o
+ COBJS-$(CONFIG_VIDEO_CT69000) += ct69000.o
+ COBJS-$(CONFIG_VIDEO_MB862xx) += mb862xx.o
+diff --git a/drivers/video/mx2fb.c b/drivers/video/mx2fb.c
+new file mode 100644
+index 0000000..35d1e00
+--- /dev/null
++++ b/drivers/video/mx2fb.c
+@@ -0,0 +1,125 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX53-EVK Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <lcd.h>
++#include <asm/arch/mx25-regs.h>
++#include <asm/io.h>
++#include <asm/errno.h>
++#include <asm/errno.h>
++#include <mx2fb.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++void *lcd_base;			/* Start of framebuffer memory	*/
++void *lcd_console_address;	/* Start of console buffer	*/
++
++int lcd_line_length;
++int lcd_color_fg;
++int lcd_color_bg;
++
++short console_col;
++short console_row;
++
++
++void lcd_initcolregs(void)
++{
++}
++
++void lcd_setcolreg(ushort regno, ushort red, ushort green, ushort blue)
++{
++}
++
++void lcd_enable(void)
++{
++}
++
++void lcd_disable(void)
++{
++}
++
++void lcd_panel_disable(void)
++{
++}
++
++void lcd_ctrl_init(void *lcdbase)
++{
++	u32 ccm_ipg_cg, pcr;
++
++	/* LSSAR */
++	writel(gd->fb_base, LCDC_BASE + 0x00);
++	/* LSR = x << 20 + y */
++	writel(((panel_info.vl_col >> 4) << 20) + panel_info.vl_row,
++		LCDC_BASE + 0x04);
++	/* LVPWR = x_res * 2 / 2 */
++	writel(panel_info.vl_col / 2, LCDC_BASE + 0x08);
++	/* LPCR =  To be fixed using Linux BSP Value for now */
++	switch (panel_info.vl_bpix) {
++	/* bpix = 4 (16bpp) */
++	case 4:
++		pcr = LCDC_LPCR | (0x5 << 25);
++		break;
++	default:
++		pcr = LCDC_LPCR;
++		break;
++	}
++
++	pcr |= (panel_info.vl_sync & FB_SYNC_CLK_LAT_FALL) ? 0x00200000 : 0;
++	pcr |= (panel_info.vl_sync & FB_SYNC_DATA_INVERT) ? 0x01000000 : 0;
++	pcr |= (panel_info.vl_sync & FB_SYNC_SHARP_MODE) ? 0x00000040 : 0;
++	pcr |= (panel_info.vl_sync & FB_SYNC_OE_LOW_ACT) ? 0x00100000 : 0;
++
++	pcr |= LCDC_LPCR_PCD;
++
++	writel(pcr, LCDC_BASE + 0x18);
++	/* LHCR = H Pulse width, Right and Left Margins */
++	writel(((panel_info.vl_hsync - 1) << 26) + \
++		((panel_info.vl_right_margin - 1) << 8) + \
++		(panel_info.vl_left_margin - 3),
++		LCDC_BASE + 0x1c);
++	/* LVCR = V Pulse width, lower and upper margins */
++	writel((panel_info.vl_vsync << 26) + \
++		(panel_info.vl_lower_margin << 8) + \
++		(panel_info.vl_upper_margin),
++		LCDC_BASE + 0x20);
++	/* LSCR */
++	writel(LCDC_LSCR, LCDC_BASE + 0x28);
++	/* LRMCR */
++	writel(LCDC_LRMCR, LCDC_BASE + 0x34);
++	/* LDCR	*/
++	writel(LCDC_LDCR, LCDC_BASE + 0x30);
++	/* LPCCR = PWM */
++	writel(LCDC_LPCCR, LCDC_BASE + 0x2c);
++
++	/* On and off clock gating */
++	ccm_ipg_cg = readl(CCM_BASE + 0x10);
++
++	writel(ccm_ipg_cg&0xDFFFFFFF, CCM_BASE + 0x10);
++	writel(ccm_ipg_cg|0x20000000, CCM_BASE + 0x10);
++}
++
++ulong calc_fbsize(void)
++{
++	return panel_info.vl_row * panel_info.vl_col * 2 \
++		* NBITS(panel_info.vl_bpix) / 8;
++}
++
++
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index fde7b12..9a6391c 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -105,6 +105,7 @@
+ #define CONFIG_CMD_MMC
+ #define CONFIG_MXC_NAND
+ 
++
+ /*
+  * MMC Configs
+  * */
+@@ -141,7 +142,8 @@
+ 	"bootcmd=run bootcmd_net\0"					\
+ 	"bootcmd_net=run bootargs_base bootargs_nfs; "			\
+ 		"tftpboot ${loadaddr} ${kernel}; bootm\0"		\
+-	"load_uboot=tftpboot ${loadaddr} ${uboot}\0"
++	"load_uboot=tftpboot ${loadaddr} ${uboot}\0"	\
++	"splashimage=0x80800000\0"
+ 
+ /*Support LAN9217*/
+ #define CONFIG_SMC911X
+@@ -211,6 +213,34 @@
+ #define PHYS_SDRAM_1_SIZE       (64 * 1024 * 1024)
+ #endif
+ 
++/* LCD */
++/*
++#define CONFIG_SPLASH_SCREEN
++*/
++
++#ifdef CONFIG_SPLASH_SCREEN
++	#define CONFIG_LCD
++	#define CONFIG_MXC2_LCD 1
++	#undef LCD_TEST_PATTERN
++	#define CONFIG_FB_BASE				0x81400000
++	#define CONFIG_SYS_CONSOLE_IS_IN_ENV            1
++	#define CONFIG_SPLASH_SCREEN                    1
++	#define CONFIG_SPLASH_IS_IN_MMC                 1
++	#define LCD_BPP                                 LCD_COLOR16
++	/* #define CONFIG_SPLASH_SCREEN_ALIGN           1 */
++
++	#define CONFIG_CMD_BMP
++	#define CONFIG_BMP_24BPP 1
++	#define CONFIG_BMP_16BPP 1
++#endif
++
++
++#ifdef CONFIG_SPLASH_IS_IN_MMC
++	#define CONFIG_SPLASH_IMG_MMC_DEV	0
++	#define CONFIG_SPLASH_IMG_OFFSET	0x4c000
++	#define CONFIG_SPLASH_IMG_SIZE		0x19000
++#endif
++
+ /* Monitor at beginning of flash */
+ /* #define CONFIG_FSL_ENV_IN_MMC */
+ #define CONFIG_FSL_ENV_IN_NAND
+diff --git a/include/lcd.h b/include/lcd.h
+index 1f85daa..afb99ba 100644
+--- a/include/lcd.h
++++ b/include/lcd.h
+@@ -1,4 +1,6 @@
+ /*
++ * Copyright (C) 2004-2010 Freescale Semiconductor, Inc.
++ *
+  * MPC823 and PXA LCD Controller
+  *
+  * Modeled after video interface by Paolo Scaffardi
+@@ -181,6 +183,26 @@ typedef struct vidinfo {
+ 	u_long	mmio;		/* Memory mapped registers */
+ } vidinfo_t;
+ 
++#elif defined(CONFIG_MXC2_LCD)
++
++typedef struct vidinfo {
++	u_long vl_refresh;	/* Refresh Rate Hz */
++	u_long vl_row;		/* resolution in x */
++	u_long vl_col;		/* resolution in y */
++	u_long vl_pixclock;	/* pixel clock in picoseconds */
++	u_long vl_left_margin;	/* Horizontal back porch */
++	u_long vl_right_margin; /* Horizontal front porch */
++	u_long vl_upper_margin; /* Vertical back porch */
++	u_long vl_lower_margin; /* Vertical front porch */
++	u_long vl_hsync;	/* Horizontal sync pulse length */
++	u_long vl_vsync;	/* Vertical sync pulse length */
++	u_long vl_sync;		/* Polarity on data enable */
++	u_long vl_mode;		/* Video Mode */
++	u_long vl_flag;
++	u_char	vl_bpix;
++	ushort	*cmap;
++} vidinfo_t;
++
+ #else
+ 
+ typedef struct vidinfo {
+diff --git a/include/mx2fb.h b/include/mx2fb.h
+new file mode 100644
+index 0000000..de05bc0
+--- /dev/null
++++ b/include/mx2fb.h
+@@ -0,0 +1,47 @@
++/*
++ * Copyright (C) 2004-2010 Freescale Semiconductor, Inc.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @file mx2fb.h
++ *
++ * @brief MX 25 LCD controller header file.
++ *
++ *
++ */
++
++#ifndef __MX2FB_H__
++#define __MX2FB_H__
++
++
++/* LCDC register settings */
++
++#define LCDC_LSCR 0x00120300
++
++#define LCDC_LRMCR 0x00000000
++
++#define LCDC_LDCR 0x00020010
++
++#define LCDC_LPCCR 0x00a9037f
++
++#define LCDC_LPCR 0xFA008B80
++
++#define LCDC_LPCR_PCD 0x4
++
++#define FB_SYNC_OE_LOW_ACT	0x80000000
++#define FB_SYNC_CLK_LAT_FALL	0x40000000
++#define FB_SYNC_DATA_INVERT	0x20000000
++#define FB_SYNC_CLK_IDLE_EN	0x10000000
++#define FB_SYNC_SHARP_MODE	0x08000000
++#define FB_SYNC_SWAP_RGB	0x04000000
++
++#endif				/* __MX2FB_H__ */
+-- 
+1.5.4.4
+

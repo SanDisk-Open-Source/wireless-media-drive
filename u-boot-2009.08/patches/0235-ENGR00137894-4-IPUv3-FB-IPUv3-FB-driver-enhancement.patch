@@ -1,0 +1,81 @@
+From e9f41e7386ed31497bf75540b0123a6758f1c269 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Thu, 13 Jan 2011 11:16:47 +0800
+Subject: [PATCH] ENGR00137894-4 IPUv3 FB: IPUv3 FB driver enhancement
+
+1) Change MX51 related function names to IPUv3 related names.
+2) Change MX51 related comments to IPUv3 related comments.
+3) Do not set panel_info.cmap to be NULL pointer.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ board/freescale/mx51_bbg/mx51_bbg.c |    9 ++++++---
+ drivers/video/mxc_ipuv3_fb.c        |    8 ++++----
+ 2 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 5fdeaad..256fdf6 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -85,8 +85,10 @@ short colormap[16777216];
+ #endif
+ #endif
+ 
+-extern int mx51_fb_init(struct fb_videomode *mode, int di,
+-			int interface_pix_fmt);
++extern int ipuv3_fb_init(struct fb_videomode *mode, int di,
++			int interface_pix_fmt,
++			ipu_di_clk_parent_t di_clk_parent,
++			int di_clk_val);
+ 
+ static struct fb_videomode claa_wvga = {
+ 	/* 800x480 @ 60 Hz , pixel clk @ 27MHz */
+@@ -912,7 +914,8 @@ void lcd_enable(void)
+ 	reg |= 0x10;
+ 	writel(reg, GPIO3_BASE_ADDR + 0x0);
+ 
+-	ret = mx51_fb_init(&claa_wvga, 1, IPU_PIX_FMT_RGB565);
++	ret = ipuv3_fb_init(&claa_wvga, 1, IPU_PIX_FMT_RGB565,
++			DI_PCLK_PLL3, 0);
+ 	if (ret)
+ 		puts("LCD cannot be configured\n");
+ }
+diff --git a/drivers/video/mxc_ipuv3_fb.c b/drivers/video/mxc_ipuv3_fb.c
+index 545d1fe..bb28114 100644
+--- a/drivers/video/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc_ipuv3_fb.c
+@@ -4,7 +4,7 @@
+  * (C) Copyright 2010
+  * Stefano Babic, DENX Software Engineering, sbabic@denx.de
+  *
+- * MX51 Linux framebuffer:
++ * IPUv3 Linux framebuffer:
+  *
+  * (C) Copyright 2004-2011 Freescale Semiconductor, Inc.
+  *
+@@ -585,7 +585,6 @@ static int mxcfb_probe(u32 interface_pix_fmt, struct fb_videomode *mode, int di)
+ 	mxcfb_set_par(fbi);
+ 
+ 	/* Setting panel_info for lcd */
+-	panel_info.cmap = NULL;
+ 	panel_info.vl_col = fbi->var.xres;
+ 	panel_info.vl_row = fbi->var.yres;
+ 	panel_info.vl_bpix = LCD_BPP;
+@@ -634,11 +633,12 @@ void lcd_ctrl_init(void *lcdbase)
+ 	memset(lcdbase, 0, mem_len);
+ }
+ 
+-int mx51_fb_init(struct fb_videomode *mode, int di, int interface_pix_fmt)
++int ipuv3_fb_init(struct fb_videomode *mode, int di, int interface_pix_fmt,
++		  ipu_di_clk_parent_t di_clk_parent, int di_clk_val)
+ {
+ 	int ret;
+ 
+-	ret = ipu_probe();
++	ret = ipu_probe(di, di_clk_parent, di_clk_val);
+ 	if (ret)
+ 		puts("Error initializing IPU\n");
+ 
+-- 
+1.5.4.4
+

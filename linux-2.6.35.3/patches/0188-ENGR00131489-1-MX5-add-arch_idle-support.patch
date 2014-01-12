@@ -1,0 +1,64 @@
+From 38fc0ad11f5f21fe61829fbd2a29a109d9cc40b4 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 14 Sep 2010 21:22:44 +0800
+Subject: [PATCH] ENGR00131489-1 MX5: add arch_idle support
+
+add arch_idle support for MX5 platform
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/system.c              |    4 ++--
+ arch/arm/plat-mxc/include/mach/system.h |   14 ++------------
+ 2 files changed, 4 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index 48b2ec6..ddc52cd 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -154,9 +154,9 @@ static int arch_idle_mode = WAIT_UNCLOCKED_POWER_OFF;
+  * This function puts the CPU into idle mode. It is called by default_idle()
+  * in process.c file.
+  */
+-void mx51_idle(void)
++void arch_idle(void)
+ {
+-/*	if (likely(!mxc_jtag_enabled)) */{
++	if (likely(!mxc_jtag_enabled)) {
+ 		struct clk *ddr_clk = clk_get(NULL, "ddr_clk");
+ 		if (gpc_dvfs_clk == NULL)
+ 			gpc_dvfs_clk = clk_get(NULL, "gpc_dvfs_clk");
+diff --git a/arch/arm/plat-mxc/include/mach/system.h b/arch/arm/plat-mxc/include/mach/system.h
+index 61ddf43..33fe6f8 100644
+--- a/arch/arm/plat-mxc/include/mach/system.h
++++ b/arch/arm/plat-mxc/include/mach/system.h
+@@ -1,7 +1,7 @@
+ /*
+  *  Copyright (C) 1999 ARM Limited
+  *  Copyright (C) 2000 Deep Blue Solutions Ltd
+- *  Copyright 2004-2010 Freescale Semiconductor, Inc.
++ *  Copyright (C) 2004-2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -24,17 +24,7 @@
+ #include <mach/hardware.h>
+ #include <mach/common.h>
+ 
+-static inline void arch_idle(void)
+-{
+-#ifdef CONFIG_ARCH_MXC91231
+-	if (cpu_is_mxc91231()) {
+-		/* Need this to set DSM low-power mode */
+-		mxc91231_prepare_idle();
+-	}
+-#endif
+-
+-	cpu_do_idle();
+-}
++void arch_idle(void);
+ 
+ void arch_reset(char mode, const char *cmd);
+ int mxs_reset_block(void __iomem *hwreg, int just_enable);
+-- 
+1.5.4.4
+

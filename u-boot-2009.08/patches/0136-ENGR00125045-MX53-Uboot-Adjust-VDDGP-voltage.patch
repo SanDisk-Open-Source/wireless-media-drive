@@ -1,0 +1,38 @@
+From acce438960d7ba5312e5d26d828fd2875901304b Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 13 Jul 2010 16:03:24 +0800
+Subject: [PATCH] ENGR00125045 MX53 Uboot: Adjust VDDGP voltage
+
+1. Adjust VDDGP voltage for 800MHZ as 1.05v.
+2. Correct VDDA comments
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx53_evk/mx53_evk.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index 7418ab7..a9e7f61 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -268,14 +268,14 @@ void setup_core_voltages(void)
+ 
+ 	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+ 
+-	/* Set core voltage VDDGP to 1.1V */
++	/* Set core voltage VDDGP to 1.05V for 800MHZ */
+ 	buf[0] = 0x45;
+ 	buf[1] = 0x4a;
+-	buf[2] = 0x54;
++	buf[2] = 0x52;
+ 	if (i2c_write(0x8, 24, 1, buf, 3))
+ 		return;
+ 
+-	/* Set DDR voltage VDDA to 1.225V */
++	/* Set DDR voltage VDDA to 1.25V */
+ 	buf[0] = 0;
+ 	buf[1] = 0x63;
+ 	buf[2] = 0x1a;
+-- 
+1.5.4.4
+

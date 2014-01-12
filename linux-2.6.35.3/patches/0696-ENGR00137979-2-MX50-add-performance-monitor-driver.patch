@@ -1,0 +1,122 @@
+From c8d17a24a501c578d24fd3fcdf071f0fa4b6aee9 Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Tue, 11 Jan 2011 18:01:03 +0800
+Subject: [PATCH] ENGR00137979-2 [MX50]add performance monitor driver
+
+	enable performance monitor driver for system loading analysis
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 +-
+ arch/arm/mach-mx5/devices.c     |   36 ++++++++++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/devices.h     |    2 ++
+ arch/arm/mach-mx5/mx50_arm2.c   |    1 +
+ arch/arm/mach-mx5/mx50_rdp.c    |    2 +-
+ 5 files changed, 41 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index c78929b..80391cb 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -710,7 +710,7 @@ CONFIG_MISC_DEVICES=y
+ # CONFIG_ANDROID_PMEM is not set
+ # CONFIG_UID_STAT is not set
+ # CONFIG_C2PORT is not set
+-
++CONFIG_MXS_PERFMON=y
+ #
+ # EEPROM support
+ #
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 6ca14b0..68c021c 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1485,6 +1485,42 @@ struct platform_device mxs_viim = {
+ 	.resource = viim_resources,
+ };
+ 
++static struct resource mx5_perfmon_res[] = {
++	{
++	 .flags = IORESOURCE_MEM,
++	 .start = PERFMON_BASE_ADDR,
++	 .end   = PERFMON_BASE_ADDR + 0x1000 - 1,
++    },
++};
++
++struct platform_device mxc_perfmon = {
++	.name			= "mxs-perfmon",
++	.resource		= mx5_perfmon_res,
++	.num_resources	= ARRAY_SIZE(mx5_perfmon_res),
++	.id			= 0
++};
++
++static struct mxs_perfmon_bit_config
++mx50_perfmon_bit_config[] = {
++	{.field = (1 << 0),	.name = "MID0-CORE" },
++	{.field = (1 << 1),	.name = "MID1-DCP" },
++	{.field = (1 << 2),	.name = "MID2-PXP" },
++	{.field = (1 << 3),	.name = "MID3-USB" },
++	{.field = (1 << 4),	.name = "MID4-GPU2D" },
++	{.field = (1 << 5),	.name = "MID5-BCH" },
++	{.field = (1 << 6),	.name = "MID6-AHB" },
++	{.field = (1 << 7),	.name = "MID7-EPDC" },
++	{.field = (1 << 8),	.name = "MID8-LCDIF" },
++	{.field = (1 << 9),	.name = "MID9-SDMA" },
++	{.field = (1 << 10),	.name = "MID10-FEC" },
++	{.field = (1 << 11),	.name = "MID11-MSHC" }
++};
++
++struct mxs_platform_perfmon_data mxc_perfmon_data = {
++	.bit_config_tab = mx50_perfmon_bit_config,
++	.bit_config_cnt = ARRAY_SIZE(mx50_perfmon_bit_config),
++};
++
+ static struct resource dma_apbh_resources[] = {
+ 	{
+ 		.start = APBHDMA_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 36ac77e..2671b5d 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -90,4 +90,6 @@ extern struct platform_device pm_device;
+ extern struct platform_device fixed_volt_reg_device;
+ extern struct platform_device mxc_zq_calib_device;
+ extern struct platform_device mxc_asrc_device;
++extern struct platform_device mxc_perfmon;
++extern struct mxs_platform_perfmon_data mxc_perfmon_data;
+ extern int z160_revision;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index f0000d2..01d6d3d 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1229,6 +1229,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&fsl_otp_device, &otp_data);
+ 	if (cpu_is_mx50_rev(CHIP_REV_1_1) >= 1)
+ 		mxc_register_device(&mxc_zq_calib_device, NULL);
++	mxc_register_device(&mxc_perfmon, &mxc_perfmon_data);
+ }
+ 
+ static void __init mx50_arm2_timer_init(void)
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index c36ff9b..f5b6440 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1398,7 +1398,6 @@ static struct mxc_pm_platform_data mx50_pm_data = {
+ 	.suspend_exit = mx50_suspend_exit,
+ };
+ 
+-
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -1565,6 +1564,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpmi_nfc_device, &gpmi_nfc_platform_data);
+ 	mx5_usb_dr_init();
+ 	mx5_usbh1_init();
++	mxc_register_device(&mxc_perfmon, &mxc_perfmon_data);
+ }
+ 
+ static void __init mx50_rdp_timer_init(void)
+-- 
+1.5.4.4
+

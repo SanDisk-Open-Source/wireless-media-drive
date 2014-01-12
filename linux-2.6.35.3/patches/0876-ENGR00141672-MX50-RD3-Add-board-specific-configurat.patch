@@ -1,0 +1,78 @@
+From 57345414831634f05a53eaea8401c8f3ab004fa5 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Wed, 6 Apr 2011 17:35:15 +0800
+Subject: [PATCH] ENGR00141672 MX50 RD3: Add board-specific configuration for M25P32
+
+Add platform data (partition info, etc.) for SPI NOR(M25P32) driver
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |   24 +++++++++++++++++++++---
+ 1 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index f824c08..14c54ad 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -31,6 +31,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/fsl_devices.h>
+ #include <linux/spi/spi.h>
++#include <linux/spi/flash.h>
+ #include <linux/i2c.h>
+ #include <linux/ata.h>
+ #include <linux/mtd/mtd.h>
+@@ -53,7 +54,6 @@
+ #include <asm/mach-types.h>
+ #include <asm/mach/arch.h>
+ #include <asm/mach/time.h>
+-#include <asm/mach/flash.h>
+ #include <asm/mach/keypad.h>
+ #include <mach/common.h>
+ #include <mach/hardware.h>
+@@ -1081,7 +1081,12 @@ static struct flash_platform_data mxc_spi_flash_data[] = {
+ 	 .name = "mxc_dataflash",
+ 	 .parts = mxc_dataflash_partitions,
+ 	 .nr_parts = ARRAY_SIZE(mxc_dataflash_partitions),
+-	 .type = "at45db321d",}
++	 .type = "at45db321d",},
++	 {
++	 .name = "m25p80",
++	 .parts = mxc_dataflash_partitions,
++	 .nr_parts = ARRAY_SIZE(mxc_dataflash_partitions),
++	 .type = "m25p32",}
+ };
+ 
+ 
+@@ -1094,6 +1099,15 @@ static struct spi_board_info mxc_dataflash_device[] __initdata = {
+ 	 .platform_data = &mxc_spi_flash_data[0],},
+ };
+ 
++static struct spi_board_info m25pxx_dataflash_device[] __initdata = {
++	{
++	 .modalias = "m25p80",
++	 .max_speed_hz = 20000000,	/* max spi clock (SCK) speed in HZ */
++	 .bus_num = 3,
++	 .chip_select = 1,
++	 .platform_data = &mxc_spi_flash_data[1],},
++};
++
+ static int sdhc_write_protect(struct device *dev)
+ {
+ 	unsigned short rc = 0;
+@@ -1620,7 +1634,11 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_ssi1_device, NULL);
+ 	mxc_register_device(&mxc_ssi2_device, NULL);
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
+-	spi_register_board_info(mxc_dataflash_device,
++	if (board_is_mx50_rd3())
++		spi_register_board_info(m25pxx_dataflash_device,
++				ARRAY_SIZE(m25pxx_dataflash_device));
++	else
++		spi_register_board_info(mxc_dataflash_device,
+ 				ARRAY_SIZE(mxc_dataflash_device));
+ 	i2c_register_board_info(0, mxc_i2c0_board_info,
+ 				ARRAY_SIZE(mxc_i2c0_board_info));
+-- 
+1.5.4.4
+

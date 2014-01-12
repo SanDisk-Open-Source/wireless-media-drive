@@ -1,0 +1,43 @@
+From 87379f9aea2713294daba1ad2a94692b84b0fcb8 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Wed, 15 Dec 2010 13:50:09 -0600
+Subject: [PATCH] ENGR00136939-1: SPI:Fix suspend/resume issue on MX50 RDP
+
+Fixed the SPI driver suspend/resume code. The SPI driver was missing
+releasing the spin lock in certain conditions.In the resume code,
+the master bit needs to be set while re-enabling the spi.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ drivers/spi/mxc_spi.c |    7 +++++--
+ 1 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/spi/mxc_spi.c b/drivers/spi/mxc_spi.c
+index 93a6671..8e255f4 100644
+--- a/drivers/spi/mxc_spi.c
++++ b/drivers/spi/mxc_spi.c
+@@ -1199,6 +1199,7 @@ static int spi_bitbang_suspend(struct spi_bitbang *bitbang)
+ 	}
+ 	if (!list_empty(&bitbang->queue)) {
+ 		dev_err(&bitbang->master->dev, "queue didn't empty\n");
++		spin_unlock_irqrestore(&bitbang->lock, flags);
+ 		return -EBUSY;
+ 	}
+ 	spin_unlock_irqrestore(&bitbang->lock, flags);
+@@ -1256,9 +1257,11 @@ static int mxc_spi_resume(struct platform_device *pdev)
+ 
+ 	spi_bitbang_resume(&master_drv_data->mxc_bitbang);
+ 	clk_enable(master_drv_data->clk);
+-	__raw_writel(master_drv_data->spi_ver_def->spi_enable,
+-		     master_drv_data->base + MXC_CSPICTRL);
++	__raw_writel((master_drv_data->spi_ver_def->spi_enable +
++				master_drv_data->spi_ver_def->master_enable),
++				master_drv_data->base + MXC_CSPICTRL);
+ 	clk_disable(master_drv_data->clk);
++
+ 	return 0;
+ }
+ #else
+-- 
+1.5.4.4
+

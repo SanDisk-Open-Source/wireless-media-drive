@@ -1,0 +1,30 @@
+From 97a1b233ef3d7cb7d01a6d4da06ea61c5e83e35f Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Fri, 18 Dec 2009 17:06:38 +0800
+Subject: [PATCH] ENGR00119486 MX25: Improve Lan9217 ethernet transfer speed
+
+Speed is too slow on MX25, remove udelay in cspi driver
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ drivers/spi/imx_cspi.c |    4 +---
+ 1 files changed, 1 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/spi/imx_cspi.c b/drivers/spi/imx_cspi.c
+index 51238eb..a4a3049 100644
+--- a/drivers/spi/imx_cspi.c
++++ b/drivers/spi/imx_cspi.c
+@@ -227,9 +227,7 @@ int spi_xfer(struct spi_slave *slave, unsigned int bitlen, const void *dout,
+ 		while ((val-- > 0) &&
+ 		       (((reg =
+ 			  readl(dev->base + SPI_STAT_REG)) & SPI_INT_STAT_TC) ==
+-			0)) {
+-			udelay(100);
+-		}
++			0));
+ 
+ 		/* clear the TC bit */
+ 		writel(reg | SPI_INT_STAT_TC, dev->base + SPI_STAT_REG);
+-- 
+1.5.4.4
+

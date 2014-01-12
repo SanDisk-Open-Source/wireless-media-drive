@@ -1,0 +1,115 @@
+From bc4f5e432e58cfd9758d6fb32a298acfe886432a Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 17 Feb 2011 13:33:38 +0800
+Subject: [PATCH] ENGR00139321 ipuv3: add YV12 format support
+
+Add YV12 format support.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_calc_stripes_sizes.c |    3 +-
+ drivers/mxc/ipu3/ipu_common.c             |    2 +
+ drivers/mxc/ipu3/ipu_param_mem.h          |   36 ++++++++++++++++++++++++++++-
+ 3 files changed, 39 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c b/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c
+index 5e6a9e2..473772a 100644
+--- a/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c
++++ b/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -60,6 +60,7 @@ static unsigned int f_calc(unsigned int pfs, unsigned int bpp, unsigned int *wri
+ 	case IPU_PIX_FMT_YUV422P:
+ 	case IPU_PIX_FMT_YUV420P2:
+ 	case IPU_PIX_FMT_YUV420P:
++	case IPU_PIX_FMT_YVU420P:
+ 		f_calculated = 16;
+ 		break;
+ 
+diff --git a/drivers/mxc/ipu3/ipu_common.c b/drivers/mxc/ipu3/ipu_common.c
+index 898d408..282d583 100644
+--- a/drivers/mxc/ipu3/ipu_common.c
++++ b/drivers/mxc/ipu3/ipu_common.c
+@@ -1047,6 +1047,7 @@ int32_t ipu_init_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
+ 		 */
+ 		if (((dma_chan == 23) || (dma_chan == 27) || (dma_chan == 28))
+ 			&& ((pixel_fmt == IPU_PIX_FMT_YUV420P) ||
++			(pixel_fmt == IPU_PIX_FMT_YVU420P) ||
+ 			(pixel_fmt == IPU_PIX_FMT_YUV420P2) ||
+ 			(pixel_fmt == IPU_PIX_FMT_YVU422P) ||
+ 			(pixel_fmt == IPU_PIX_FMT_YUV422P) ||
+@@ -2430,6 +2431,7 @@ uint32_t bytes_per_pixel(uint32_t fmt)
+ 	case IPU_PIX_FMT_GENERIC:	/*generic data */
+ 	case IPU_PIX_FMT_RGB332:
+ 	case IPU_PIX_FMT_YUV420P:
++	case IPU_PIX_FMT_YVU420P:
+ 	case IPU_PIX_FMT_YUV422P:
+ 		return 1;
+ 		break;
+diff --git a/drivers/mxc/ipu3/ipu_param_mem.h b/drivers/mxc/ipu3/ipu_param_mem.h
+index 81b001e..00ce4ea 100644
+--- a/drivers/mxc/ipu3/ipu_param_mem.h
++++ b/drivers/mxc/ipu3/ipu_param_mem.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -255,6 +255,21 @@ static inline void _ipu_ch_param_init(int ch,
+ 			ipu_ch_param_set_field(&params, 1, 78, 7, 31);  /* burst size */
+ 		}
+ 		break;
++	case IPU_PIX_FMT_YVU420P:
++		ipu_ch_param_set_field(&params, 1, 85, 4, 2);	/* pix format */
++
++		if (uv_stride < stride / 2)
++			uv_stride = stride / 2;
++
++		v_offset = stride * height;
++		u_offset = v_offset + (uv_stride * height / 2);
++		if ((ch == 8) || (ch == 9) || (ch == 10)) {
++			ipu_ch_param_set_field(&params, 1, 78, 7, 15);  /* burst size */
++			uv_stride = uv_stride*2;
++		} else {
++			ipu_ch_param_set_field(&params, 1, 78, 7, 31);  /* burst size */
++		}
++		break;
+ 	case IPU_PIX_FMT_YVU422P:
+ 		/* BPP & pixel format */
+ 		ipu_ch_param_set_field(&params, 1, 85, 4, 1);	/* pix format */
+@@ -481,6 +496,25 @@ static inline void _ipu_ch_offset_update(int ch,
+ 					v_offset;
+ 
+ 		break;
++	case IPU_PIX_FMT_YVU420P:
++		if (uv_stride < stride / 2)
++			uv_stride = stride / 2;
++
++		v_offset = stride * (height - vertical_offset - 1) +
++					(stride - horizontal_offset) +
++					(uv_stride * vertical_offset / 2) +
++					horizontal_offset / 2;
++		u_offset = v_offset + (uv_stride * height / 2);
++		u_fix = u ? (u + (uv_stride * vertical_offset / 2) +
++					(horizontal_offset / 2) -
++					(stride * vertical_offset) - (horizontal_offset)) :
++					u_offset;
++		v_fix = v ? (v + (uv_stride * vertical_offset / 2) +
++					(horizontal_offset / 2) -
++					(stride * vertical_offset) - (horizontal_offset)) :
++					v_offset;
++
++		break;
+ 	case IPU_PIX_FMT_YVU422P:
+ 		if (uv_stride < stride / 2)
+ 			uv_stride = stride / 2;
+-- 
+1.5.4.4
+

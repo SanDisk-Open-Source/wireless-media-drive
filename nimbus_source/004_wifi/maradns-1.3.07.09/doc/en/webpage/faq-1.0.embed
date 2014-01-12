@@ -1,0 +1,640 @@
+<h1>FREQUENTLY ASKED QUESTIONS</h1>
+
+<h3>This FAQ is for version 1.0 of MaraDNS.  An updated FAQ for version
+1.2 of MaraDNS is available <A href="http://www.maradns.org/faq.html">here</A>
+</h3>
+
+<h2>INDEX</h2>
+<BLOCKQUOTE>
+1. <A href="#tryout">How to I try out MaraDNS?</A> <P>
+2. <A href="#license">What license is MaraDNS released under?</A><P>
+
+3. <A href="#ips">How do I get MaraDNS to bind to multiple IP addresses?</A><P>
+
+4. <A href="#ipsbug">How come BIND 9 can not process MaraDNS queries when 
+MaraDNS is bound to multiple IP addresses?</A><P>
+
+5. <A href="#bugzilla">How do I report bugs in MaraDNS?</A><P>
+
+6. <A href="#chatter">Some of the postings to the mailing list do not talk 
+   about MaraDNS!</A><P>
+
+7. <A href="#unsub">How to I get off the mailing list?</A><P>
+
+8. <A href="#rdns">How do I set up reverse DNS on MaraDNS?</A><P>
+
+9. <A href="#timeout">I am on a slow network, and MaraDNS can not process 
+   recursive queries</A><P>
+
+10. <A href="#obtuse">When I try to run MaraDNS, I get a 
+    <tt>Fatal error: Error running populate_main program</tt>
+    or a <tt>Fatal error: init_cache() failed</tt>
+    error message.</A><P>
+
+11. <A href="#rrany">I am trying to register a domain under the .au or 
+    the .de name space,and my registrar is not taking my domain name</A><P>
+
+12. <A href="#netstat">After I start MaraDNS, I can not see the process 
+    when I run netstat -na</A><P>
+
+13. <A href="#jsstr">What string library does MaraDNS use?</A><P>
+
+14. <A href="#license2">Why is MaraDNS public domain instead of BSD or GPL 
+    licensed?</A><P>
+
+15. <A href="#whythreads">Why does MaraDNS use a multi-threaded model?</A><P>
+
+16. <A href="#wishlist">I feel that XXX feature should be added to MaraDNS</A><P>
+
+17. <A href="#docbook">I feel that MaraDNS should use another documentation 
+    format</A><P>
+
+18. <A href="#patch">Is there any process I need to follow to add a patch 
+    to MaraDNS?</A><P>
+
+19. <A href="#primary">Can MaraDNS act as a primary nameserver?</A><P>
+
+20. <A href="#secondary">Can MaraDNS act as a secondary nameserver?</A><P>
+
+21. <A href="#auth">What is the difference between an authoritative and 
+    a recursive DNS server?</A><P>
+
+22. <A href="#bailiwick">The getzone client isn't allowing me to add certain 
+    hostnames to my zone</A><P>
+
+23. <A href="#kosherzone">I have having problems transferring zones from 
+    MaraDNS' zone server to a BIND zone transfer client</A><P>
+
+24. <A href="#portable">Is MaraDNS portable?</A><P>
+
+25. <A href="#openbsd">How do I compile MaraDNS on OpenBSD?</A><P>
+
+26. <A href="#cygwin">Can I use MaraDNS in Windows?</A><P>
+
+27. <A href="#upstream">MaraDNS freezes up after being used for a while</A><P>
+
+28. <A href="#python">What kind of Python integration does MaraDNS have</A><P>
+
+29. <A href="#kvar">Doesn't "kvar" mean "four" in Esperanto?</A><p>
+
+30. <A href="#timestamp">How do I make MaraDNS' time stamps 
+    human-readable?</A><p>
+
+31. <A href="#scability">How scalable is MaraDNS?</A><p>
+
+32. <A href="#dcname">I'm getting a warning about dangling CNAME entries</A><p>
+
+</BLOCKQUOTE>
+<H2>ANSWERS</H2>
+
+<a name="tryout"> </a>
+<H2>1. How to I try out MaraDNS?</H2>
+
+<p>Read the <A href="quickstart.html">quick start guide</A>, which
+   is the file named 0QuickStart in the MaraDNS distribution.
+<p>
+<a name="license"> </a>
+<H2>2. What license is MaraDNS released under?</H2>
+<p>None, actually.  MaraDNS is released to the public domain.
+
+<a name="ips"> </a>
+<H2>3. How do I get MaraDNS to bind to multiple IP addresses?</H2>
+<p>
+The current method is to run multiple copies of MaraDNS, each using its
+own mararc file.
+<p> 
+E.g:
+
+<blockquote>
+<pre>
+maradns -f /etc/mararc.1
+maradns -f /etc/mararc.2
+etc.
+</pre>
+</blockquote>
+<p>
+If you just want to bind to all IP addresses your computer has, bind to
+the IP "0.0.0.0"; however this can cause problems.  See the next 
+question.
+<p> 
+I don't think this will be too hard to correctly implement, since I
+already have code for specifying multiple IP addresses with the IP ACL
+code used by the zone server.  Until then, I will add this workaround to
+the FAQ.
+
+<a name="ipsbug"> </a>
+<H2>4. How come BIND 9 can not process MaraDNS queries when MaraDNS is bound
+to multiple IP addresses?</H2>
+In certain cricumstances, when MaraDNS is bound to more than one IP
+address, the underlying OS will send the UDP reply with a different IP
+than the IP the UDP query was sent to.  This will confuse BIND 9, since
+BIND 9's method for listening for requests that BIND has sent out expects
+the reply to come from the same IP that the request was sent to.
+<p>
+
+<a name="bugzilla"> </a>
+<H2>5. How do I report bugs in MaraDNS?</H2>
+
+<p>
+Before reporting a bug that MaraDNS has, please read the relevant man
+pages.  The man pages should be installed when one installs MaraDNS, and,
+in addition, are available in the <tt>doc/man</tt> directory of the
+MaraDNS source tarball.  (It is also possible that you are reading the man
+page right now)
+<p>
+
+Some MaraDNS man pages (namely, the man pages for <B>maradns</B>,
+<B>askmara</B>, <B>zoneserver</B>, and <B>mararc</B>) have a section,
+titled "BUGS", which list already known bugs which I feel are not
+important enough to fix before the 1.0 release of MaraDNS.  Bug reports
+which mention one of these bugs will be cheerfully ignored (or given a 
+polite "thanks for the report, in this man page the bug is already 
+mentioned" message if I am in a particularly good mood).
+
+<p>
+Subscribe to the mailing list by sending mail to 
+<A href="mailto:list-subscribe@maradns.org">list-subscribe@maradns.org</A>
+with "subscribe" as the subject line,
+and describe the bug by sending email to
+<A href="mailto:list@maradns.org">list@maradns.org</A>.
+
+<a name="chatter"> </a>
+<H2>6. Some of the postings to the mailing list do not talk about MaraDNS!</H2>
+In cases where I post something to the mailing list which does not directly
+talk about MaraDNS, the subject line will not have [MARA] in it, but will
+have some form of the word CHATTER in it.  
+<P>
+This way, people who do not like this can set up mail filters to filter out
+anything that comes from this list and doesn't have [MARA] in the subject
+line, or simply unsubscribe from the list and read the list from the
+archives; if one needs to report a bug, they can subscribe to the list
+again, post their bug, then unsubscribe after a week.  
+<P>
+Another option is to set up one's Freshmeat preferences to be notified
+in email every time I update MaraDNS at Freshmeat.  This will give one
+email notice of any critical bug fixes without needing to be
+subscribed to the mailing list.
+<P>
+The web page <A href="http://www.maradns.org">http://www.maradns.org/</A>
+has a link to the mailing list archives.
+
+<a name="unsub"> </a>
+<H2>7. How to I get off the mailing list?</H2>
+Send an email to list-request@maradns.org with "unsubscribe" as the
+subject line.
+
+<a name="rdns"> </a>
+<H2>8. How do I set up reverse DNS on MaraDNS?</H2>
+
+By using PTR (pointer) records.  For example, the PTR record which performs
+the reverse DNS lookup for the ip 1.2.3.4 looks like this in a CSV1 zone
+file:
+<blockquote>
+<tt>
+P4.3.2.1.in-addr.arpa.|86400|www.example.com.
+</tt>
+</blockquote>
+
+If you wish to have a PTR (reverse DNS lookup; getting a DNS name from a
+numeric IP) record work on the internet at large, it is not a simple
+matter of just adding a record like this to a MaraDNS zonefile.  One also
+needs control of the appropriate in-addr.arpa. domain.
+
+<p>
+
+While it can make logical sense to contact the IP 10.11.12.13 when trying
+to get the reverse DNS lookup (fully qualified domain name) for a given
+IP, DNS servers don't do this.  DNS server, instead, contact the root
+DNS servers for a given in-addr.arpa name to get the reverse DNS lookup,
+just like they do with any other record type.
+
+<p>
+
+When an internet service provider is given a block of IPs, they are also
+given control of the DNS zones which allow them to control reverse DNS
+lookups for those IPs.  While it is possible to obtain a domain and run
+a DNS server without the knowledge or intervention of an ISP, being
+able to control reverse DNS loookups for those IPs requires ISP 
+intervention.
+
+<a name="timeout"> </a>
+<H2>9. I am on a slow network, and MaraDNS can not process recursive 
+queries</H2>
+
+MaraDNS, by default, only waits two seconds for a reply from a remote
+DNS server.  This default can be increased by adding a line like this 
+in the mararc file:
+
+<blockquote>
+<pre>
+timeout_seconds = 5
+</pre>
+</blockquote>
+
+Note that making this too high will slow MaraDNS down when DNS servers
+are down, which is, alas, all too common on today's internet.
+
+<a name="obtuse"> </a>
+
+<H2>10. When I try to run MaraDNS, I get a 
+<tt>Fatal error: Error running populate_main program</tt>
+or a <tt>Fatal error: init_cache() failed</tt> error message.</H2>
+
+<p>If a line in a mararc file is too long, you will see, before the
+"Fatal error: Error running populate_main program" message, a message
+showing you the line number which is too long and the filename with
+the offending line.  While it is possible to increase this limit
+by changing the appropriate variable in the MaraDns.h file, the
+current limit is in line with the 512-byte limit that UDP DNS
+packets have; MaraDNS does not currently support DNS over TCP.
+
+<p>Otherwise, this error message should not be visible.  If it appears, 
+subscribe to
+the mailing list (see above), and describe your problem by sending email to 
+<A href="mailto:list@maradns.org">list@maradns.org</A>.  Be sure to include
+the following information:
+
+<ul><li>The contents of your /etc/mararc file
+
+<li>The contents of any files in /etc/maradns
+
+<li>The full output MaraDNS generates
+
+</ul>
+
+<a name="rrany"> </a>
+<H2>11. I am trying to register a domain under the .au or the .de name space,
+and my registrar is not taking my domain name</H2>
+
+<p>Both the German registrar and the Australian registrars require a RR_ANY
+request to return NS and SOA records.  MaraDNS can do this if you add the
+following line to your mararc file:<p>
+
+<tt>default_rrany_set = 15</tt>
+
+<a name="netstat"> </a>
+<H2>12. After I start MaraDNS, I can not see the process when I run netstat -na
+</H2>
+
+Udp services do not have a prominent "LISTEN" when netstat is run.
+<p>
+When MaraDNS is up, the relevant line in the netstat output looks 
+like this:            
+<tt>
+udp        0      0 127.0.0.4:53            0.0.0.0:* 
+</tt>
+<p>
+While on the topic of netstat, if you run <TT>netstat -nap</TT> as root,
+you can see the names of the processes which are providing internet 
+services.
+
+<a name="jsstr"> </a>
+<H2>13. What string library does MaraDNS use?</H2>
+
+<p>MaraDNS uses her own string library, which is called the "js_string"
+library.  Man pages for most of the functions in the js_string library
+are in the folder <tt>doc/man</tt> of the <A href="download.html">MaraDNS
+distribution</A>
+
+<a name="license2"> </a>
+<H2>14. Why is MaraDNS public domain instead of BSD or GPL licensed?</H2>
+
+<p>The post-1.0.xx releases of MaraDNS are, in fact, under a simple
+   BSD license (without any "obnoxious" advertising clause).
+<p>I used a public domain (non-)license so that MaraDNS could be integrated 
+   with Python without trouble.  While
+Python is, I believe, currently GPL compatible, Python was not 
+GPL-compatible at the time I decided on a license for MaraDNS.
+
+<a name="thythreads"> </a>
+<H2>15. Why does MaraDNS use a multi-threaded model?</H2>
+
+<p>The multi-threaded model is, plain and simple, the simplest way to write
+a functioning recursive DNS server.  There is a reason why MaraDNS, pdnsd, and
+BIND 9 all use the multi-threaded model.
+
+<a name="wishlist"> </a>
+<H2>16. I feel that XXX feature should be added to MaraDNS</H2>
+<p>
+Before sending mail to the list with a feature request, please read
+the UNIMPLEMENTED FEATURES section of the MaraDNS man page, which has a
+list of feature requests other people have already sent me.  If you do not 
+see your requested feature in this section of the man page, send an email to
+the mailing list so that I can add your feature request to the 
+UNIMPLEMENTED FEATURES section of the MaraDNS man page.
+<p>
+Feature requests which include a patch which implements the feature in 
+question are may even be implemented by MaraDNS, as long as the patch comes
+with a declaration that the patch is public domain.
+<p>
+Note that MaraDNS is currently "frozen".  In other words, new features will
+not be added until after the 1.0 release.
+
+<a name="docbook"> </a>
+<H2>17. I feel that MaraDNS should use another documentation format</H2>
+<p>
+The reason that MaraDNS uses its own documentation format is to satisfy both
+the needs of translators to have a unified document format and my own 
+need to use a documentation format that is simple enough to be readily
+understood and which I can add features on an 
+as needed basis.
+<p>
+The documentation format is essentially simplified HTML with some
+special tags added to meet MaraDNS' special needs.
+<p>
+For people who prefer other formats of documentation, I am open to
+making filters which convert from MaraDNS' own "EJ" documentation format
+to the format in question after MaraDNS 1.0 is released.
+<p>
+Having a given program have its own documentation format is not
+without precedent; Perl uses its own "pod" documentation format.
+
+<a name="patch"> </a>
+<H2>18. Is there any process I need to follow to add a patch to MaraDNS?</H2>
+
+<p>Yes.  
+
+<p>Here is the procedure for making a proper patch:
+
+<p>
+
+<ul>
+<li>Enter the directory that the file is in, for example
+    <tt>maradns-0.9.20/server</tt>
+
+<li>Copy over the file that you wish to modify to another file
+    name.  For example: <tt>cp MaraDNS.c MaraDNS.c.orig</tt>
+
+<li>Edit the file in question, e.g: <tt>vi MaraDNS.c</tt>
+
+<li>After editing, do something like this: <br><tt>
+    diff -u MaraDNS.c.orig MaraDNS.c > maradns.patch</tt>
+
+<li>Make sure the modified version compiles cleanly
+
+</ul>
+
+Send a patch to me in email, along with a statement that you place
+the contents of the patch in to the public domain.  If I find that the patch
+works well, I will integrate it in to MaraDNS.
+
+<a name="primary"> </a>
+<H2>19. Can MaraDNS act as a primary nameserver?</H2>
+
+<p>Yes.
+
+<p>The <tt>zoneserver</tt> program serves zones so that other DNS servers
+can be secondaries for zones which MaraDNS serves.  This is a separate
+program from the <tt>maradns</tt> server, which processes both 
+authoritative and recursive UDP DNS queries.
+
+<a name="secondary"> </a>
+<H2>20. Can MaraDNS act as a secondary nameserver?</H2>
+
+<p>Yes.
+
+<p>The 'getzone' program obtains zone files from remote DNS servers, 
+   outputting the contents of the zone file in MaraDNS' "csv1" zone
+   file format.  This program can be run from cron.  If one desires 
+   more BIND-like functionality, getzone can be wrapped in a
+   shell script that uses askmara to look at the SOA record to see if 
+   the serial number of the zone has changed.
+
+<p>I feel that the traditional DNS design of having a single application
+   both serve DNS records and handle the maintenance of zone files is
+   not ideal; the best design is to have a number of simple applications
+   working together.
+
+<a name="auth"> </a>
+<H2>21. What is the difference between an authoritative and a recursive DNS 
+server?</H2>
+
+A recursive DNS server is a DNS server that is able to contact other DNS
+servers in order to resolve a given domain name label.  This is the kind 
+of DNS server one points to in /etc/resolve.conf
+
+<p>
+
+An authoritative DNS server is a DNS server that a recursive server 
+contacts in order to find out the answer to a given DNS query.
+
+<a name="bailiwick"> </a>
+<H2>22. The getzone client isn't allowing me to add certain hostnames to 
+my zone</H2>
+
+For security reasons, MaraDNS' getzone client does not
+add records which are not part of the zone in question.  For example,
+if someone has a zone for example.com, and this record in the zone:
+
+<p>
+<tt>
+P1.1.1.10.in-addr.arpa.|86400|dns.example.com.
+</tt>
+<p>
+MaraDNS will not add the record, since the record is out-of-bailiwick.  In
+other words, it is a host name that does not end in .example.com.  
+<p>
+There are two workarounds for this issue:
+<UL>
+<LI>Create a zone file for 1.1.10.in-addr.arpa., and put the PTR records
+    there.
+<LI>Use rcp, rsync, or another method to copy over the zone files in 
+    question.
+</UL>
+
+<a name="kosherzone"> </a>
+<H2>23. I have having problems transferring zones from MaraDNS' zone server
+      to a BIND zone transfer client</H2>
+
+<p>BIND is rather picky about what kind of data it will accept from
+a zone server.  Make sure the following is true with your domain:
+<ul>
+<li>Make sure that the authoritative NS records are at the top of your 
+    zone, immediately after the SOA record
+<li>Make sure that your authoritative NS records are NS records
+    for your zone
+<li>To work around <A href="quirks.html">a known bug in MaraDNS</a>, make
+    sure you have at least one non-NS record between the authoritative NS
+    records for your zone and any delegation NS records that exist in the
+    zone.
+</ul>
+<p>
+Here is an example bad zone file (with a linefeed added to the SOA
+line):
+<PRE>
+Sexample.com.|86400|example.com.|
+hostmaster@example.com.|1|86400|3600|6048000|86400
+Nbad.example.com.|86400|ns1.example.com.
+Nbad.example.com.|86400|ns2.example.com.
+Nsubdomain.example.com.|86400|ns.subdomain.example.com.
+Aexample.com.|12345|10.2.3.4
+</PRE>
+<p>
+Here is the same zone file, with corrections (and a linefeed added to the
+SOA line):
+<PRE>
+Sexample.com.|86400|example.com.|
+hostmaster@example.com.|1|86400|3600|6048000|86400
+Nexample.com.|86400|ns1.example.com.
+Nexample.com.|86400|ns2.example.com.
+Aexample.com.|12345|10.2.3.4
+Nsubdomain.example.com.|86400|ns.subdomain.example.com.
+</PRE>
+<a name="portable"> </a>
+<H2>24. Is MaraDNS portable?</H2>
+
+<p>While I intend to have MaraDNS be a portable DNS server which will
+compile on a variety of unices, right now all of MaraDNS's work development
+is being done on Linux.  
+In terms of proprietary OSes, I know that SCO Open Server,
+SCO UNIXware and <A href="solaris.html">Solaris</A> have issues running a
+UDP or TCP server in a chroot() environment.  Word is that, with
+Solaris and UNIXware, placing /dev/tcp and /dev/udp in the chroot() jail
+will allow a server like MaraDNS to function.
+
+<a name="openbsd"> </a>
+<H2>25. How do I compile MaraDNS on OpenBSD?</H2>
+
+<p>
+There are two ways to do this:
+
+<P>
+To use the native thread support add -pthread to the CFLAGS variable.
+<P>
+To use the GNU pthread library, install the pth package and add
+-L/usr/local/lib/pth to the linker.
+<P>
+(Florin Iucha provided this tip)
+
+<a name="cygwin"> </a>
+<H2>26. Can I use MaraDNS in Windows?</H2>
+
+<p>
+Yes.
+
+<p>
+Provided, of course, that one has the Cygwin environment which emulates
+a UNIX environment in Windows.
+
+<p>
+MaraDNS should now compile fine on Cygwin systems. If not, join the mailing
+list and let me know; I will correct this FAQ entry.
+
+<a name="upstream"> </a>
+<H2>27. MaraDNS freezes up after being used for a while</H2>
+
+If using your ISP's name servers or some other name servers which
+are not, in fact, root name servers, please make sure that you are
+using the upstream_servers dictionary variable instead of the
+root_servers dictionary variable.
+
+<p>
+
+If you still see MaraDNS freeze up after making this correction, please
+send a bug report to the mailing list.
+
+<a name="python"> </a>
+<H2>28. What kind of Python integration does MaraDNS have</H2>
+
+The mararc file uses the same syntax that Python uses; in fact, Python
+can parse a properly formatted mararc file.
+<p>
+There is currently no other integration with Python.
+
+<a name="kvar"> </a>
+<H2>29. Doesn't "kvar" mean "four" in Esperanto?</H2>
+
+Indeed, it does.  However the use of "kvar" in the MaraDNS source
+code only coincidentally is an Esperanto word.  "kvar" is short
+for "Kiwi variable"; a lot of the parsing code comes from the code
+used in the Kiwi spam filter project.  
+
+<a name="timestamp"> </a>
+<H2>30. How do I make MaraDNS' time stamps human-readable?</H2>
+
+MaraDNS uses standard UNIX timestamps; which is the number of 
+seconds since Midnight, January 1, 1970.
+<p>
+To make MaraDNS' time stamps human readable, use this awk script:
+
+<pre>
+maradns -f /etc/maradns | awk '
+          /Timestamp/{
+           gsub(/Timestamp: ([0-9]+)/,
+                strftime("%a, %d %b %Y %H:%M:%S",$2),$0)}
+          {print}' >> logfile
+</pre>
+
+The MaraDNS startup script has the option to use this Awk script 
+to convert the time stamp; read the script for details.
+
+<a name="scability"> </a>
+<H2>31. How scalable is MaraDNS?</H2>
+
+MaraDNS is optimized for serving a small number of domains as quickly
+as possible.  That said, MaraDNS is remarkably efficnent for serving a
+large number of domains, as long as the server MaraDNS is on has the
+memory to fit all of the domains, and as long as the startup time for
+loading a large number of domains can be worked around.
+<P>
+The "big-O" or "theta" growth rates for various MaraDNS functions
+are as follows, where N is the number of authoritative host names being
+served:
+<p>
+<pre>
+Startup time				N
+Memory usage				N
+Processing incoming DNS requests	1
+</pre>
+<p>
+As can be seen, MaraDNS will process 1 or 100000 domains in the same amount
+of time, once the domain names are loaded in to memory.  
+
+<a name="dcname"> </a>
+<H2>I'm getting a warning about dangling CNAME entries</H2>
+
+Let us suppose we have a CNAME record without an A record in the local
+DNS server's database, such as:
+
+<pre>
+	Cgoogle.example.com.|86400|www.google.com.
+</pre>
+
+<p>
+This record, which is a CNAME record for "google.example.com", points
+to "www.google.com".  Some DNS servers will recursively look up 
+www.google.com, and render the above record like this:
+
+<pre>
+	Cgoogle.example.com.|86400|www.google.com.
+	Awww.google.com.|900|66.102.7.104
+</pre>
+
+<p>
+
+For security reasons, MaraDNS doesn't do this.  Instead, MaraDNS will simply
+output:
+
+<pre>
+	Cgoogle.example.com.|86400|www.google.com.
+</pre>
+
+Some stub resolvers will be unable to resolve google.example.com as
+a consequence.
+
+<p>
+If you want to remove these warnings, add the following to your mararc file:
+
+<pre>
+	no_cname_warnings = 1
+</pre>
+
+<p>
+
+Information about how to get MaraDNS to resolve dangling CNAME
+records is in the tutorial file <A 
+href="http://www.maradns.org/tutorial/dangling.html">dangling.html</A>
+
+<!-- <a name="memusage"> </a>
+<H2>32. How much memory does MaraDNS use?</H2> -->
+

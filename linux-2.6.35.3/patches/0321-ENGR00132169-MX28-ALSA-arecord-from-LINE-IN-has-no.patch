@@ -1,0 +1,28 @@
+From f6b55e9492db231b1442eb468aaf8ac0a0d352a2 Mon Sep 17 00:00:00 2001
+From: Lionel Xu <Lionel.Xu@freescale.com>
+Date: Wed, 13 Oct 2010 15:24:19 +0800
+Subject: [PATCH] ENGR00132169 MX28 ALSA: arecord from LINE IN has no sound
+
+To fix the problem of no sound when recording from line in.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ sound/soc/mxs/mxs-devb.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/mxs/mxs-devb.c b/sound/soc/mxs/mxs-devb.c
+index 1c73d72..66520b7 100644
+--- a/sound/soc/mxs/mxs-devb.c
++++ b/sound/soc/mxs/mxs-devb.c
+@@ -181,8 +181,6 @@ static int mxs_evk_sgtl5000_init(struct snd_soc_codec *codec)
+ 	/* Set up mxs_evk specific audio path audio_map */
+ 	snd_soc_dapm_add_routes(codec, audio_map, ARRAY_SIZE(audio_map));
+ 
+-	snd_soc_dapm_disable_pin(codec, "Line In Jack");
+-
+ 	snd_soc_dapm_sync(codec);
+ 
+ 	return 0;
+-- 
+1.5.4.4
+

@@ -1,0 +1,67 @@
+From 2293c37431ab42f48bb28b2ff6be9fe00125bee4 Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Sat, 9 Oct 2010 13:40:11 +0800
+Subject: [PATCH] ENGR00132418-2 I.MX USB ID debounce only needed when wakeup event is present
+
+Driver Part
+We do need software ID debounce only when the wakeup event is present
+This is becasse that on some boards when an usb device is attached to otg
+port,the vbus wakeup event is present earlier than ID pin wakeup
+event,but the vbus wakeup event is not expected, So we must delay
+with some time (3ms) when wakup event is present to let the ID pin
+change to the correct value.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |    2 --
+ drivers/usb/otg/fsl_otg.c       |    7 +++++++
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index ee72f61..a31c956 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -2033,7 +2033,6 @@ static void suspend_irq(struct fsl_udc *udc)
+  */
+  static bool wake_up_irq(struct fsl_udc *udc)
+  {
+-	usb_debounce_id_pin();
+ 	/* if the ID=0, let arc host process the wakeup */
+ 	if (fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) {
+ 		dr_wake_up_enable(udc_controller, false);
+@@ -2131,7 +2130,6 @@ bool try_wake_up_udc(struct fsl_udc *udc)
+ 	irq_src = fsl_readl(&dr_regs->otgsc);
+ 	if (irq_src & OTGSC_B_SESSION_VALID_IRQ_STS) {
+ 		u32 tmp;
+-		usb_debounce_id_pin();
+ 		b_device = (irq_src & OTGSC_STS_USB_ID) ? true : false;
+ 		fsl_writel(irq_src, &dr_regs->otgsc);
+ 		if (!b_device)
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index 88d7d4b..2395a63 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -792,6 +792,8 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+  * intact.  It needs to have knowledge of some USB interrupts
+  * such as port change.
+  */
++extern int usb_event_is_otg_wakeup(void);
++extern void usb_debounce_id_pin(void);
+ irqreturn_t fsl_otg_isr(int irq, void *dev_id)
+ {
+ 	struct fsl_otg *fotg = (struct fsl_otg *)dev_id;
+@@ -800,6 +802,11 @@ irqreturn_t fsl_otg_isr(int irq, void *dev_id)
+ 	irqreturn_t ret = IRQ_NONE;
+ 
+ 	fsl_otg_clk_ctl();
++	/* if this is an wakeup event, we should debounce ID pin
++	 * so we can get the correct ID value(ID status) here */
++	if (usb_event_is_otg_wakeup())
++		usb_debounce_id_pin();
++
+ 	otg_sc = le32_to_cpu(usb_dr_regs->otgsc);
+ 	otg_int_src = otg_sc & OTGSC_INTSTS_MASK & (otg_sc >> 8);
+ 
+-- 
+1.5.4.4
+

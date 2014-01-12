@@ -1,0 +1,559 @@
+From 97fc45810719f30baeac94786d129fbb7dc44f44 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Tue, 15 Feb 2011 15:41:14 -0600
+Subject: [PATCH] ENGR00139377 Iomux clean-up, remove unnecessary defines.
+
+Remove IOMUX_TO_IRQ_V3, because the call gpio_to_irq in
+mach/gpio.h does the same thing. Also the iomux_config
+enum is not used anywhere.
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c                 |   14 +++++++-------
+ arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c    |    5 +++--
+ arch/arm/mach-mx5/mx50_rdp.c                  |   10 +++++-----
+ arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c     |    3 ++-
+ arch/arm/mach-mx5/mx51_babbage.c              |   12 ++++++------
+ arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c |    3 ++-
+ arch/arm/mach-mx5/mx53_ard.c                  |   14 +++++++-------
+ arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c     |    5 +++--
+ arch/arm/mach-mx5/mx53_evk.c                  |   16 ++++++++--------
+ arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c     |    5 +++--
+ arch/arm/mach-mx5/mx53_loco.c                 |    8 ++++----
+ arch/arm/mach-mx5/mx53_loco_pmic_da9053.c     |    5 +++--
+ arch/arm/mach-mx5/mx53_smd.c                  |   12 ++++++------
+ arch/arm/mach-mx5/mx53_smd_pmic_da9053.c      |    5 +++--
+ arch/arm/plat-mxc/include/mach/iomux-mx50.h   |   21 +--------------------
+ arch/arm/plat-mxc/include/mach/iomux-mx51.h   |    2 --
+ arch/arm/plat-mxc/include/mach/iomux-mx53.h   |   18 ------------------
+ 17 files changed, 63 insertions(+), 95 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 5308964..da0aa7c 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -966,7 +966,7 @@ static struct mxc_audio_platform_data sgtl5000_data = {
+ 	.ssi_num = 1,
+ 	.src_port = 2,
+ 	.ext_port = 3,
+-	.hp_irq = IOMUX_TO_IRQ_V3(HP_DETECT),
++	.hp_irq = gpio_to_irq(HP_DETECT),
+ 	.hp_status = headphone_det_status,
+ 	.amp_enable = mxc_sgtl5000_amp_enable,
+ 	.sysclk = 12288000,
+@@ -1175,12 +1175,12 @@ static void __init mx50_arm2_io_init(void)
+ static void __init mxc_board_init(void)
+ {
+ 	/* SD card detect irqs */
+-	mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(SD1_CD);
+-	mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(SD1_CD);
+-	mxcsdhc2_device.resource[2].start = IOMUX_TO_IRQ_V3(SD2_CD);
+-	mxcsdhc2_device.resource[2].end = IOMUX_TO_IRQ_V3(SD2_CD);
+-	mxcsdhc3_device.resource[2].start = IOMUX_TO_IRQ_V3(SD3_CD);
+-	mxcsdhc3_device.resource[2].end = IOMUX_TO_IRQ_V3(SD3_CD);
++	mxcsdhc1_device.resource[2].start = gpio_to_irq(SD1_CD);
++	mxcsdhc1_device.resource[2].end = gpio_to_irq(SD1_CD);
++	mxcsdhc2_device.resource[2].start = gpio_to_irq(SD2_CD);
++	mxcsdhc2_device.resource[2].end = gpio_to_irq(SD2_CD);
++	mxcsdhc3_device.resource[2].start = gpio_to_irq(SD3_CD);
++	mxcsdhc3_device.resource[2].end = gpio_to_irq(SD3_CD);
+ 
+ 	mxc_cpu_common_init();
+ 	mx50_arm2_io_init();
+diff --git a/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
+index 014ec1a..c468833 100644
+--- a/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_arm2_pmic_mc13892.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -29,6 +29,7 @@
+ #include <mach/irqs.h>
+ 
+ #include <mach/iomux-mx50.h>
++#include <mach/gpio.h>
+ 
+ /*
+  * Convenience conversion.
+@@ -420,7 +421,7 @@ static struct mc13892_platform_data mc13892_plat = {
+ 
+ static struct spi_board_info __initdata mc13892_spi_device = {
+ 	.modalias = "pmic_spi",
+-	.irq = IOMUX_TO_IRQ_V3(114),
++	.irq = gpio_to_irq(114),
+ 	.max_speed_hz = 6000000,	/* max spi SCK clock speed in HZ */
+ 	.bus_num = 3,
+ 	.chip_select = 0,
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 23c56d3..5d19142 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1168,7 +1168,7 @@ static struct mxc_audio_platform_data sgtl5000_data = {
+ 	.ssi_num = 1,
+ 	.src_port = 2,
+ 	.ext_port = 3,
+-	.hp_irq = IOMUX_TO_IRQ_V3(HP_DETECT),
++	.hp_irq = gpio_to_irq(HP_DETECT),
+ 	.hp_status = headphone_det_status,
+ 	.amp_enable = mxc_sgtl5000_amp_enable,
+ 	.clock_enable = mxc_sgtl5000_clock_enable,
+@@ -1513,10 +1513,10 @@ static void __init mx50_rdp_io_init(void)
+ static void __init mxc_board_init(void)
+ {
+ 	/* SD card detect irqs */
+-	mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(SD1_CD);
+-	mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(SD1_CD);
+-	mxcsdhc2_device.resource[2].start = IOMUX_TO_IRQ_V3(SD2_CD);
+-	mxcsdhc2_device.resource[2].end = IOMUX_TO_IRQ_V3(SD2_CD);
++	mxcsdhc1_device.resource[2].start = gpio_to_irq(SD1_CD);
++	mxcsdhc1_device.resource[2].end = gpio_to_irq(SD1_CD);
++	mxcsdhc2_device.resource[2].start = gpio_to_irq(SD2_CD);
++	mxcsdhc2_device.resource[2].end = gpio_to_irq(SD2_CD);
+ 
+ 	mxc_cpu_common_init();
+ 	mx50_rdp_io_init();
+diff --git a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+index b362a5a..5502d40 100644
+--- a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+@@ -29,6 +29,7 @@
+ #include <mach/irqs.h>
+ 
+ #include <mach/iomux-mx50.h>
++#include <mach/gpio.h>
+ 
+ /*
+  * Convenience conversion.
+@@ -421,7 +422,7 @@ static struct mc13892_platform_data mc13892_plat = {
+ 
+ static struct spi_board_info __initdata mc13892_spi_device = {
+ 	.modalias = "pmic_spi",
+-	.irq = IOMUX_TO_IRQ_V3(114),
++	.irq = gpio_to_irq(114),
+ 	.max_speed_hz = 6000000,	/* max spi SCK clock speed in HZ */
+ 	.bus_num = 3,
+ 	.chip_select = 0,
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 2b3f7a9..e565103 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -931,7 +931,7 @@ static struct mxc_audio_platform_data sgtl5000_data = {
+ 	.ssi_num = 1,
+ 	.src_port = 2,
+ 	.ext_port = 3,
+-	.hp_irq = IOMUX_TO_IRQ_V3(BABBAGE_HEADPHONE_DET),
++	.hp_irq = gpio_to_irq(BABBAGE_HEADPHONE_DET),
+ 	.hp_status = headphone_det_status,
+ 	.amp_enable = mxc_sgtl5000_amp_enable,
+ 	.clock_enable = mxc_sgtl5000_clock_enable,
+@@ -1074,7 +1074,7 @@ static void mxc_register_powerkey(pwrkey_callback pk_cb)
+ {
+ 	/* Set power key as wakeup resource */
+ 	int irq, ret;
+-	irq = IOMUX_TO_IRQ_V3(BABBAGE_POWER_KEY);
++	irq = gpio_to_irq(BABBAGE_POWER_KEY);
+ 
+ 	if (gpio_get_value(BABBAGE_POWER_KEY))
+ 		set_irq_type(irq, IRQF_TRIGGER_FALLING);
+@@ -1219,10 +1219,10 @@ static void __init mxc_board_init(void)
+ 	mxc_spdif_data.spdif_core_clk = clk_get(NULL, "spdif_xtal_clk");
+ 	clk_put(mxc_spdif_data.spdif_core_clk);
+ 	/* SD card detect irqs */
+-	mxcsdhc2_device.resource[2].start = IOMUX_TO_IRQ_V3(BABBAGE_SD2_CD_2_5);
+-	mxcsdhc2_device.resource[2].end = IOMUX_TO_IRQ_V3(BABBAGE_SD2_CD_2_5);
+-	mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(BABBAGE_SD1_CD);
+-	mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(BABBAGE_SD1_CD);
++	mxcsdhc2_device.resource[2].start = gpio_to_irq(BABBAGE_SD2_CD_2_5);
++	mxcsdhc2_device.resource[2].end = gpio_to_irq(BABBAGE_SD2_CD_2_5);
++	mxcsdhc1_device.resource[2].start = gpio_to_irq(BABBAGE_SD1_CD);
++	mxcsdhc1_device.resource[2].end = gpio_to_irq(BABBAGE_SD1_CD);
+ 
+ 	mxc_cpu_common_init();
+ 	mx51_babbage_io_init();
+diff --git a/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c b/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c
+index 89a7514..dd7fd03 100644
+--- a/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx51_babbage_pmic_mc13892.c
+@@ -25,6 +25,7 @@
+ #include <mach/irqs.h>
+ #include <mach/hardware.h>
+ #include <mach/iomux-mx51.h>
++#include <mach/gpio.h>
+ 
+ /*
+  * Convenience conversion.
+@@ -422,7 +423,7 @@ static struct mc13892_platform_data mc13892_plat = {
+ 
+ static struct spi_board_info __initdata mc13892_spi_device = {
+ 	.modalias = "pmic_spi",
+-	.irq = IOMUX_TO_IRQ_V3(8),
++	.irq = gpio_to_irq(8),
+ 	.max_speed_hz = 6000000,	/* max spi SCK clock speed in HZ */
+ 	.bus_num = 1,
+ 	.chip_select = 0,
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index ec04d80..3085d5c 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -751,7 +751,7 @@ static struct i2c_board_info mxc_i2c2_board_info[] __initdata = {
+ 	{
+ 	 .type = "max11801",
+ 	 .addr = 0x49,
+-	 .irq  = IOMUX_TO_IRQ_V3(ARD_TS_INT),
++	 .irq  = gpio_to_irq(ARD_TS_INT),
+ 	},
+ 	{
+ 	 .type = "max7310",
+@@ -854,8 +854,8 @@ static struct resource ard_smsc911x_resources[] = {
+ 	 .flags = IORESOURCE_MEM,
+ 	 },
+ 	{
+-	 .start =  IOMUX_TO_IRQ_V3(ARD_ETHERNET_INT_B),
+-	 .end =  IOMUX_TO_IRQ_V3(ARD_ETHERNET_INT_B),
++	 .start =  gpio_to_irq(ARD_ETHERNET_INT_B),
++	 .end =  gpio_to_irq(ARD_ETHERNET_INT_B),
+ 	 .flags = IORESOURCE_IRQ,
+ 	 },
+ };
+@@ -1220,10 +1220,10 @@ static void __init mxc_board_init(void)
+ 	mxc_spdif_data.spdif_core_clk = clk_get(NULL, "spdif_xtal_clk");
+ 	clk_put(mxc_spdif_data.spdif_core_clk);
+ 
+-	mxcsdhc2_device.resource[2].start = IOMUX_TO_IRQ_V3(ARD_SD2_CD);
+-	mxcsdhc2_device.resource[2].end = IOMUX_TO_IRQ_V3(ARD_SD2_CD);
+-	mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(ARD_SD1_CD);
+-	mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(ARD_SD1_CD);
++	mxcsdhc2_device.resource[2].start = gpio_to_irq(ARD_SD2_CD);
++	mxcsdhc2_device.resource[2].end = gpio_to_irq(ARD_SD2_CD);
++	mxcsdhc1_device.resource[2].start = gpio_to_irq(ARD_SD1_CD);
++	mxcsdhc1_device.resource[2].end = gpio_to_irq(ARD_SD1_CD);
+ 
+ 	mxc_cpu_common_init();
+ 
+diff --git a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+index 0253881..25eb152 100644
+--- a/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
++++ b/arch/arm/mach-mx5/mx53_ard_pmic_ltc3589.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -31,6 +31,7 @@
+ #include <linux/mfd/ltc3589/core.h>
+ #include <mach/iomux-mx53.h>
+ #include <mach/irqs.h>
++#include <mach/gpio.h>
+ 
+ #define ARD_PMIC_INT			(4*32 + 7)	/* GPIO_5_7 */
+ 
+@@ -183,7 +184,7 @@ static struct ltc3589_platform_data __initdata ltc3589_plat = {
+ 
+ static struct i2c_board_info __initdata ltc3589_i2c_device = {
+ 	I2C_BOARD_INFO("ltc3589", 0x34),
+-	.irq = IOMUX_TO_IRQ_V3(ARD_PMIC_INT),
++	.irq = gpio_to_irq(ARD_PMIC_INT),
+ 	.platform_data = &ltc3589_plat,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 83110fc..2b412cc 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -870,7 +870,7 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	 .type = "tsc2007",
+ 	 .addr = 0x48,
+-	 .irq  = IOMUX_TO_IRQ_V3(EVK_TS_INT),
++	 .irq  = gpio_to_irq(EVK_TS_INT),
+ 	},
+ 	{
+ 	 .type = "backlight-i2c",
+@@ -887,7 +887,7 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	.type = "sii902x",
+ 	.addr = 0x39,
+-	.irq = IOMUX_TO_IRQ_V3(MX53_DVI_DETECT),
++	.irq = gpio_to_irq(MX53_DVI_DETECT),
+ 	.platform_data = &sii902x_hdmi_data,
+ 	},
+ };
+@@ -1416,17 +1416,17 @@ static void __init mxc_board_init(void)
+ 
+ 	/* SD card detect irqs */
+ 	if (board_is_mx53_arm2()) {
+-		mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(ARM2_SD1_CD);
+-		mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(ARM2_SD1_CD);
++		mxcsdhc1_device.resource[2].start = gpio_to_irq(ARM2_SD1_CD);
++		mxcsdhc1_device.resource[2].end = gpio_to_irq(ARM2_SD1_CD);
+ 		mmc3_data.card_inserted_state = 1;
+ 		mmc3_data.status = NULL;
+ 		mmc3_data.wp_status = NULL;
+ 		mmc1_data.wp_status = NULL;
+ 	} else {
+-		mxcsdhc3_device.resource[2].start = IOMUX_TO_IRQ_V3(EVK_SD3_CD);
+-		mxcsdhc3_device.resource[2].end = IOMUX_TO_IRQ_V3(EVK_SD3_CD);
+-		mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(EVK_SD1_CD);
+-		mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(EVK_SD1_CD);
++		mxcsdhc3_device.resource[2].start = gpio_to_irq(EVK_SD3_CD);
++		mxcsdhc3_device.resource[2].end = gpio_to_irq(EVK_SD3_CD);
++		mxcsdhc1_device.resource[2].start = gpio_to_irq(EVK_SD1_CD);
++		mxcsdhc1_device.resource[2].end = gpio_to_irq(EVK_SD1_CD);
+ 	}
+ 
+ 	mxc_cpu_common_init();
+diff --git a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+index 3ed2e14..6a6c189 100644
+--- a/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx53_evk_pmic_mc13892.c
+@@ -2,7 +2,7 @@
+  * mx53-evk-pmic-mc13892.c  --  i.MX53 3STACK Driver for Atlas MC13892 PMIC
+  */
+  /*
+-  * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++  * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+   */
+ 
+  /*
+@@ -25,6 +25,7 @@
+ #include <mach/irqs.h>
+ 
+ #include <mach/iomux-mx53.h>
++#include <mach/gpio.h>
+ 
+ /*
+  * Convenience conversion.
+@@ -341,7 +342,7 @@ static struct mc13892_platform_data mc13892_plat = {
+ 
+ static struct i2c_board_info __initdata mc13892_i2c_device = {
+ 	I2C_BOARD_INFO("mc13892", 0x08),
+-	.irq = IOMUX_TO_IRQ_V3(203),
++	.irq = gpio_to_irq(203),
+ 	.platform_data = &mc13892_plat,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 1ce4c94..201d722 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -451,7 +451,7 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	 .type = "sii902x",
+ 	 .addr = 0x39,
+-	 .irq = IOMUX_TO_IRQ_V3(DISP0_DET_INT),
++	 .irq = gpio_to_irq(DISP0_DET_INT),
+ 	 .platform_data = &sii902x_hdmi_data,
+ 	},
+ };
+@@ -511,7 +511,7 @@ static struct mxc_audio_platform_data sgtl5000_data = {
+ 	.ssi_num = 1,
+ 	.src_port = 2,
+ 	.ext_port = 5,
+-	.hp_irq = IOMUX_TO_IRQ_V3(HEADPHONE_DEC_B),
++	.hp_irq = gpio_to_irq(HEADPHONE_DEC_B),
+ 	.hp_status = headphone_det_status,
+ 	.init = mxc_sgtl5000_init,
+ };
+@@ -739,8 +739,8 @@ static void __init mxc_board_init(void)
+ 	mxc_spdif_data.spdif_core_clk = clk_get(NULL, "spdif_xtal_clk");
+ 	clk_put(mxc_spdif_data.spdif_core_clk);
+ 
+-	mxcsdhc3_device.resource[2].start = IOMUX_TO_IRQ_V3(SD3_CD);
+-	mxcsdhc3_device.resource[2].end = IOMUX_TO_IRQ_V3(SD3_CD);
++	mxcsdhc3_device.resource[2].start = gpio_to_irq(SD3_CD);
++	mxcsdhc3_device.resource[2].end = gpio_to_irq(SD3_CD);
+ 
+ 	mxc_cpu_common_init();
+ 	mx53_loco_io_init();
+diff --git a/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c b/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
+index e11243b..ddb9054 100644
+--- a/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
++++ b/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
+@@ -35,6 +35,7 @@
+ #include <linux/mfd/da9052/tsi.h>
+ #include <mach/irqs.h>
+ #include <mach/iomux-mx53.h>
++#include <mach/gpio.h>
+ 
+ #define DA9052_LDO(max, min, rname, suspend_mv) \
+ {\
+@@ -240,7 +241,7 @@ static int __init loco_da9052_init(struct da9052 *da9052)
+ 	/* s3c_gpio_setpull(DA9052_IRQ_PIN, S3C_GPIO_PULL_UP);*/
+ 
+ 	/* Set interrupt as LOW LEVEL interrupt source */
+-	set_irq_type(IOMUX_TO_IRQ_V3(MX53_LOCO_DA9052_IRQ), IRQF_TRIGGER_LOW);
++	set_irq_type(gpio_to_irq(MX53_LOCO_DA9052_IRQ), IRQF_TRIGGER_LOW);
+ 
+ 	da9052_init_ssc_cache(da9052);
+ 
+@@ -260,7 +261,7 @@ static struct da9052_platform_data __initdata da9052_plat = {
+ 
+ static struct i2c_board_info __initdata da9052_i2c_device = {
+ 	I2C_BOARD_INFO(DA9052_SSC_I2C_DEVICE_NAME, DA9052_I2C_ADDR >> 1),
+-	.irq = IOMUX_TO_IRQ_V3(MX53_LOCO_DA9052_IRQ),
++	.irq = gpio_to_irq(MX53_LOCO_DA9052_IRQ),
+ 	.platform_data = &da9052_plat,
+ };
+ 
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index e815690..cc30a07 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -643,7 +643,7 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ 	{
+ 	.type = "mpr121_touchkey",
+ 	.addr = 0x5a,
+-	.irq = IOMUX_TO_IRQ_V3(MX53_SMD_KEY_INT),
++	.irq = gpio_to_irq(MX53_SMD_KEY_INT),
+ 	.platform_data = &mpr121_keyboard_platdata,
+ 	},
+ };
+@@ -699,13 +699,13 @@ static struct i2c_board_info mxc_i2c2_board_info[] __initdata = {
+ 	{
+ 	.type = "sii902x",
+ 	.addr = 0x39,
+-	.irq = IOMUX_TO_IRQ_V3(MX53_SMD_HDMI_INT),
++	.irq = gpio_to_irq(MX53_SMD_HDMI_INT),
+ 	.platform_data = &sii902x_hdmi_data,
+ 	},
+ 	{
+ 	.type = "p1003_fwv33",
+ 	.addr = 0x41,
+-	.irq  = IOMUX_TO_IRQ_V3(MX53_SMD_CAP_TCH_INT1),
++	.irq  = gpio_to_irq(MX53_SMD_CAP_TCH_INT1),
+ 	.platform_data = &p1003_ts_data,
+ 	},
+ };
+@@ -795,7 +795,7 @@ static struct mxc_audio_platform_data sgtl5000_data = {
+ 	.ssi_num = 1,
+ 	.src_port = 2,
+ 	.ext_port = 5,
+-	.hp_irq = IOMUX_TO_IRQ_V3(MX53_SMD_HEADPHONE_DEC),
++	.hp_irq = gpio_to_irq(MX53_SMD_HEADPHONE_DEC),
+ 	.hp_status = headphone_det_status,
+ 	.amp_enable = mxc_sgtl5000_amp_enable,
+ 	.init = mxc_sgtl5000_init,
+@@ -1027,8 +1027,8 @@ static void __init mxc_board_init(void)
+ 	mxc_spdif_data.spdif_core_clk = clk_get(NULL, "spdif_xtal_clk");
+ 	clk_put(mxc_spdif_data.spdif_core_clk);
+ 
+-	mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ_V3(MX53_SMD_SD1_CD);
+-	mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ_V3(MX53_SMD_SD1_CD);
++	mxcsdhc1_device.resource[2].start = gpio_to_irq(MX53_SMD_SD1_CD);
++	mxcsdhc1_device.resource[2].end = gpio_to_irq(MX53_SMD_SD1_CD);
+ 
+ 	mxc_cpu_common_init();
+ 	mx53_smd_io_init();
+diff --git a/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c b/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
+index e6cf9e3..e65fdc5 100644
+--- a/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
++++ b/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
+@@ -37,6 +37,7 @@
+ #include <linux/mfd/da9052/tsi.h>
+ #include <mach/irqs.h>
+ #include <mach/iomux-mx53.h>
++#include <mach/gpio.h>
+ 
+ #define DA9052_LDO(max, min, rname, suspend_mv) \
+ {\
+@@ -267,7 +268,7 @@ static int __init smd_da9052_init(struct da9052 *da9052)
+ 	/* s3c_gpio_setpull(DA9052_IRQ_PIN, S3C_GPIO_PULL_UP);*/
+ 	int ret;
+ 	/* Set interrupt as LOW LEVEL interrupt source */
+-	set_irq_type(IOMUX_TO_IRQ_V3(MX53_SMD_DA9052_IRQ), IRQF_TRIGGER_LOW);
++	set_irq_type(gpio_to_irq(MX53_SMD_DA9052_IRQ), IRQF_TRIGGER_LOW);
+ 
+ 	da9052_init_ssc_cache(da9052);
+ 	ret = platform_device_register(&wifi_bt_reg_device);
+@@ -288,7 +289,7 @@ static struct da9052_platform_data __initdata da9052_plat = {
+ 
+ static struct i2c_board_info __initdata da9052_i2c_device = {
+ 	I2C_BOARD_INFO(DA9052_SSC_I2C_DEVICE_NAME, DA9052_I2C_ADDR >> 1),
+-	.irq = IOMUX_TO_IRQ_V3(MX53_SMD_DA9052_IRQ),
++	.irq = gpio_to_irq(MX53_SMD_DA9052_IRQ),
+ 	.platform_data = &da9052_plat,
+ };
+ 
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx50.h b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+index fd4a2e2..d92fd16 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx50.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+@@ -21,26 +21,7 @@
+ 
+ #include <mach/iomux-v3.h>
+ 
+-/*
+- * various IOMUX alternate output functions (1-7)
+- */
+-typedef enum iomux_config {
+-	IOMUX_CONFIG_ALT0,
+-	IOMUX_CONFIG_ALT1,
+-	IOMUX_CONFIG_ALT2,
+-	IOMUX_CONFIG_ALT3,
+-	IOMUX_CONFIG_ALT4,
+-	IOMUX_CONFIG_ALT5,
+-	IOMUX_CONFIG_ALT6,
+-	IOMUX_CONFIG_ALT7,
+-	IOMUX_CONFIG_GPIO,	/* added to help user use GPIO mode */
+-	IOMUX_CONFIG_SION = 0x1 << 4,	/* LOOPBACK:MUX SION bit */
+-} iomux_pin_cfg_t;
+-
+-#define NON_MUX_I	0x3FF
+-#define NON_PAD_I	0x7FF
+-
+-#define IOMUX_TO_IRQ_V3(pin)		(MXC_GPIO_IRQ_START + pin)
++#define NON_MUX_I	0
+ 
+ #define MX50_ELCDIF_PAD_CTRL	(PAD_CTL_PKE | \
+ 					PAD_CTL_DSE_HIGH)
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx51.h b/arch/arm/plat-mxc/include/mach/iomux-mx51.h
+index 8f77976..5b3cc08 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx51.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx51.h
+@@ -15,8 +15,6 @@
+ 
+ #include <mach/iomux-v3.h>
+ 
+-#define IOMUX_TO_IRQ_V3(pin)	(MXC_GPIO_IRQ_START + pin)
+-
+ /* Pad control groupings */
+ #define MX51_UART_PAD_CTRL	(PAD_CTL_PKE | PAD_CTL_PUE | PAD_CTL_DSE_HIGH | \
+ 				PAD_CTL_HYS | PAD_CTL_SRE_FAST)
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx53.h b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+index 11a5aa2..5581a2a 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx53.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx53.h
+@@ -21,24 +21,6 @@
+ 
+ #include <mach/iomux-v3.h>
+ 
+-/*
+- * various IOMUX alternate output functions (1-7)
+- */
+-typedef enum iomux_config {
+-	IOMUX_CONFIG_ALT0,
+-	IOMUX_CONFIG_ALT1,
+-	IOMUX_CONFIG_ALT2,
+-	IOMUX_CONFIG_ALT3,
+-	IOMUX_CONFIG_ALT4,
+-	IOMUX_CONFIG_ALT5,
+-	IOMUX_CONFIG_ALT6,
+-	IOMUX_CONFIG_ALT7,
+-	IOMUX_CONFIG_GPIO,	/* added to help user use GPIO mode */
+-	IOMUX_CONFIG_SION = 0x1 << 4,	/* LOOPBACK:MUX SION bit */
+-} iomux_pin_cfg_t;
+-
+-#define IOMUX_TO_IRQ_V3(pin)	(MXC_GPIO_IRQ_START + pin)
+-
+ #define NON_PAD_I	0
+ 
+ #define MX53_UART_PAD_CTRL	(PAD_CTL_PKE | PAD_CTL_PUE | PAD_CTL_DSE_HIGH | \
+-- 
+1.5.4.4
+

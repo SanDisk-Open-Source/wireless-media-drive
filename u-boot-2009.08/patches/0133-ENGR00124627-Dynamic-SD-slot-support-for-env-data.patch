@@ -1,0 +1,255 @@
+From d6141b1640edd06e59e431baf1ab87b0894f22f3 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 25 Jun 2010 15:25:14 +0800
+Subject: [PATCH] ENGR00124627: Dynamic SD slot support for env data.
+
+MMC init failed when boot with upper SD slot
+while succesful with lower slot.
+This patch will fix it.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/mx51_3stack.c |  145 +++++++++++++++--------------
+ board/freescale/mx51_bbg/mx51_bbg.c       |    8 ++
+ include/configs/mx51_3stack.h             |    1 +
+ include/configs/mx51_3stack_android.h     |    1 +
+ include/configs/mx51_bbg.h                |    1 +
+ include/configs/mx51_bbg_android.h        |    1 +
+ 6 files changed, 89 insertions(+), 68 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 7ec3b1d..1289118 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -990,84 +990,93 @@ int board_eth_init(bd_t *bis)
+ 
+ #ifdef CONFIG_CMD_MMC
+ 
+-u32 *imx_esdhc_base_addr;
++struct fsl_esdhc_cfg esdhc_cfg[2] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++};
+ 
+-int esdhc_gpio_init(void)
++#ifdef CONFIG_DYNAMIC_MMC_DEVNO
++int get_mmc_env_devno()
+ {
+-	u32 interface_esdhc = 0;
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	return (soc_sbmr & 0x00180000) ? 1 : 0;
++}
++#endif
++
++int esdhc_gpio_init(bd_t *bis)
++{
++	u32 index = 0;
+ 	s32 status = 0;
+ 
+-	interface_esdhc = (readl(SRC_BASE_ADDR + 0x4) & (0x00180000)) >> 19;
+-
+-	switch (interface_esdhc) {
+-	case 0:
+-
+-		imx_esdhc_base_addr = (u32 *)MMC_SDHC1_BASE_ADDR;
+-
+-		mxc_request_iomux(MX51_PIN_SD1_CMD,
+-			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_CLK,
+-			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-
+-		mxc_request_iomux(MX51_PIN_SD1_DATA0,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_DATA1,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_DATA2,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_request_iomux(MX51_PIN_SD1_DATA3,
+-				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
+-				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
+-				PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
+-				PAD_CTL_PUE_PULL |
+-				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+-		break;
+-	case 1:
+-		status = 1;
+-		break;
+-	case 2:
+-		status = 1;
+-		break;
+-	case 3:
+-		status = 1;
+-		break;
+-	default:
+-		status = 1;
+-		break;
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			mxc_request_iomux(MX51_PIN_SD1_CMD,
++				  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_CLK,
++				  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++
++			mxc_request_iomux(MX51_PIN_SD1_DATA0,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_DATA1,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_DATA2,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_request_iomux(MX51_PIN_SD1_DATA3,
++					IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++			mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
++					PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++					PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
++					PAD_CTL_PUE_PULL |
++					PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++			break;
++		case 1:
++			status = 1;
++			break;
++		case 2:
++			status = 1;
++			break;
++		case 3:
++			status = 1;
++			break;
++		default:
++			status = 1;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
+ 	}
+ 
+ 	return status;
+ }
+ 
+-int board_mmc_init(void)
++int board_mmc_init(bd_t *bis)
+ {
+-	if (!esdhc_gpio_init())
++	if (!esdhc_gpio_init(bis))
+ 		return fsl_esdhc_mmc_init(gd->bd);
+ 	else
+ 		return -1;
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index f615589..66bb43d 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -687,6 +687,14 @@ struct fsl_esdhc_cfg esdhc_cfg[2] = {
+ 	{MMC_SDHC2_BASE_ADDR, 1, 1},
+ };
+ 
++#ifdef CONFIG_DYNAMIC_MMC_DEVNO
++int get_mmc_env_devno()
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	return (soc_sbmr & 0x00180000) ? 1 : 0;
++}
++#endif
++
+ int esdhc_gpio_init(bd_t *bis)
+ {
+ 	s32 status = 0;
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 31cf943..354523c 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -117,6 +117,7 @@
+ 	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
++	#define CONFIG_SYS_FSL_ESDHC_NUM 1
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 752fcd7..3189269 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -212,6 +212,7 @@
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
++	#define CONFIG_SYS_FSL_ESDHC_NUM 1
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 252b1d8..76d718e 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -129,6 +129,7 @@
+ 	#define CONFIG_SYS_MMC_ENV_DEV	0
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
++	#define CONFIG_DYNAMIC_MMC_DEVNO
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 5f7435d..79aae09 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -256,6 +256,7 @@
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
++	#define CONFIG_DYNAMIC_MMC_DEVNO
+ #endif
+ 
+ /*
+-- 
+1.5.4.4
+

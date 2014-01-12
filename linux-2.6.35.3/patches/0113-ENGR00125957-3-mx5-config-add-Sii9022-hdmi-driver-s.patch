@@ -1,0 +1,27 @@
+From a96b81fd54812203e7d6acc822997647b819220d Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Wed, 11 Aug 2010 10:58:01 +0800
+Subject: [PATCH] ENGR00125957-3 mx5 config: add Sii9022 hdmi driver support
+
+Build in Sii9022.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index d226152..d71d033 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1513,6 +1513,7 @@ CONFIG_FB_MXC_EPSON_VGA_SYNC_PANEL=y
+ CONFIG_FB_MXC_TVOUT_TVE=y
+ CONFIG_FB_MXC_LDB=y
+ # CONFIG_FB_MXC_CLAA_WVGA_SYNC_PANEL is not set
++CONFIG_FB_MXC_SII9022=y
+ CONFIG_FB_MXC_CH7026=y
+ # CONFIG_FB_MXC_TVOUT_CH7024 is not set
+ # CONFIG_FB_MXC_ASYNC_PANEL is not set
+-- 
+1.5.4.4
+

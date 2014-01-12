@@ -1,0 +1,51 @@
+From 270ba8ac5b8c52a0b4fcf0d77eb66ac647c7f37c Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 9 Dec 2009 15:55:58 +0800
+Subject: [PATCH] ENGR00119133: MX35 can't boot due to wrong frequency setting
+
+MX35 can't boot due to wrong frequency setting.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx35_3stack/lowlevel_init.S |    5 +++--
+ board/freescale/mx35_3stack/mx35_3stack.c   |    8 +++++++-
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/lowlevel_init.S b/board/freescale/mx35_3stack/lowlevel_init.S
+index c4454fa..9608aa5 100644
+--- a/board/freescale/mx35_3stack/lowlevel_init.S
++++ b/board/freescale/mx35_3stack/lowlevel_init.S
+@@ -204,8 +204,9 @@
+ 
+     	check_soc_version r1, r2
+ 	cmp r1, #CHIP_REV_2_0
+-	movhs r2, #CLKMODE_CONSUMER
+-	ldrlo r2, [r0, #CLKCTL_PDR0]
++	ldrhs r3, =CCM_MPLL_532_HZ
++	bhs 1f
++	ldr r2, [r0, #CLKCTL_PDR0]
+         tst r2, #CLKMODE_CONSUMER
+         ldrne r3, =CCM_MPLL_532_HZ  /* consumer path*/
+         ldreq r3, =CCM_MPLL_399_HZ  /* auto path*/
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 9eea6ad..4f79942 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -322,7 +322,13 @@ int board_late_init(void)
+ 
+ int checkboard(void)
+ {
+-	printf("Board: MX35 3STACK [");
++	printf("Board: MX35 3STACK ");
++
++	if (system_rev & CHIP_REV_2_0)
++		printf("2.0 [");
++	else
++		printf("1.0 [");
++
+ 	switch (__REG(CCM_BASE_ADDR + CLKCTL_RCSR) & 0x0F) {
+ 	case 0x0000:
+ 		printf("POR");
+-- 
+1.5.4.4
+

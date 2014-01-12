@@ -1,0 +1,59 @@
+From 3a765c56b5b2ea47ebeb050d7653ef35aa44f7c3 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Thu, 11 Nov 2010 10:17:59 -0600
+Subject: [PATCH] ENGR00133669: MXC: Ensure some clock APIs can be called in process context only.
+
+The added checks will ensure that clk_enable() and clk_disable() are called
+only in a process context(). The main reason behind doing this is to allow
+for voltage scaling as part of clk_enable()/clk_disable() functions.
+Voltage scaling uses the Regulator APIs which cannot be called in an
+ISR context.
+This also reduces the amount of work done in an ISR context.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/clock.c |   14 +++++++++++++-
+ 1 files changed, 13 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/clock.c b/arch/arm/plat-mxc/clock.c
+index be6f258..af47bed 100644
+--- a/arch/arm/plat-mxc/clock.c
++++ b/arch/arm/plat-mxc/clock.c
+@@ -39,7 +39,7 @@
+ #include <linux/seq_file.h>
+ #include <linux/semaphore.h>
+ #include <linux/string.h>
+-
++#include <linux/hardirq.h>
+ #include <mach/clock.h>
+ #include <mach/hardware.h>
+ 
+@@ -171,6 +171,12 @@ int clk_enable(struct clk *clk)
+ 	unsigned long flags;
+ 	int ret = 0;
+ 
++	if (in_interrupt()) {
++		printk(KERN_ERR " clk_enable cannot be called in an interrupt context\n");
++		dump_stack();
++		BUG();
++	}
++
+ 	if (clk == NULL || IS_ERR(clk))
+ 		return -EINVAL;
+ 
+@@ -215,6 +221,12 @@ void clk_disable(struct clk *clk)
+ {
+ 	unsigned long flags;
+ 
++	if (in_interrupt()) {
++		printk(KERN_ERR " clk_disable cannot be called in an interrupt context\n");
++		dump_stack();
++		BUG();
++	}
++
+ 	if (clk == NULL || IS_ERR(clk))
+ 		return;
+ 
+-- 
+1.5.4.4
+

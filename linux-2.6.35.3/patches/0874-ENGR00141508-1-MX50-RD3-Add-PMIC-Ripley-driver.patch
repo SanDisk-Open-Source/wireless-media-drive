@@ -1,0 +1,3785 @@
+From 12156df7104dba860d59b4f3729bad220cb33711 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Sat, 2 Apr 2011 17:46:58 +0800
+Subject: [PATCH] ENGR00141508-1 MX50 RD3: Add PMIC Ripley driver
+
+Support Regulator, ADC, TouchScreen, Battery, RTC.
+
+PMIC issues are tracked on
+http://wiki.freescale.net/display/MADPlatMX508/RD3+board+Issues+Tracking
+
+Signed-off-by: Anson Huang <b20788@freescale.com>
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/mxc/pmic/Kconfig                    |    9 +
+ drivers/mxc/pmic/Makefile                   |    1 +
+ drivers/mxc/pmic/core/Makefile              |    4 +
+ drivers/mxc/pmic/core/mc34708.c             |  121 +++
+ drivers/mxc/pmic/core/pmic_core_spi.c       |    6 +
+ drivers/mxc/pmic/mc34708/Kconfig            |   27 +
+ drivers/mxc/pmic/mc34708/Makefile           |   10 +
+ drivers/mxc/pmic/mc34708/mc34708_adc.c      |  615 +++++++++++++
+ drivers/mxc/pmic/mc34708/mc34708_battery.c  |  950 ++++++++++++++++++++
+ drivers/regulator/Kconfig                   |    5 +
+ drivers/regulator/Makefile                  |    1 +
+ drivers/regulator/reg-mc34708.c             | 1276 +++++++++++++++++++++++++++
+ include/linux/mfd/mc34708/core.h            |   83 ++
+ include/linux/mfd/mc34708/mc34708.h         |  134 +++
+ include/linux/mfd/mc34708/mc34708_adc.h     |   88 ++
+ include/linux/mfd/mc34708/mc34708_battery.h |  162 ++++
+ include/linux/pmic_external.h               |   78 ++-
+ 17 files changed, 3568 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mxc/pmic/Kconfig b/drivers/mxc/pmic/Kconfig
+index 4ee9111..6f69ab0 100644
+--- a/drivers/mxc/pmic/Kconfig
++++ b/drivers/mxc/pmic/Kconfig
+@@ -23,6 +23,14 @@ config MXC_PMIC_MC13892
+ 	  This is the MXC MC13892(PMIC) support. It include
+ 	  ADC, Battery, Connectivity, Light, Power and RTC.
+ 
++config MXC_PMIC_MC34708
++	tristate "MC34708 PMIC"
++	depends on ARCH_MXC && (I2C || SPI)
++	select MXC_PMIC
++	---help---
++	  This is the MXC MC34708(PMIC) support. It include
++	  ADC, Battery, Connectivity, Light, Power and RTC.
++
+ config MXC_PMIC_I2C
+ 	bool "Support PMIC I2C Interface"
+ 	depends on MXC_PMIC_MC13892 && I2C
+@@ -61,4 +69,5 @@ source "drivers/mxc/pmic/mc13783/Kconfig"
+ 
+ source "drivers/mxc/pmic/mc13892/Kconfig"
+ 
++source "drivers/mxc/pmic/mc34708/Kconfig"
+ endmenu
+diff --git a/drivers/mxc/pmic/Makefile b/drivers/mxc/pmic/Makefile
+index 385c07e..1c4dccc 100644
+--- a/drivers/mxc/pmic/Makefile
++++ b/drivers/mxc/pmic/Makefile
+@@ -5,3 +5,4 @@
+ obj-y				+= core/
+ obj-$(CONFIG_MXC_PMIC_MC13783)	+= mc13783/
+ obj-$(CONFIG_MXC_PMIC_MC13892)	+= mc13892/
++obj-$(CONFIG_MXC_PMIC_MC34708)	+= mc34708/
+diff --git a/drivers/mxc/pmic/core/Makefile b/drivers/mxc/pmic/core/Makefile
+index be06863..17b0751 100644
+--- a/drivers/mxc/pmic/core/Makefile
++++ b/drivers/mxc/pmic/core/Makefile
+@@ -11,6 +11,10 @@ ifneq ($(CONFIG_MXC_PMIC_MC13892),)
+ pmic_mxc_mod-objs	+= mc13892.o
+ endif
+ 
++ifneq ($(CONFIG_MXC_PMIC_MC34708),)
++pmic_mxc_mod-objs	+= mc34708.o
++endif
++
+ ifneq ($(CONFIG_MXC_PMIC_SPI),)
+ pmic_mxc_mod-objs += pmic_core_spi.o
+ endif
+diff --git a/drivers/mxc/pmic/core/mc34708.c b/drivers/mxc/pmic/core/mc34708.c
+new file mode 100644
+index 0000000..0f37683
+--- /dev/null
++++ b/drivers/mxc/pmic/core/mc34708.c
+@@ -0,0 +1,121 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++/*!
++ * @file pmic/core/mc34708.c
++ * @brief This file contains MC34708 specific PMIC code. This implementaion
++ * may differ for each PMIC chip.
++ *
++ * @ingroup PMIC_CORE
++ */
++
++/*
++ * Includes
++ */
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/slab.h>
++#include <linux/device.h>
++#include <linux/spi/spi.h>
++#include <linux/i2c.h>
++#include <linux/uaccess.h>
++#include <linux/delay.h>
++#include <linux/pmic_external.h>
++#include <linux/pmic_status.h>
++#include <linux/mfd/mc34708/core.h>
++
++#include <asm/mach-types.h>
++
++#include "pmic.h"
++
++/*
++ * Defines
++ */
++#define MC34708_I2C_RETRY_TIMES 10
++#define MXC_PMIC_FRAME_MASK		0x00FFFFFF
++#define MXC_PMIC_MAX_REG_NUM		0x3F
++#define MXC_PMIC_REG_NUM_SHIFT		0x19
++#define MXC_PMIC_WRITE_BIT_SHIFT		31
++
++void mc34708_power_off(void);
++
++void *mc34708_alloc_data(struct device *dev)
++{
++	struct mc34708 *mc34708;
++
++	mc34708 = kzalloc(sizeof(struct mc34708), GFP_KERNEL);
++	if (mc34708 == NULL)
++		return NULL;
++
++	mc34708->dev = dev;
++
++	return (void *)mc34708;
++}
++
++int mc34708_init_registers(void)
++{
++	CHECK_ERROR(pmic_write(REG_INT_MASK0, 0xFFFFFF));
++	CHECK_ERROR(pmic_write(REG_INT_MASK0, 0xFFFFFF));
++	CHECK_ERROR(pmic_write(REG_INT_STATUS0, 0xFFFFFF));
++	CHECK_ERROR(pmic_write(REG_INT_STATUS1, 0xFFFFFF));
++
++	pm_power_off = mc34708_power_off;
++
++	return PMIC_SUCCESS;
++}
++
++
++/*!
++ * This function returns the PMIC version in system.
++ *
++ * @param	ver	pointer to the pmic_version_t structure
++ *
++ * @return	This function returns PMIC version.
++ */
++void mc34708_get_revision(pmic_version_t *ver)
++{
++	int rev_id = 0;
++	int rev1 = 0;
++	int rev2 = 0;
++	int finid = 0;
++	int icid = 0;
++
++	ver->id = PMIC_MC34708;
++	pmic_read(REG_IDENTIFICATION, &rev_id);
++
++	rev1 = (rev_id & 0x018) >> 3;
++	rev2 = (rev_id & 0x007);
++	icid = (rev_id & 0x01C0) >> 6;
++	finid = (rev_id & 0x01E00) >> 9;
++
++	ver->revision = ((rev1 * 10) + rev2);
++	printk(KERN_INFO "mc34708 Rev %d.%d FinVer %x detected\n", rev1,
++	       rev2, finid);
++}
++
++void mc34708_power_off(void)
++{
++	unsigned int value;
++
++	pmic_read_reg(REG_POWER_CTL0, &value, 0xffffff);
++
++	value |= 0x000008;
++
++	pmic_write_reg(REG_POWER_CTL0, value, 0xffffff);
++}
+diff --git a/drivers/mxc/pmic/core/pmic_core_spi.c b/drivers/mxc/pmic/core/pmic_core_spi.c
+index 7357945..156c50f 100644
+--- a/drivers/mxc/pmic/core/pmic_core_spi.c
++++ b/drivers/mxc/pmic/core/pmic_core_spi.c
+@@ -42,6 +42,7 @@
+ #include <asm/uaccess.h>
+ 
+ #include <linux/mfd/mc13892/core.h>
++#include <linux/mfd/mc34708/core.h>
+ 
+ #include "pmic.h"
+ 
+@@ -89,11 +90,13 @@ static struct platform_device bleds_ldm = {
+ 
+ enum pmic_id {
+ 	PMIC_ID_MC13892,
++	PMIC_ID_MC34708,
+ 	PMIC_ID_INVALID,
+ };
+ 
+ struct pmic_internal pmic_internal[] = {
+ 	[PMIC_ID_MC13892] = _PMIC_INTERNAL_INITIALIZER(mc13892),
++	[PMIC_ID_MC34708] = _PMIC_INTERNAL_INITIALIZER(mc34708),
+ };
+ 
+ /*
+@@ -227,6 +230,7 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ 
+ 	adc_ldm.name = get_client_device_name(name, "%s_adc");
+ 	battery_ldm.name = get_client_device_name(name, "%s_battery");
++	light_ldm.name = get_client_device_name(name, "%s_light");
+ 
+ 	/* Initialize the PMIC event handling */
+ 	pmic_event_list_init();
+@@ -319,6 +323,8 @@ static const struct spi_device_id pmic_device_id[] = {
+ 	{
+ 		.name = "mc13892",
+ 	}, {
++		.name = "mc34708",
++	}, {
+ 		/* sentinel */
+ 	}
+ };
+diff --git a/drivers/mxc/pmic/mc34708/Kconfig b/drivers/mxc/pmic/mc34708/Kconfig
+new file mode 100644
+index 0000000..612ebdb
+--- /dev/null
++++ b/drivers/mxc/pmic/mc34708/Kconfig
+@@ -0,0 +1,27 @@
++#
++# PMIC Modules configuration
++#
++
++config MXC_MC34708_ADC
++	tristate "MC34708 ADC support"
++	depends on MXC_PMIC_MC34708
++	---help---
++	This is the MC34708 ADC module driver. This module provides kernel API
++	for the ADC system of MC34708.
++	It controls also the touch screen interface.
++	If you want MC34708 ADC support, you should say Y here
++
++config MXC_MC34708_RTC
++	tristate "MC34708 Real Time Clock (RTC) support"
++	depends on MXC_PMIC_MC34708
++	---help---
++	This is the MC34708 RTC module driver. This module provides kernel API
++	for RTC part of MC34708.
++	If you want MC34708 RTC support, you should say Y here
++config MXC_MC34708_BATTERY
++	tristate "MC34708 Battery API support"
++	depends on MXC_PMIC_MC34708
++	---help---
++	This is the MC34708 battery module driver. This module provides kernel API
++	for battery control part of MC34708.
++	If you want MC34708 battery support, you should say Y here
+diff --git a/drivers/mxc/pmic/mc34708/Makefile b/drivers/mxc/pmic/mc34708/Makefile
+new file mode 100644
+index 0000000..6e1c907
+--- /dev/null
++++ b/drivers/mxc/pmic/mc34708/Makefile
+@@ -0,0 +1,10 @@
++#
++# Makefile for the mc13783 pmic drivers.
++#
++
++obj-$(CONFIG_MXC_MC34708_ADC) += mc34708_adc.o
++#obj-$(CONFIG_MXC_MC34708_RTC) += mc34708_rtc.o
++obj-$(CONFIG_MXC_MC34708_LIGHT) += mc34708_light.o
++obj-$(CONFIG_MXC_MC34708_BATTERY) += mc34708_battery.o
++#obj-$(CONFIG_MXC_MC34708_CONNECTIVITY) += mc34708_convity.o
++#obj-$(CONFIG_MXC_MC34708_POWER) += mc34708_power.o
+diff --git a/drivers/mxc/pmic/mc34708/mc34708_adc.c b/drivers/mxc/pmic/mc34708/mc34708_adc.c
+new file mode 100644
+index 0000000..a08c21a
+--- /dev/null
++++ b/drivers/mxc/pmic/mc34708/mc34708_adc.c
+@@ -0,0 +1,615 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#include <linux/platform_device.h>
++#include <linux/poll.h>
++#include <linux/sched.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/wait.h>
++#include <linux/device.h>
++
++#include <linux/pmic_adc.h>
++#include <linux/pmic_status.h>
++#include <linux/mfd/mc34708/mc34708.h>
++
++#include "../core/pmic.h"
++
++#define ADSEL0_LSH	0
++#define ADSEL0_WID	4
++#define ADSEL1_LSH	4
++#define ADSEL1_WID	4
++#define ADSEL2_LSH	8
++#define ADSEL2_WID	4
++#define ADSEL3_LSH	12
++#define ADSEL3_WID	4
++#define ADSEL4_LSH	16
++#define ADSEL4_WID	4
++#define ADSEL5_LSH	20
++#define ADSEL5_WID	4
++
++#define ADSEL6_LSH	0
++#define ADSEL6_WID	4
++#define ADSEL7_LSH	4
++#define ADSEL7_WID	4
++
++#define ADRESULT0_LSH 2
++#define ADRESULT0_WID 10
++
++#define ADRESULT1_LSH 14
++#define ADRESULT1_WID 10
++
++#define ADEN_LSH 0
++#define ADEN_WID 1
++
++#define ADSTART_LSH 1
++#define ADSTART_WID 1
++
++#define ADSTOP_LSH 4
++#define ADSTOP_WID 3
++
++#define TSEN	(1 << 12)
++#define TSSTART	(1 << 13)
++#define	TSCONT	(1 << 14)
++#define	TSHOLD	(1 << 15)
++#define	TSSTOP0	(1 << 16)
++#define	TSSTOP1	(1 << 17)
++#define	TSSTOP2	(1 << 18)
++#define	TSPENDETEN	(1 << 20)
++
++#define	DUMMY		0
++#define	X_POS		1
++#define	Y_POS		2
++#define	CONTACT_RES	3
++
++#define	DELTA_Y_MAX	50
++#define	DELTA_X_MAX	50
++
++#define ADC_MAX_CHANNEL 7
++
++/* internal function */
++static void callback_tspendet(void *);
++static void callback_tsdone(void *);
++static void callback_adcbisdone(void *);
++
++static int suspend_flag;
++
++static DECLARE_COMPLETION(adcdone_it);
++static DECLARE_COMPLETION(tsdone_int);
++static DECLARE_COMPLETION(tspendet_int);
++static pmic_event_callback_t tspendet_event;
++static pmic_event_callback_t event_tsdone;
++static pmic_event_callback_t event_adc;
++static DECLARE_MUTEX(convert_mutex);
++
++u32 value[8];
++
++static bool pmic_adc_ready;
++
++int is_mc34708_adc_ready()
++{
++	return pmic_adc_ready;
++}
++
++EXPORT_SYMBOL(is_mc34708_adc_ready);
++
++static int mc34708_pmic_adc_suspend(struct platform_device *pdev,
++				    pm_message_t state)
++{
++	suspend_flag = 1;
++	CHECK_ERROR(pmic_write_reg
++		    (MC34708_REG_ADC0, BITFVAL(ADEN, 0), BITFMASK(ADEN)));
++
++	return 0;
++};
++
++static int mc34708_pmic_adc_resume(struct platform_device *pdev)
++{
++	suspend_flag = 0;
++	CHECK_ERROR(pmic_write_reg
++		    (MC34708_REG_ADC0, BITFVAL(ADEN, 1), BITFMASK(ADEN)));
++
++	return 0;
++};
++
++static void callback_tspendet(void *unused)
++{
++	pr_debug("*** TSI IT mc34708 PMIC_ADC_GET_TOUCH_SAMPLE ***\n");
++	complete(&tspendet_int);
++	pmic_event_mask(MC34708_EVENT_TSPENDET);
++}
++
++static void callback_tsdone(void *unused)
++{
++	complete(&tsdone_int);
++}
++
++static void callback_adcdone(void *unused)
++{
++	complete(&adcdone_it);
++}
++
++int mc34708_pmic_adc_init(void)
++{
++	unsigned int reg_value = 0, i = 0;
++
++	if (suspend_flag == 1)
++		return -EBUSY;
++
++	/* sub to ADCDone IT */
++	event_adc.param = NULL;
++	event_adc.func = callback_adcdone;
++	CHECK_ERROR(pmic_event_subscribe(MC34708_EVENT_ADCDONEI, event_adc));
++
++	/* sub to TSDONE INT */
++	event_tsdone.param = NULL;
++	event_tsdone.func = callback_tsdone;
++	CHECK_ERROR(pmic_event_subscribe(MC34708_EVENT_TSDONEI, event_tsdone));
++
++	/* sub to TS Pen Detect INT */
++	tspendet_event.param = NULL;
++	tspendet_event.func = callback_tspendet;
++	CHECK_ERROR(pmic_event_subscribe
++		    (MC34708_EVENT_TSPENDET, tspendet_event));
++
++	/* enable adc */
++	pmic_write_reg(MC34708_REG_ADC0, 0x170000, PMIC_ALL_BITS);
++	pmic_write_reg(MC34708_REG_ADC1, 0xFFF000, PMIC_ALL_BITS);
++	pmic_write_reg(MC34708_REG_ADC2, 0x000000, PMIC_ALL_BITS);
++	pmic_write_reg(MC34708_REG_ADC3, 0xF28500, PMIC_ALL_BITS);
++
++	return PMIC_SUCCESS;
++}
++
++PMIC_STATUS mc34708_pmic_adc_deinit(void)
++{
++	CHECK_ERROR(pmic_event_unsubscribe
++		    (MC34708_EVENT_ADCDONEI, event_tsdone));
++	CHECK_ERROR(pmic_event_unsubscribe
++		    (MC34708_EVENT_TSPENDET, tspendet_event));
++
++	return PMIC_SUCCESS;
++}
++
++PMIC_STATUS mc34708_pmic_adc_convert(t_channel channel, unsigned short *result)
++{
++	PMIC_STATUS ret;
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++
++	register1 = MC34708_REG_ADC2;
++
++	if (suspend_flag == 1)
++		return -EBUSY;
++	down(&convert_mutex);
++
++	if (channel <= BATTERY_CURRENT) {
++		INIT_COMPLETION(adcdone_it);
++		ret = pmic_write_reg(MC34708_REG_ADC2,
++					   BITFVAL(ADSEL0, BATTERY_VOLTAGE),
++					   BITFMASK(ADSEL0));
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++
++		ret = pmic_write_reg(MC34708_REG_ADC2,
++					   BITFVAL(ADSEL1, BATTERY_CURRENT),
++					   BITFMASK(ADSEL1));
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++
++		ret = pmic_write_reg
++			    (MC34708_REG_ADC0, BITFVAL(ADEN, 1),
++			     BITFMASK(ADEN));
++
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++		ret = pmic_write_reg(MC34708_REG_ADC0,
++				     BITFVAL(ADSTOP, ADC_MAX_CHANNEL),
++				     BITFMASK(ADSTOP));
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++		ret = pmic_write_reg(MC34708_REG_ADC0,
++				     BITFVAL(ADSTART, 1), BITFMASK(ADSTART));
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++
++		pr_debug("wait adc done.\n");
++		msleep(100);
++		wait_for_completion_interruptible(&adcdone_it);
++		ret = pmic_write_reg(MC34708_REG_ADC0,
++				     BITFVAL(ADSTART, 0), BITFMASK(ADSTART));
++
++		ret =
++		    pmic_read_reg(MC34708_REG_ADC4, &register_val,
++				  PMIC_ALL_BITS);
++
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++
++		switch (channel) {
++		case BATTERY_VOLTAGE:
++			*result = BITFEXT(register_val, ADRESULT0);
++			break;
++		case BATTERY_CURRENT:
++			*result = BITFEXT(register_val, ADRESULT1);
++			break;
++		default:
++			*result = BITFEXT(register_val, ADRESULT0);
++			break;
++		}
++
++		pmic_write_reg
++			    (MC34708_REG_ADC0, BITFVAL(ADEN, 0),
++			     BITFMASK(ADEN));
++	} else {
++
++		INIT_COMPLETION(tsdone_int);
++		pr_debug("wait adc done.\n");
++		wait_for_completion_interruptible(&tsdone_int);
++		ret =
++		    pmic_read_reg(MC34708_REG_ADC4, &register_val,
++				  PMIC_ALL_BITS);
++		if (PMIC_SUCCESS != ret)
++			goto error1;
++		*result = BITFEXT(register_val, ADRESULT0);
++	}
++error1:
++	up(&convert_mutex);
++
++	return ret;
++}
++
++EXPORT_SYMBOL(mc34708_pmic_adc_convert);
++
++static int pmic_adc_filter(t_touch_screen *ts_curr)
++{
++	unsigned int ydiff, xdiff;
++	unsigned int sample_sumx, sample_sumy;
++
++	if (ts_curr->contact_resistance == 0) {
++		ts_curr->x_position = 0;
++		ts_curr->y_position = 0;
++		return 0;
++	}
++
++	ydiff = abs(ts_curr->y_position1 - ts_curr->y_position2);
++	if (ydiff > DELTA_Y_MAX) {
++		pr_debug("pmic_adc_filter: Ret pos y\n");
++		return -1;
++	}
++
++	xdiff = abs(ts_curr->x_position1 - ts_curr->x_position2);
++	if (xdiff > DELTA_X_MAX) {
++		pr_debug("pmic_adc_filter: Ret pos x\n");
++		return -1;
++	}
++
++	sample_sumx = ts_curr->x_position1 + ts_curr->x_position2;
++	sample_sumy = ts_curr->y_position1 + ts_curr->y_position2;
++
++	ts_curr->y_position = sample_sumy / 2;
++	ts_curr->x_position = sample_sumx / 2;
++
++	return 0;
++}
++
++PMIC_STATUS mc34708_adc_read_ts(t_touch_screen *ts_value, int wait_tsi)
++{
++	pr_debug("mc34708_adc : mc34708_adc_read_ts\n");
++
++	if (wait_tsi) {
++		INIT_COMPLETION(tspendet_int);
++
++		pmic_event_unmask(MC34708_EVENT_TSPENDET);
++		pmic_write_reg(MC34708_REG_ADC0, 0x170000, PMIC_ALL_BITS);
++		pmic_write_reg(MC34708_REG_ADC1, 0xFFF000, PMIC_ALL_BITS);
++		pmic_write_reg(MC34708_REG_ADC2, 0x000000, PMIC_ALL_BITS);
++		pmic_write_reg(MC34708_REG_ADC3, 0xF28500, PMIC_ALL_BITS);
++
++		wait_for_completion_interruptible(&tspendet_int);
++	}
++
++	INIT_COMPLETION(tsdone_int);
++
++	int adc3 = X_POS << 8 | X_POS << 10 | DUMMY << 12 |
++	    Y_POS << 14 | Y_POS << 16 | DUMMY << 18 |
++	    CONTACT_RES << 20 | CONTACT_RES << 22;
++
++	pmic_write_reg(MC34708_REG_ADC1, 0xFFF000, PMIC_ALL_BITS);
++	pmic_write_reg(MC34708_REG_ADC2, 0x000000, PMIC_ALL_BITS);
++	pmic_write_reg(MC34708_REG_ADC3, adc3, PMIC_ALL_BITS);
++	/* TSSTOP=0b111, TSCONT=1, TSSTART=1, TSEN=1 */
++	pmic_write_reg(MC34708_REG_ADC0, 0x177000, PMIC_ALL_BITS);
++
++	wait_for_completion_interruptible(&tsdone_int);
++
++	int i;
++	for (i = 0; i < 4; i++) {
++		int reg = MC34708_REG_ADC4 + i;
++		int result, ret;
++		ret = pmic_read_reg(reg, &result, PMIC_ALL_BITS);
++		if (ret != PMIC_SUCCESS)
++			pr_err("pmic_write_reg err\n");
++
++		value[i * 2] = (result & (0x3FF << 2)) >> 2;
++		value[i * 2 + 1] = (result & (0x3FF << 14)) >> 14;
++	}
++
++	if (value[6] < 1000) {
++		ts_value->x_position = value[0];
++		ts_value->x_position1 = value[0];
++		ts_value->x_position2 = value[1];
++
++		ts_value->y_position = value[3];
++		ts_value->y_position1 = value[3];
++		ts_value->y_position2 = value[4];
++
++		ts_value->contact_resistance = value[6];
++	} else {
++		ts_value->x_position = 0;
++		ts_value->y_position = 0;
++		ts_value->contact_resistance = 0;
++	}
++
++	return PMIC_SUCCESS;
++}
++
++PMIC_STATUS mc34708_adc_get_touch_sample(t_touch_screen *touch_sample, int wait)
++{
++	if (mc34708_adc_read_ts(touch_sample, wait) != 0)
++		return PMIC_ERROR;
++	if (0 == pmic_adc_filter(touch_sample))
++		return PMIC_SUCCESS;
++	else
++		return PMIC_ERROR;
++}
++
++EXPORT_SYMBOL(mc34708_adc_get_touch_sample);
++
++#ifdef DEBUG
++static t_adc_param adc_param_db;
++
++static ssize_t adc_info(struct device *dev, struct device_attribute *attr,
++			char *buf)
++{
++	int *value = adc_param_db.value;
++
++	pr_debug("adc_info\n");
++
++	pr_debug("ch0\t\t%d\n", adc_param_db.channel_0);
++	pr_debug("ch1\t\t%d\n", adc_param_db.channel_1);
++	pr_debug("d5\t\t%d\n", adc_param_db.chrgraw_devide_5);
++	pr_debug("conv delay\t%d\n", adc_param_db.conv_delay);
++	pr_debug("delay\t\t%d\n", adc_param_db.delay);
++	pr_debug("read mode\t%d\n", adc_param_db.read_mode);
++	pr_debug("read ts\t\t%d\n", adc_param_db.read_ts);
++	pr_debug("single ch\t%d\n", adc_param_db.single_channel);
++	pr_debug("wait ts int\t%d\n", adc_param_db.wait_tsi);
++	pr_debug("value0-3:\t%d\t%d\t%d\t%d\n", value[0], value[1],
++		 value[2], value[3]);
++	pr_debug("value4-7:\t%d\t%d\t%d\t%d\n", value[4], value[5],
++		 value[6], value[7]);
++
++	return 0;
++}
++
++enum {
++	ADC_SET_CH0 = 0,
++	ADC_SET_CH1,
++	ADC_SET_DV5,
++	ADC_SET_CON_DELAY,
++	ADC_SET_DELAY,
++	ADC_SET_RM,
++	ADC_SET_RT,
++	ADC_SET_S_CH,
++	ADC_SET_WAIT_TS,
++	ADC_INIT_P,
++	ADC_START,
++	ADC_TS,
++	ADC_TS_READ,
++	ADC_TS_CAL,
++	ADC_CMD_MAX
++};
++
++static const char *const adc_cmd[ADC_CMD_MAX] = {
++	[ADC_SET_CH0] = "ch0",
++	[ADC_SET_CH1] = "ch1",
++	[ADC_SET_DV5] = "dv5",
++	[ADC_SET_CON_DELAY] = "cd",
++	[ADC_SET_DELAY] = "dl",
++	[ADC_SET_RM] = "rm",
++	[ADC_SET_RT] = "rt",
++	[ADC_SET_S_CH] = "sch",
++	[ADC_SET_WAIT_TS] = "wt",
++	[ADC_INIT_P] = "init",
++	[ADC_START] = "start",
++	[ADC_TS] = "touch",
++	[ADC_TS_READ] = "touchr",
++	[ADC_TS_CAL] = "cal"
++};
++
++static int cmd(unsigned int index, int value)
++{
++	t_touch_screen ts;
++
++	switch (index) {
++	case ADC_SET_CH0:
++		adc_param_db.channel_0 = value;
++		break;
++	case ADC_SET_CH1:
++		adc_param_db.channel_1 = value;
++		break;
++	case ADC_SET_DV5:
++		adc_param_db.chrgraw_devide_5 = value;
++		break;
++	case ADC_SET_CON_DELAY:
++		adc_param_db.conv_delay = value;
++		break;
++	case ADC_SET_RM:
++		adc_param_db.read_mode = value;
++		break;
++	case ADC_SET_RT:
++		adc_param_db.read_ts = value;
++		break;
++	case ADC_SET_S_CH:
++		adc_param_db.single_channel = value;
++		break;
++	case ADC_SET_WAIT_TS:
++		adc_param_db.wait_tsi = value;
++		break;
++	case ADC_TS:
++		mc34708_pmic_adc_get_touch_sample(&ts, 1);
++		pr_debug("x = %d\n", ts.x_position);
++		pr_debug("y = %d\n", ts.y_position);
++		pr_debug("p = %d\n", ts.contact_resistance);
++		break;
++	case ADC_TS_READ:
++		mc34708_pmic_adc_get_touch_sample(&ts, 0);
++		pr_debug("x = %d\n", ts.x_position);
++		pr_debug("y = %d\n", ts.y_position);
++		pr_debug("p = %d\n", ts.contact_resistance);
++		break;
++	case ADC_TS_CAL:
++		break;
++	default:
++		pr_debug("error command\n");
++		break;
++	}
++	return 0;
++}
++
++static ssize_t adc_ctl(struct device *dev, struct device_attribute *attr,
++		       const char *buf, size_t count)
++{
++	int state = 0;
++	const char *const *s;
++	char *p, *q;
++	int error;
++	int len, value = 0;
++
++	pr_debug("adc_ctl\n");
++
++	q = NULL;
++	q = memchr(buf, ' ', count);
++
++	if (q != NULL) {
++		len = q - buf;
++		q += 1;
++		value = simple_strtoul(q, NULL, 10);
++	} else {
++		p = memchr(buf, '\n', count);
++		len = p ? p - buf : count;
++	}
++
++	for (s = &adc_cmd[state]; state < ADC_CMD_MAX; s++, state++) {
++		if (*s && !strncmp(buf, *s, len))
++			break;
++	}
++	if (state < ADC_CMD_MAX && *s)
++		error = cmd(state, value);
++	else
++		error = -EINVAL;
++
++	return count;
++}
++
++#else
++static ssize_t adc_info(struct device *dev, struct device_attribute *attr,
++			char *buf)
++{
++	return 0;
++}
++
++static ssize_t adc_ctl(struct device *dev, struct device_attribute *attr,
++		       const char *buf, size_t count)
++{
++	return count;
++}
++
++#endif
++
++static DEVICE_ATTR(adc, 0644, adc_info, adc_ctl);
++
++static struct pmic_adc_api pmic_adc_api = {
++	.is_pmic_adc_ready = is_mc34708_adc_ready,
++	.pmic_adc_get_touch_sample = mc34708_adc_get_touch_sample,
++};
++
++static int mc34708_pmic_adc_module_probe(struct platform_device *pdev)
++{
++	int ret = 0;
++
++	pr_info("PMIC ADC start probe\n");
++	ret = device_create_file(&(pdev->dev), &dev_attr_adc);
++	if (ret) {
++		pr_debug("Can't create device file!\n");
++		return -ENODEV;
++	}
++
++	ret = mc34708_pmic_adc_init();
++	if (ret != PMIC_SUCCESS) {
++		pr_info("Error in mc34708_pmic_adc_init.\n");
++		goto rm_dev_file;
++	}
++
++	pmic_adc_ready = 1;
++	register_adc_apis(&pmic_adc_api);
++	pr_debug("PMIC ADC successfully probed\n");
++	return 0;
++
++rm_dev_file:
++	device_remove_file(&(pdev->dev), &dev_attr_adc);
++	return ret;
++}
++
++static int mc34708_pmic_adc_module_remove(struct platform_device *pdev)
++{
++	mc34708_pmic_adc_deinit();
++	pmic_adc_ready = 0;
++	pr_debug("PMIC ADC successfully removed\n");
++	return 0;
++}
++
++static struct platform_driver mc34708_pmic_adc_driver_ldm = {
++	.driver = {
++		   .name = "mc34708_adc",
++		   },
++	.suspend = mc34708_pmic_adc_suspend,
++	.resume = mc34708_pmic_adc_resume,
++	.probe = mc34708_pmic_adc_module_probe,
++	.remove = mc34708_pmic_adc_module_remove,
++};
++
++static int __init mc34708_pmic_adc_module_init(void)
++{
++	pr_info("MC34708 PMIC ADC driver loading...\n");
++	return platform_driver_register(&mc34708_pmic_adc_driver_ldm);
++}
++
++static void __exit mc34708_pmic_adc_module_exit(void)
++{
++	platform_driver_unregister(&mc34708_pmic_adc_driver_ldm);
++	pr_debug("MC34708 PMIC ADC driver successfully unloaded\n");
++}
++
++module_init(mc34708_pmic_adc_module_init);
++module_exit(mc34708_pmic_adc_module_exit);
++
++MODULE_DESCRIPTION("MC34708 PMIC ADC device driver");
++MODULE_AUTHOR("Freescale Semiconductor, Inc.");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/mxc/pmic/mc34708/mc34708_battery.c b/drivers/mxc/pmic/mc34708/mc34708_battery.c
+new file mode 100644
+index 0000000..55dd7d0
+--- /dev/null
++++ b/drivers/mxc/pmic/mc34708/mc34708_battery.c
+@@ -0,0 +1,950 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++/*
++ * Includes
++ */
++#include <linux/platform_device.h>
++#include <linux/power_supply.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++#include <asm/mach-types.h>
++#include <linux/mfd/mc34708/mc34708_battery.h>
++#include <linux/mfd/mc34708/mc34708_adc.h>
++#include <linux/pmic_status.h>
++#include <linux/pmic_external.h>
++#include <linux/mfd/mc34708/mc34708.h>
++
++#define CHRCV_LSH 6
++#define CHRCV_WID 6
++
++#define CHRCC_LSH 12
++#define CHRCC_WID 4
++
++#define CHRITERM_LSH 16
++#define CHRITERM_WID 3
++
++#define USBDETS_LSH 3
++#define USBDETS_WID 1
++
++#define AUXDETS_LSH 4
++#define AUXDETS_WID 1
++
++#define VBAT_TRKL_LSH 0
++#define VBAT_TRKL_WID 2
++
++#define LOWBATT_LSH 4
++#define LOWBATT_WID 2
++
++#define BATTEMPH_LSH 21
++#define BATTEMPH_WID 2
++
++#define EOCBUCKEN_LSH 23
++#define EOCBUCKEN_WID 1
++
++#define BATTEMPL_LSH 19
++#define BATTEMPL_WID 2
++
++#define CHRITERMEN_LSH 2
++#define CHRITERMEN_WID 1
++
++#define CHREN_LSH 3
++#define CHREN_WID 1
++
++#define MUSBCHRG_LSH 13
++#define MUSBCHRG_WID 2
++
++#define MSW_LSH 1
++#define MSW_WID 1
++
++#define AUXWEAKEN_LSH 22
++#define AUXWEAKEN_WID 1
++
++#define VBUSWEAKEN_LSH 23
++#define VBUSWEAKEN_WID 1
++
++#define AUXILIM_LSH 11
++#define AUXILIM_WID 3
++
++#define ILIM1P5_LSH 20
++#define ILIM1P5_WID 1
++
++#define ACC_STARTCC_LSH		0
++#define ACC_STARTCC_WID		1
++#define ACC_RSTCC_LSH		1
++#define ACC_RSTCC_WID		1
++#define ACC_CCFAULT_LSH		7
++#define ACC_CCFAULT_WID		7
++#define ACC_CCOUT_LSH		8
++#define ACC_CCOUT_WID		16
++#define ACC1_ONEC_LSH		0
++#define ACC1_ONEC_WID		15
++
++#define ACC_CALIBRATION 0x17
++#define ACC_START_COUNTER 0x07
++#define ACC_STOP_COUNTER 0x2
++#define ACC_CONTROL_BIT_MASK 0x1f
++#define ACC_ONEC_VALUE 2621
++#define ACC_COULOMB_PER_LSB 1
++#define ACC_CALIBRATION_DURATION_MSECS 20
++
++#define BAT_VOLTAGE_UNIT_UV 4692
++#define BAT_CURRENT_UNIT_UA 7813
++#define CHG_VOLTAGE_UINT_UV 23474
++#define CHG_MIN_CURRENT_UA 3500
++
++#define COULOMB_TO_UAH(c) (10000 * c / 36)
++
++#define BATTOVP_LSH 9
++#define BATTOVP_WID 1
++
++#define USBDETM_LSH 3
++#define USBDETM_WID 1
++#define AUXDETM_LSH 4
++#define AUXDETM_WID 1
++#define ATTACHM_LSH 15
++#define ATTACHM_WID 1
++#define DETACHM_LSH 16
++#define DETACHM_WID 1
++#define ADCCHANGEM_LSH 21
++#define ADCCHANGEM_WID 1
++
++#define BATTISOEN_LSH 23
++#define BATTISOEN_WID 1
++
++#define USBHOST 0x4
++#define USBCHARGER 0x20
++#define DEDICATEDCHARGER 0x40
++
++static int suspend_flag;
++static int charging_flag;
++static int power_change_flag;
++
++/*
++usb_type = 0x4; USB host;
++usb_type = 0x20; USB charger;
++usb_type = 0x40; Dedicated charger;
++*/
++static int usb_type;
++static struct mc34708_charger_setting_point ripley_charger_setting_point[] = {
++	{
++	 .microVolt = 4200000,
++	 .microAmp = 1150000,
++	 },
++};
++
++static struct mc34708_charger_config ripley_charge_config = {
++	.batteryTempLow = 0,
++	.batteryTempHigh = 0,
++	.hasTempSensor = 0,
++	.trickleThreshold = 3000000,
++	.vbusThresholdLow = 4600000,
++	.vbusThresholdWeak = 4800000,
++	.vbusThresholdHigh = 5000000,
++	.vauxThresholdLow = 4600000,
++	.vauxThresholdWeak = 4800000,
++	.vauxThresholdHigh = 5000000,
++	.lowBattThreshold = 3100000,
++	.toppingOffMicroAmp = 50000,	/* 50mA */
++	.chargingPoints = ripley_charger_setting_point,
++	.pointsNumber = 3,
++};
++
++static int dump_ripley_register(int reg);
++
++static int enable_charger(int enable)
++{
++	charging_flag = enable ? 1 : 0;
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++				   BITFVAL(CHREN, enable ? 1 : 0),
++				   BITFMASK(CHREN)));
++	return 0;
++}
++
++static int ripley_get_batt_voltage(unsigned short *voltage)
++{
++	t_channel channel;
++	unsigned short result[8];
++
++	channel = BATTERY_VOLTAGE;
++	CHECK_ERROR(mc34708_pmic_adc_convert(channel, result));
++	*voltage = result[0];
++
++	return 0;
++}
++
++static int ripley_get_batt_current(unsigned short *curr)
++{
++	t_channel channel;
++	unsigned short result[8];
++
++	channel = BATTERY_CURRENT;
++	CHECK_ERROR(mc34708_pmic_adc_convert(channel, result));
++	*curr = result[0];
++
++	return 0;
++}
++
++static int coulomb_counter_calibration;
++static unsigned int coulomb_counter_start_time_msecs;
++
++static int ripley_start_coulomb_counter(void)
++{
++	/* set scaler */
++	CHECK_ERROR(pmic_write_reg(REG_ACC1,
++				   ACC_COULOMB_PER_LSB * ACC_ONEC_VALUE,
++				   BITFMASK(ACC1_ONEC)));
++
++	CHECK_ERROR(pmic_write_reg
++		    (REG_ACC0, ACC_START_COUNTER, ACC_CONTROL_BIT_MASK));
++	coulomb_counter_start_time_msecs = jiffies_to_msecs(jiffies);
++	pr_debug("coulomb counter start time %u\n",
++		 coulomb_counter_start_time_msecs);
++	return 0;
++}
++
++static int ripley_stop_coulomb_counter(void)
++{
++	CHECK_ERROR(pmic_write_reg
++		    (REG_ACC0, ACC_STOP_COUNTER, ACC_CONTROL_BIT_MASK));
++	return 0;
++}
++
++static int ripley_calibrate_coulomb_counter(void)
++{
++	int ret;
++	unsigned int value;
++
++	/* set scaler */
++	CHECK_ERROR(pmic_write_reg(REG_ACC1, 0x1, BITFMASK(ACC1_ONEC)));
++
++	CHECK_ERROR(pmic_write_reg
++		    (REG_ACC0, ACC_CALIBRATION, ACC_CONTROL_BIT_MASK));
++	msleep(ACC_CALIBRATION_DURATION_MSECS);
++
++	ret = pmic_read_reg(REG_ACC0, &value, BITFMASK(ACC_CCOUT));
++	if (ret != 0)
++		return -1;
++	value = BITFEXT(value, ACC_CCOUT);
++	pr_debug("calibrate value = %x\n", value);
++	coulomb_counter_calibration = (int)((s16) ((u16) value));
++	pr_debug("coulomb_counter_calibration = %d\n",
++		 coulomb_counter_calibration);
++
++	return 0;
++
++}
++
++static int ripley_get_charger_coulomb(int *coulomb)
++{
++	int ret;
++	unsigned int value;
++	int calibration;
++	unsigned int time_diff_msec;
++
++	ret = pmic_read_reg(REG_ACC0, &value, BITFMASK(ACC_CCOUT));
++	if (ret != 0)
++		return -1;
++	value = BITFEXT(value, ACC_CCOUT);
++	pr_debug("counter value = %x\n", value);
++	*coulomb = ((s16) ((u16) value)) * ACC_COULOMB_PER_LSB;
++
++	if (abs(*coulomb) >= ACC_COULOMB_PER_LSB) {
++		/* calibrate */
++		time_diff_msec = jiffies_to_msecs(jiffies);
++		time_diff_msec =
++		    (time_diff_msec > coulomb_counter_start_time_msecs) ?
++		    (time_diff_msec - coulomb_counter_start_time_msecs) :
++		    (0xffffffff - coulomb_counter_start_time_msecs
++		     + time_diff_msec);
++		calibration = coulomb_counter_calibration * (int)time_diff_msec
++		    / (ACC_ONEC_VALUE * ACC_CALIBRATION_DURATION_MSECS);
++		*coulomb -= calibration;
++	}
++
++	return 0;
++}
++
++struct ripley_dev_info {
++	struct device *dev;
++
++	unsigned short voltage_raw;
++	int voltage_uV;
++	unsigned short current_raw;
++	int current_uA;
++	int battery_status;
++	int full_counter;
++	int chargeTimeSeconds;
++	int usb_charger_online;
++	int aux_charger_online;
++	int charger_voltage_uV;
++	int accum_current_uAh;
++
++	int currChargePoint;
++
++	struct power_supply bat;
++	struct power_supply usb_charger;
++	struct power_supply aux_charger;
++
++	struct workqueue_struct *monitor_wqueue;
++	struct delayed_work monitor_work;
++	struct mc34708_charger_config *chargeConfig;
++};
++
++#define ripley_SENSER	25
++#define to_ripley_dev_info(x) container_of((x), struct ripley_dev_info, \
++					      bat);
++
++static enum power_supply_property ripley_battery_props[] = {
++	POWER_SUPPLY_PROP_VOLTAGE_NOW,
++	POWER_SUPPLY_PROP_CURRENT_NOW,
++	POWER_SUPPLY_PROP_CHARGE_NOW,
++	POWER_SUPPLY_PROP_STATUS,
++};
++
++static enum power_supply_property ripley_aux_charger_props[] = {
++	POWER_SUPPLY_PROP_ONLINE,
++};
++
++static enum power_supply_property ripley_usb_charger_props[] = {
++	POWER_SUPPLY_PROP_ONLINE,
++};
++
++#define BATTTEMPH_TO_BITS(temp)	((temp - 45) / 5)
++#define BATTTEMPL_TO_BITS(temp)	(temp / 5)
++#define VBAT_TRKL_UV_TO_BITS(uv)	((uv-2800000) / 100000)
++#define LOWBATT_UV_TO_BITS(uv)	((uv - 3100000) / 100000)
++#define CHRITEM_UV_TO_BITS(uv)	(((uv / 1000) - 50) / 50)
++
++static int dump_ripley_register(int reg)
++{
++	unsigned int value;
++	pmic_read_reg(reg, &value, PMIC_ALL_BITS);
++	pr_info("ripley reg %d = 0x%x\n", reg, value);
++	return 0;
++}
++
++static int init_charger(struct mc34708_charger_config *config)
++{
++	/* set charger current termination threshold */
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++				   BITFVAL(CHRITERM,
++					   CHRITEM_UV_TO_BITS
++					   (config->toppingOffMicroAmp)),
++				   BITFMASK(CHRITERM)));
++	/* enable charger current termination */
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++				   BITFVAL(CHRITERMEN, 1),
++				   BITFMASK(CHRITERMEN)));
++
++	/* enable EOC buck */
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++				   BITFVAL(EOCBUCKEN, 1), BITFMASK(EOCBUCKEN)));
++	/* disable manual switch */
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_USB_CTL,
++				   BITFVAL(MSW, 0), BITFMASK(MSW)));
++	/* enable 1P5 large current */
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_CHARGER_DEBOUNCE,
++				   BITFVAL(ILIM1P5, 1), BITFMASK(ILIM1P5)));
++
++	/* enable ISO */
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_CHARGER_DEBOUNCE,
++				   BITFVAL(BATTISOEN, 1), BITFMASK(BATTISOEN)));
++
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_CHARGER_SOURCE,
++				   BITFVAL(AUXWEAKEN, 1), BITFMASK(AUXWEAKEN)));
++
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_CHARGER_SOURCE,
++				   BITFVAL(VBUSWEAKEN, 1),
++				   BITFMASK(VBUSWEAKEN)));
++
++	CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++				   BITFVAL(VBAT_TRKL,
++					   VBAT_TRKL_UV_TO_BITS
++					   (config->trickleThreshold)),
++				   BITFMASK(VBAT_TRKL)));
++	CHECK_ERROR(pmic_write_reg
++		    (MC34708_REG_BATTERY_PROFILE,
++		     BITFVAL(LOWBATT,
++			     LOWBATT_UV_TO_BITS(config->lowBattThreshold)),
++		     BITFMASK(LOWBATT)));
++
++	if (config->hasTempSensor) {
++		CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++					   BITFVAL(BATTEMPH,
++						   BATTTEMPH_TO_BITS
++						   (config->batteryTempHigh)),
++					   BITFMASK(BATTEMPH)));
++		CHECK_ERROR(pmic_write_reg
++			    (MC34708_REG_BATTERY_PROFILE,
++			     BITFVAL(BATTEMPL,
++				     BATTTEMPL_TO_BITS(config->batteryTempLow)),
++			     BITFMASK(BATTEMPL)));
++	}
++
++	return 0;
++}
++
++#define CHRCV_UV_TO_BITS(uv)	((uv - 3500000) / 20000)
++#define CHRCC_UA_TO_BITS(ua)	((ua - 250000) / 100000)
++
++static int set_charging_point(struct ripley_dev_info *di, int point)
++{
++	unsigned int val, mask;
++	if (point >= 0 && point < di->chargeConfig->pointsNumber) {
++
++		val =
++		    BITFVAL(CHRCV,
++			    CHRCV_UV_TO_BITS(di->
++					     chargeConfig->chargingPoints
++					     [point].microVolt));
++		switch (usb_type) {
++		case USBHOST:
++			/* set current limit to 500mA */
++			CHECK_ERROR(pmic_write_reg(MC34708_REG_USB_CTL,
++						   BITFVAL(MUSBCHRG, 1),
++						   BITFMASK(MUSBCHRG)));
++			val |= BITFVAL(CHRCC, CHRCC_UA_TO_BITS(250000));
++			break;
++		case USBCHARGER:
++			/* set current limit to 950mA */
++			CHECK_ERROR(pmic_write_reg(MC34708_REG_USB_CTL,
++						   BITFVAL(MUSBCHRG, 3),
++						   BITFMASK(MUSBCHRG)));
++			val |= BITFVAL(CHRCC, CHRCC_UA_TO_BITS(350000));
++			break;
++		case DEDICATEDCHARGER:
++			/* set current limit to 950mA */
++			CHECK_ERROR(pmic_write_reg(MC34708_REG_USB_CTL,
++						   BITFVAL(MUSBCHRG, 3),
++						   BITFMASK(MUSBCHRG)));
++			val |= BITFVAL(CHRCC, CHRCC_UA_TO_BITS(350000));
++			break;
++		default:
++			val |=
++			    BITFVAL(CHRCC,
++				    CHRCC_UA_TO_BITS(di->
++						     chargeConfig->chargingPoints
++						     [point].microAmp));
++			break;
++		}
++
++		mask = BITFMASK(CHRCV) | BITFMASK(CHRCC);
++		CHECK_ERROR(pmic_write_reg(MC34708_REG_BATTERY_PROFILE,
++					   val, mask));
++
++		di->currChargePoint = point;
++		return 0;
++	}
++	return -EINVAL;
++}
++
++#define  FULL_DEBOUNCE_TIME 3
++static int adjust_charging_parameter(struct mc34708_charger_config **config)
++{
++	struct ripley_dev_info *di =
++	    container_of((config), struct ripley_dev_info, chargeConfig);
++
++	if (di->voltage_uV >=
++	    (*config)->chargingPoints[di->currChargePoint].microVolt) {
++
++		/* for NOT the final charge point */
++		if (di->currChargePoint < (*config)->pointsNumber - 1) {
++			di->full_counter++;
++			if (di->full_counter > FULL_DEBOUNCE_TIME) {
++				set_charging_point(di, di->currChargePoint + 1);
++				pr_info
++				    ("shift to charge point %d, volt=%d uV, curr=%d uA\n",
++				     di->currChargePoint,
++				     (*config)->
++				     chargingPoints
++				     [di->currChargePoint].microVolt,
++				     (*config)->
++				     chargingPoints
++				     [di->currChargePoint].microAmp);
++			}
++		} else {
++			if (di->current_uA <= (*config)->toppingOffMicroAmp)
++				di->full_counter++;
++			if (di->full_counter > FULL_DEBOUNCE_TIME)
++				di->battery_status =
++				    POWER_SUPPLY_STATUS_NOT_CHARGING;
++		}
++	}
++
++	return 0;
++}
++
++static int ripley_charger_update_status(struct ripley_dev_info *di)
++{
++	int ret;
++	unsigned int value;
++	unsigned int reg_usb_type;
++	int usbOnline, auxOnline;
++	int restartCharging = 0;
++	int stopCharging = 0;
++
++	ret = pmic_read_reg(MC34708_REG_INT_SENSE0, &value, PMIC_ALL_BITS);
++
++	if (ret == 0) {
++		usbOnline = BITFEXT(value, USBDETS);
++		auxOnline = BITFEXT(value, AUXDETS);
++		if (!(di->aux_charger_online || di->usb_charger_online) &&
++		    (usbOnline || auxOnline))
++			restartCharging = 1;
++		if ((di->aux_charger_online || di->usb_charger_online) &&
++		    !(usbOnline || auxOnline))
++			stopCharging = 1;
++
++		if (auxOnline != di->aux_charger_online) {
++			msleep(500);
++			di->aux_charger_online = auxOnline;
++			dev_info(di->aux_charger.dev,
++				 "aux charger status: %s\n",
++				 auxOnline ? "online" : "offline");
++			power_supply_changed(&di->aux_charger);
++		}
++		if (usbOnline != di->usb_charger_online) {
++			/* need some delay to know the usb type */
++			msleep(800);
++			ret = pmic_read_reg(MC34708_REG_USB_DEVICE_TYPE,
++					    &reg_usb_type, PMIC_ALL_BITS);
++			usb_type = 0;
++			if ((reg_usb_type & USBHOST) != 0) {
++				usb_type = USBHOST;
++				pr_info("USB host attached!!!\n");
++			}
++			if ((reg_usb_type & USBCHARGER) != 0) {
++				usb_type = USBCHARGER;
++				pr_info("USB charger attached!!!\n");
++			}
++			if ((reg_usb_type & DEDICATEDCHARGER) != 0) {
++				usb_type = DEDICATEDCHARGER;
++				pr_info("Dedicated charger attached!!!\n");
++			}
++			di->usb_charger_online = usbOnline;
++			dev_info(di->usb_charger.dev, "usb cable status: %s\n",
++				 usbOnline ? "online" : "offline");
++			power_supply_changed(&di->usb_charger);
++		}
++
++		if (restartCharging) {
++			ripley_start_coulomb_counter();
++			enable_charger(1);
++			cancel_delayed_work(&di->monitor_work);
++			queue_delayed_work(di->monitor_wqueue,
++					   &di->monitor_work, HZ / 10);
++		} else if (stopCharging) {
++			ripley_stop_coulomb_counter();
++			cancel_delayed_work(&di->monitor_work);
++			queue_delayed_work(di->monitor_wqueue,
++					   &di->monitor_work, HZ / 10);
++		}
++	}
++	power_change_flag = 1;
++
++	return ret;
++}
++
++static int ripley_aux_charger_get_property(struct power_supply *psy,
++					   enum power_supply_property psp,
++					   union power_supply_propval *val)
++{
++	struct ripley_dev_info *di =
++	    container_of((psy), struct ripley_dev_info, aux_charger);
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_ONLINE:
++		val->intval = di->aux_charger_online;
++		return 0;
++	default:
++		break;
++	}
++
++	return -EINVAL;
++}
++
++static int ripley_usb_charger_get_property(struct power_supply *psy,
++					   enum power_supply_property psp,
++					   union power_supply_propval *val)
++{
++	struct ripley_dev_info *di =
++	    container_of((psy), struct ripley_dev_info, usb_charger);
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_ONLINE:
++		val->intval = di->usb_charger_online;
++		return 0;
++	default:
++		break;
++	}
++
++	return -EINVAL;
++}
++
++static int ripley_battery_read_status(struct ripley_dev_info *di)
++{
++	int retval;
++	int coulomb;
++	retval = ripley_get_batt_voltage(&(di->voltage_raw));
++	if (retval == 0)
++		di->voltage_uV = di->voltage_raw * BAT_VOLTAGE_UNIT_UV;
++
++	retval = ripley_get_batt_current(&(di->current_raw));
++	if (retval == 0) {
++		if (di->current_raw & 0x200)
++			di->current_uA =
++			    (0x1FF - (di->current_raw & 0x1FF)) *
++			    BAT_CURRENT_UNIT_UA * (-1);
++		else
++			di->current_uA =
++			    (di->current_raw & 0x1FF) * BAT_CURRENT_UNIT_UA;
++	}
++	retval = ripley_get_charger_coulomb(&coulomb);
++	if (retval == 0)
++		di->accum_current_uAh = COULOMB_TO_UAH(coulomb);
++	return retval;
++}
++
++static void ripley_battery_update_status(struct ripley_dev_info *di)
++{
++	unsigned int point = 0;
++	struct mc34708_charger_config *config = di->chargeConfig;
++	int old_battery_status = di->battery_status;
++
++	if (di->battery_status == POWER_SUPPLY_STATUS_UNKNOWN)
++		di->full_counter = 0;
++
++	ripley_battery_read_status(di);
++
++	if (di->usb_charger_online || di->aux_charger_online) {
++		if (di->battery_status == POWER_SUPPLY_STATUS_UNKNOWN ||
++		    di->battery_status == POWER_SUPPLY_STATUS_DISCHARGING) {
++			point = 0;
++			init_charger(config);
++			set_charging_point(di, point);
++			enable_charger(1);
++		} else if (di->battery_status == POWER_SUPPLY_STATUS_CHARGING)
++			adjust_charging_parameter(&(di->chargeConfig));
++		if (di->full_counter > FULL_DEBOUNCE_TIME &&
++		    di->currChargePoint >= di->chargeConfig->pointsNumber) {
++			di->battery_status = POWER_SUPPLY_STATUS_NOT_CHARGING;
++		} else
++			di->battery_status = POWER_SUPPLY_STATUS_CHARGING;
++	} else {
++		di->battery_status = POWER_SUPPLY_STATUS_DISCHARGING;
++		di->full_counter = 0;
++	}
++
++	if (power_change_flag) {
++		pr_info("battery status: %d, old status: %d, point: %d\n",
++			di->battery_status, old_battery_status,
++			di->currChargePoint);
++		power_change_flag = 0;
++	}
++	dev_dbg(di->bat.dev, "bat status: %d\n", di->battery_status);
++	if (old_battery_status != POWER_SUPPLY_STATUS_UNKNOWN &&
++	    di->battery_status != old_battery_status)
++		power_supply_changed(&di->bat);
++}
++
++static void ripley_battery_work(struct work_struct *work)
++{
++	struct ripley_dev_info *di = container_of(work,
++						  struct ripley_dev_info,
++						  monitor_work.work);
++	const int interval = HZ * 15;
++
++	dev_dbg(di->dev, "%s\n", __func__);
++
++	ripley_battery_update_status(di);
++	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, interval);
++}
++
++static void usb_charger_online_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	ripley_charger_update_status(di);
++}
++
++static void aux_charger_online_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	ripley_charger_update_status(di);
++}
++
++static void usb_over_voltage_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	ripley_charger_update_status(di);
++}
++
++static void aux_over_voltage_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	ripley_charger_update_status(di);
++}
++
++static void battery_over_voltage_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	ripley_charger_update_status(di);
++}
++
++static void battery_over_temp_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	ripley_charger_update_status(di);
++}
++
++static void battery_charge_complete_event_callback(void *para)
++{
++	struct ripley_dev_info *di = (struct ripley_dev_info *)para;
++	pr_info("\n\n battery charge complete event, disable charging\n");
++}
++
++static int ripley_battery_get_property(struct power_supply *psy,
++				       enum power_supply_property psp,
++				       union power_supply_propval *val)
++{
++	struct ripley_dev_info *di = to_ripley_dev_info(psy);
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_STATUS:
++		if (di->battery_status == POWER_SUPPLY_STATUS_UNKNOWN) {
++			ripley_charger_update_status(di);
++			ripley_battery_update_status(di);
++		}
++		val->intval = di->battery_status;
++		return 0;
++	default:
++		break;
++	}
++
++	ripley_battery_read_status(di);
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
++		val->intval = di->voltage_uV;
++		break;
++	case POWER_SUPPLY_PROP_CURRENT_NOW:
++		val->intval = di->current_uA;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_NOW:
++		val->intval = di->accum_current_uAh;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
++		val->intval = 3800000;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
++		val->intval = 3300000;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static int ripley_battery_remove(struct platform_device *pdev)
++{
++	pmic_event_callback_t bat_event_callback;
++	struct ripley_dev_info *di = platform_get_drvdata(pdev);
++
++	bat_event_callback.func = usb_charger_online_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_unsubscribe(MC34708_EVENT_USBDET, bat_event_callback);
++	bat_event_callback.func = aux_charger_online_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_unsubscribe(MC34708_EVENT_AUXDET, bat_event_callback);
++
++	cancel_rearming_delayed_workqueue(di->monitor_wqueue,
++					  &di->monitor_work);
++	destroy_workqueue(di->monitor_wqueue);
++	power_supply_unregister(&di->bat);
++	power_supply_unregister(&di->usb_charger);
++	power_supply_unregister(&di->aux_charger);
++
++	kfree(di);
++
++	return 0;
++}
++
++static int ripley_battery_probe(struct platform_device *pdev)
++{
++	int retval = 0;
++	struct ripley_dev_info *di;
++	pmic_event_callback_t bat_event_callback;
++	di = kzalloc(sizeof(*di), GFP_KERNEL);
++	if (!di) {
++		retval = -ENOMEM;
++		goto di_alloc_failed;
++	}
++
++	platform_set_drvdata(pdev, di);
++
++	di->aux_charger.name = "ripley_aux_charger";
++	di->aux_charger.type = POWER_SUPPLY_TYPE_MAINS;
++	di->aux_charger.properties = ripley_aux_charger_props;
++	di->aux_charger.num_properties = ARRAY_SIZE(ripley_aux_charger_props);
++	di->aux_charger.get_property = ripley_aux_charger_get_property;
++	retval = power_supply_register(&pdev->dev, &di->aux_charger);
++	if (retval) {
++		dev_err(di->dev, "failed to register charger\n");
++		goto charger_failed;
++	}
++
++	di->usb_charger.name = "ripley_usb_charger";
++	di->usb_charger.type = POWER_SUPPLY_TYPE_USB;
++	di->usb_charger.properties = ripley_usb_charger_props;
++	di->usb_charger.num_properties = ARRAY_SIZE(ripley_usb_charger_props);
++	di->usb_charger.get_property = ripley_usb_charger_get_property;
++	retval = power_supply_register(&pdev->dev, &di->usb_charger);
++	if (retval) {
++		dev_err(di->dev, "failed to register charger\n");
++		goto charger_failed;
++	}
++
++	INIT_DELAYED_WORK(&di->monitor_work, ripley_battery_work);
++	di->monitor_wqueue =
++	    create_singlethread_workqueue(dev_name(&pdev->dev));
++	if (!di->monitor_wqueue) {
++		retval = -ESRCH;
++		goto workqueue_failed;
++	}
++
++	queue_delayed_work(di->monitor_wqueue, &di->monitor_work, HZ * 10);
++
++	di->dev = &pdev->dev;
++	di->chargeConfig = &ripley_charge_config;
++	di->bat.name = "ripley_bat";
++	di->bat.type = POWER_SUPPLY_TYPE_BATTERY;
++	di->bat.properties = ripley_battery_props;
++	di->bat.num_properties = ARRAY_SIZE(ripley_battery_props);
++	di->bat.get_property = ripley_battery_get_property;
++	di->bat.use_for_apm = 1;
++
++	di->battery_status = POWER_SUPPLY_STATUS_UNKNOWN;
++
++	retval = power_supply_register(&pdev->dev, &di->bat);
++	if (retval) {
++		dev_err(di->dev, "failed to register battery\n");
++		goto batt_failed;
++	}
++
++	bat_event_callback.func = usb_over_voltage_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_USBOVP, bat_event_callback);
++
++	bat_event_callback.func = aux_over_voltage_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_AUXOVP, bat_event_callback);
++
++	bat_event_callback.func = usb_charger_online_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_USBDET, bat_event_callback);
++
++	bat_event_callback.func = aux_charger_online_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_AUXDET, bat_event_callback);
++
++	bat_event_callback.func = battery_over_voltage_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_BATTOVP, bat_event_callback);
++
++	bat_event_callback.func = battery_over_temp_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_BATTOTP, bat_event_callback);
++
++	bat_event_callback.func = battery_charge_complete_event_callback;
++	bat_event_callback.param = (void *)di;
++	pmic_event_subscribe(MC34708_EVENT_CHRCMPL, bat_event_callback);
++
++	ripley_stop_coulomb_counter();
++	ripley_calibrate_coulomb_counter();
++
++	goto success;
++
++workqueue_failed:
++	power_supply_unregister(&di->aux_charger);
++	power_supply_unregister(&di->usb_charger);
++charger_failed:
++	power_supply_unregister(&di->bat);
++batt_failed:
++	kfree(di);
++di_alloc_failed:
++success:
++	dev_dbg(di->dev, "%s battery probed!\n", __func__);
++	return retval;
++
++	return 0;
++}
++
++static int ripley_battery_suspend(struct platform_device *pdev,
++				  pm_message_t state)
++{
++	suspend_flag = 1;
++	CHECK_ERROR(pmic_write_reg
++		    (MC34708_REG_INT_STATUS0, BITFVAL(BATTOVP, 0),
++		     BITFMASK(BATTOVP)));
++	CHECK_ERROR(pmic_write_reg
++		    (MC34708_REG_INT_MASK0, BITFVAL(BATTOVP, 1),
++		     BITFMASK(BATTOVP)));
++
++	return 0;
++};
++
++static int ripley_battery_resume(struct platform_device *pdev)
++{
++	suspend_flag = 0;
++	CHECK_ERROR(pmic_write_reg
++		    (MC34708_REG_INT_MASK0, BITFVAL(BATTOVP, 0),
++		     BITFMASK(BATTOVP)));
++
++	return 0;
++};
++
++static struct platform_driver ripley_battery_driver_ldm = {
++	.driver = {
++		   .name = "mc34708_battery",
++		   .bus = &platform_bus_type,
++		   },
++	.probe = ripley_battery_probe,
++	.remove = ripley_battery_remove,
++	.suspend = ripley_battery_suspend,
++	.resume = ripley_battery_resume,
++};
++
++static int __init ripley_battery_init(void)
++{
++	pr_debug("Ripley Battery driver loading...\n");
++	return platform_driver_register(&ripley_battery_driver_ldm);
++}
++
++static void __exit ripley_battery_exit(void)
++{
++	platform_driver_unregister(&ripley_battery_driver_ldm);
++	pr_debug("Ripley Battery driver successfully unloaded\n");
++}
++
++module_init(ripley_battery_init);
++module_exit(ripley_battery_exit);
++
++MODULE_DESCRIPTION("ripley_battery driver");
++MODULE_AUTHOR("Freescale Semiconductor, Inc.");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/regulator/Kconfig b/drivers/regulator/Kconfig
+index 694c2e6..6239f34 100644
+--- a/drivers/regulator/Kconfig
++++ b/drivers/regulator/Kconfig
+@@ -206,6 +206,11 @@ config REGULATOR_MC13892
+ 	depends on MXC_PMIC_MC13892
+ 	default y
+ 
++config REGULATOR_MC34708
++	tristate "MC34708 Regulator Support"
++	depends on MXC_PMIC_MC34708
++	default y
++
+ config REGULATOR_MC34704
+ 	tristate "MC34704 Regulator Support"
+ 	depends on MXC_PMIC_MC34704
+diff --git a/drivers/regulator/Makefile b/drivers/regulator/Makefile
+index 850fdd8..c368da7 100644
+--- a/drivers/regulator/Makefile
++++ b/drivers/regulator/Makefile
+@@ -39,6 +39,7 @@ obj-$(CONFIG_REGULATOR_MC13892) += reg-mc13892.o
+ obj-$(CONFIG_REGULATOR_MC34704) += reg-mc34704.o
+ obj-$(CONFIG_REGULATOR_STMP3XXX) += stmp3xxx.o
+ obj-$(CONFIG_REGULATOR_MXS) += mxs-regulator.o
++obj-$(CONFIG_REGULATOR_MC34708) += reg-mc34708.o
+ obj-$(CONFIG_REGULATOR_LTC3589) += ltc3589-regulator.o
+ 
+ obj-$(CONFIG_REGULATOR_MC9S08DZ60) += reg-mc9s08dz60.o
+diff --git a/drivers/regulator/reg-mc34708.c b/drivers/regulator/reg-mc34708.c
+new file mode 100644
+index 0000000..64e4abd
+--- /dev/null
++++ b/drivers/regulator/reg-mc34708.c
+@@ -0,0 +1,1276 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/pm.h>
++#include <linux/bitops.h>
++#include <linux/err.h>
++#include <linux/regulator/machine.h>
++#include <linux/regulator/driver.h>
++#include <linux/mfd/mc34708/core.h>
++#include <linux/platform_device.h>
++#include <linux/pmic_status.h>
++#include <linux/mfd/mc34708/mc34708.h>
++#include <linux/pmic_external.h>
++
++/*
++ * Convenience conversion.
++ * Here atm, maybe there is somewhere better for this.
++ */
++#define mV_to_uV(mV) (mV * 1000)
++#define uV_to_mV(uV) (uV / 1000)
++#define V_to_uV(V) (mV_to_uV(V * 1000))
++#define uV_to_V(uV) (uV_to_mV(uV) / 1000)
++
++/*!
++ * @enum regulator_voltage_vpll
++ * @brief PMIC regulator VPLL output voltage.
++ */
++enum {
++	VPLL_1_2V = 0,
++	VPLL_1_25V,
++	VPLL_1_5V,
++	VPLL_1_8V,
++};
++
++/*!
++ * @enum regulator_voltage_vusb2
++ * @brief PMIC regulator VUSB2 output voltage.
++ */
++enum {
++	VUSB2_2_5V = 0,
++	VUSB2_2_6V,
++	VUSB2_2_75V,
++	VUSB2_3V,
++};
++
++/*!
++ * @enum regulator_voltage_vdac
++ * @brief PMIC regulator VDAC output voltage.
++ */
++enum {
++	VDAC_2_5V = 0,
++	VDAC_2_6V,
++	VDAC_2_7V,
++	VDAC_2_775V,
++} regulator_voltage_vdac;
++
++/*!
++ * @enum regulator_voltage_vgen1
++ * @brief PMIC regulator VGEN1 output voltage.
++ */
++enum {
++	VGEN1_1_2V = 0,
++	VGEN1_1_25V,
++	VGEN1_1_3V,
++	VGEN1_1_35V,
++	VGEN1_1_4V,
++	VGEN1_1_45V,
++	VGEN1_1_5V,
++	VGEN1_1_55V,
++};
++
++/*!
++ * @enum regulator_voltage_vgen2
++ * @brief mc34708 PMIC regulator VGEN2 output voltage.
++ */
++enum {
++	VGEN2_2_5V = 0,
++	VGEN2_2_7V,
++	VGEN2_2_8V,
++	VGEN2_2_9V,
++	VGEN2_3V,
++	VGEN2_3_1V,
++	VGEN2_3_15V,
++	VGEN2_3_3V,
++};
++
++/*!
++     * The \b TPmicDVSTransitionSpeed enum defines the rate with which the
++     * voltage transition occurs.
++     */
++enum {
++	ESysDependent,
++	E25mVEach4us,
++	E25mVEach8us,
++	E25mvEach16us
++} DVS_transition_speed;
++
++/*
++ * Reg Regulator Mode 0
++ */
++
++#define VGEN1_EN_LSH	0
++#define VGEN1_EN_WID	1
++#define VGEN1_EN_ENABLE	1
++#define VGEN1_EN_DISABLE	0
++#define VDAC_EN_LSH	4
++#define VDAC_EN_WID	1
++#define VDAC_EN_ENABLE	1
++#define VDAC_EN_DISABLE	0
++#define VREFDDR_EN_LSH	10
++#define VREFDDR_EN_WID	1
++#define VREFDDR_EN_ENABLE	1
++#define VREFDDR_EN_DISABLE	0
++#define VGEN2_EN_LSH	12
++#define VGEN2_EN_WID	1
++#define VGEN2_EN_ENABLE	1
++#define VGEN2_EN_DISABLE	0
++#define VPLL_EN_LSH	15
++#define VPLL_EN_WID	1
++#define VPLL_EN_ENABLE	1
++#define VPLL_EN_DISABLE	0
++#define VUSB2_EN_LSH	18
++#define VUSB2_EN_WID	1
++#define VUSB2_EN_ENABLE	1
++#define VUSB2_EN_DISABLE	0
++#define VUSB_EN_LSH	3
++#define VUSB_EN_WID	1
++#define VUSB_EN_ENABLE	1
++#define VUSB_EN_DISABLE	0
++
++#define VUSBSEL_LSH	2
++#define VUSBSEL_WID	1
++#define VUSBSEL_ENABLE	1
++#define VUSBSEL_DISABLE	0
++
++/*
++ * Reg Regulator Setting 0
++ */
++#define VGEN1_LSH		0
++#define VGEN1_WID		3
++#define VDAC_LSH		4
++#define VDAC_WID		2
++#define VGEN2_LSH		6
++#define VGEN2_WID		3
++#define VPLL_LSH		9
++#define VPLL_WID		2
++#define VUSB2_LSH		11
++#define VUSB2_WID		2
++
++/*
++ * Reg Switcher 1 A/B
++ */
++#define SW1A_LSH		0
++#define SW1A_WID		6
++#define SW1A_STDBY_LSH	6
++#define SW1A_STDBY_WID	6
++
++#define SW1B_LSH		12
++#define SW1B_WID		6
++#define SW1B_STDBY_LSH	18
++#define SW1B_STDBY_WID	6
++
++/*
++ * Reg Switcher 2&3
++ */
++#define SW2_LSH		0
++#define SW2_WID		6
++#define SW2_STDBY_LSH	6
++#define SW2_STDBY_WID	6
++#define SW3_LSH		12
++#define SW3_WID		5
++#define SW3_STDBY_LSH	18
++#define SW3_STDBY_WID	5
++
++/*
++ * Reg Switcher 4 A/B
++ */
++#define SW4A_LSH		0
++#define SW4A_WID		5
++#define SW4A_STDBY_LSH	5
++#define SW4A_STDBY_WID	5
++#define SW4AHI_LSH		10
++#define SW4AHI_WID		2
++
++#define SW4B_LSH		12
++#define SW4B_WID		5
++#define SW4B_STDBY_LSH	17
++#define SW4B_STDBY_WID	5
++#define SW4BHI_LSH		22
++#define SW4BHI_WID		2
++
++/*
++ * Reg Switcher 5
++ */
++#define SW5_LSH		0
++#define SW5_WID		5
++#define SW5_STDBY_LSH	10
++#define SW5_STDBY_WID	5
++
++#define SWXHI_LSH	23
++#define SWXHI_WID	1
++#define SWXHI_ON	1
++#define SWXHI_OFF	0
++
++/*
++ * Switcher mode configuration
++ */
++#define SW_MODE_SYNC_RECT_EN	0
++#define SW_MODE_PULSE_NO_SKIP_EN	1
++#define SW_MODE_PULSE_SKIP_EN	2
++#define SW_MODE_LOW_POWER_EN	3
++
++#define dvs_speed E25mvEach16us
++
++enum {
++	SW1_MIN_UV = 650000,
++	SW1_MAX_UV = 1437500,
++	SW1_STEP_UV = 12500,
++};
++
++enum {
++	SW2_MIN_UV = 650000,
++	SW2_MAX_UV = 1437500,
++	SW2_STEP_UV = 12500,
++};
++
++enum {
++	SW3_MIN_MV = 650,
++	SW3_MAX_MV = 1425,
++	SW3_STEP_MV = 25,
++};
++
++enum {
++	SW4_MIN_MV = 1200,
++	SW4_MAX_MV = 1975,
++	SW4_STEP_MV = 25,
++	SW4_HI_2500_MV = 2500,
++	SW4_HI_3150_MV = 3150,
++	SW4_HI_3300_MV = 3300,
++};
++
++enum {
++	SW5_MIN_MV = 1200,
++	SW5_MAX_MV = 1975,
++	SW5_STEP_MV = 25,
++};
++
++enum {
++	VGEN1_MIN_MV = 1200,
++	VGEN1_MAX_MV = 1550,
++	VGEN1_STEP_MV = 50,
++};
++
++static unsigned int mv_to_bit_value(int mv, int min_mv, int max_mv, int step_mv)
++{
++	return ((unsigned int)(((mv < min_mv) ?
++				min_mv : (mv > max_mv ? max_mv : mv)
++				- min_mv) / step_mv));
++}
++
++static int bit_value_to_mv(unsigned int val, int min_mv, int step_mv)
++{
++	return ((unsigned int)val) * step_mv + min_mv;
++}
++
++static unsigned int uv_to_bit_value(int uv, int min_uv, int max_uv, int step_uv)
++{
++	return (unsigned int)(((uv < min_uv) ?
++			       min_uv : (uv > max_uv ? max_uv : uv)
++			       - min_uv) / step_uv);
++}
++
++static int bit_value_to_uv(unsigned int val, int min_uv, int step_uv)
++{
++	return ((unsigned int)val) * step_uv + min_uv;
++}
++
++static int mc34708_get_voltage_value(int sw, int mV)
++{
++	int voltage;
++
++	switch (sw) {
++	case MC34708_SW1A:
++	case MC34708_SW1B:
++	case MC34708_SW2:
++		if (mV < 650)
++			mV = 650;
++		if (mV > 1437)
++			mV = 1437;
++		voltage = (mV - 650) * 10 / 125;
++		break;
++	case MC34708_SW3:
++		if (mV < 650)
++			mV = 650;
++		if (mV > 1425)
++			mV = 1425;
++		voltage = (mV - 650) / 25;
++		break;
++
++	default:
++		return -EINVAL;
++	}
++
++	return voltage;
++}
++
++static int mc34708_vpll_set_voltage(struct regulator_dev *reg,
++				    int minuV, int uV)
++{
++	unsigned int register_val = 0, register_mask = 0, register1 = 0;
++	int voltage, mV = uV / 1000;
++
++	if (mV < 1250)
++		voltage = VPLL_1_2V;
++	else if (mV < 1500)
++		voltage = VPLL_1_25V;
++	else if (mV < 1800)
++		voltage = VPLL_1_5V;
++	else
++		voltage = VPLL_1_8V;
++
++	register_val = BITFVAL(VPLL, voltage);
++	register_mask = BITFMASK(VPLL);
++	register1 = MC34708_REG_REGULATOR_SETTING0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_vpll_get_voltage(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0;
++	int voltage = 0, mV = 0;
++
++	CHECK_ERROR(pmic_read_reg(MC34708_REG_REGULATOR_SETTING0,
++				  &register_val, PMIC_ALL_BITS));
++	voltage = BITFEXT(register_val, VPLL);
++
++	switch (voltage) {
++	case VPLL_1_2V:
++		mV = 1200;
++		break;
++	case VPLL_1_25V:
++		mV = 1250;
++		break;
++	case VPLL_1_5V:
++		mV = 1500;
++		break;
++	case VPLL_1_8V:
++		mV = 1800;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return mV * 1000;
++}
++
++static int mc34708_regulator_is_enabled(struct regulator_dev *rdev)
++{
++	unsigned int register1;
++	unsigned int register_mask;
++	int id = rdev_get_id(rdev);
++	unsigned int register_val = 0;
++
++	switch (id) {
++	case MC34708_SWBST:
++		register_mask = BITFMASK(VUSBSEL);
++		register1 = MC34708_REG_REGULATOR_MODE0;
++		break;
++	case MC34708_VUSB:
++		register_mask = BITFMASK(VUSB_EN);
++		register1 = MC34708_REG_REGULATOR_MODE0;
++		break;
++	default:
++		return 1;
++	}
++	CHECK_ERROR(pmic_read_reg(register1, &register_val, register_mask));
++	return (register_val != 0);
++}
++
++static int mc34708_vusb2_set_voltage(struct regulator_dev *reg,
++				     int minuV, int uV)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int voltage, mV = uV / 1000;
++
++	if (mV < 2600)
++		voltage = VUSB2_2_5V;
++	else if (mV < 2750)
++		voltage = VUSB2_2_6V;
++	else if (mV < 3000)
++		voltage = VUSB2_2_75V;
++	else
++		voltage = VUSB2_3V;
++
++	register_val = BITFVAL(VUSB2, voltage);
++	register_mask = BITFMASK(VUSB2);
++	register1 = MC34708_REG_REGULATOR_SETTING0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_vusb2_get_voltage(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0;
++	int voltage = 0, mV = 0;
++
++	CHECK_ERROR(pmic_read_reg(MC34708_REG_REGULATOR_SETTING0,
++				  &register_val, PMIC_ALL_BITS));
++	voltage = BITFEXT(register_val, VUSB2);
++
++	switch (voltage) {
++	case VUSB2_2_5V:
++		mV = 2500;
++		break;
++	case VUSB2_2_6V:
++		mV = 2600;
++		break;
++	case VUSB2_2_75V:
++		mV = 2750;
++		break;
++	case VUSB2_3V:
++		mV = 3000;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return mV * 1000;
++}
++
++static int mc34708_vgen1_set_voltage(struct regulator_dev *reg,
++				     int minuV, int uV)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int voltage, mV = uV / 1000;
++
++	voltage = mv_to_bit_value(mV, VGEN1_MIN_MV,
++				  VGEN1_MAX_MV, VGEN1_STEP_MV);
++	register_val = BITFVAL(VGEN1, voltage);
++	register_mask = BITFMASK(VGEN1);
++	register1 = MC34708_REG_REGULATOR_SETTING0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_vgen1_get_voltage(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0;
++	int voltage = 0, mV = 0;
++
++	CHECK_ERROR(pmic_read_reg(MC34708_REG_REGULATOR_SETTING0,
++				  &register_val, PMIC_ALL_BITS));
++	voltage = BITFEXT(register_val, VGEN1);
++	mV = bit_value_to_mv(voltage, VGEN1_MIN_MV, VGEN1_STEP_MV);
++
++	return mV * 1000;
++}
++
++static int mc34708_ldo_enable(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int id = rdev_get_id(reg);
++
++	switch (id) {
++	case MC34708_VREFDDR:
++		register_val = BITFVAL(VREFDDR_EN, VREFDDR_EN_ENABLE);
++		register_mask = BITFMASK(VREFDDR_EN);
++		break;
++	case MC34708_VUSB:
++		register_val = BITFVAL(VUSB_EN, VUSB_EN_ENABLE);
++		register_mask = BITFMASK(VUSB_EN);
++		break;
++	case MC34708_VUSB2:
++		register_val = BITFVAL(VUSB2_EN, VUSB2_EN_ENABLE);
++		register_mask = BITFMASK(VUSB2_EN);
++		break;
++	case MC34708_VDAC:
++		register_val = BITFVAL(VDAC_EN, VDAC_EN_ENABLE);
++		register_mask = BITFMASK(VDAC_EN);
++		break;
++	case MC34708_VGEN1:
++		register_val = BITFVAL(VGEN1_EN, VGEN1_EN_ENABLE);
++		register_mask = BITFMASK(VGEN1_EN);
++		break;
++	case MC34708_VGEN2:
++		register_val = BITFVAL(VGEN2_EN, VGEN2_EN_ENABLE);
++		register_mask = BITFMASK(VGEN2_EN);
++		break;
++	default:
++		return -EINVAL;
++	}
++	register1 = MC34708_REG_REGULATOR_MODE0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_ldo_disable(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int id = rdev_get_id(reg);
++	switch (id) {
++	case MC34708_SWBST:
++		register_val = BITFVAL(VUSBSEL, VUSBSEL_DISABLE);
++		register_mask = BITFMASK(VUSBSEL);
++		break;
++	case MC34708_VREFDDR:
++		register_val = BITFVAL(VREFDDR_EN, VREFDDR_EN_DISABLE);
++		register_mask = BITFMASK(VREFDDR_EN);
++		break;
++	case MC34708_VUSB:
++		register_val = BITFVAL(VUSB_EN, VUSB_EN_DISABLE);
++		register_mask = BITFMASK(VUSB_EN);
++		break;
++	case MC34708_VUSB2:
++		register_val = BITFVAL(VUSB2_EN, VUSB2_EN_DISABLE);
++		register_mask = BITFMASK(VUSB2_EN);
++		break;
++	case MC34708_VDAC:
++		register_val = BITFVAL(VDAC_EN, VDAC_EN_DISABLE);
++		register_mask = BITFMASK(VDAC_EN);
++		break;
++	case MC34708_VGEN1:
++		register_val = BITFVAL(VGEN1_EN, VGEN1_EN_DISABLE);
++		register_mask = BITFMASK(VGEN1_EN);
++		break;
++	case MC34708_VGEN2:
++		register_val = BITFVAL(VGEN2_EN, VGEN2_EN_DISABLE);
++		register_mask = BITFMASK(VGEN2_EN);
++		break;
++	default:
++		return -EINVAL;
++	}
++	register1 = MC34708_REG_REGULATOR_MODE0;
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_vdac_set_voltage(struct regulator_dev *reg,
++				    int minuV, int uV)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int voltage, mV = uV / 1000;
++
++	if (mV < 2600)
++		voltage = VDAC_2_5V;
++	else if (mV < 2700)
++		voltage = VDAC_2_6V;
++	else if (mV < 2775)
++		voltage = VDAC_2_7V;
++	else
++		voltage = VDAC_2_775V;
++
++	register_val = BITFVAL(VDAC, voltage);
++	register_mask = BITFMASK(VDAC);
++	register1 = MC34708_REG_REGULATOR_SETTING0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_vdac_get_voltage(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0;
++	int voltage = 0, mV = 0;
++
++	CHECK_ERROR(pmic_read_reg(MC34708_REG_REGULATOR_SETTING0,
++				  &register_val, PMIC_ALL_BITS));
++	voltage = BITFEXT(register_val, VDAC);
++
++	switch (voltage) {
++	case VDAC_2_5V:
++		mV = 2500;
++		break;
++	case VDAC_2_6V:
++		mV = 2600;
++		break;
++	case VDAC_2_7V:
++		mV = 2700;
++		break;
++	case VDAC_2_775V:
++		mV = 2775;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return mV * 1000;
++}
++
++static int mc34708_vgen2_set_voltage(struct regulator_dev *reg,
++				     int minuV, int uV)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int voltage, mV = uV / 1000;
++
++	if (mV < 2700)
++		voltage = VGEN2_2_5V;
++	else if (mV < 2800)
++		voltage = VGEN2_2_7V;
++	else if (mV < 2900)
++		voltage = VGEN2_2_8V;
++	else if (mV < 3000)
++		voltage = VGEN2_2_9V;
++	else if (mV < 3100)
++		voltage = VGEN2_3V;
++	else if (mV < 3150)
++		voltage = VGEN2_3_1V;
++	else if (mV < 3300)
++		voltage = VGEN2_3_15V;
++	else
++		voltage = VGEN2_3_3V;
++
++	register1 = MC34708_REG_REGULATOR_SETTING0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_vgen2_get_voltage(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0;
++	int voltage = 0, mV = 0;
++
++	CHECK_ERROR(pmic_read_reg(MC34708_REG_REGULATOR_SETTING0,
++				  &register_val, PMIC_ALL_BITS));
++
++	voltage = BITFEXT(register_val, VGEN2);
++
++	switch (voltage) {
++	case VGEN2_2_5V:
++		mV = 2500;
++		break;
++	case VGEN2_2_7V:
++		mV = 2700;
++		break;
++	case VGEN2_2_8V:
++		mV = 2800;
++		break;
++	case VGEN2_2_9V:
++		mV = 2900;
++		break;
++	case VGEN2_3V:
++		mV = 3000;
++		break;
++	case VGEN2_3_1V:
++		mV = 3100;
++		break;
++	case VGEN2_3_15V:
++		mV = 3150;
++		break;
++	case VGEN2_3_3V:
++		mV = 3300;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return mV * 1000;
++}
++
++static int mc34708_sw_set_normal_voltage(struct regulator_dev *reg, int minuV,
++					 int uV)
++{
++	unsigned int register_val = 0, register_mask = 0, register1 = 0;
++	int voltage, mV = uV / 1000;
++	int id = rdev_get_id(reg);
++
++	switch (id) {
++	case MC34708_SW1A:
++		voltage =
++		    uv_to_bit_value(mV * 1000, SW1_MIN_UV, SW1_MAX_UV,
++				    SW1_STEP_UV);
++		register_val = BITFVAL(SW1A, voltage);
++		register_mask = BITFMASK(SW1A);
++		register1 = MC34708_REG_SW1AB;
++		break;
++	case MC34708_SW1B:
++		voltage =
++		    uv_to_bit_value(mV * 1000, SW1_MIN_UV, SW1_MAX_UV,
++				    SW1_STEP_UV);
++		register_val = BITFVAL(SW1B, voltage);
++		register_mask = BITFMASK(SW1B);
++		register1 = MC34708_REG_SW1AB;
++		break;
++	case MC34708_SW2:
++		voltage =
++		    uv_to_bit_value(mV, SW2_MIN_UV, SW2_MAX_UV, SW2_STEP_UV);
++		register_val = BITFVAL(SW2, voltage);
++		register_mask = BITFMASK(SW2);
++		register1 = MC34708_REG_SW2_3;
++		break;
++	case MC34708_SW3:
++		voltage =
++		    mv_to_bit_value(mV, SW3_MIN_MV, SW3_MAX_MV, SW3_STEP_MV);
++		register_val = BITFVAL(SW3, voltage);
++		register_mask = BITFMASK(SW3);
++		register1 = MC34708_REG_SW2_3;
++		break;
++	case MC34708_SW4A:
++		if (mV < SW4_HI_2500_MV) {
++			voltage =
++			    mv_to_bit_value(mV, SW4_MIN_MV, SW4_MAX_MV,
++					    SW4_STEP_MV);
++			register_val =
++			    BITFVAL(SW4A, voltage) | BITFVAL(SW4AHI, 0);
++			register_mask = BITFMASK(SW4A) | BITFMASK(SW4AHI);
++			register1 = MC34708_REG_SW4AB;
++		} else {
++			if (mV < SW4_HI_3150_MV)
++				register_val = BITFVAL(SW4AHI, 1);
++			else if (mV < SW4_HI_3300_MV)
++				register_val = BITFVAL(SW4AHI, 2);
++			else
++				register_val = BITFVAL(SW4AHI, 3);
++			register_mask = BITFMASK(SW4AHI);
++			register1 = MC34708_REG_SW4AB;
++		}
++		break;
++	case MC34708_SW4B:
++		if (mV < SW4_HI_2500_MV) {
++			voltage =
++			    mv_to_bit_value(mV, SW4_MIN_MV, SW4_MAX_MV,
++					    SW4_STEP_MV);
++			register_val =
++			    BITFVAL(SW4B, voltage) | BITFVAL(SW4BHI, 0);
++			register_mask = BITFMASK(SW4B) | BITFMASK(SW4BHI);
++			register1 = MC34708_REG_SW4AB;
++		} else {
++			if (mV < SW4_HI_3150_MV)
++				register_val = BITFVAL(SW4BHI, 1);
++			else if (mV < SW4_HI_3300_MV)
++				register_val = BITFVAL(SW4BHI, 2);
++			else
++				register_val = BITFVAL(SW4BHI, 3);
++			register_mask = BITFMASK(SW4BHI);
++			register1 = MC34708_REG_SW4AB;
++		}
++		break;
++	case MC34708_SW5:
++		voltage =
++		    mv_to_bit_value(mV, SW5_MIN_MV, SW5_MAX_MV, SW5_STEP_MV);
++		register_val = BITFVAL(SW5, voltage);
++		register_mask = BITFMASK(SW5);
++		register1 = MC34708_REG_SW5;
++		break;
++	default:
++		break;
++	}
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_sw_get_normal_voltage(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0;
++	int voltage = 0, mV = 0;
++	int id = rdev_get_id(reg);
++
++	switch (id) {
++	case MC34708_SW1A:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW1AB,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW1A);
++		mV = bit_value_to_uv(voltage, SW1_MIN_UV, SW1_STEP_UV) / 1000;
++		break;
++	case MC34708_SW1B:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW1AB,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW1B);
++		mV = bit_value_to_uv(voltage, SW1_MIN_UV, SW1_STEP_UV) / 1000;
++		break;
++	case MC34708_SW2:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW2_3,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW2);
++		mV = bit_value_to_uv(voltage, SW2_MIN_UV, SW2_STEP_UV) / 1000;
++		break;
++	case MC34708_SW3:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW2_3,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW3);
++		mV = bit_value_to_mv(voltage, SW3_MIN_MV, SW3_STEP_MV);
++		break;
++	case MC34708_SW4A:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW4AB,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW4AHI);
++		if (voltage == 0) {
++			voltage = BITFEXT(register_val, SW4A);
++			mV = bit_value_to_mv(voltage, SW4_MIN_MV, SW4_STEP_MV);
++		} else if (voltage == 1)
++			mV = SW4_HI_2500_MV;
++		else if (voltage == 2)
++			mV = SW4_HI_3150_MV;
++		else
++			mV = SW4_HI_3300_MV;
++		break;
++	case MC34708_SW4B:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW4AB,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW4BHI);
++		if (voltage == 0) {
++			voltage = BITFEXT(register_val, SW4B);
++			mV = bit_value_to_mv(voltage, SW4_MIN_MV, SW4_STEP_MV);
++		} else if (voltage == 1)
++			mV = SW4_HI_2500_MV;
++		else if (voltage == 2)
++			mV = SW4_HI_3150_MV;
++		else
++			mV = SW4_HI_3300_MV;
++		break;
++	case MC34708_SW5:
++		CHECK_ERROR(pmic_read_reg(MC34708_REG_SW5,
++					  &register_val, PMIC_ALL_BITS));
++		voltage = BITFEXT(register_val, SW5);
++		mV = bit_value_to_mv(voltage, SW5_MIN_MV, SW5_STEP_MV);
++		break;
++	default:
++		break;
++	}
++	if (mV == 0)
++		return -EINVAL;
++	else
++		return mV * 1000;
++}
++
++static int mc34708_sw_normal_enable(struct regulator_dev *reg)
++{
++	return 0;
++}
++
++static int mc34708_sw_normal_disable(struct regulator_dev *reg)
++{
++	return 0;
++}
++
++static int mc34708_sw_stby_enable(struct regulator_dev *reg)
++{
++	return 0;
++}
++
++static int mc34708_sw_stby_disable(struct regulator_dev *reg)
++{
++	return 0;
++}
++
++static int mc34708_sw_set_stby_voltage(struct regulator_dev *reg, int uV)
++{
++	unsigned int register_val = 0, register_mask = 0, register_valtest = 0;
++	unsigned int register1 = 0;
++
++	int voltage, mV = uV / 1000;
++	int sw = rdev_get_id(reg);
++
++	voltage = mc34708_get_voltage_value(sw, mV);
++
++	switch (sw) {
++	case MC34708_SW1A:
++		register1 = REG_MC34708_SW_1_A_B;
++		register_val = BITFVAL(SW1A_STDBY, voltage);
++		register_mask = BITFMASK(SW1A_STDBY);
++		break;
++	case MC34708_SW1B:
++		register1 = REG_MC34708_SW_1_A_B;
++		register_val = BITFVAL(SW1B_STDBY, voltage);
++		register_mask = BITFMASK(SW1B_STDBY);
++		break;
++	case MC34708_SW2:
++		register1 = REG_MC34708_SW_2_3;
++		register_val = BITFVAL(SW2_STDBY, voltage);
++		register_mask = BITFMASK(SW2_STDBY);
++		break;
++	case MC34708_SW3:
++		register1 = REG_MC34708_SW_2_3;
++		register_val = BITFVAL(SW3_STDBY, voltage);
++		register_mask = BITFMASK(SW3_STDBY);
++		break;
++	case MC34708_SW4A:
++		register1 = REG_MC34708_SW_4_A_B;
++		register_val = BITFVAL(SW4A_STDBY, voltage);
++		register_mask = BITFMASK(SW4A_STDBY);
++		break;
++	case MC34708_SW4B:
++		register1 = REG_MC34708_SW_4_A_B;
++		register_val = BITFVAL(SW4B_STDBY, voltage);
++		register_mask = BITFMASK(SW4B_STDBY);
++		break;
++	case MC34708_SW5:
++		register1 = REG_MC34708_SW_5;
++		register_val = BITFVAL(SW5_STDBY, voltage);
++		register_mask = BITFMASK(SW5_STDBY);
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_sw_set_normal_mode(struct regulator_dev *reg,
++				      unsigned int mode)
++{
++	unsigned int reg_val = 0, reg_mask = 0;
++	unsigned int register1 = 0;
++	unsigned int l_mode;
++	int sw = rdev_get_id(reg);
++
++	switch (mode) {
++	case REGULATOR_MODE_FAST:
++		/* SYNC RECT mode */
++		l_mode = SW_MODE_SYNC_RECT_EN;
++		break;
++	case REGULATOR_MODE_NORMAL:
++		/* PULSE SKIP mode */
++		l_mode = SW_MODE_PULSE_SKIP_EN;
++		break;
++	case REGULATOR_MODE_IDLE:
++		/* LOW POWER mode */
++		l_mode = SW_MODE_LOW_POWER_EN;
++		break;
++	case REGULATOR_MODE_STANDBY:
++		/* NO PULSE SKIP mode */
++		l_mode = SW_MODE_PULSE_NO_SKIP_EN;
++		break;
++	default:
++		return -EINVAL;
++	}
++	return pmic_write_reg(register1, reg_val, reg_mask);
++}
++
++static unsigned int mc34708_sw_get_normal_mode(struct regulator_dev *reg)
++{
++	unsigned int reg_val = 0, reg_mask = 0;
++	unsigned int register1 = 0;
++	unsigned int l_mode = 0;
++	int sw = rdev_get_id(reg);
++	int ret = 0;
++
++	ret = pmic_read_reg(register1, &reg_val, reg_mask);
++	return ret;
++
++}
++
++static int mc34708_sw_set_stby_mode(struct regulator_dev *reg,
++				    unsigned int mode)
++{
++	unsigned int reg_val = 0, reg_mask = 0;
++	unsigned int register1 = 0;
++	unsigned int l_mode;
++	int sw = rdev_get_id(reg);
++
++	return pmic_write_reg(register1, reg_val, reg_mask);
++}
++
++static int mc34708_swbst_enable(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int id = rdev_get_id(reg);
++
++	switch (id) {
++	case MC34708_SWBST:
++		register_val = 0xC;	/* SWBSTMODE=0x3 */
++		register_mask = 0xC;
++		pmic_write_reg(MC34708_REG_SWBST_CTL, register_val,
++			       register_mask);
++		register_val = BITFVAL(VUSBSEL, VUSBSEL_ENABLE);
++		register_mask = BITFMASK(VUSBSEL);
++		break;
++	default:
++		return -EINVAL;
++	}
++	register1 = MC34708_REG_REGULATOR_MODE0;
++
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static int mc34708_swbst_disable(struct regulator_dev *reg)
++{
++	unsigned int register_val = 0, register_mask = 0;
++	unsigned int register1;
++	int id = rdev_get_id(reg);
++
++	switch (id) {
++	case MC34708_SWBST:
++		register_val = BITFVAL(VUSBSEL, VUSBSEL_DISABLE);
++		register_mask = BITFMASK(VUSBSEL);
++		break;
++	default:
++		return -EINVAL;
++	}
++	register1 = MC34708_REG_REGULATOR_MODE0;
++	return pmic_write_reg(register1, register_val, register_mask);
++}
++
++static struct regulator_ops mc34708_vrefddr_ops = {
++	.enable = mc34708_ldo_enable,
++	.disable = mc34708_ldo_disable,
++};
++
++static struct regulator_ops mc34708_vpll_ops = {
++	.set_voltage = mc34708_vpll_set_voltage,
++	.get_voltage = mc34708_vpll_get_voltage,
++};
++
++static struct regulator_ops mc34708_swbst_ops = {
++	.enable = mc34708_swbst_enable,
++	.disable = mc34708_swbst_disable,
++	.is_enabled = mc34708_regulator_is_enabled,
++};
++
++static struct regulator_ops mc34708_vusb_ops = {
++	.enable = mc34708_ldo_enable,
++	.disable = mc34708_ldo_disable,
++	.is_enabled = mc34708_regulator_is_enabled,
++};
++
++static struct regulator_ops mc34708_vusb2_ops = {
++	.set_voltage = mc34708_vusb2_set_voltage,
++	.get_voltage = mc34708_vusb2_get_voltage,
++	.enable = mc34708_ldo_enable,
++	.disable = mc34708_ldo_disable,
++};
++
++static struct regulator_ops mc34708_vgen1_ops = {
++	.set_voltage = mc34708_vgen1_set_voltage,
++	.get_voltage = mc34708_vgen1_get_voltage,
++	.enable = mc34708_ldo_enable,
++	.disable = mc34708_ldo_disable,
++};
++
++static struct regulator_ops mc34708_vgen2_ops = {
++	.set_voltage = mc34708_vgen2_set_voltage,
++	.get_voltage = mc34708_vgen2_get_voltage,
++	.enable = mc34708_ldo_enable,
++	.disable = mc34708_ldo_disable,
++};
++
++static struct regulator_ops mc34708_vdac_ops = {
++	.set_voltage = mc34708_vdac_set_voltage,
++	.get_voltage = mc34708_vdac_get_voltage,
++	.enable = mc34708_ldo_enable,
++	.disable = mc34708_ldo_disable,
++};
++
++static struct regulator_ops mc34708_sw_ops = {
++	.set_voltage = mc34708_sw_set_normal_voltage,
++	.get_voltage = mc34708_sw_get_normal_voltage,
++	.get_mode = mc34708_sw_get_normal_mode,
++	.set_mode = mc34708_sw_set_normal_mode,
++	.set_suspend_voltage = mc34708_sw_set_stby_voltage,
++	.set_suspend_enable = mc34708_sw_stby_enable,
++	.set_suspend_disable = mc34708_sw_stby_disable,
++	.set_suspend_mode = mc34708_sw_set_stby_mode,
++};
++
++static struct regulator_desc reg_mc34708[] = {
++	{
++	 .name = "SW1A",
++	 .id = MC34708_SW1A,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SW1B",
++	 .id = MC34708_SW1B,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SW2",
++	 .id = MC34708_SW2,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SW3",
++	 .id = MC34708_SW3,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SW4A",
++	 .id = MC34708_SW4A,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SW4B",
++	 .id = MC34708_SW4B,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SW5",
++	 .id = MC34708_SW5,
++	 .ops = &mc34708_sw_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "SWBST",
++	 .id = MC34708_SWBST,
++	 .ops = &mc34708_swbst_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VPLL",
++	 .id = MC34708_VPLL,
++	 .ops = &mc34708_vpll_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VREFDDR",
++	 .id = MC34708_VREFDDR,
++	 .ops = &mc34708_vrefddr_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VUSB",
++	 .id = MC34708_VUSB,
++	 .ops = &mc34708_vusb_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VUSB2",
++	 .id = MC34708_VUSB2,
++	 .ops = &mc34708_vusb2_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VDAC",
++	 .id = MC34708_VDAC,
++	 .ops = &mc34708_vdac_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VGEN1",
++	 .id = MC34708_VGEN1,
++	 .ops = &mc34708_vgen1_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++	{
++	 .name = "VGEN2",
++	 .id = MC34708_VGEN2,
++	 .ops = &mc34708_vgen2_ops,
++	 .irq = 0,
++	 .type = REGULATOR_VOLTAGE,
++	 .owner = THIS_MODULE},
++};
++
++/*
++ * Init and Exit
++ */
++
++static int reg_mc34708_probe(struct platform_device *pdev)
++{
++	struct regulator_dev *rdev;
++	/* register regulator */
++	rdev = regulator_register(&reg_mc34708[pdev->id], &pdev->dev,
++				  pdev->dev.platform_data,
++				  dev_get_drvdata(&pdev->dev));
++	if (IS_ERR(rdev)) {
++		dev_err(&pdev->dev, "failed to register %s\n",
++			reg_mc34708[pdev->id].name);
++		return PTR_ERR(rdev);
++	}
++	platform_set_drvdata(pdev, rdev);
++
++	return 0;
++}
++
++static int mc34708_regulator_remove(struct platform_device *pdev)
++{
++	struct regulator_dev *rdev = platform_get_drvdata(pdev);
++
++	regulator_unregister(rdev);
++
++	return 0;
++}
++
++int mc34708_register_regulator(struct mc34708 *mc34708, int reg,
++			       struct regulator_init_data *initdata)
++{
++	struct platform_device *pdev;
++	int ret;
++	if (mc34708->pmic.pdev[reg])
++		return -EBUSY;
++
++	pdev = platform_device_alloc("mc34708-regulatr", reg);
++	if (!pdev)
++		return -ENOMEM;
++
++	mc34708->pmic.pdev[reg] = pdev;
++
++	initdata->driver_data = mc34708;
++
++	pdev->dev.platform_data = initdata;
++	pdev->dev.parent = mc34708->dev;
++	ret = platform_device_add(pdev);
++
++	if (ret != 0) {
++		dev_err(mc34708->dev, "Failed to register regulator %d: %d\n",
++			reg, ret);
++		platform_device_del(pdev);
++		mc34708->pmic.pdev[reg] = NULL;
++	}
++
++	return ret;
++}
++
++EXPORT_SYMBOL_GPL(mc34708_register_regulator);
++
++static struct platform_driver mc34708_regulator_driver = {
++	.probe = reg_mc34708_probe,
++	.remove = mc34708_regulator_remove,
++	.driver = {
++		   .name = "mc34708-regulatr",
++		   /* o left out due to string length */
++		   },
++};
++
++static int __init mc34708_regulator_subsys_init(void)
++{
++	return platform_driver_register(&mc34708_regulator_driver);
++}
++
++subsys_initcall(mc34708_regulator_subsys_init);
++
++static void __exit mc34708_regulator_exit(void)
++{
++	platform_driver_unregister(&mc34708_regulator_driver);
++}
++
++module_exit(mc34708_regulator_exit);
++
++/* Module information */
++MODULE_AUTHOR("Freescale Semiconductor, Inc.");
++MODULE_DESCRIPTION("mc34708 Regulator driver");
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/mfd/mc34708/core.h b/include/linux/mfd/mc34708/core.h
+new file mode 100644
+index 0000000..9da55b6
+--- /dev/null
++++ b/include/linux/mfd/mc34708/core.h
+@@ -0,0 +1,83 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#ifndef __LINUX_MFD_MC34708_CORE_H_
++#define __LINUX_MFD_MC34708_CORE_H_
++
++#include <linux/kernel.h>
++#include <linux/mutex.h>
++#include <linux/workqueue.h>
++#include <linux/pmic_external.h>
++/*!
++ * brief PMIC regulators.
++ */
++#define MC34708_SW1A		0
++#define MC34708_SW1B		1
++#define MC34708_SW2		2
++#define MC34708_SW3		3
++#define MC34708_SW4A		4
++#define MC34708_SW4B		5
++#define MC34708_SW5		6
++#define MC34708_SWBST		7
++#define MC34708_VPLL		8
++#define MC34708_VREFDDR		9
++#define MC34708_VUSB		10
++#define MC34708_VUSB2		11
++#define MC34708_VDAC		12
++#define MC34708_VGEN1		13
++#define MC34708_VGEN2		14
++#define MC34708_REG_NUM		15
++
++struct mc34708;
++struct regulator_init_data;
++
++struct mc34708_platform_data {
++	int (*init)(struct mc34708 *);
++	void *(*pmic_alloc_data)(struct device *dev);
++	int (*pmic_init_registers)(void);
++	void (*pmic_get_revision)(pmic_version_t *ver);
++};
++
++struct mc34708_pmic {
++	/* regulator devices */
++	struct platform_device *pdev[MC34708_REG_NUM];
++};
++
++struct mc34708 {
++	int rev;		/* chip revision */
++
++	struct device *dev;
++
++	/* device IO */
++	union {
++		struct i2c_client *i2c_client;
++		struct spi_device *spi_device;
++	};
++	u16 *reg_cache;
++
++	/* Client devices */
++	struct mc34708_pmic pmic;
++};
++
++int mc34708_register_regulator(struct mc34708 *mc34708, int reg,
++			       struct regulator_init_data *initdata);
++void *mc34708_alloc_data(struct device *dev);
++int mc34708_init_registers(void);
++void mc34708_get_revision(pmic_version_t *ver);
++
++#endif
+diff --git a/include/linux/mfd/mc34708/mc34708.h b/include/linux/mfd/mc34708/mc34708.h
+new file mode 100644
+index 0000000..cf56bfe
+--- /dev/null
++++ b/include/linux/mfd/mc34708/mc34708.h
+@@ -0,0 +1,134 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#ifndef __ASM_ARCH_MXC_PMIC_MC34708_EXTERNAL_H__
++#define __ASM_ARCH_MXC_PMIC_MC34708_EXTERNAL_H__
++
++
++enum {
++	MC34708_REG_INT_STATUS0 = 0,
++	MC34708_REG_INT_MASK0,
++	MC34708_REG_INT_SENSE0,
++	MC34708_REG_INT_STATUS1,
++	MC34708_REG_INT_MASK1,
++	MC34708_REG_INT_SENSE1,
++	MC34708_REG_POWER_UP_MODE_SENSE,
++	MC34708_REG_IDENTIFICATION,
++	MC34708_REG_REGULATOR_FAULT_SENSE,
++	MC34708_REG_ACC0,
++	MC34708_REG_ACC1,
++	MC34708_REG_UNUSED0,
++	MC34708_REG_UNUSED1,
++	MC34708_REG_POWER_CTL0,
++	MC34708_REG_POWER_CTL1,
++	MC34708_REG_POWER_CTL2,
++	MC34708_REG_MEM_A,
++	MC34708_REG_MEM_B,
++	MC34708_REG_MEM_C,
++	MC34708_REG_MEM_D,
++	MC34708_REG_RTC_TIME,
++	MC34708_REG_RTC_ALARM,
++	MC34708_REG_RTC_DAY,
++	MC34708_REG_RTC_DAY_ALARM,
++	MC34708_REG_SW1AB,
++	MC34708_REG_SW2_3,
++	MC34708_REG_SW4AB,
++	MC34708_REG_SW5,
++	MC34708_REG_SW_OP_MODE_1_2,
++	MC34708_REG_SW_OP_MODE_3_4_5,
++	MC34708_REG_REGULATOR_SETTING0,
++	MC34708_REG_SWBST_CTL,
++	MC34708_REG_REGULATOR_MODE0,
++	MC34708_REG_GPIOLV0_CTL,
++	MC34708_REG_GPIOLV1_CTL,
++	MC34708_REG_GPIOLV2_CTL,
++	MC34708_REG_GPIOLV3_CTL,
++	MC34708_REG_USB_TIMING,
++	MC34708_REG_USB_BUTTON,
++	MC34708_REG_USB_CTL,
++	MC34708_REG_USB_DEVICE_TYPE,
++	MC34708_REG_UNUSED2,
++	MC34708_REG_UNUSED3,
++	MC34708_REG_ADC0,
++	MC34708_REG_ADC1,
++	MC34708_REG_ADC2,
++	MC34708_REG_ADC3,
++	MC34708_REG_ADC4,
++	MC34708_REG_ADC5,
++	MC34708_REG_ADC6,
++	MC34708_REG_ADC7,
++	MC34708_REG_BATTERY_PROFILE,
++	MC34708_REG_CHARGER_DEBOUNCE,
++	MC34708_REG_CHARGER_SOURCE,
++	MC34708_REG_CHARGER_LED_CTL,
++	MC34708_REG_PWM_CTL,
++	MC34708_REG_UNUSED4,
++	MC34708_REG_UNUSED5,
++	MC34708_REG_UNUSED6,
++	MC34708_REG_UNUSED7,
++	MC34708_REG_UNUSED8,
++	MC34708_REG_UNUSED9,
++	MC34708_REG_UNUSED10,
++	MC34708_REG_UNUSED11,
++};
++
++enum {
++	MC34708_EVENT_ADCDONEI = 0,
++	MC34708_EVENT_TSDONEI = 1,
++	MC34708_EVENT_TSPENDET = 2,
++	MC34708_EVENT_USBDET = 3,
++	MC34708_EVENT_AUXDET = 4,
++	MC34708_EVENT_USBOVP = 5,
++	MC34708_EVENT_AUXOVP = 6,
++	MC34708_EVENT_CHRTIMEEXP = 7,
++	MC34708_EVENT_BATTOTP = 8,
++	MC34708_EVENT_BATTOVP = 9,
++	MC34708_EVENT_CHRCMPL = 10,
++	MC34708_EVENT_WKVBUSDET = 11,
++	MC34708_EVENT_WKAUXDET = 12,
++	MC34708_EVENT_LOWBATT = 13,
++	MC34708_EVENT_VBUSREGMI = 14,
++	MC34708_EVENT_ATTACH = 15,
++	MC34708_EVENT_DETACH = 16,
++	MC34708_EVENT_KP = 17,
++	MC34708_EVENT_LKP = 18,
++	MC34708_EVENT_LKR = 19,
++	MC34708_EVENT_UKNOWN_ATTA = 20,
++	MC34708_EVENT_ADC_CHANGE = 21,
++	MC34708_EVENT_STUCK_KEY = 22,
++	MC34708_EVENT_STUCK_KEY_RCV = 23,
++
++	MC34708_EVENT_1HZI = 24,
++	MC34708_EVENT_TODAI = 25,
++	MC34708_EVENT_Unused1 = 26,
++	MC34708_EVENT_PWRON1I = 27,
++	MC34708_EVENT_PWRON2I = 28,
++	MC34708_EVENT_WDIRESETI = 29,
++	MC34708_EVENT_SYSRSTI = 30,
++	MC34708_EVENT_RTCRSTI = 31,
++	MC34708_EVENT_PCI = 32,
++	MC34708_EVENT_WARMI = 33,
++	MC34708_EVENT_MEMHLDI = 34,
++	MC34708_EVENT_Unused2 = 35,
++	MC34708_EVENT_THWARNLI = 36,
++	MC34708_EVENT_THWARNHI = 37,
++	MC34708_EVENT_CLKI = 38,
++	MC34708_EVENT_Unused3 = 39,
++	MC34708_EVENT_SCPI = 40,
++};
++#endif
+diff --git a/include/linux/mfd/mc34708/mc34708_adc.h b/include/linux/mfd/mc34708/mc34708_adc.h
+new file mode 100644
+index 0000000..721d788
+--- /dev/null
++++ b/include/linux/mfd/mc34708/mc34708_adc.h
+@@ -0,0 +1,88 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#ifndef __ASM_ARCH_MXC_MC34708_PMIC_ADC_H__
++#define __ASM_ARCH_MXC_MC34708_PMIC_ADC_H__
++
++/*!
++ * @defgroup PMIC_ADC PMIC Digitizer Driver
++ * @ingroup PMIC_DRVRS
++ */
++
++#include <linux/pmic_status.h>
++#include <linux/pmic_external.h>
++
++/*!
++ * This enumeration defines input channels for PMIC ADC
++ */
++
++typedef enum {
++	BATTERY_VOLTAGE,
++	BATTERY_CURRENT,
++	APPLICATION_SUPPLY_VOLTAGE,
++	DIE_TEMP,
++	AUX_CHARGER_VOLTAGE,
++	USB_VOLTAGE,
++	RESERVER0,
++	BATTERY_THEMISTOR,
++	COINCELL_VOLTAGE,
++	GEN_PURPOSE_AD9,
++	GEN_PURPOSE_AD10,
++	GEN_PURPOSE_AD11,
++	GEN_PURPOSE_AD12,
++	GEN_PURPOSE_AD13,
++	GEN_PURPOSE_AD14,
++	GEN_PURPOSE_AD15,
++} t_channel;
++
++
++/* EXPORTED FUNCTIONS */
++
++#ifdef __KERNEL__
++/*!
++ * This function initializes all ADC registers with default values. This
++ * function also registers the interrupt events.
++ *
++ * @return       This function returns PMIC_SUCCESS if successful.
++ */
++PMIC_STATUS mc34708_pmic_adc_init(void);
++
++/*!
++ * This function disables the ADC, de-registers the interrupt events.
++ *
++ * @return       This function returns PMIC_SUCCESS if successful.
++ */
++PMIC_STATUS mc34708_pmic_adc_deinit(void);
++
++/*!
++ * This function triggers a conversion and returns one sampling result of one
++ * channel.
++ *
++ * @param        channel   The channel to be sampled
++ * @param        result    The pointer to the conversion result. The memory
++ *                         should be allocated by the caller of this function.
++ *
++ * @return       This function returns PMIC_SUCCESS if successful.
++ */
++
++PMIC_STATUS mc34708_pmic_adc_convert(t_channel channel, unsigned short *result);
++
++
++
++#endif				/* _KERNEL */
++#endif				/* __ASM_ARCH_MXC_PMIC_ADC_H__ */
+diff --git a/include/linux/mfd/mc34708/mc34708_battery.h b/include/linux/mfd/mc34708/mc34708_battery.h
+new file mode 100644
+index 0000000..c38c448
+--- /dev/null
++++ b/include/linux/mfd/mc34708/mc34708_battery.h
+@@ -0,0 +1,162 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#ifndef _MC34708_BC_H
++#define _MC34708_BC_H
++
++#include <linux/types.h>
++
++#define RIPLIEY_BC_MAX_RESTART_CYCLES 100
++
++#define RIPLIEY_BC_LIION_CHARGING_VOLTAGE  4200
++#define RIPLIEY_BC_ALKALINE_NIMH_CHARGING_VOLTAGE 1750
++
++/* brief Defines battery charger states. */
++typedef enum _ddi_bc_State {
++	/* brief TBD */
++	RIPLIEY_BC_STATE_UNINITIALIZED = 0,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_BROKEN = 1,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_DISABLED = 2,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_WAITING_TO_CHARGE = 3,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_CONDITIONING = 4,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_CHARGING = 5,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_TOPPING_OFF = 6,
++	/* brief TBD */
++	RIPLIEY_BC_STATE_DCDC_MODE_WAITING_TO_CHARGE = 7,
++
++} ddi_bc_State_t;
++
++typedef enum _ddi_bc_BrokenReason {
++	/* brief TBD */
++	RIPLIEY_BC_BROKEN_UNINITIALIZED = 0,
++	/* brief TBD */
++	RIPLIEY_BC_BROKEN_CHARGING_TIMEOUT = 1,
++	/* brief TBD */
++	RIPLIEY_BC_BROKEN_FORCED_BY_APPLICATION = 2,
++	/* brief TBD */
++	RIPLIEY_BC_BROKEN_EXTERNAL_BATTERY_VOLTAGE_DETECTED = 3,
++	/* brief TBD */
++	RIPLIEY_BC_BROKEN_NO_BATTERY_DETECTED = 4,
++
++} ddi_bc_BrokenReason_t;
++
++struct mc34708_charger_setting_point {
++	u32 microVolt;
++	u32 microAmp;
++};
++
++/* brief Defines the battery charger configuration. */
++typedef struct mc34708_charger_config {
++
++	u32 batteryTempLow;
++	u32 batteryTempHigh;
++	s32 hasTempSensor;
++
++	u32 trickleThreshold;
++
++	u32 vbusThresholdLow;
++	u32 vbusThresholdWeak;
++	u32 vbusThresholdHigh;
++
++	u32 vauxThresholdLow;
++	u32 vauxThresholdWeak;
++	u32 vauxThresholdHigh;
++
++	u32 lowBattThreshold;
++
++	u32 toppingOffMicroAmp;
++
++	struct mc34708_charger_setting_point *chargingPoints;
++	u32 pointsNumber;
++
++};
++
++/*  Status returned by Battery Charger functions. */
++
++typedef enum _ddi_bc_Status {
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_SUCCESS = 0,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_HARDWARE_DISABLED,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_BAD_BATTERY_MODE,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_CLOCK_GATE_CLOSED,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_NOT_INITIALIZED,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_ALREADY_INITIALIZED,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_BROKEN,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_NOT_BROKEN,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_NOT_DISABLED,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_BAD_ARGUMENT,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_CFG_BAD_BATTERY_TEMP_CHANNEL,
++	/* brief TBD */
++	RIPLIEY_BC_STATUS_CFG_BAD_CHARGING_VOLTAGE,
++} ddi_bc_Status_t;
++
++
++/*  BCM Event Codes */
++
++/* These are the codes that might be published to PMI Subscribers. */
++
++
++#define RIPLIEY_BC_EVENT_GROUP (11<<10)
++
++/* brief TBD */
++/* todo [PUBS] Add definition(s)... */
++typedef enum {
++	/* Use the error code group value to make events unique for the EOI */
++	/* brief TBD */
++	ddi_bc_MinEventCode = RIPLIEY_BC_EVENT_GROUP,
++	/* brief TBD */
++	ddi_bc_WaitingToChargeCode,
++	/* brief TBD */
++	ddi_bc_State_ConditioningCode,
++	/* brief TBD */
++	ddi_bc_State_Topping_OffCode,
++	/* brief TBD */
++	ddi_bc_State_BrokenCode,
++	/* brief TBD */
++	ddi_bc_SettingChargeCode,
++	/* brief TBD */
++	ddi_bc_RaisingDieTempAlarmCode,
++	/* brief TBD */
++	ddi_bc_DroppingDieTempAlarmCode,
++
++	/* brief TBD */
++	ddi_bc_MaxEventCode,
++	/* brief TBD */
++	ddi_bc_DcdcModeWaitingToChargeCode
++} ddi_bc_Event_t;
++
++
++/* End of file */
++
++#endif				/* _MC34708_BC_H */
+diff --git a/include/linux/pmic_external.h b/include/linux/pmic_external.h
+index 0ea60e5..cc66a33 100644
+--- a/include/linux/pmic_external.h
++++ b/include/linux/pmic_external.h
+@@ -50,7 +50,8 @@ typedef enum {
+ 	PMIC_MC13783 = 1,	/*!< MC13783 */
+ 	PMIC_SC55112 = 2,	/*!< SC55112 */
+ 	PMIC_MC13892 = 3,
+-	PMIC_MC34704 = 4
++	PMIC_MC34704 = 4,
++	PMIC_MC34708 = 5
+ } pmic_id_t;
+ 
+ /*!
+@@ -132,7 +133,10 @@ typedef struct {
+ #define PMIC_ARBITRATION	"NULL"
+ 
+ 
+-#if defined(CONFIG_MXC_PMIC_MC13892_MODULE) || defined(CONFIG_MXC_PMIC_MC13892)
++#if defined(CONFIG_MXC_PMIC_MC13892_MODULE) ||	\
++	defined(CONFIG_MXC_PMIC_MC13892) ||	\
++	defined(CONFIG_MXC_PMIC_MC34708_MODULE) || \
++	defined(CONFIG_MXC_PMIC_MC34708)
+ enum {
+ 	REG_INT_STATUS0 = 0,
+ 	REG_INT_MASK0,
+@@ -292,6 +296,76 @@ void gpio_pmic_active(void);
+ void pmic_event_list_init(void);
+ void mc13892_power_off(void);
+ 
++enum {
++	REG_MC34708_INT_STATUS0 = 0,
++	REG_MC34708_INT_MASK0,
++	REG_MC34708_INT_SENSE0,
++	REG_MC34708_INT_STATUS1,
++	REG_MC34708_INT_MASK1,
++	REG_MC34708_INT_SENSE1,
++	REG_MC34708_PU_MODE_S,
++	REG_MC34708_IDENTIFICATION,
++	REG_MC34708_REGU_FAULT_S,
++	REG_MC34708_ACC0,
++	REG_MC34708_ACC1,		/*10 */
++	REG_MC34708_UNUSED1,
++	REG_MC34708_UNUSED2,
++	REG_MC34708_POWER_CTL0,
++	REG_MC34708_POWER_CTL1,
++	REG_MC34708_POWER_CTL2,
++	REG_MC34708_MEM_A,
++	REG_MC34708_MEM_B,
++	REG_MC34708_MEM_C,
++	REG_MC34708_MEM_D,
++	REG_MC34708_RTC_TIME,		/*20 */
++	REG_MC34708_RTC_ALARM,
++	REG_MC34708_RTC_DAY,
++	REG_MC34708_RTC_DAY_ALARM,
++	REG_MC34708_SW_1_A_B,
++	REG_MC34708_SW_2_3,
++	REG_MC34708_SW_4_A_B,
++	REG_MC34708_SW_5,
++	REG_MC34708_SW_1_2_OP,
++	REG_MC34708_SW_3_4_5_OP,
++	REG_MC34708_SETTING_0,		/*30 */
++	REG_MC34708_SWBST,
++	REG_MC34708_MODE_0,
++	REG_MC34708_GPIOLV0,
++	REG_MC34708_GPIOLV1,
++	REG_MC34708_GPIOLV2,
++	REG_MC34708_GPIOLV3,
++	REG_MC34708_USB_TIMING,
++	REG_MC34708_USB_BUTTON,
++	REG_MC34708_USB_CONTROL,
++	REG_MC34708_USB_DEVICE_TYPE, /*40 */
++	REG_MC34708_UNUSED3,
++	REG_MC34708_UNUSED4,
++	REG_MC34708_ADC0,
++	REG_MC34708_ADC1,
++	REG_MC34708_ADC2,
++	REG_MC34708_ADC3,
++	REG_MC34708_ADC4,
++	REG_MC34708_ADC5,
++	REG_MC34708_ADC6,
++	REG_MC34708_ADC7,		/*50 */
++	REG_MC34708_BATTERY_PRO,
++	REG_MC34708_CHARGER_DEBOUNCE,
++	REG_MC34708_CHARGER_SOURCE,
++	REG_MC34708_CHARGER_LED_CON,
++	REG_MC34708_PWM_CON,
++	REG_MC34708_UNUSED5,
++	REG_MC34708_UNUSED6,
++	REG_MC34708_UNUSED7,
++	REG_MC34708_UNUSED8,
++	REG_MC34708_UNUSED9,		/*60 */
++	REG_MC34708_UNUSED10,
++	REG_MC34708_UNUSED11,
++	REG_MC34708_UNUSED12,
++};
++
++extern struct i2c_client *mc34708_client;
++void mc34708_power_off(void);
++
+ #elif defined(CONFIG_MXC_PMIC_MC34704_MODULE) || defined(CONFIG_MXC_PMIC_MC34704)
+ 
+ typedef enum {
+-- 
+1.5.4.4
+

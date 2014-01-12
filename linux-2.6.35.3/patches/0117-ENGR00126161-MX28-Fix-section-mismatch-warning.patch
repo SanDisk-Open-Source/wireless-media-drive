@@ -1,0 +1,35 @@
+From f78b696899fb085498402ecd6c659177667e3472 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 11 Aug 2010 13:03:11 +0800
+Subject: [PATCH] ENGR00126161 MX28:Fix section mismatch warning
+
+Fix the following miss match warning:
+WARNING: vmlinux.o(.text+0xe220): Section mismatch
+in reference from the function i2c_device_init()
+to the (unknown reference) .init.data:(unknown)
+The function i2c_device_init() references
+the (unknown reference) __initdata (unknown).
+This is often because i2c_device_init lacks a __initdata
+annotation or the annotation of (unknown) is wrong
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ arch/arm/mach-mx28/mx28evk.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/mx28evk.c b/arch/arm/mach-mx28/mx28evk.c
+index 768b21a..37beb27 100644
+--- a/arch/arm/mach-mx28/mx28evk.c
++++ b/arch/arm/mach-mx28/mx28evk.c
+@@ -39,7 +39,7 @@ static struct i2c_board_info __initdata mxs_i2c_device[] = {
+ 	{ I2C_BOARD_INFO("sgtl5000-i2c", 0x14), .flags = I2C_M_TEN }
+ };
+ 
+-static void i2c_device_init(void)
++static void __init i2c_device_init(void)
+ {
+ 	i2c_register_board_info(0, mxs_i2c_device, ARRAY_SIZE(mxs_i2c_device));
+ }
+-- 
+1.5.4.4
+

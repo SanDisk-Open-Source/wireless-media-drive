@@ -1,0 +1,46 @@
+From f1bde3f50af22c975170cab48768f9428de3e11a Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Thu, 25 Nov 2010 12:56:04 +0800
+Subject: [PATCH] ENGR00134043-1: PM: change device suspend time debug driver to default off.
+
+the default state of suspend driver is default off,
+if you want to debug the suspend time, echo time in
+microsecond(u Second) to /sys/powe/device_suspend_time_threshold
+
+eg: I want to know which driver suspend & resume takes
+more that 0.5 ms (500 us), you can just :
+
+ehco 500 > /sys/power/device_suspend_time_threshold
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ kernel/power/main.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/power/main.c b/kernel/power/main.c
+index 0b94978..bfb684a 100644
+--- a/kernel/power/main.c
++++ b/kernel/power/main.c
+@@ -234,13 +234,17 @@ power_attr(pm_trace);
+  * threshold of device suspend time consumption in microsecond(0.5ms), the
+  * driver suspend/resume time longer than this threshold will be
+  * print to console, 0 to disable */
+-int device_suspend_time_threshold = 500;
++int device_suspend_time_threshold;
+ 
+ static ssize_t
+ device_suspend_time_threshold_show(struct kobject *kobj,
+ 				   struct kobj_attribute *attr, char *buf)
+ {
+-	return sprintf(buf, "%d\n", device_suspend_time_threshold);
++	if (device_suspend_time_threshold == 0)
++		return sprintf(buf, "off\n");
++	else
++		return sprintf(buf, "%d usecs\n",
++			       device_suspend_time_threshold);
+ }
+ 
+ static ssize_t
+-- 
+1.5.4.4
+

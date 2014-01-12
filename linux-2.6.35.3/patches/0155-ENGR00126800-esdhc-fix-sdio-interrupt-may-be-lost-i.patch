@@ -1,0 +1,77 @@
+From d0f68951a35954b4b8e3e07a2a2e6085bba1edd8 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 30 Aug 2010 14:38:33 +0800
+Subject: [PATCH] ENGR00126800 esdhc: fix sdio interrupt may be lost issue
+
+Due to the SDIO interrupt of esdhc is implemented in edge trigger
+mode, the interrupt may be lost in some critical cases.
+This may cause SDIO cards such as WiFi has the possiblity to hang
+during a long-term transferring.
+
+Using D3CD to manually driver the HW to re-sample the SDIO interrupt
+on bus one more time to guarantee the SDIO interrupt signal sent
+from card during the interrupt signal disabled period will not
+be lost.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |   21 ++++++++++++++++++++-
+ drivers/mmc/host/mx_sdhci.h |    1 +
+ 2 files changed, 21 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index 76b3e4a..ef756aa 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -1106,7 +1106,12 @@ static void sdhci_enable_sdio_irq(struct mmc_host *mmc, int enable)
+ 			goto exit_unlock;
+ 	}
+ 
+-	ier = readl(host->ioaddr + SDHCI_SIGNAL_ENABLE);
++	/* Enable the clock */
++	if (!host->plat_data->clk_flg) {
++		clk_enable(host->clk);
++		host->plat_data->clk_flg = 1;
++	}
++	ier = readl(host->ioaddr + SDHCI_INT_ENABLE);
+ 	prot = readl(host->ioaddr + SDHCI_HOST_CONTROL);
+ 
+ 	if (enable) {
+@@ -1122,8 +1127,22 @@ static void sdhci_enable_sdio_irq(struct mmc_host *mmc, int enable)
+ 	}
+ 
+ 	writel(prot, host->ioaddr + SDHCI_HOST_CONTROL);
++	writel(ier, host->ioaddr + SDHCI_INT_ENABLE);
+ 	writel(ier, host->ioaddr + SDHCI_SIGNAL_ENABLE);
+ 
++	/*
++	 * Using D3CD to manually driver the HW to re-sample the SDIO interrupt
++	 * on bus one more time to guarantee the SDIO interrupt signal sent
++	 * from card during the interrupt signal disabled period will not
++	 * be lost.
++	 */
++	prot |= SDHCI_CTRL_CDSS;
++	writel(prot, host->ioaddr + SDHCI_HOST_CONTROL);
++	prot &= ~SDHCI_CTRL_D3CD;
++	writel(prot, host->ioaddr + SDHCI_HOST_CONTROL);
++	prot |= SDHCI_CTRL_D3CD;
++	writel(prot, host->ioaddr + SDHCI_HOST_CONTROL);
++
+ 	mmiowb();
+       exit_unlock:
+ 	spin_unlock_irqrestore(&host->lock, flags);
+diff --git a/drivers/mmc/host/mx_sdhci.h b/drivers/mmc/host/mx_sdhci.h
+index aaee235..39fc0e5 100644
+--- a/drivers/mmc/host/mx_sdhci.h
++++ b/drivers/mmc/host/mx_sdhci.h
+@@ -69,6 +69,7 @@
+ #define  SDHCI_CTRL_4BITBUS	0x00000002
+ #define  SDHCI_CTRL_8BITBUS	0x00000004
+ #define  SDHCI_CTRL_HISPD	0x00000004
++#define  SDHCI_CTRL_CDSS       0x80
+ #define  SDHCI_CTRL_DMA_MASK	0x18
+ #define   SDHCI_CTRL_SDMA	0x00
+ #define   SDHCI_CTRL_ADMA1	0x08
+-- 
+1.5.4.4
+

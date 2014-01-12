@@ -1,0 +1,5590 @@
+From 315847875c915dc4ee666743bf99235a4f9a4b8d Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 7 Jul 2010 05:33:19 +0800
+Subject: [PATCH] ENGR00124359 Add uboot support for MX50
+
+Add initial support for MX50
+
+-Support mddr200Mhz, lpddr2266Mhz ARM2 board,
+-Support boot from SD/MMC,
+-Support boot from SPI-NOR,
+-Support FEC, UART,
+-Support SD/MMC/SPI command within UBOOT
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+Signed-off-by: Terry Lv <r65388@freescale.com>
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ Makefile                                  |    9 +
+ board/freescale/mx50_arm2/Makefile        |   49 ++
+ board/freescale/mx50_arm2/config.mk       |    7 +
+ board/freescale/mx50_arm2/flash_header.S  |  346 ++++++++++
+ board/freescale/mx50_arm2/lowlevel_init.S |  207 ++++++
+ board/freescale/mx50_arm2/mx50_arm2.c     |  680 +++++++++++++++++++
+ board/freescale/mx50_arm2/u-boot.lds      |   73 ++
+ cpu/arm_cortexa8/mx50/Makefile            |   48 ++
+ cpu/arm_cortexa8/mx50/cache.c             |   44 ++
+ cpu/arm_cortexa8/mx50/crm_regs.h          |  646 ++++++++++++++++++
+ cpu/arm_cortexa8/mx50/generic.c           | 1019 +++++++++++++++++++++++++++++
+ cpu/arm_cortexa8/mx50/interrupts.c        |   39 ++
+ cpu/arm_cortexa8/mx50/iomux.c             |  137 ++++
+ cpu/arm_cortexa8/mx50/serial.c            |  226 +++++++
+ cpu/arm_cortexa8/mx50/timer.c             |  127 ++++
+ include/asm-arm/arch-mx50/imx_spi_pmic.h  |   33 +
+ include/asm-arm/arch-mx50/iomux.h         |  230 +++++++
+ include/asm-arm/arch-mx50/mmu.h           |  174 +++++
+ include/asm-arm/arch-mx50/mx50.h          |  300 +++++++++
+ include/asm-arm/arch-mx50/mx50_pins.h     |  285 ++++++++
+ include/asm-arm/mach-types.h              |   13 +
+ include/configs/mx50_arm2.h               |  248 +++++++
+ include/configs/mx50_arm2_iram.h          |  194 ++++++
+ include/configs/mx50_arm2_lpddr2.h        |  249 +++++++
+ 24 files changed, 5383 insertions(+), 0 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 2def708..61dbcb9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3247,6 +3247,15 @@ mx35_3stack_mfg_config \
+ mx35_3stack_mmc_config: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 mx35_3stack freescale mx35
+ 
++mx50_arm2_lpddr2_config \
++mx50_arm2_iram_config \
++mx50_arm2_config      : unconfig
++	@[ -z "$(findstring iram_,$@)" ] || \
++		{ echo "TEXT_BASE = 0xF8008400" >$(obj)board/freescale/mx50_arm2/config.tmp ; \
++		  echo "... with iram configuration" ; \
++		}
++	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx50_arm2 freescale mx50
++
+ mx51_bbg_android_config	\
+ mx51_bbg_mfg_config \
+ mx51_bbg_config		: unconfig
+diff --git a/board/freescale/mx50_arm2/Makefile b/board/freescale/mx50_arm2/Makefile
+new file mode 100644
+index 0000000..2bbcde3
+--- /dev/null
++++ b/board/freescale/mx50_arm2/Makefile
+@@ -0,0 +1,49 @@
++#
++# Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++#
++# (C) Copyright 2010 Freescale Semiconductor, Inc.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= mx50_arm2.o
++SOBJS	:= lowlevel_init.o flash_header.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/freescale/mx50_arm2/config.mk b/board/freescale/mx50_arm2/config.mk
+new file mode 100644
+index 0000000..fcb4c00
+--- /dev/null
++++ b/board/freescale/mx50_arm2/config.mk
+@@ -0,0 +1,7 @@
++LDSCRIPT := $(SRCTREE)/board/$(VENDOR)/$(BOARD)/u-boot.lds
++
++sinclude $(OBJTREE)/board/$(VENDOR)/$(BOARD)/config.tmp
++
++ifndef TEXT_BASE
++	TEXT_BASE = 0x77800000
++endif
+diff --git a/board/freescale/mx50_arm2/flash_header.S b/board/freescale/mx50_arm2/flash_header.S
+new file mode 100644
+index 0000000..aa246df
+--- /dev/null
++++ b/board/freescale/mx50_arm2/flash_header.S
+@@ -0,0 +1,346 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx50.h>
++
++#ifdef	CONFIG_FLASH_HEADER
++#ifndef CONFIG_FLASH_HEADER_OFFSET
++# error "Must define the offset of flash header"
++#endif
++
++#define CPU_2_BE_32(l) \
++       ((((l) & 0x000000FF) << 24) | \
++	(((l) & 0x0000FF00) << 8)  | \
++	(((l) & 0x00FF0000) >> 8)  | \
++	(((l) & 0xFF000000) >> 24))
++
++#define MXC_DCD_ITEM(i, addr, val)   \
++dcd_node_##i:                        \
++        .word CPU_2_BE_32(addr) ;     \
++        .word CPU_2_BE_32(val)  ;     \
++
++#define DCDGEN_CHECKDATA(i,addr,mask,count) \
++dcd_chkdata_##i:                         ; \
++        .word CPU_2_BE_32(addr)                ;\
++	.word CPU_2_BE_32(mask)                ;\
++	.word CPU_2_BE_32(count)                ;\
++
++.section ".text.flasheader", "x"
++	b	_start
++	.org	CONFIG_FLASH_HEADER_OFFSET
++ivt_header:       .word 0x402000D1 /* Tag=0xD1, Len=0x0020, Ver=0x40 */
++app_code_jump_v:  .word _start
++reserv1:          .word 0x0
++dcd_ptr:          .word dcd_hdr
++boot_data_ptr:	  .word boot_data
++self_ptr:         .word ivt_header
++app_code_csf:     .word 0x0
++reserv2:          .word 0x0
++
++boot_data:        .word TEXT_BASE
++image_len:        .word _end - TEXT_BASE
++plugin:           .word 0x0
++
++#if defined(CONFIG_LPDDR2)
++
++/* DCD for LPDDR2 board */
++
++/* Tag=0xD2, Len=4 + 76 + 16 + 844 + 26 = 966 (0x03c6), Ver=0x40. */
++dcd_hdr:           .word 0x40c603D2
++
++/* Tag = 0xCC, Len = 9*8 + 4 = 76(0x4C), Param = 4 */
++write_ccm_dcd_cmd: .word 0x044C00CC
++
++MXC_DCD_ITEM(01, 0x53fd4068 , 0xffffffff)
++MXC_DCD_ITEM(02, 0x53fd406c , 0xffffffff)
++MXC_DCD_ITEM(03, 0x53fd4070 , 0xffffffff)
++MXC_DCD_ITEM(04, 0x53fd4074 , 0xffffffff)
++MXC_DCD_ITEM(05, 0x53fd4078 , 0xffffffff)
++MXC_DCD_ITEM(06, 0x53fd407c , 0xffffffff)
++MXC_DCD_ITEM(07, 0x53fd4080 , 0xffffffff)
++MXC_DCD_ITEM(08, 0x53fd4084 , 0xffffffff)
++MXC_DCD_ITEM(09, 0x53FD4098 , 0x80000003)
++
++/* poll for completion of CCM_CSR2 for update: use dummy write to wait */
++/* Tag = 0xCF, Len = 1*12 + 4 = 16(0x10), Param = 4(Mast & Set bit are zero) */
++check_data_dcd_cmd:       .word 0x241000CF
++/* loop 0x1FFFFFFF times to make sure bit 2(ddr_clk_ref_pll_bsy) is cleared */
++DCDGEN_CHECKDATA(1, CCM_BASE_ADDR + 0x8c, 0x04, 0x1FFFFFFF)
++
++/* Tag=0xCC, Len=105*8 + 4 = 844(0x034C), Param=4 */
++write_dcd_cmd:    .word 0x044C03CC
++
++MXC_DCD_ITEM(1, IOMUXC_BASE_ADDR + 0x6ac, 0x04000000)
++MXC_DCD_ITEM(2, IOMUXC_BASE_ADDR + 0x6a4, 0x00380000)
++MXC_DCD_ITEM(3, IOMUXC_BASE_ADDR + 0x668, 0x00380000)
++MXC_DCD_ITEM(4, IOMUXC_BASE_ADDR + 0x698, 0x00380000)
++MXC_DCD_ITEM(5, IOMUXC_BASE_ADDR + 0x6a0, 0x00380000)
++MXC_DCD_ITEM(6, IOMUXC_BASE_ADDR + 0x6a8, 0x00380000)
++MXC_DCD_ITEM(7, IOMUXC_BASE_ADDR + 0x6b4, 0x00380000)
++MXC_DCD_ITEM(8, IOMUXC_BASE_ADDR + 0x498, 0x00380000)
++MXC_DCD_ITEM(9, IOMUXC_BASE_ADDR + 0x49c, 0x00380000)
++MXC_DCD_ITEM(10, IOMUXC_BASE_ADDR + 0x4f0, 0x00380000)
++MXC_DCD_ITEM(11, IOMUXC_BASE_ADDR + 0x500, 0x00380000)
++MXC_DCD_ITEM(12, IOMUXC_BASE_ADDR + 0x4c8, 0x00380000)
++MXC_DCD_ITEM(13, IOMUXC_BASE_ADDR + 0x528, 0x00380000)
++MXC_DCD_ITEM(14, IOMUXC_BASE_ADDR + 0x4f4, 0x00380000)
++MXC_DCD_ITEM(15, IOMUXC_BASE_ADDR + 0x4fc, 0x00380000)
++MXC_DCD_ITEM(16, IOMUXC_BASE_ADDR + 0x4cc, 0x00380000)
++MXC_DCD_ITEM(17, IOMUXC_BASE_ADDR + 0x524, 0x00380000)
++
++MXC_DCD_ITEM(18, DATABAHN_BASE_ADDR + 0x000, 0x00000500)
++MXC_DCD_ITEM(19, DATABAHN_BASE_ADDR + 0x004, 0x00000000)
++MXC_DCD_ITEM(20, DATABAHN_BASE_ADDR + 0x008, 0x0000001b)
++MXC_DCD_ITEM(21, DATABAHN_BASE_ADDR + 0x00c, 0x0000d056)
++MXC_DCD_ITEM(22, DATABAHN_BASE_ADDR + 0x010, 0x0000010b)
++MXC_DCD_ITEM(23, DATABAHN_BASE_ADDR + 0x014, 0x00000a6b)
++MXC_DCD_ITEM(24, DATABAHN_BASE_ADDR + 0x018, 0x02020d0c)
++MXC_DCD_ITEM(25, DATABAHN_BASE_ADDR + 0x01c, 0x0c110302)
++MXC_DCD_ITEM(26, DATABAHN_BASE_ADDR + 0x020, 0x05020503)
++MXC_DCD_ITEM(27, DATABAHN_BASE_ADDR + 0x024, 0x00000105)
++MXC_DCD_ITEM(28, DATABAHN_BASE_ADDR + 0x028, 0x01000403)
++MXC_DCD_ITEM(29, DATABAHN_BASE_ADDR + 0x02c, 0x09040501)
++MXC_DCD_ITEM(30, DATABAHN_BASE_ADDR + 0x030, 0x02000000)
++MXC_DCD_ITEM(31, DATABAHN_BASE_ADDR + 0x034, 0x00000e02)
++MXC_DCD_ITEM(32, DATABAHN_BASE_ADDR + 0x038, 0x00000006)
++MXC_DCD_ITEM(33, DATABAHN_BASE_ADDR + 0x03c, 0x00002301)
++MXC_DCD_ITEM(34, DATABAHN_BASE_ADDR + 0x040, 0x00050408)
++MXC_DCD_ITEM(35, DATABAHN_BASE_ADDR + 0x044, 0x00000300)
++MXC_DCD_ITEM(36, DATABAHN_BASE_ADDR + 0x048, 0x00260026)
++MXC_DCD_ITEM(37, DATABAHN_BASE_ADDR + 0x04c, 0x00010000)
++
++MXC_DCD_ITEM(38, DATABAHN_BASE_ADDR + 0x05c, 0x02000000)
++MXC_DCD_ITEM(39, DATABAHN_BASE_ADDR + 0x060, 0x00000002)
++MXC_DCD_ITEM(40, DATABAHN_BASE_ADDR + 0x064, 0x00000000)
++MXC_DCD_ITEM(41, DATABAHN_BASE_ADDR + 0x068, 0x00000000)
++MXC_DCD_ITEM(42, DATABAHN_BASE_ADDR + 0x06c, 0x00040042)
++MXC_DCD_ITEM(43, DATABAHN_BASE_ADDR + 0x070, 0x00000001)
++MXC_DCD_ITEM(44, DATABAHN_BASE_ADDR + 0x074, 0x00000000)
++MXC_DCD_ITEM(45, DATABAHN_BASE_ADDR + 0x078, 0x00040042)
++MXC_DCD_ITEM(46, DATABAHN_BASE_ADDR + 0x07c, 0x00000001)
++MXC_DCD_ITEM(47, DATABAHN_BASE_ADDR + 0x080, 0x010b0000)
++MXC_DCD_ITEM(48, DATABAHN_BASE_ADDR + 0x084, 0x00000060)
++MXC_DCD_ITEM(49, DATABAHN_BASE_ADDR + 0x088, 0x02400018)
++MXC_DCD_ITEM(50, DATABAHN_BASE_ADDR + 0x08c, 0x01000e00)
++MXC_DCD_ITEM(51, DATABAHN_BASE_ADDR + 0x090, 0x0a010101)
++MXC_DCD_ITEM(52, DATABAHN_BASE_ADDR + 0x094, 0x01011f1f)
++MXC_DCD_ITEM(53, DATABAHN_BASE_ADDR + 0x098, 0x01010101)
++MXC_DCD_ITEM(54, DATABAHN_BASE_ADDR + 0x09c, 0x00030101)
++MXC_DCD_ITEM(55, DATABAHN_BASE_ADDR + 0x0a0, 0x00010000)
++MXC_DCD_ITEM(56, DATABAHN_BASE_ADDR + 0x0a4, 0x00010000)
++MXC_DCD_ITEM(57, DATABAHN_BASE_ADDR + 0x0a8, 0x00000000)
++MXC_DCD_ITEM(58, DATABAHN_BASE_ADDR + 0x0ac, 0x0000ffff)
++MXC_DCD_ITEM(59, DATABAHN_BASE_ADDR + 0x0c8, 0x02020101)
++MXC_DCD_ITEM(60, DATABAHN_BASE_ADDR + 0x0cc, 0x01000000)
++MXC_DCD_ITEM(61, DATABAHN_BASE_ADDR + 0x0d0, 0x01000201)
++MXC_DCD_ITEM(62, DATABAHN_BASE_ADDR + 0x0d4, 0x00000200)
++MXC_DCD_ITEM(63, DATABAHN_BASE_ADDR + 0x0d8, 0x00000102)
++MXC_DCD_ITEM(64, DATABAHN_BASE_ADDR + 0x0dc, 0x0000ffff)
++MXC_DCD_ITEM(65, DATABAHN_BASE_ADDR + 0x0e0, 0x0000ffff)
++MXC_DCD_ITEM(66, DATABAHN_BASE_ADDR + 0x0e4, 0x02020000)
++MXC_DCD_ITEM(67, DATABAHN_BASE_ADDR + 0x0e8, 0x02020202)
++MXC_DCD_ITEM(68, DATABAHN_BASE_ADDR + 0x0ec, 0x00000202)
++MXC_DCD_ITEM(69, DATABAHN_BASE_ADDR + 0x0f0, 0x01010064)
++MXC_DCD_ITEM(70, DATABAHN_BASE_ADDR + 0x0f4, 0x01010101)
++MXC_DCD_ITEM(71, DATABAHN_BASE_ADDR + 0x0f8, 0x00010101)
++MXC_DCD_ITEM(72, DATABAHN_BASE_ADDR + 0x0fc, 0x00000064)
++MXC_DCD_ITEM(73, DATABAHN_BASE_ADDR + 0x100, 0x00000000)
++MXC_DCD_ITEM(74, DATABAHN_BASE_ADDR + 0x104, 0x02000802)
++MXC_DCD_ITEM(75, DATABAHN_BASE_ADDR + 0x108, 0x04080000)
++MXC_DCD_ITEM(76, DATABAHN_BASE_ADDR + 0x10c, 0x04080408)
++MXC_DCD_ITEM(77, DATABAHN_BASE_ADDR + 0x110, 0x04080408)
++MXC_DCD_ITEM(78, DATABAHN_BASE_ADDR + 0x114, 0x03060408)
++MXC_DCD_ITEM(79, DATABAHN_BASE_ADDR + 0x118, 0x01010002)
++MXC_DCD_ITEM(80, DATABAHN_BASE_ADDR + 0x11c, 0x00000000)
++
++MXC_DCD_ITEM(81, DATABAHN_BASE_ADDR + 0x200, 0x00000000)
++MXC_DCD_ITEM(82, DATABAHN_BASE_ADDR + 0x204, 0x00000000)
++MXC_DCD_ITEM(83, DATABAHN_BASE_ADDR + 0x208, 0xf5003a27)
++MXC_DCD_ITEM(84, DATABAHN_BASE_ADDR + 0x20c, 0x074002e1)
++MXC_DCD_ITEM(85, DATABAHN_BASE_ADDR + 0x210, 0xf5003a27)
++MXC_DCD_ITEM(86, DATABAHN_BASE_ADDR + 0x214, 0x074002e1)
++MXC_DCD_ITEM(87, DATABAHN_BASE_ADDR + 0x218, 0xf5003a27)
++MXC_DCD_ITEM(88, DATABAHN_BASE_ADDR + 0x21c, 0x074002e1)
++MXC_DCD_ITEM(89, DATABAHN_BASE_ADDR + 0x220, 0xf5003a27)
++MXC_DCD_ITEM(90, DATABAHN_BASE_ADDR + 0x224, 0x074002e1)
++MXC_DCD_ITEM(91, DATABAHN_BASE_ADDR + 0x228, 0xf5003a27)
++MXC_DCD_ITEM(92, DATABAHN_BASE_ADDR + 0x22c, 0x074002e1)
++MXC_DCD_ITEM(93, DATABAHN_BASE_ADDR + 0x230, 0x00000000)
++MXC_DCD_ITEM(94, DATABAHN_BASE_ADDR + 0x234, 0x00810006)
++MXC_DCD_ITEM(95, DATABAHN_BASE_ADDR + 0x238, 0x20099414)
++MXC_DCD_ITEM(96, DATABAHN_BASE_ADDR + 0x23c, 0x000a1401)
++MXC_DCD_ITEM(97, DATABAHN_BASE_ADDR + 0x240, 0x20099414)
++MXC_DCD_ITEM(98, DATABAHN_BASE_ADDR + 0x244, 0x000a1401)
++MXC_DCD_ITEM(99, DATABAHN_BASE_ADDR + 0x248, 0x20099414)
++MXC_DCD_ITEM(100, DATABAHN_BASE_ADDR + 0x24c, 0x000a1401)
++MXC_DCD_ITEM(101, DATABAHN_BASE_ADDR + 0x250, 0x20099414)
++MXC_DCD_ITEM(102, DATABAHN_BASE_ADDR + 0x254, 0x000a1401)
++MXC_DCD_ITEM(103, DATABAHN_BASE_ADDR + 0x258, 0x20099414)
++MXC_DCD_ITEM(104, DATABAHN_BASE_ADDR + 0x25c, 0x000a1401)
++MXC_DCD_ITEM(105, DATABAHN_BASE_ADDR + 0x000, 0x00000501)
++
++
++/* poll for completion of HW_DRAM_CTL42 for DDR inti completion */
++/* Tag = 0xCF, Len = 1*12 + 4 = 16(0x10), Param = 4 (Mast & Set bit are zero) */
++check_ddr_init_dcd_cmd:       .word 0x341000CF
++/* loop 0x1FFFFFFF times to make sure bit 4 (int_status) is set */
++DCDGEN_CHECKDATA(2, DATABAHN_BASE_ADDR + 0xa8, 0x10, 0x1FFFFFFF)
++
++#else
++
++/* DCD for mDDR board */
++
++/* Tag=0xD2, Len=4 + 76 + 16 + 796 + 26 = 908 (03A4), Ver=0x40. */
++dcd_hdr:          .word 0x408C03D2
++
++/* Tag = 0xCC, Len = 9*8 + 4 = 76(0x4C), Param = 4 */
++write_ccm_dcd_cmd:        .word 0x044C00CC
++
++MXC_DCD_ITEM(01, 0x53fd4068 , 0xffffffff)
++MXC_DCD_ITEM(02, 0x53fd406c , 0xffffffff)
++MXC_DCD_ITEM(03, 0x53fd4070 , 0xffffffff)
++MXC_DCD_ITEM(04, 0x53fd4074 , 0xffffffff)
++MXC_DCD_ITEM(05, 0x53fd4078 , 0xffffffff)
++MXC_DCD_ITEM(06, 0x53fd407c , 0xffffffff)
++MXC_DCD_ITEM(07, 0x53fd4080 , 0xffffffff)
++MXC_DCD_ITEM(08, 0x53fd4084 , 0xffffffff)
++MXC_DCD_ITEM(09, 0x53FD4098 , 0x80000004)
++
++/* poll for completion of CCM_CSR2 for update: use dummy write to wait */
++/* Tag = 0xCF, Len = 1*12 + 4 = 16(0x10), Param = 4(Mast & Set bit are zero) */
++check_data_dcd_cmd:       .word 0x241000CF
++/* loop 0x1FFFFFFF times to make sure bit 2(ddr_clk_ref_pll_bsy) is cleared */
++DCDGEN_CHECKDATA(1, CCM_BASE_ADDR + 0x8c, 0x04, 0x1FFFFFFF)
++
++write_dcd_cmd:    .word 0x041C03CC /* Tag=0xCC, Len=99*8 + 4, Param=4 */
++
++MXC_DCD_ITEM(1, IOMUXC_BASE_ADDR + 0x6ac, 0x02000000)
++MXC_DCD_ITEM(2, IOMUXC_BASE_ADDR + 0x668, 0x00200000)
++MXC_DCD_ITEM(3, IOMUXC_BASE_ADDR + 0x66c, 0x00000000)
++MXC_DCD_ITEM(4, IOMUXC_BASE_ADDR + 0x670, 0x00000000)
++MXC_DCD_ITEM(5, IOMUXC_BASE_ADDR + 0x68c, 0x00000000)
++MXC_DCD_ITEM(6, IOMUXC_BASE_ADDR + 0x698, 0x00200000)
++MXC_DCD_ITEM(7, IOMUXC_BASE_ADDR + 0x6a0, 0x00200000)
++MXC_DCD_ITEM(8, IOMUXC_BASE_ADDR + 0x6a4, 0x00200000)
++MXC_DCD_ITEM(9, IOMUXC_BASE_ADDR + 0x6a8, 0x00200000)
++MXC_DCD_ITEM(10, IOMUXC_BASE_ADDR + 0x6b4, 0x00200000)
++
++MXC_DCD_ITEM(11, IOMUXC_BASE_ADDR + 0x498, 0x00200000)
++MXC_DCD_ITEM(12, IOMUXC_BASE_ADDR + 0x49c, 0x00200000)
++MXC_DCD_ITEM(13, IOMUXC_BASE_ADDR + 0x4c8, 0x00200000)
++MXC_DCD_ITEM(14, IOMUXC_BASE_ADDR + 0x4cc, 0x00200000)
++MXC_DCD_ITEM(15, IOMUXC_BASE_ADDR + 0x4f0, 0x00200000)
++MXC_DCD_ITEM(16, IOMUXC_BASE_ADDR + 0x4f4, 0x00200000)
++MXC_DCD_ITEM(17, IOMUXC_BASE_ADDR + 0x4fc, 0x00200000)
++MXC_DCD_ITEM(18, IOMUXC_BASE_ADDR + 0x500, 0x00200000)
++MXC_DCD_ITEM(19, IOMUXC_BASE_ADDR + 0x524, 0x00200000)
++MXC_DCD_ITEM(20, IOMUXC_BASE_ADDR + 0x528, 0x00200000)
++
++MXC_DCD_ITEM(21, DATABAHN_BASE_ADDR + 0x000, 0x00000100)
++MXC_DCD_ITEM(22, DATABAHN_BASE_ADDR + 0x008, 0x00009c40)
++MXC_DCD_ITEM(23, DATABAHN_BASE_ADDR + 0x014, 0x02000000)
++MXC_DCD_ITEM(24, DATABAHN_BASE_ADDR + 0x018, 0x01010706)
++MXC_DCD_ITEM(25, DATABAHN_BASE_ADDR + 0x01c, 0x080b0201)
++MXC_DCD_ITEM(26, DATABAHN_BASE_ADDR + 0x020, 0x02000303)
++MXC_DCD_ITEM(27, DATABAHN_BASE_ADDR + 0x024, 0x0136b002)
++MXC_DCD_ITEM(28, DATABAHN_BASE_ADDR + 0x028, 0x01000101)
++MXC_DCD_ITEM(29, DATABAHN_BASE_ADDR + 0x02c, 0x06030301)
++MXC_DCD_ITEM(30, DATABAHN_BASE_ADDR + 0x030, 0x00000000)
++MXC_DCD_ITEM(31, DATABAHN_BASE_ADDR + 0x034, 0x00000a02)
++MXC_DCD_ITEM(32, DATABAHN_BASE_ADDR + 0x038, 0x00000003)
++MXC_DCD_ITEM(33, DATABAHN_BASE_ADDR + 0x03c, 0x00001401)
++MXC_DCD_ITEM(34, DATABAHN_BASE_ADDR + 0x040, 0x0005030f)
++MXC_DCD_ITEM(35, DATABAHN_BASE_ADDR + 0x044, 0x00000200)
++MXC_DCD_ITEM(36, DATABAHN_BASE_ADDR + 0x048, 0x00180018)
++MXC_DCD_ITEM(37, DATABAHN_BASE_ADDR + 0x04c, 0x00010000)
++MXC_DCD_ITEM(38, DATABAHN_BASE_ADDR + 0x05c, 0x01000000)
++MXC_DCD_ITEM(39, DATABAHN_BASE_ADDR + 0x060, 0x00000001)
++MXC_DCD_ITEM(40, DATABAHN_BASE_ADDR + 0x064, 0x00000000)
++MXC_DCD_ITEM(41, DATABAHN_BASE_ADDR + 0x068, 0x00320000)
++MXC_DCD_ITEM(42, DATABAHN_BASE_ADDR + 0x06c, 0x00000000)
++MXC_DCD_ITEM(43, DATABAHN_BASE_ADDR + 0x070, 0x00000000)
++MXC_DCD_ITEM(44, DATABAHN_BASE_ADDR + 0x074, 0x00320000)
++MXC_DCD_ITEM(45, DATABAHN_BASE_ADDR + 0x080, 0x02000000)
++MXC_DCD_ITEM(46, DATABAHN_BASE_ADDR + 0x084, 0x00000100)
++MXC_DCD_ITEM(47, DATABAHN_BASE_ADDR + 0x088, 0x02400040)
++MXC_DCD_ITEM(48, DATABAHN_BASE_ADDR + 0x08c, 0x01000000)
++MXC_DCD_ITEM(49, DATABAHN_BASE_ADDR + 0x090, 0x0a000100)
++MXC_DCD_ITEM(50, DATABAHN_BASE_ADDR + 0x094, 0x01011f1f)
++MXC_DCD_ITEM(51, DATABAHN_BASE_ADDR + 0x098, 0x01010101)
++MXC_DCD_ITEM(52, DATABAHN_BASE_ADDR + 0x09c, 0x00030101)
++MXC_DCD_ITEM(53, DATABAHN_BASE_ADDR + 0x0a4, 0x00010000)
++MXC_DCD_ITEM(54, DATABAHN_BASE_ADDR + 0x0ac, 0x0000ffff)
++MXC_DCD_ITEM(55, DATABAHN_BASE_ADDR + 0x0c8, 0x02020101)
++MXC_DCD_ITEM(56, DATABAHN_BASE_ADDR + 0x0cc, 0x00000000)
++MXC_DCD_ITEM(57, DATABAHN_BASE_ADDR + 0x0d0, 0x01000202)
++MXC_DCD_ITEM(58, DATABAHN_BASE_ADDR + 0x0d4, 0x02030302)
++MXC_DCD_ITEM(59, DATABAHN_BASE_ADDR + 0x0d8, 0x00000001)
++MXC_DCD_ITEM(60, DATABAHN_BASE_ADDR + 0x0dc, 0x0000ffff) /* sync mode */
++MXC_DCD_ITEM(61, DATABAHN_BASE_ADDR + 0x0e0, 0x0000ffff)
++MXC_DCD_ITEM(62, DATABAHN_BASE_ADDR + 0x0e4, 0x02020000)
++MXC_DCD_ITEM(63, DATABAHN_BASE_ADDR + 0x0e8, 0x02020202)
++MXC_DCD_ITEM(64, DATABAHN_BASE_ADDR + 0x0ec, 0x00000202)
++MXC_DCD_ITEM(65, DATABAHN_BASE_ADDR + 0x0f0, 0x01010064)
++MXC_DCD_ITEM(66, DATABAHN_BASE_ADDR + 0x0f4, 0x01010101)
++MXC_DCD_ITEM(67, DATABAHN_BASE_ADDR + 0x0f8, 0x00010101)
++MXC_DCD_ITEM(68, DATABAHN_BASE_ADDR + 0x0fc, 0x00000064)
++MXC_DCD_ITEM(69, DATABAHN_BASE_ADDR + 0x104, 0x02000602)
++MXC_DCD_ITEM(70, DATABAHN_BASE_ADDR + 0x108, 0x06120000)
++MXC_DCD_ITEM(71, DATABAHN_BASE_ADDR + 0x10c, 0x06120612)
++MXC_DCD_ITEM(72, DATABAHN_BASE_ADDR + 0x110, 0x06120612)
++MXC_DCD_ITEM(73, DATABAHN_BASE_ADDR + 0x114, 0x01030612)
++MXC_DCD_ITEM(74, DATABAHN_BASE_ADDR + 0x118, 0x01010002)
++
++MXC_DCD_ITEM(75, DATABAHN_BASE_ADDR + 0x200, 0x00000000)
++MXC_DCD_ITEM(76, DATABAHN_BASE_ADDR + 0x204, 0x00000000)
++MXC_DCD_ITEM(77, DATABAHN_BASE_ADDR + 0x208, 0xf5002725)
++MXC_DCD_ITEM(78, DATABAHN_BASE_ADDR + 0x20c, 0x070002d0)
++MXC_DCD_ITEM(79, DATABAHN_BASE_ADDR + 0x210, 0xf5002725)
++MXC_DCD_ITEM(80, DATABAHN_BASE_ADDR + 0x214, 0x074002d0)
++MXC_DCD_ITEM(81, DATABAHN_BASE_ADDR + 0x218, 0xf5002725)
++MXC_DCD_ITEM(82, DATABAHN_BASE_ADDR + 0x21c, 0x074002d0)
++MXC_DCD_ITEM(83, DATABAHN_BASE_ADDR + 0x220, 0xf5002725)
++MXC_DCD_ITEM(84, DATABAHN_BASE_ADDR + 0x224, 0x074002d0)
++MXC_DCD_ITEM(85, DATABAHN_BASE_ADDR + 0x228, 0xf5002725)
++MXC_DCD_ITEM(86, DATABAHN_BASE_ADDR + 0x22c, 0x074002d0)
++MXC_DCD_ITEM(87, DATABAHN_BASE_ADDR + 0x230, 0x00000000)
++MXC_DCD_ITEM(88, DATABAHN_BASE_ADDR + 0x234, 0x00800006)
++MXC_DCD_ITEM(89, DATABAHN_BASE_ADDR + 0x238, 0x200e1014)
++MXC_DCD_ITEM(90, DATABAHN_BASE_ADDR + 0x23c, 0x000d9f01)
++MXC_DCD_ITEM(91, DATABAHN_BASE_ADDR + 0x240, 0x200e1014)
++MXC_DCD_ITEM(92, DATABAHN_BASE_ADDR + 0x244, 0x000d9f01)
++MXC_DCD_ITEM(93, DATABAHN_BASE_ADDR + 0x248, 0x200e1014)
++MXC_DCD_ITEM(94, DATABAHN_BASE_ADDR + 0x24c, 0x000d9f01)
++MXC_DCD_ITEM(95, DATABAHN_BASE_ADDR + 0x250, 0x200e1014)
++MXC_DCD_ITEM(96, DATABAHN_BASE_ADDR + 0x254, 0x000d9f01)
++MXC_DCD_ITEM(97, DATABAHN_BASE_ADDR + 0x258, 0x200e1014)
++MXC_DCD_ITEM(98, DATABAHN_BASE_ADDR + 0x25c, 0x000d9f01)
++MXC_DCD_ITEM(99, DATABAHN_BASE_ADDR + 0x000, 0x00000101)
++
++
++/* poll for completion of HW_DRAM_CTL42 for DDR inti completion */
++/* Tag = 0xCF, Len = 1*12 + 4 = 16(0x10), Param = 4 (Mast & Set bit are zero) */
++check_ddr_init_dcd_cmd:       .word 0x341000CF
++/* loop 0x1FFFFFFF times to make sure bit 4 (int_status) is set */
++DCDGEN_CHECKDATA(2, DATABAHN_BASE_ADDR + 0xa8, 0x10, 0x1FFFFFFF)
++
++#endif
++
++#endif
+diff --git a/board/freescale/mx50_arm2/lowlevel_init.S b/board/freescale/mx50_arm2/lowlevel_init.S
+new file mode 100644
+index 0000000..4e031c7
+--- /dev/null
++++ b/board/freescale/mx50_arm2/lowlevel_init.S
+@@ -0,0 +1,207 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx50.h>
++
++/*
++ * L2CC Cache setup/invalidation/disable
++ */
++.macro init_l2cc
++	/* explicitly disable L2 cache */
++        mrc 15, 0, r0, c1, c0, 1
++        bic r0, r0, #0x2
++        mcr 15, 0, r0, c1, c0, 1
++
++        /* reconfigure L2 cache aux control reg */
++        mov r0, #0xC0                   /* tag RAM */
++        add r0, r0, #0x4                /* data RAM */
++        orr r0, r0, #(1 << 24)          /* disable write allocate delay */
++        orr r0, r0, #(1 << 23)          /* disable write allocate combine */
++        orr r0, r0, #(1 << 22)          /* disable write allocate */
++
++	mcr 15, 1, r0, c9, c0, 2
++.endm /* init_l2cc */
++
++/* AIPS setup - Only setup MPROTx registers.
++ * The PACR default values are good.*/
++.macro init_aips
++	/*
++	 * Set all MPROTx to be non-bufferable, trusted for R/W,
++	 * not forced to user-mode.
++	 */
++	ldr r0, =AIPS1_BASE_ADDR
++	ldr r1, =0x77777777
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++	ldr r0, =AIPS2_BASE_ADDR
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++.endm /* init_aips */
++
++.macro setup_pll pll, freq
++	ldr r0, =\pll
++	ldr r1, =0x00001232
++	str r1, [r0, #PLL_DP_CTL]
++	mov r1, #0x2
++	str r1, [r0, #PLL_DP_CONFIG]
++
++	ldr r1, W_DP_OP_\freq
++	str r1, [r0, #PLL_DP_OP]
++	str r1, [r0, #PLL_DP_HFS_OP]
++
++	ldr r1,	W_DP_MFD_\freq
++	str r1, [r0, #PLL_DP_MFD]
++	str r1, [r0, #PLL_DP_HFS_MFD]
++
++	ldr r1,  W_DP_MFN_\freq
++	str r1, [r0, #PLL_DP_MFN]
++	str r1, [r0, #PLL_DP_HFS_MFN]
++
++	ldr r1, =0x00001232
++	str r1, [r0, #PLL_DP_CTL]
++1:	ldr r1, [r0, #PLL_DP_CTL]
++	ands r1, r1, #0x1
++	beq 1b
++.endm
++
++.macro init_clock
++
++	setup_pll PLL3_BASE_ADDR, 400
++
++	/* Switch peripheral to PLL3 */
++	/* Set periph_clk_sel[1:0]=0b10 to PLL3 */
++
++	ldr r0, CCM_BASE_ADDR_W
++	ldr r1, [r0, #CLKCTL_CBCDR]
++	orr r1, r1, #(3 << 25)
++	eor r1, r1, #(3 << 25)
++	orr r1, r1, #(2 << 25)
++	str r1, [r0, #CLKCTL_CBCDR]
++
++	/* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++	cmp r1, #0x0
++	bne 1b
++
++        setup_pll PLL2_BASE_ADDR, CONFIG_SYS_PLL2_FREQ
++
++	/* Switch peripheral to PLL2 */
++	/* Set periph_clk_sel[1:0]=0b01 to PLL2 */
++
++        ldr r0, CCM_BASE_ADDR_W
++        ldr r1, [r0, #CLKCTL_CBCDR]
++        orr r1, r1, #(3 << 25)
++        eor r1, r1, #(3 << 25)
++        orr r1, r1, #(1 << 25)
++
++	orr r1, r1, #(CONFIG_SYS_AHB_PODF << 10)
++	orr r1, r1, #(CONFIG_SYS_AXIA_PODF << 16)
++	orr r1, r1, #(CONFIG_SYS_AXIB_PODF << 19)
++	str r1, [r0, #CLKCTL_CBCDR]
++
++	/* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++	cmp r1, #0x0
++	bne 1b
++
++        setup_pll PLL3_BASE_ADDR, 216
++
++	/* Set the platform clock dividers */
++	ldr r0, PLATFORM_BASE_ADDR_W
++	ldr r1, PLATFORM_CLOCK_DIV_W
++	str r1, [r0, #PLATFORM_ICGC]
++
++	/* ARM2 run at full speed */
++	ldr r0, CCM_BASE_ADDR_W
++	mov r1, #0
++	str r1, [r0, #CLKCTL_CACRR]
++
++        /* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++        cmp r1, #0x0
++        bne 1b
++
++	/* Restore the default values in the Gate registers */
++	ldr r1, =0xFFFFFFFF
++	str r1, [r0, #CLKCTL_CCGR0]
++	str r1, [r0, #CLKCTL_CCGR1]
++	str r1, [r0, #CLKCTL_CCGR2]
++	str r1, [r0, #CLKCTL_CCGR3]
++	str r1, [r0, #CLKCTL_CCGR4]
++	str r1, [r0, #CLKCTL_CCGR5]
++	str r1, [r0, #CLKCTL_CCGR6]
++	str r1, [r0, #CLKCTL_CCGR7]
++
++        /* for cko - for ARM div by 8 */
++        mov r1, #0x000A0000
++        add r1, r1, #0x00000F0
++        str r1, [r0, #CLKCTL_CCOSR]
++.endm
++
++.section ".text.init", "x"
++
++.globl lowlevel_init
++lowlevel_init:
++
++#ifdef ENABLE_IMPRECISE_ABORT
++        mrs r1, spsr            /* save old spsr */
++        mrs r0, cpsr            /* read out the cpsr */
++	bic r0, r0, #0x100      /* clear the A bit */
++	msr spsr, r0            /* update spsr */
++	add lr, pc, #0x8        /* update lr */
++        movs pc, lr             /* update cpsr */
++        nop
++        nop
++        nop
++	nop
++	msr spsr, r1            /* restore old spsr */
++#endif
++
++	/* ARM errata ID #468414 */
++	mrc 15, 0, r1, c1, c0, 1
++	orr r1, r1, #(1 << 5)    /* enable L1NEON bit */
++	mcr 15, 0, r1, c1, c0, 1
++
++	init_l2cc
++
++	init_aips
++
++	init_clock /* not finished */
++
++	mov pc, lr
++
++/* Board level setting value */
++CCM_BASE_ADDR_W:        .word CCM_BASE_ADDR
++W_DP_OP_800:           	.word DP_OP_800
++W_DP_MFD_800:           .word DP_MFD_800
++W_DP_MFN_800:           .word DP_MFN_800
++W_DP_OP_600:            .word DP_OP_600
++W_DP_MFD_600:           .word DP_MFD_600
++W_DP_MFN_600:           .word DP_MFN_600
++W_DP_OP_400:            .word DP_OP_400
++W_DP_MFD_400:           .word DP_MFD_400
++W_DP_MFN_400:           .word DP_MFN_400
++W_DP_OP_216:            .word DP_OP_216
++W_DP_MFD_216:           .word DP_MFD_216
++W_DP_MFN_216:           .word DP_MFN_216
++PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
++PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/board/freescale/mx50_arm2/mx50_arm2.c b/board/freescale/mx50_arm2/mx50_arm2.c
+new file mode 100644
+index 0000000..d606dfc
+--- /dev/null
++++ b/board/freescale/mx50_arm2/mx50_arm2.c
+@@ -0,0 +1,680 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/mx50.h>
++#include <asm/arch/mx50_pins.h>
++#include <asm/arch/iomux.h>
++#include <asm/errno.h>
++
++#ifdef CONFIG_IMX_CSPI
++#include <imx_spi.h>
++#include <asm/arch/imx_spi_pmic.h>
++#endif
++
++#if CONFIG_I2C_MXC
++#include <i2c.h>
++#endif
++
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#endif
++
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
++
++#ifdef CONFIG_CMD_CLOCK
++#include <asm/clock.h>
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++static u32 system_rev;
++static enum boot_device boot_dev;
++u32	mx51_io_base_addr;
++
++static inline void setup_boot_device(void)
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	uint bt_mem_ctl = (soc_sbmr & 0x000000FF) >> 4 ;
++	uint bt_mem_type = (soc_sbmr & 0x00000008) >> 3;
++
++	switch (bt_mem_ctl) {
++	case 0x0:
++		if (bt_mem_type)
++			boot_dev = ONE_NAND_BOOT;
++		else
++			boot_dev = WEIM_NOR_BOOT;
++		break;
++	case 0x2:
++		if (bt_mem_type)
++			boot_dev = SATA_BOOT;
++		else
++			boot_dev = PATA_BOOT;
++		break;
++	case 0x3:
++		if (bt_mem_type)
++			boot_dev = SPI_NOR_BOOT;
++		else
++			boot_dev = I2C_BOOT;
++		break;
++	case 0x4:
++	case 0x5:
++		boot_dev = SD_BOOT;
++		break;
++	case 0x6:
++	case 0x7:
++		boot_dev = MMC_BOOT;
++		break;
++	case 0x8 ... 0xf:
++		boot_dev = NAND_BOOT;
++		break;
++	default:
++		boot_dev = UNKNOWN_BOOT;
++		break;
++	}
++}
++
++enum boot_device get_boot_device(void)
++{
++	return boot_dev;
++}
++
++u32 get_board_rev(void)
++{
++	return system_rev;
++}
++
++static inline void setup_soc_rev(void)
++{
++	system_rev = 0x50000 | CHIP_REV_1_0;
++}
++
++static inline void setup_board_rev(int rev)
++{
++	system_rev |= (rev & 0xF) << 8;
++}
++
++inline int is_soc_rev(int rev)
++{
++	return (system_rev & 0xFF) - rev;
++}
++
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
++	unsigned long i;
++
++	/*
++	* Set the TTB register
++	*/
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	* Set the Domain Access Control Register
++	*/
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	* First clear all TT entries - ie Set them to Faulting
++	*/
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes          Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0x000, 0x10,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* ROM, 16M */
++	X_ARM_MMU_SECTION(0x070, 0x070, 0x010,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IRAM */
++	X_ARM_MMU_SECTION(0x100, 0x100, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SATA */
++	X_ARM_MMU_SECTION(0x180, 0x180, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IPUv3M */
++	X_ARM_MMU_SECTION(0x200, 0x200, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* GPU */
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x300,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* periperals */
++	X_ARM_MMU_SECTION(0x700, 0x700, 0x400,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 1G */
++	X_ARM_MMU_SECTION(0x700, 0xB00, 0x400,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 1G */
++	X_ARM_MMU_SECTION(0xF00, 0xF00, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS1 EIM control*/
++	X_ARM_MMU_SECTION(0xF80, 0xF80, 0x001,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* iRam */
++
++	/* Workaround for arm errata #709718 */
++	/* Setup PRRR so device is always mapped to non-shared */
++	asm volatile ("mrc p15, 0, %0, c10, c2, 0" : "=r"(i) : /*:*/);
++	i &= (~(3 << 0x10));
++	asm volatile ("mcr p15, 0, %0, c10, c2, 0" : : "r"(i) /*:*/);
++
++	/* Enable MMU */
++	MMU_ON();
++}
++#endif
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++	return 0;
++}
++
++static void setup_uart(void)
++{
++
++	/* UART1 RXD */
++	mxc_request_iomux(MX50_PIN_UART1_RXD, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX50_PIN_UART1_RXD, 0x1E4);
++	mxc_iomux_set_input(MUX_IN_UART1_IPP_UART_RXD_MUX_SELECT_INPUT, 0x1);
++
++	/* UART1 TXD */
++	mxc_request_iomux(MX50_PIN_UART1_TXD, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX50_PIN_UART1_TXD, 0x1E4);
++}
++
++#ifdef CONFIG_I2C_MXC
++static void setup_i2c(unsigned int module_base)
++{
++	switch (module_base) {
++	case I2C1_BASE_ADDR:
++		/* i2c1 SDA */
++		mxc_request_iomux(MX50_PIN_I2C1_SDA,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C1_SDA, PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		/* i2c1 SCL */
++		mxc_request_iomux(MX50_PIN_I2C1_SCL,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C1_SCL, PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		break;
++	case I2C2_BASE_ADDR:
++		/* i2c2 SDA */
++		mxc_request_iomux(MX50_PIN_I2C2_SDA,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C2_SDA,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++
++		/* i2c2 SCL */
++		mxc_request_iomux(MX50_PIN_I2C2_SCL,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C2_SCL,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		break;
++	case I2C3_BASE_ADDR:
++		/* i2c3 SDA */
++		mxc_request_iomux(MX50_PIN_I2C3_SDA,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C3_SDA,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++
++		/* i2c3 SCL */
++		mxc_request_iomux(MX50_PIN_I2C3_SCL,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C3_SCL,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		break;
++	default:
++		printf("Invalid I2C base: 0x%x\n", module_base);
++		break;
++	}
++}
++
++#endif
++
++#ifdef CONFIG_IMX_CSPI
++s32 spi_get_cfg(struct imx_spi_dev_t *dev)
++{
++	switch (dev->slave.cs) {
++	case 0:
++		/* PMIC */
++		dev->base = CSPI3_BASE_ADDR;
++		dev->freq = 25000000;
++		dev->ss_pol = IMX_SPI_ACTIVE_HIGH;
++		dev->ss = 0;
++		dev->fifo_sz = 32;
++		dev->us_delay = 0;
++		break;
++	case 1:
++		/* SPI-NOR */
++		dev->base = CSPI3_BASE_ADDR;
++		dev->freq = 25000000;
++		dev->ss_pol = IMX_SPI_ACTIVE_LOW;
++		dev->ss = 1;
++		dev->fifo_sz = 32;
++		dev->us_delay = 0;
++		break;
++	default:
++		printf("Invalid Bus ID! \n");
++	}
++
++	return 0;
++}
++
++void spi_io_init(struct imx_spi_dev_t *dev)
++{
++	switch (dev->base) {
++	case CSPI3_BASE_ADDR:
++		mxc_request_iomux(MX50_PIN_CSPI_MOSI, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX50_PIN_CSPI_MOSI, 0x4);
++
++		mxc_request_iomux(MX50_PIN_CSPI_MISO, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX50_PIN_CSPI_MISO, 0x4);
++
++		if (dev->ss == 0) {
++			/* de-select SS1 of instance: cspi */
++			mxc_request_iomux(MX50_PIN_ECSPI1_MOSI,
++						IOMUX_CONFIG_ALT1);
++
++			mxc_request_iomux(MX50_PIN_CSPI_SS0, IOMUX_CONFIG_ALT0);
++			mxc_iomux_set_pad(MX50_PIN_CSPI_SS0, 0xE4);
++		} else if (dev->ss == 1) {
++			/* de-select SS0 of instance: cspi */
++			mxc_request_iomux(MX50_PIN_CSPI_SS0, IOMUX_CONFIG_ALT1);
++
++			mxc_request_iomux(MX50_PIN_ECSPI1_MOSI,
++						IOMUX_CONFIG_ALT2);
++			mxc_iomux_set_pad(MX50_PIN_ECSPI1_MOSI, 0xE4);
++			mxc_iomux_set_input(
++			MUX_IN_CSPI_IPP_IND_SS1_B_SELECT_INPUT, 0x1);
++		}
++
++		mxc_request_iomux(MX50_PIN_CSPI_SCLK, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX50_PIN_CSPI_SCLK, 0x4);
++		break;
++	case CSPI2_BASE_ADDR:
++	case CSPI1_BASE_ADDR:
++		/* ecspi1-2 fall through */
++		break;
++	default:
++		break;
++	}
++}
++#endif
++
++#ifdef CONFIG_MXC_FEC
++static void setup_fec(void)
++{
++	volatile unsigned int reg;
++
++	/*FEC_MDIO*/
++	mxc_request_iomux(MX50_PIN_SSI_RXC, IOMUX_CONFIG_ALT6);
++	mxc_iomux_set_pad(MX50_PIN_SSI_RXC, 0xC);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_MDI_SELECT_INPUT, 0x1);
++
++	/*FEC_MDC*/
++	mxc_request_iomux(MX50_PIN_SSI_RXFS, IOMUX_CONFIG_ALT6);
++	mxc_iomux_set_pad(MX50_PIN_SSI_RXFS, 0x004);
++
++	/* FEC RXD1 */
++	mxc_request_iomux(MX50_PIN_DISP_D3, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D3, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RDATA_1_SELECT_INPUT, 0x0);
++
++	/* FEC RXD0 */
++	mxc_request_iomux(MX50_PIN_DISP_D4, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D4, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RDATA_0_SELECT_INPUT, 0x0);
++
++	 /* FEC TXD1 */
++	mxc_request_iomux(MX50_PIN_DISP_D6, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D6, 0x004);
++
++	/* FEC TXD0 */
++	mxc_request_iomux(MX50_PIN_DISP_D7, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D7, 0x004);
++
++	/* FEC TX_EN */
++	mxc_request_iomux(MX50_PIN_DISP_D5, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D5, 0x004);
++
++	/* FEC TX_CLK */
++	mxc_request_iomux(MX50_PIN_DISP_D0, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D0, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_TX_CLK_SELECT_INPUT, 0x0);
++
++	/* FEC RX_ER */
++	mxc_request_iomux(MX50_PIN_DISP_D1, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D1, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RX_ER_SELECT_INPUT, 0);
++
++	/* FEC CRS */
++	mxc_request_iomux(MX50_PIN_DISP_D2, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D2, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RX_DV_SELECT_INPUT, 0);
++
++	/* phy reset: gpio4-6 */
++	mxc_request_iomux(MX50_PIN_KEY_COL3, IOMUX_CONFIG_ALT1);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg &= ~0x40;
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x4);
++	reg |= 0x40;
++	writel(reg, GPIO4_BASE_ADDR + 0x4);
++
++	udelay(500);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg |= 0x40;
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++}
++#endif
++
++#ifdef CONFIG_CMD_MMC
++
++struct fsl_esdhc_cfg esdhc_cfg[3] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC2_BASE_ADDR, 1, 1},
++	{MMC_SDHC3_BASE_ADDR, 1, 1},
++};
++
++
++#ifdef CONFIG_DYNAMIC_MMC_DEVNO
++int get_mmc_env_devno()
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	int mmc_devno = 0;
++
++	switch (soc_sbmr & 0x00300000) {
++	default:
++	case 0:
++		mmc_devno = 0;
++		break;
++	case 1:
++		mmc_devno = 1;
++		break;
++	case 2:
++		mmc_devno = 2;
++		break;
++	}
++
++	return mmc_devno;
++}
++#endif
++
++
++int esdhc_gpio_init(bd_t *bis)
++{
++	s32 status = 0;
++	u32 index = 0;
++
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			mxc_request_iomux(MX50_PIN_SD1_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D0,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D1,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D2,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D3,  IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX50_PIN_SD1_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_CLK, 0xD4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D0,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D1,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D2,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D3,  0x1D4);
++
++			break;
++		case 1:
++			mxc_request_iomux(MX50_PIN_SD2_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D0,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D1,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D2,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D3,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D4,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D5,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D6,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D7,  IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX50_PIN_SD2_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_CLK, 0xD4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D0,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D1,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D2,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D3,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D4,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D5,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D6,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D7,  0x1D4);
++
++			break;
++		case 2:
++			mxc_request_iomux(MX50_PIN_SD3_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D0,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D1,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D2,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D3,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D4,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D5,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D6,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D7,  IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX50_PIN_SD3_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_CLK, 0xD4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D0,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D1,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D2,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D3,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D4,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D5,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D6,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D7,  0x1D4);
++
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
++	}
++
++	return status;
++}
++
++int board_mmc_init(bd_t *bis)
++{
++	if (!esdhc_gpio_init(bis))
++		return 0;
++	else
++		return -1;
++}
++
++#endif
++
++#ifdef CONFIG_IMX_CSPI
++static void setup_power(void)
++{
++	struct spi_slave *slave;
++	unsigned int val;
++	unsigned int reg;
++
++	puts("PMIC Mode: SPI\n");
++
++	/* Enable VGEN1 to enable ethernet */
++	slave = spi_pmic_probe();
++
++	val = pmic_reg(slave, 30, 0, 0);
++	val |= 0x3;
++	pmic_reg(slave, 30, val, 1);
++
++	val = pmic_reg(slave, 32, 0, 0);
++	val |= 0x1;
++	pmic_reg(slave, 32, val, 1);
++
++	/* Enable VCAM   */
++	val = pmic_reg(slave, 33, 0, 0);
++	val |= 0x40;
++	pmic_reg(slave, 33, val, 1);
++
++	spi_pmic_free(slave);
++}
++
++void setup_voltage_cpu(void)
++{
++	/* Currently VDDGP 1.05v
++	 * no one tell me we need increase the core
++	 * voltage to let CPU run at 800Mhz, not do it
++	 */
++
++	/* Raise the core frequency to 800MHz */
++	writel(0x0, CCM_BASE_ADDR + CLKCTL_CACRR);
++
++}
++#endif
++
++int board_init(void)
++{
++	/* boot device */
++	setup_boot_device();
++
++	/* soc rev */
++	setup_soc_rev();
++
++	/* arch id for linux */
++	gd->bd->bi_arch_number = MACH_TYPE_MX50_ARM2;
++
++	/* boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
++
++	/* iomux for uart */
++	setup_uart();
++
++#ifdef CONFIG_MXC_FEC
++	/* iomux for fec */
++	setup_fec();
++#endif
++
++	return 0;
++}
++
++int board_late_init(void)
++{
++#ifdef CONFIG_IMX_CSPI
++	setup_power();
++#endif
++	return 0;
++}
++
++int checkboard(void)
++{
++	printf("Board: MX50 ARM2 board\n");
++
++	printf("Boot Reason: [");
++
++	switch (__REG(SRC_BASE_ADDR + 0x8)) {
++	case 0x0001:
++		printf("POR");
++		break;
++	case 0x0009:
++		printf("RST");
++		break;
++	case 0x0010:
++	case 0x0011:
++		printf("WDOG");
++		break;
++	default:
++		printf("unknown");
++	}
++	printf("]\n");
++
++	printf("Boot Device: ");
++	switch (get_boot_device()) {
++	case WEIM_NOR_BOOT:
++		printf("NOR\n");
++		break;
++	case ONE_NAND_BOOT:
++		printf("ONE NAND\n");
++		break;
++	case PATA_BOOT:
++		printf("PATA\n");
++		break;
++	case SATA_BOOT:
++		printf("SATA\n");
++		break;
++	case I2C_BOOT:
++		printf("I2C\n");
++		break;
++	case SPI_NOR_BOOT:
++		printf("SPI NOR\n");
++		break;
++	case SD_BOOT:
++		printf("SD\n");
++		break;
++	case MMC_BOOT:
++		printf("MMC\n");
++		break;
++	case NAND_BOOT:
++		printf("NAND\n");
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("UNKNOWN\n");
++		break;
++	}
++
++	return 0;
++}
+diff --git a/board/freescale/mx50_arm2/u-boot.lds b/board/freescale/mx50_arm2/u-boot.lds
+new file mode 100644
+index 0000000..07478dd
+--- /dev/null
++++ b/board/freescale/mx50_arm2/u-boot.lds
+@@ -0,0 +1,73 @@
++/*
++ * January 2004 - Changed to support H4 device
++ * Copyright (c) 2004 Texas Instruments
++ *
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text	   :
++	{
++	  /* WARNING - the following is hand-optimized to fit within	*/
++	  /* the sector layout of our flash chips!	XXX FIXME XXX	*/
++	  board/freescale/mx50_arm2/flash_header.o	(.text.flasheader)
++	  cpu/arm_cortexa8/start.o
++	  board/freescale/mx50_arm2/libmx50_arm2.a	(.text)
++	  lib_arm/libarm.a		(.text)
++	  net/libnet.a			(.text)
++	  drivers/mtd/libmtd.a		(.text)
++	  drivers/mmc/libmmc.a		(.text)
++
++	  . = DEFINED(env_offset) ? env_offset : .;
++	  common/env_embedded.o(.text)
++
++	  *(.text)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(.rodata) }
++
++	. = ALIGN(4);
++	.data : { *(.data) }
++
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/cpu/arm_cortexa8/mx50/Makefile b/cpu/arm_cortexa8/mx50/Makefile
+new file mode 100644
+index 0000000..460bdd9
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/Makefile
+@@ -0,0 +1,48 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# (C) Copyright 2010 Freescale Semiconductor, Inc.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= interrupts.o serial.o generic.o iomux.o timer.o cache.o
++COBJS += $(COBJS-y)
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(SOBJS) $(COBJS))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/arm_cortexa8/mx50/cache.c b/cpu/arm_cortexa8/mx50/cache.c
+new file mode 100644
+index 0000000..60df92f
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/cache.c
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/cache.h>
++
++void l2_cache_enable(void)
++{
++	asm("mrc 15, 0, r0, c1, c0, 1");
++	asm("orr r0, r0, #0x2");
++	asm("mcr 15, 0, r0, c1, c0, 1");
++}
++
++void l2_cache_disable(void)
++{
++	asm("mrc 15, 0, r0, c1, c0, 1");
++	asm("bic r0, r0, #0x2");
++	asm("mcr 15, 0, r0, c1, c0, 1");
++}
++
++/*dummy function for L2 ON*/
++u32 get_device_type(void)
++{
++	return 0;
++}
+diff --git a/cpu/arm_cortexa8/mx50/crm_regs.h b/cpu/arm_cortexa8/mx50/crm_regs.h
+new file mode 100644
+index 0000000..eb94bbe
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/crm_regs.h
+@@ -0,0 +1,646 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#ifndef __ARCH_ARM_MACH_MX50_CRM_REGS_H__
++#define __ARCH_ARM_MACH_MX50_CRM_REGS_H__
++
++#define MXC_CCM_BASE   CCM_BASE_ADDR
++#define MXC_DPLL1_BASE PLL1_BASE_ADDR
++#define MXC_DPLL2_BASE PLL2_BASE_ADDR
++#define MXC_DPLL3_BASE PLL3_BASE_ADDR
++
++/* PLL Register Offsets */
++#define MXC_PLL_DP_CTL			0x00
++#define MXC_PLL_DP_CONFIG		0x04
++#define MXC_PLL_DP_OP			0x08
++#define MXC_PLL_DP_MFD			0x0C
++#define MXC_PLL_DP_MFN			0x10
++#define MXC_PLL_DP_MFNMINUS		0x14
++#define MXC_PLL_DP_MFNPLUS		0x18
++#define MXC_PLL_DP_HFS_OP		0x1C
++#define MXC_PLL_DP_HFS_MFD		0x20
++#define MXC_PLL_DP_HFS_MFN		0x24
++#define MXC_PLL_DP_MFN_TOGC		0x28
++#define MXC_PLL_DP_DESTAT		0x2c
++
++/* PLL Register Bit definitions */
++#define MXC_PLL_DP_CTL_MUL_CTRL		0x2000
++#define MXC_PLL_DP_CTL_DPDCK0_2_EN	0x1000
++#define MXC_PLL_DP_CTL_DPDCK0_2_OFFSET	12
++#define MXC_PLL_DP_CTL_ADE		0x800
++#define MXC_PLL_DP_CTL_REF_CLK_DIV	0x400
++#define MXC_PLL_DP_CTL_REF_CLK_SEL_MASK	(3 << 8)
++#define MXC_PLL_DP_CTL_REF_CLK_SEL_OFFSET	8
++#define MXC_PLL_DP_CTL_HFSM		0x80
++#define MXC_PLL_DP_CTL_PRE		0x40
++#define MXC_PLL_DP_CTL_UPEN		0x20
++#define MXC_PLL_DP_CTL_RST		0x10
++#define MXC_PLL_DP_CTL_RCP		0x8
++#define MXC_PLL_DP_CTL_PLM		0x4
++#define MXC_PLL_DP_CTL_BRM0		0x2
++#define MXC_PLL_DP_CTL_LRF		0x1
++
++#define MXC_PLL_DP_CONFIG_BIST		0x8
++#define MXC_PLL_DP_CONFIG_SJC_CE	0x4
++#define MXC_PLL_DP_CONFIG_AREN		0x2
++#define MXC_PLL_DP_CONFIG_LDREQ		0x1
++
++#define MXC_PLL_DP_OP_MFI_OFFSET	4
++#define MXC_PLL_DP_OP_MFI_MASK		(0xF << 4)
++#define MXC_PLL_DP_OP_PDF_OFFSET	0
++#define MXC_PLL_DP_OP_PDF_MASK		0xF
++
++#define MXC_PLL_DP_MFD_OFFSET		0
++#define MXC_PLL_DP_MFD_MASK		0x07FFFFFF
++
++#define MXC_PLL_DP_MFN_OFFSET		0x0
++#define MXC_PLL_DP_MFN_MASK		0x07FFFFFF
++
++#define MXC_PLL_DP_MFN_TOGC_TOG_DIS	(1 << 17)
++#define MXC_PLL_DP_MFN_TOGC_TOG_EN	(1 << 16)
++#define MXC_PLL_DP_MFN_TOGC_CNT_OFFSET	0x0
++#define MXC_PLL_DP_MFN_TOGC_CNT_MASK	0xFFFF
++
++#define MXC_PLL_DP_DESTAT_TOG_SEL	(1 << 31)
++#define MXC_PLL_DP_DESTAT_MFN		0x07FFFFFF
++
++/* Register addresses of CCM*/
++#define MXC_CCM_CCR		(MXC_CCM_BASE + 0x00)
++#define MXC_CCM_CCDR		(MXC_CCM_BASE + 0x04) /* Reserved */
++#define MXC_CCM_CSR		(MXC_CCM_BASE + 0x08)
++#define MXC_CCM_CCSR		(MXC_CCM_BASE + 0x0C)
++#define MXC_CCM_CACRR		(MXC_CCM_BASE + 0x10)
++#define MXC_CCM_CBCDR		(MXC_CCM_BASE + 0x14)
++#define MXC_CCM_CBCMR		(MXC_CCM_BASE + 0x18)
++#define MXC_CCM_CSCMR1		(MXC_CCM_BASE + 0x1C)
++#define MXC_CCM_CSCMR2		(MXC_CCM_BASE + 0x20) /* Reserved */
++#define MXC_CCM_CSCDR1		(MXC_CCM_BASE + 0x24)
++#define MXC_CCM_CS1CDR		(MXC_CCM_BASE + 0x28)
++#define MXC_CCM_CS2CDR		(MXC_CCM_BASE + 0x2C)
++#define MXC_CCM_CDCDR		(MXC_CCM_BASE + 0x30) /* Reserved */
++#define MXC_CCM_CHSCDR		(MXC_CCM_BASE + 0x34) /* Reserved */
++#define MXC_CCM_CSCDR2		(MXC_CCM_BASE + 0x38)
++#define MXC_CCM_CSCDR3		(MXC_CCM_BASE + 0x3C) /* Reserved */
++#define MXC_CCM_CSCDR4		(MXC_CCM_BASE + 0x40) /* Reserved */
++#define MXC_CCM_CWDR		(MXC_CCM_BASE + 0x44) /* Reserved */
++#define MXC_CCM_CDHIPR		(MXC_CCM_BASE + 0x48)
++#define MXC_CCM_CDCR		(MXC_CCM_BASE + 0x4C)
++#define MXC_CCM_CTOR		(MXC_CCM_BASE + 0x50)
++#define MXC_CCM_CLPCR		(MXC_CCM_BASE + 0x54)
++#define MXC_CCM_CISR		(MXC_CCM_BASE + 0x58)
++#define MXC_CCM_CIMR		(MXC_CCM_BASE + 0x5C)
++#define MXC_CCM_CCOSR		(MXC_CCM_BASE + 0x60)
++#define MXC_CCM_CGPR		(MXC_CCM_BASE + 0x64) /* Reserved */
++#define MXC_CCM_CCGR0		(MXC_CCM_BASE + 0x68)
++#define MXC_CCM_CCGR1		(MXC_CCM_BASE + 0x6C)
++#define MXC_CCM_CCGR2		(MXC_CCM_BASE + 0x70)
++#define MXC_CCM_CCGR3		(MXC_CCM_BASE + 0x74)
++#define MXC_CCM_CCGR4		(MXC_CCM_BASE + 0x78)
++#define MXC_CCM_CCGR5		(MXC_CCM_BASE + 0x7C)
++#define MXC_CCM_CCGR6		(MXC_CCM_BASE + 0x80)
++#define MXC_CCM_CCGR7		(MXC_CCM_BASE + 0x84)
++#define MXC_CCM_CMEOR		(MXC_CCM_BASE + 0x88)
++#define MXC_CCM_CSR2		(MXC_CCM_BASE + 0x8C)
++#define MXC_CCM_CLKSEQ_BYPASS	(MXC_CCM_BASE + 0x90)
++#define MXC_CCM_CLK_SYS		(MXC_CCM_BASE + 0x94)
++#define MXC_CCM_CLK_DDR		(MXC_CCM_BASE + 0x98)
++
++/* Define the bits in register CCR */
++#define MXC_CCM_CCR_COSC_EN			(1 << 12)
++#define MXC_CCM_CCR_CAMP1_EN			(1 << 9)
++#define MXC_CCM_CCR_OSCNT_OFFSET		(0)
++#define MXC_CCM_CCR_OSCNT_MASK			(0xFF)
++
++/* Define the bits in register CSR */
++#define MXC_CCM_CSR_COSR_READY			(1 << 5)
++#define MXC_CCM_CSR_LVS_VALUE			(1 << 4)
++#define MXC_CCM_CSR_CAMP1_READY			(1 << 2)
++#define MXC_CCM_CSR_TEMP_MON_ALARM		(1 << 1)
++#define MXC_CCM_CSR_REF_EN_B			(1 << 0)
++
++/* Define the bits in register CCSR */
++#define MXC_CCM_CCSR_PLL3_PFD_EN		(0x1 << 13)
++#define MXC_CCM_CCSR_PLL2_PFD_EN		(0x1 << 12)
++#define MXC_CCM_CCSR_PLL1_PFD_EN		(0x1 << 11)
++#define MXC_CCM_CCSR_LP_APM_SEL			(0x1 << 10)
++#define MXC_CCM_CCSR_LP_APM_SEL_OFFSET		(1)
++#define MXC_CCM_CCSR_STEP_SEL_OFFSET		(7)
++#define MXC_CCM_CCSR_STEP_SEL_MASK		(0x3 << 7)
++#define MXC_CCM_CCSR_PLL2_PODF_OFFSET		(5)
++#define MXC_CCM_CCSR_PLL2_PODF_MASK		(0x3 << 5)
++#define MXC_CCM_CCSR_PLL3_PODF_OFFSET		(3)
++#define MXC_CCM_CCSR_PLL3_PODF_MASK		(0x3 << 3)
++#define MXC_CCM_CCSR_PLL1_SW_CLK_SEL		(1 << 2)
++#define MXC_CCM_CCSR_PLL2_SW_CLK_SEL		(1 << 1)
++#define MXC_CCM_CCSR_PLL3_SW_CLK_SEL		(1 << 0)
++
++/* Define the bits in register CACRR */
++#define MXC_CCM_CACRR_ARM_PODF_OFFSET		(0)
++#define MXC_CCM_CACRR_ARM_PODF_MASK		(0x7)
++
++/* Define the bits in register CBCDR */
++#define MXC_CCM_CBCDR_WEIM_CLK_SEL		(0x1 << 27)
++#define MXC_CCM_CBCDR_PERIPH_CLK_SEL_OFFSET	(25)
++#define MXC_CCM_CBCDR_PERIPH_CLK_SEL_MASK	(0x3 << 25)
++#define MXC_CCM_CBCDR_WEIM_PODF_OFFSET		(22)
++#define MXC_CCM_CBCDR_WEIM_PODF_MASK		(7 << 22)
++#define MXC_CCM_CBCDR_AXI_B_PODF_OFFSET		(19)
++#define MXC_CCM_CBCDR_AXI_B_PODF_MASK		(0x7 << 19)
++#define MXC_CCM_CBCDR_AXI_A_PODF_OFFSET		(16)
++#define MXC_CCM_CBCDR_AXI_A_PODF_MASK		(0x7 << 16)
++#define MXC_CCM_CBCDR_AHB_PODF_OFFSET		(10)
++#define MXC_CCM_CBCDR_AHB_PODF_MASK		(0x7 << 10)
++#define MXC_CCM_CBCDR_IPG_PODF_OFFSET		(8)
++#define MXC_CCM_CBCDR_IPG_PODF_MASK		(0x3 << 8)
++#define MXC_CCM_CBCDR_PERCLK_PRED1_OFFSET	(6)
++#define MXC_CCM_CBCDR_PERCLK_PRED1_MASK		(0x3 << 6)
++#define MXC_CCM_CBCDR_PERCLK_PRED2_OFFSET	(3)
++#define MXC_CCM_CBCDR_PERCLK_PRED2_MASK		(0x7 << 3)
++#define MXC_CCM_CBCDR_PERCLK_PODF_OFFSET	(0)
++#define MXC_CCM_CBCDR_PERCLK_PODF_MASK		(0x7)
++
++/* Define the bits in register CBCMR */
++#define MXC_CCM_CBCMR_GPU2D_CLK_SEL_OFFSET	(16)
++#define MXC_CCM_CBCMR_GPU2D_CLK_SEL_MASK	(0x3 << 16)
++#define MXC_CCM_CBCMR_DBG_APB_CLK_SEL_OFFSET	(2)
++#define MXC_CCM_CBCMR_DBG_APB_CLK_SEL_MASK	(0x3 << 2)
++#define MXC_CCM_CBCMR_PERCLK_LP_APM_CLK_SEL	(0x1 << 1)
++#define MXC_CCM_CBCMR_PERCLK_IPG_CLK_SEL	(0x1 << 0)
++#define MXC_CCM_CBCMR_LP_APM_SEL_OFFSET		(0x1)
++
++/* Define the bits in register CSCMR1 */
++#define MXC_CCM_CSCMR1_SSI_EXT2_CLK_SEL_OFFSET		(30)
++#define MXC_CCM_CSCMR1_SSI_EXT2_CLK_SEL_MASK		(0x3 << 30)
++#define MXC_CCM_CSCMR1_SSI_EXT1_CLK_SEL_OFFSET		(28)
++#define MXC_CCM_CSCMR1_SSI_EXT1_CLK_SEL_MASK		(0x3 << 28)
++#define MXC_CCM_CSCMR1_UART_CLK_SEL_OFFSET		(24)
++#define MXC_CCM_CSCMR1_UART_CLK_SEL_MASK		(0x3 << 24)
++#define MXC_CCM_CSCMR1_ESDHC1_CLK_SEL_OFFSET	(21)
++#define MXC_CCM_CSCMR1_ESDHC1_CLK_SEL_MASK	(0x3 << 21)
++#define MXC_CCM_CSCMR1_ESDHC2_CLK_SEL			(0x1 << 20)
++#define MXC_CCM_CSCMR1_ESDHC4_CLK_SEL			(0x1 << 19)
++#define MXC_CCM_CSCMR1_ESDHC3_CLK_SEL_OFFSET		(16)
++#define MXC_CCM_CSCMR1_ESDHC3_CLK_SEL_MASK		(0x7 << 16)
++#define MXC_CCM_CSCMR1_SSI1_CLK_SEL_OFFSET		(14)
++#define MXC_CCM_CSCMR1_SSI1_CLK_SEL_MASK		(0x3 << 14)
++#define MXC_CCM_CSCMR1_SSI2_CLK_SEL_OFFSET		(12)
++#define MXC_CCM_CSCMR1_SSI2_CLK_SEL_MASK		(0x3 << 12)
++#define MXC_CCM_CSCMR1_SSI_APM_CLK_SEL_OFFSET		(8)
++#define MXC_CCM_CSCMR1_SSI_APM_CLK_SEL_MASK		(0x3 << 8)
++#define MXC_CCM_CSCMR1_CSPI_CLK_SEL_OFFSET		(4)
++#define MXC_CCM_CSCMR1_CSPI_CLK_SEL_MASK		(0x3 << 4)
++#define MXC_CCM_CSCMR1_SSI_EXT2_COM_CLK_SEL		(0x1 << 1)
++#define MXC_CCM_CSCMR1_SSI_EXT1_COM_CLK_SEL		(0x1)
++
++/* Define the bits in register CSCDR1 */
++#define MXC_CCM_CSCDR1_ESDHC3_CLK_PRED_OFFSET		(22)
++#define MXC_CCM_CSCDR1_ESDHC3_CLK_PRED_MASK		(0x7 << 22)
++#define MXC_CCM_CSCDR1_ESDHC3_CLK_PODF_OFFSET		(19)
++#define MXC_CCM_CSCDR1_ESDHC3_CLK_PODF_MASK		(0x7 << 19)
++#define MXC_CCM_CSCDR1_ESDHC1_CLK_PRED_OFFSET		(16)
++#define MXC_CCM_CSCDR1_ESDHC1_CLK_PRED_MASK		(0x7 << 16)
++#define MXC_CCM_CSCDR1_PGC_CLK_PODF_OFFSET		(14)
++#define MXC_CCM_CSCDR1_PGC_CLK_PODF_MASK		(0x3 << 14)
++#define MXC_CCM_CSCDR1_ESDHC1_CLK_PODF_OFFSET		(11)
++#define MXC_CCM_CSCDR1_ESDHC1_CLK_PODF_MASK		(0x7 << 11)
++#define MXC_CCM_CSCDR1_UART_CLK_PRED_OFFSET		(3)
++#define MXC_CCM_CSCDR1_UART_CLK_PRED_MASK		(0x7 << 3)
++#define MXC_CCM_CSCDR1_UART_CLK_PODF_OFFSET		(0)
++#define MXC_CCM_CSCDR1_UART_CLK_PODF_MASK		(0x7)
++
++/* Define the bits in register CS1CDR and CS2CDR */
++#define MXC_CCM_CS1CDR_SSI_EXT1_CLK_PRED_OFFSET		(22)
++#define MXC_CCM_CS1CDR_SSI_EXT1_CLK_PRED_MASK		(0x7 << 22)
++#define MXC_CCM_CS1CDR_SSI_EXT1_CLK_PODF_OFFSET		(16)
++#define MXC_CCM_CS1CDR_SSI_EXT1_CLK_PODF_MASK		(0x3F << 16)
++#define MXC_CCM_CS1CDR_SSI1_CLK_PRED_OFFSET		(6)
++#define MXC_CCM_CS1CDR_SSI1_CLK_PRED_MASK		(0x7 << 6)
++#define MXC_CCM_CS1CDR_SSI1_CLK_PODF_OFFSET		(0)
++#define MXC_CCM_CS1CDR_SSI1_CLK_PODF_MASK		(0x3F)
++
++#define MXC_CCM_CS2CDR_SSI_EXT2_CLK_PRED_OFFSET		(22)
++#define MXC_CCM_CS2CDR_SSI_EXT2_CLK_PRED_MASK		(0x7 << 22)
++#define MXC_CCM_CS2CDR_SSI_EXT2_CLK_PODF_OFFSET		(16)
++#define MXC_CCM_CS2CDR_SSI_EXT2_CLK_PODF_MASK		(0x3F << 16)
++#define MXC_CCM_CS2CDR_SSI2_CLK_PRED_OFFSET		(6)
++#define MXC_CCM_CS2CDR_SSI2_CLK_PRED_MASK		(0x7 << 6)
++#define MXC_CCM_CS2CDR_SSI2_CLK_PODF_OFFSET		(0)
++#define MXC_CCM_CS2CDR_SSI2_CLK_PODF_MASK		(0x3F)
++
++/* Define the bits in register CSCDR2 */
++#define MXC_CCM_CSCDR2_CSPI_CLK_PRED_OFFSET		(25)
++#define MXC_CCM_CSCDR2_CSPI_CLK_PRED_MASK		(0x7 << 25)
++#define MXC_CCM_CSCDR2_CSPI_CLK_PODF_OFFSET		(19)
++#define MXC_CCM_CSCDR2_CSPI_CLK_PODF_MASK		(0x3F << 19)
++
++/* Define the bits in register CDHIPR */
++#define MXC_CCM_CDHIPR_ARM_PODF_BUSY			(1 << 16)
++#define MXC_CCM_CDHIPR_WEIM_CLK_SEL_BUSY		(1 << 6)
++#define MXC_CCM_CDHIPR_PERIPH_CLK_SEL_BUSY		(1 << 5)
++#define MXC_CCM_CDHIPR_AHB_PODF_BUSY			(1 << 3)
++#define MXC_CCM_CDHIPR_WEIM_PODF_BUSY			(1 << 2)
++#define MXC_CCM_CDHIPR_AXI_B_PODF_BUSY			(1 << 1)
++#define MXC_CCM_CDHIPR_AXI_A_PODF_BUSY			(1 << 0)
++
++/* Define the bits in register CDCR */
++
++#define MXC_CCM_CDCR_SW_PERIPH_CLK_DIV_REQ_STATUS	(0x1 << 7)
++#define MXC_CCM_CDCR_SW_PERIPH_CLK_DIV_REQ		(0x1 << 6)
++#define MXC_CCM_CDCR_SW_DVFS_EN				(0x1 << 5)
++#define MXC_CCM_CDCR_ARM_FREQ_SHIFT_DIVIDER		(0x1 << 2)
++#define MXC_CCM_CDCR_PERIPH_CLK_DVFS_PODF_OFFSET	(0)
++#define MXC_CCM_CDCR_PERIPH_CLK_DVFS_PODF_MASK		(0x3)
++
++/* Define the bits in register CLPCR */
++#define MXC_CCM_CLPCR_BYPASS_MAX_LPM_HS			(0x1 << 25)
++#define MXC_CCM_CLPCR_BYPASS_SDMA_LPM_HS		(0x1 << 24)
++#define MXC_CCM_CLPCR_BYPASS_RNGB_LPM_HS		(0x1 << 23)
++#define MXC_CCM_CLPCR_BYPASS_WEIM_LPM_HS		(0x1 << 19)
++#define MXC_CCM_CLPCR_COSC_PWRDOWN			(0x1 << 11)
++#define MXC_CCM_CLPCR_STBY_COUNT_OFFSET			(9)
++#define MXC_CCM_CLPCR_STBY_COUNT_MASK			(0x3 << 9)
++#define MXC_CCM_CLPCR_VSTBY				(0x1 << 8)
++#define MXC_CCM_CLPCR_DIS_REF_OSC			(0x1 << 7)
++#define MXC_CCM_CLPCR_SBYOS				(0x1 << 6)
++#define MXC_CCM_CLPCR_ARM_CLK_DIS_ON_LPM		(0x1 << 5)
++#define MXC_CCM_CLPCR_BYPASS_PMIC_VFUNC_READY		(0x1 << 2)
++#define MXC_CCM_CLPCR_LPM_OFFSET			(0)
++#define MXC_CCM_CLPCR_LPM_MASK				(0x3)
++
++/* Define the bits in register CISR */
++#define MXC_CCM_CISR_ARM_PODF_LOADED			(0x1 << 26)
++#define MXC_CCM_CISR_TEMP_MON_ALARM			(0x1 << 25)
++#define MXC_CCM_CISR_WEIM_CLK_SEL_LOADED		(0x1 << 23)
++#define MXC_CCM_CISR_PER_CLK_SEL_LOADED			(0x1 << 22)
++#define MXC_CCM_CISR_AHB_PODF_LOADED			(0x1 << 20)
++#define MXC_CCM_CISR_WEIM_PODF_LOADED			(0x1 << 19)
++#define MXC_CCM_CISR_AXI_B_PODF_LOADED			(0x1 << 18)
++#define MXC_CCM_CISR_AXI_A_PODF_LOADED			(0x1 << 17)
++#define MXC_CCM_CISR_DIVIDER_LOADED			(0x1 << 16)
++#define MXC_CCM_CISR_COSC_READY				(0x1 << 6)
++#define MXC_CCM_CISR_CAMP1_READY			(0x1 << 4)
++#define MXC_CCM_CISR_LRF_PLL3				(0x1 << 2)
++#define MXC_CCM_CISR_LRF_PLL2				(0x1 << 1)
++#define MXC_CCM_CISR_LRF_PLL1				(0x1)
++
++/* Define the bits in register CIMR */
++#define MXC_CCM_CIMR_MASK_ARM_PODF_LOADED		(0x1 << 26)
++#define MXC_CCM_CIMR_MASK_TEMP_MON_ALARM		(0x1 << 25)
++#define MXC_CCM_CIMR_MASK_WEIM_CLK_SEL_LOADED		(0x1 << 23)
++#define MXC_CCM_CIMR_MASK_PER_CLK_SEL_LOADED		(0x1 << 22)
++#define MXC_CCM_CIMR_MASK_AHB_PODF_LOADED		(0x1 << 20)
++#define MXC_CCM_CIMR_MASK_WEIM_PODF_LOADED		(0x1 << 19)
++#define MXC_CCM_CIMR_MASK_AXI_B_PODF_LOADED		(0x1 << 18)
++#define MXC_CCM_CIMR_MASK_AXI_A_PODF_LOADED		(0x1 << 17)
++#define MXC_CCM_CIMR_MASK_DIVIDER_LOADED		(0x1 << 16)
++#define MXC_CCM_CIMR_MASK_COSC_READY			(0x1 << 6)
++#define MXC_CCM_CIMR_MASK_CAMP1_READY			(0x1 << 4)
++#define MXC_CCM_CIMR_MASK_LRF_PLL3			(0x1 << 2)
++#define MXC_CCM_CIMR_MASK_LRF_PLL2			(0x1 << 1)
++#define MXC_CCM_CIMR_MASK_LRF_PLL1			(0x1)
++
++/* Define the bits in register CCOSR */
++#define MXC_CCM_CCOSR_CKO2_EN_OFFSET			(0x1 << 24)
++#define MXC_CCM_CCOSR_CKO2_DIV_OFFSET			(21)
++#define MXC_CCM_CCOSR_CKO2_DIV_MASK			(0x7 << 21)
++#define MXC_CCM_CCOSR_CKO2_SEL_OFFSET			(16)
++#define MXC_CCM_CCOSR_CKO2_SEL_MASK			(0x1F << 16)
++#define MXC_CCM_CCOSR_CKO1_SLOW_SEL			(0x1 << 8)
++#define MXC_CCM_CCOSR_CKO1_EN				(0x1 << 7)
++#define MXC_CCM_CCOSR_CKO1_DIV_OFFSET			(4)
++#define MXC_CCM_CCOSR_CKO1_DIV_MASK			(0x7 << 4)
++#define MXC_CCM_CCOSR_CKO1_SEL_OFFSET			(0)
++#define MXC_CCM_CCOSR_CKO1_SEL_MASK			(0xF)
++
++/* Define the bits in registers CCGRx */
++#define MXC_CCM_CCGR_CG_MASK				0x3
++
++#define MXC_CCM_CCGR0_CG15_OFFSET			30
++#define MXC_CCM_CCGR0_CG15_MASK			(0x3 << 30)
++#define MXC_CCM_CCGR0_CG14_OFFSET			28
++#define MXC_CCM_CCGR0_CG14_MASK			(0x3 << 28)
++#define MXC_CCM_CCGR0_CG13_OFFSET			26
++#define MXC_CCM_CCGR0_CG13_MASK			(0x3 << 26)
++#define MXC_CCM_CCGR0_CG12_OFFSET			24
++#define MXC_CCM_CCGR0_CG12_MASK			(0x3 << 24)
++#define MXC_CCM_CCGR0_CG11_OFFSET			22
++#define MXC_CCM_CCGR0_CG11_MASK			(0x3 << 22)
++#define MXC_CCM_CCGR0_CG10_OFFSET			20
++#define MXC_CCM_CCGR0_CG10_MASK			(0x3 << 20)
++#define MXC_CCM_CCGR0_CG9_OFFSET			18
++#define MXC_CCM_CCGR0_CG9_MASK			(0x3 << 18)
++#define MXC_CCM_CCGR0_CG8_OFFSET			16
++#define MXC_CCM_CCGR0_CG8_MASK			(0x3 << 16)
++#define MXC_CCM_CCGR0_CG7_OFFSET			14
++#define MXC_CCM_CCGR0_CG6_OFFSET			12
++#define MXC_CCM_CCGR0_CG5_OFFSET			10
++#define MXC_CCM_CCGR0_CG5_MASK			(0x3 << 10)
++#define MXC_CCM_CCGR0_CG4_OFFSET			8
++#define MXC_CCM_CCGR0_CG4_MASK			(0x3 << 8)
++#define MXC_CCM_CCGR0_CG3_OFFSET			6
++#define MXC_CCM_CCGR0_CG3_MASK			(0x3 << 6)
++#define MXC_CCM_CCGR0_CG2_OFFSET			4
++#define MXC_CCM_CCGR0_CG2_MASK			(0x3 << 4)
++#define MXC_CCM_CCGR0_CG1_OFFSET			2
++#define MXC_CCM_CCGR0_CG1_MASK			(0x3 << 2)
++#define MXC_CCM_CCGR0_CG0_OFFSET			0
++#define MXC_CCM_CCGR0_CG0_MASK			0x3
++
++#define MXC_CCM_CCGR1_CG15_OFFSET			30
++#define MXC_CCM_CCGR1_CG14_OFFSET			28
++#define MXC_CCM_CCGR1_CG13_OFFSET			26
++#define MXC_CCM_CCGR1_CG12_OFFSET			24
++#define MXC_CCM_CCGR1_CG11_OFFSET			22
++#define MXC_CCM_CCGR1_CG10_OFFSET			20
++#define MXC_CCM_CCGR1_CG9_OFFSET			18
++#define MXC_CCM_CCGR1_CG8_OFFSET			16
++#define MXC_CCM_CCGR1_CG7_OFFSET			14
++#define MXC_CCM_CCGR1_CG6_OFFSET			12
++#define MXC_CCM_CCGR1_CG5_OFFSET			10
++#define MXC_CCM_CCGR1_CG4_OFFSET			8
++#define MXC_CCM_CCGR1_CG3_OFFSET			6
++#define MXC_CCM_CCGR1_CG2_OFFSET			4
++#define MXC_CCM_CCGR1_CG1_OFFSET			2
++#define MXC_CCM_CCGR1_CG0_OFFSET			0
++
++#define MXC_CCM_CCGR2_CG15_OFFSET			30
++#define MXC_CCM_CCGR2_CG14_OFFSET			28
++#define MXC_CCM_CCGR2_CG13_OFFSET			26
++#define MXC_CCM_CCGR2_CG12_OFFSET			24
++#define MXC_CCM_CCGR2_CG11_OFFSET			22
++#define MXC_CCM_CCGR2_CG10_OFFSET			20
++#define MXC_CCM_CCGR2_CG9_OFFSET			18
++#define MXC_CCM_CCGR2_CG8_OFFSET			16
++#define MXC_CCM_CCGR2_CG7_OFFSET			14
++#define MXC_CCM_CCGR2_CG6_OFFSET			12
++#define MXC_CCM_CCGR2_CG5_OFFSET			10
++#define MXC_CCM_CCGR2_CG4_OFFSET			8
++#define MXC_CCM_CCGR2_CG3_OFFSET			6
++#define MXC_CCM_CCGR2_CG2_OFFSET			4
++#define MXC_CCM_CCGR2_CG1_OFFSET			2
++#define MXC_CCM_CCGR2_CG0_OFFSET			0
++
++#define MXC_CCM_CCGR3_CG15_OFFSET			30
++#define MXC_CCM_CCGR3_CG14_OFFSET			28
++#define MXC_CCM_CCGR3_CG13_OFFSET			26
++#define MXC_CCM_CCGR3_CG12_OFFSET			24
++#define MXC_CCM_CCGR3_CG11_OFFSET			22
++#define MXC_CCM_CCGR3_CG10_OFFSET			20
++#define MXC_CCM_CCGR3_CG9_OFFSET			18
++#define MXC_CCM_CCGR3_CG8_OFFSET			16
++#define MXC_CCM_CCGR3_CG7_OFFSET			14
++#define MXC_CCM_CCGR3_CG6_OFFSET			12
++#define MXC_CCM_CCGR3_CG5_OFFSET			10
++#define MXC_CCM_CCGR3_CG4_OFFSET			8
++#define MXC_CCM_CCGR3_CG3_OFFSET			6
++#define MXC_CCM_CCGR3_CG2_OFFSET			4
++#define MXC_CCM_CCGR3_CG1_OFFSET			2
++#define MXC_CCM_CCGR3_CG0_OFFSET			0
++
++#define MXC_CCM_CCGR4_CG15_OFFSET			30
++#define MXC_CCM_CCGR4_CG14_OFFSET			28
++#define MXC_CCM_CCGR4_CG13_OFFSET			26
++#define MXC_CCM_CCGR4_CG12_OFFSET			24
++#define MXC_CCM_CCGR4_CG11_OFFSET			22
++#define MXC_CCM_CCGR4_CG10_OFFSET			20
++#define MXC_CCM_CCGR4_CG9_OFFSET			18
++#define MXC_CCM_CCGR4_CG8_OFFSET			16
++#define MXC_CCM_CCGR4_CG7_OFFSET			14
++#define MXC_CCM_CCGR4_CG6_OFFSET			12
++#define MXC_CCM_CCGR4_CG5_OFFSET			10
++#define MXC_CCM_CCGR4_CG4_OFFSET			8
++#define MXC_CCM_CCGR4_CG3_OFFSET			6
++#define MXC_CCM_CCGR4_CG2_OFFSET			4
++#define MXC_CCM_CCGR4_CG1_OFFSET			2
++#define MXC_CCM_CCGR4_CG0_OFFSET			0
++
++#define MXC_CCM_CCGR5_CG15_OFFSET			30
++#define MXC_CCM_CCGR5_CG14_OFFSET			28
++#define MXC_CCM_CCGR5_CG14_MASK			(0x3 << 28)
++#define MXC_CCM_CCGR5_CG13_OFFSET			26
++#define MXC_CCM_CCGR5_CG13_MASK			(0x3 << 26)
++#define MXC_CCM_CCGR5_CG12_OFFSET			24
++#define MXC_CCM_CCGR5_CG12_MASK			(0x3 << 24)
++#define MXC_CCM_CCGR5_CG11_OFFSET			22
++#define MXC_CCM_CCGR5_CG11_MASK			(0x3 << 22)
++#define MXC_CCM_CCGR5_CG10_OFFSET			20
++#define MXC_CCM_CCGR5_CG10_MASK			(0x3 << 20)
++#define MXC_CCM_CCGR5_CG9_OFFSET			18
++#define MXC_CCM_CCGR5_CG9_MASK			(0x3 << 18)
++#define MXC_CCM_CCGR5_CG8_OFFSET			16
++#define MXC_CCM_CCGR5_CG8_MASK			(0x3 << 16)
++#define MXC_CCM_CCGR5_CG7_OFFSET			14
++#define MXC_CCM_CCGR5_CG7_MASK			(0x3 << 14)
++#define MXC_CCM_CCGR5_CG6_1_OFFSET		12
++#define MXC_CCM_CCGR5_CG6_2_OFFSET		13
++#define MXC_CCM_CCGR5_CG6_OFFSET			12
++#define MXC_CCM_CCGR5_CG6_MASK			(0x3 << 12)
++#define MXC_CCM_CCGR5_CG5_OFFSET			10
++#define MXC_CCM_CCGR5_CG4_OFFSET			8
++#define MXC_CCM_CCGR5_CG3_OFFSET			6
++#define MXC_CCM_CCGR5_CG2_OFFSET			4
++#define MXC_CCM_CCGR5_CG2_MASK			(0x3 << 4)
++#define MXC_CCM_CCGR5_CG1_OFFSET			2
++#define MXC_CCM_CCGR5_CG0_OFFSET			0
++
++#define MXC_CCM_CCGR6_CG15_OFFSET			30
++#define MXC_CCM_CCGR6_CG14_OFFSET			28
++#define MXC_CCM_CCGR6_CG14_MASK			(0x3 << 28)
++#define MXC_CCM_CCGR6_CG13_OFFSET			26
++#define MXC_CCM_CCGR6_CG13_MASK			(0x3 << 26)
++#define MXC_CCM_CCGR6_CG12_OFFSET			24
++#define MXC_CCM_CCGR6_CG12_MASK			(0x3 << 24)
++#define MXC_CCM_CCGR6_CG11_OFFSET			22
++#define MXC_CCM_CCGR6_CG11_MASK			(0x3 << 22)
++#define MXC_CCM_CCGR6_CG10_OFFSET			20
++#define MXC_CCM_CCGR6_CG10_MASK			(0x3 << 20)
++#define MXC_CCM_CCGR6_CG9_OFFSET			18
++#define MXC_CCM_CCGR6_CG9_MASK			(0x3 << 18)
++#define MXC_CCM_CCGR6_CG8_OFFSET			16
++#define MXC_CCM_CCGR6_CG8_MASK			(0x3 << 16)
++#define MXC_CCM_CCGR6_CG7_OFFSET            		14
++#define MXC_CCM_CCGR6_CG7_MASK          	(0x3 << 14)
++#define MXC_CCM_CCGR6_CG6_OFFSET			12
++#define MXC_CCM_CCGR6_CG6_MASK			(0x3 << 12)
++#define MXC_CCM_CCGR6_CG5_OFFSET			10
++#define MXC_CCM_CCGR6_CG5_MASK			(0x3 << 10)
++#define MXC_CCM_CCGR6_CG4_OFFSET			8
++#define MXC_CCM_CCGR6_CG4_MASK			(0x3 << 8)
++#define MXC_CCM_CCGR6_CG3_OFFSET			6
++#define MXC_CCM_CCGR6_CG2_OFFSET			4
++#define MXC_CCM_CCGR6_CG2_MASK			(0x3 << 4)
++#define MXC_CCM_CCGR6_CG1_OFFSET			2
++#define MXC_CCM_CCGR6_CG0_OFFSET			0
++
++#define MXC_CCM_CCGR7_CG15_OFFSET			30
++#define MXC_CCM_CCGR7_CG14_OFFSET			28
++#define MXC_CCM_CCGR7_CG14_MASK			(0x3 << 28)
++#define MXC_CCM_CCGR7_CG13_OFFSET			26
++#define MXC_CCM_CCGR7_CG13_MASK			(0x3 << 26)
++#define MXC_CCM_CCGR7_CG12_OFFSET			24
++#define MXC_CCM_CCGR7_CG12_MASK			(0x3 << 24)
++#define MXC_CCM_CCGR7_CG11_OFFSET			22
++#define MXC_CCM_CCGR7_CG11_MASK			(0x3 << 22)
++#define MXC_CCM_CCGR7_CG10_OFFSET			20
++#define MXC_CCM_CCGR7_CG10_MASK			(0x3 << 20)
++#define MXC_CCM_CCGR7_CG9_OFFSET			18
++#define MXC_CCM_CCGR7_CG9_MASK			(0x3 << 18)
++#define MXC_CCM_CCGR7_CG8_OFFSET			16
++#define MXC_CCM_CCGR7_CG8_MASK			(0x3 << 16)
++#define MXC_CCM_CCGR7_CG7_OFFSET			14
++#define MXC_CCM_CCGR7_CG7_MASK			(0x3 << 14)
++#define MXC_CCM_CCGR7_CG6_OFFSET			12
++#define MXC_CCM_CCGR7_CG6_MASK			(0x3 << 12)
++#define MXC_CCM_CCGR7_CG5_OFFSET			10
++#define MXC_CCM_CCGR7_CG4_OFFSET			8
++#define MXC_CCM_CCGR7_CG3_OFFSET			6
++#define MXC_CCM_CCGR7_CG2_OFFSET			4
++#define MXC_CCM_CCGR7_CG2_MASK			(0x3 << 4)
++#define MXC_CCM_CCGR7_CG1_OFFSET			2
++#define MXC_CCM_CCGR7_CG0_OFFSET			0
++
++/* Define the bits in registers CLKSEQ_BYPASS */
++#define MXC_CCM_CLKSEQ_BYPASS_ELCDIF_PIX_OFFSET 	14
++#define MXC_CCM_CLKSEQ_BYPASS_ELCDIF_PIX_MASK	(0x3 << 14)
++#define MXC_CCM_CLKSEQ_BYPASS_EPDC_PIX_OFFSET		12
++#define MXC_CCM_CLKSEQ_BYPASS_EPDC_PIX_MASK	(0x3 << 12)
++#define MXC_CCM_CLKSEQ_BYPASS_MSHCX_OFFSET		10
++#define MXC_CCM_CLKSEQ_BYPASS_MSHCX_MASK	(0x3 << 10)
++#define MXC_CCM_CLKSEQ_BYPASS_BCH_OFFSET		8
++#define MXC_CCM_CLKSEQ_BYPASS_BCH_MASK		(0x3 << 8)
++#define MXC_CCM_CLKSEQ_BYPASS_GPMI_OFFSET               6
++#define MXC_CCM_CLKSEQ_BYPASS_GPMI_MASK         (0x3 << 6)
++#define MXC_CCM_CLKSEQ_BYPASS_EPDC_OFFSET		4
++#define MXC_CCM_CLKSEQ_BYPASS_EPDC_MASK		(0x3 << 4)
++#define MXC_CCM_CLKSEQ_BYPASS_DISPLY_AXI_OFFSET		2
++#define MXC_CCM_CLKSEQ_BYPASS_DISPLY_AXI_MASK	(0x3 << 2)
++#define MXC_CCM_CLKSEQ_BYPASS_SYS_CLK_1		(0x1 << 1)
++#define MXC_CCM_CLKSEQ_BYPASS_SYS_CLK_0		(0x1 << 0)
++
++/* Define the bits in registers CLK_SYS */
++#define MXC_CCM_CLK_SYS_XTAL_CLKGATE_OFFSET		30
++#define MXC_CCM_CLK_SYS_XTAL_CLKGATE_MASK	(0x3 << 30)
++#define MXC_CCM_CLK_SYS_PLL_CLKGATE_OFFSET		28
++#define MXC_CCM_CLK_SYS_PLL_CLKGATE_MASK	(0x3 << 28)
++#define MXC_CCM_CLK_SYS_DIV_XTAL_OFFSET			6
++#define MXC_CCM_CLK_SYS_DIV_XTAL_MASK		(0xf << 6)
++#define MXC_CCM_CLK_SYS_DIV_PLL_OFFSET			0
++#define MXC_CCM_CLK_SYS_DIV_PLL_MASK	       (0x3f << 0)
++
++/* Define the bits in registers CLK_DDR */
++#define MXC_CCM_CLK_DDR_DDR_CLKGATE_OFFSET	(30)
++#define MXC_CCM_CLK_DDR_DDR_CLKGATE_MASK	(0x3 << 30)
++#define MXC_CCM_CLK_DDR_DDR_PFD_SEL		(1 << 6)
++#define MXC_CCM_CLK_DDR_DDR_DIV_PLL_OFFSET	(0)
++#define MXC_CCM_CLK_DDR_DDR_DIV_PLL_MASK	(0x3F)
++
++
++#define MXC_GPC_BASE			(IO_ADDRESS(GPC_BASE_ADDR))
++#define MXC_DPTC_LP_BASE		(MXC_GPC_BASE + 0x80)
++#define MXC_DPTC_GP_BASE		(MXC_GPC_BASE + 0x100)
++#define MXC_DVFS_CORE_BASE		(MXC_GPC_BASE + 0x180)
++#define MXC_DVFS_PER_BASE		(MXC_GPC_BASE + 0x1C4)
++#define MXC_PGC_IPU_BASE		(MXC_GPC_BASE + 0x220)
++#define MXC_PGC_VPU_BASE		(MXC_GPC_BASE + 0x240)
++#define MXC_PGC_GPU_BASE		(MXC_GPC_BASE + 0x260)
++#define MXC_SRPG_NEON_BASE		(MXC_GPC_BASE + 0x280)
++#define MXC_SRPG_ARM_BASE		(MXC_GPC_BASE + 0x2A0)
++#define MXC_SRPG_EMPGC0_BASE		(MXC_GPC_BASE + 0x2C0)
++#define MXC_SRPG_EMPGC1_BASE		(MXC_GPC_BASE + 0x2D0)
++#define MXC_SRPG_MEGAMIX_BASE		(MXC_GPC_BASE + 0x2E0)
++#define MXC_SRPG_EMI_BASE		(MXC_GPC_BASE + 0x300)
++
++/* DVFS CORE */
++#define MXC_DVFSTHRS		(MXC_DVFS_CORE_BASE + 0x00)
++#define MXC_DVFSCOUN		(MXC_DVFS_CORE_BASE + 0x04)
++#define MXC_DVFSSIG1		(MXC_DVFS_CORE_BASE + 0x08)
++#define MXC_DVFSSIG0		(MXC_DVFS_CORE_BASE + 0x0C)
++#define MXC_DVFSGPC0		(MXC_DVFS_CORE_BASE + 0x10)
++#define MXC_DVFSGPC1		(MXC_DVFS_CORE_BASE + 0x14)
++#define MXC_DVFSGPBT		(MXC_DVFS_CORE_BASE + 0x18)
++#define MXC_DVFSEMAC		(MXC_DVFS_CORE_BASE + 0x1C)
++#define MXC_DVFSCNTR		(MXC_DVFS_CORE_BASE + 0x20)
++#define MXC_DVFSLTR0_0		(MXC_DVFS_CORE_BASE + 0x24)
++#define MXC_DVFSLTR0_1		(MXC_DVFS_CORE_BASE + 0x28)
++#define MXC_DVFSLTR1_0		(MXC_DVFS_CORE_BASE + 0x2C)
++#define MXC_DVFSLTR1_1		(MXC_DVFS_CORE_BASE + 0x30)
++#define MXC_DVFSPT0 		(MXC_DVFS_CORE_BASE + 0x34)
++#define MXC_DVFSPT1 		(MXC_DVFS_CORE_BASE + 0x38)
++#define MXC_DVFSPT2 		(MXC_DVFS_CORE_BASE + 0x3C)
++#define MXC_DVFSPT3 		(MXC_DVFS_CORE_BASE + 0x40)
++
++/* DVFS PER */
++#define MXC_DVFSPER_LTR0	(MXC_DVFS_PER_BASE)
++#define MXC_DVFSPER_LTR1	(MXC_DVFS_PER_BASE + 0x04)
++#define MXC_DVFSPER_LTR2	(MXC_DVFS_PER_BASE + 0x08)
++#define MXC_DVFSPER_LTR3	(MXC_DVFS_PER_BASE + 0x0C)
++#define MXC_DVFSPER_LTBR0	(MXC_DVFS_PER_BASE + 0x10)
++#define MXC_DVFSPER_LTBR1	(MXC_DVFS_PER_BASE + 0x14)
++#define MXC_DVFSPER_PMCR0	(MXC_DVFS_PER_BASE + 0x18)
++#define MXC_DVFSPER_PMCR1	(MXC_DVFS_PER_BASE + 0x1C)
++
++/* GPC */
++#define MXC_GPC_CNTR		(MXC_GPC_BASE + 0x0)
++#define MXC_GPC_PGR		(MXC_GPC_BASE + 0x4)
++#define MXC_GPC_VCR		(MXC_GPC_BASE + 0x8)
++#define MXC_GPC_ALL_PU		(MXC_GPC_BASE + 0xC)
++#define MXC_GPC_NEON		(MXC_GPC_BASE + 0x10)
++
++/* PGC */
++#define MXC_PGC_IPU_PGCR	(MXC_PGC_IPU_BASE + 0x0)
++#define MXC_PGC_IPU_PGSR	(MXC_PGC_IPU_BASE + 0xC)
++#define MXC_PGC_VPU_PGCR	(MXC_PGC_VPU_BASE + 0x0)
++#define MXC_PGC_VPU_PGSR	(MXC_PGC_VPU_BASE + 0xC)
++#define MXC_PGC_GPU_PGCR	(MXC_PGC_GPU_BASE + 0x0)
++#define MXC_PGC_GPU_PGSR	(MXC_PGC_GPU_BASE + 0xC)
++
++#define MXC_PGCR_PCR		1
++#define MXC_SRPGCR_PCR		1
++#define MXC_EMPGCR_PCR		1
++#define MXC_PGSR_PSR		1
++
++
++#define MXC_CORTEXA8_PLAT_LPC_DSM	(1 << 0)
++#define MXC_CORTEXA8_PLAT_LPC_DBG_DSM	(1 << 1)
++
++/* SRPG */
++#define MXC_SRPG_NEON_SRPGCR	(MXC_SRPG_NEON_BASE + 0x0)
++#define MXC_SRPG_NEON_PUPSCR	(MXC_SRPG_NEON_BASE + 0x4)
++#define MXC_SRPG_NEON_PDNSCR	(MXC_SRPG_NEON_BASE + 0x8)
++
++#define MXC_SRPG_ARM_SRPGCR	(MXC_SRPG_ARM_BASE + 0x0)
++#define MXC_SRPG_ARM_PUPSCR	(MXC_SRPG_ARM_BASE + 0x4)
++#define MXC_SRPG_ARM_PDNSCR	(MXC_SRPG_ARM_BASE + 0x8)
++
++#define MXC_SRPG_EMPGC0_SRPGCR	(MXC_SRPG_EMPGC0_BASE + 0x0)
++#define MXC_SRPG_EMPGC0_PUPSCR	(MXC_SRPG_EMPGC0_BASE + 0x4)
++#define MXC_SRPG_EMPGC0_PDNSCR	(MXC_SRPG_EMPGC0_BASE + 0x8)
++
++#define MXC_SRPG_EMPGC1_SRPGCR	(MXC_SRPG_EMPGC1_BASE + 0x0)
++#define MXC_SRPG_EMPGC1_PUPSCR	(MXC_SRPG_EMPGC1_BASE + 0x4)
++#define MXC_SRPG_EMPGC1_PDNSCR	(MXC_SRPG_EMPGC1_BASE + 0x8)
++
++#define MXC_SRPG_MEGAMIX_SRPGCR		(MXC_SRPG_MEGAMIX_BASE + 0x0)
++#define MXC_SRPG_MEGAMIX_PUPSCR		(MXC_SRPG_MEGAMIX_BASE + 0x4)
++#define MXC_SRPG_MEGAMIX_PDNSCR		(MXC_SRPG_MEGAMIX_BASE + 0x8)
++
++#define MXC_SRPGC_EMI_SRPGCR	(MXC_SRPGC_EMI_BASE + 0x0)
++#define MXC_SRPGC_EMI_PUPSCR	(MXC_SRPGC_EMI_BASE + 0x4)
++#define MXC_SRPGC_EMI_PDNSCR	(MXC_SRPGC_EMI_BASE + 0x8)
++
++#endif				/* __ARCH_ARM_MACH_MX50_CRM_REGS_H__ */
+diff --git a/cpu/arm_cortexa8/mx50/generic.c b/cpu/arm_cortexa8/mx50/generic.c
+new file mode 100644
+index 0000000..79a803c
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/generic.c
+@@ -0,0 +1,1019 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/mx50.h>
++#include <asm/errno.h>
++#include <asm/io.h>
++#include "crm_regs.h"
++#ifdef CONFIG_CMD_CLOCK
++#include <asm/clock.h>
++#endif
++#include <div64.h>
++#ifdef CONFIG_ARCH_CPU_INIT
++#include <asm/cache-cp15.h>
++#endif
++
++enum pll_clocks {
++	PLL1_CLK = MXC_DPLL1_BASE,
++	PLL2_CLK = MXC_DPLL2_BASE,
++	PLL3_CLK = MXC_DPLL3_BASE,
++};
++
++enum pll_sw_clocks {
++	PLL1_SW_CLK,
++	PLL2_SW_CLK,
++	PLL3_SW_CLK,
++};
++
++#define AHB_CLK_ROOT 133333333
++#define IPG_CLK_ROOT 66666666
++#define IPG_PER_CLK_ROOT 40000000
++
++#ifdef CONFIG_CMD_CLOCK
++#define SZ_DEC_1M       1000000
++#define PLL_PD_MAX      16      /* Actual pd+1 */
++#define PLL_MFI_MAX     15
++#define PLL_MFI_MIN     5
++#define ARM_DIV_MAX     8
++#define IPG_DIV_MAX     4
++#define AHB_DIV_MAX     8
++#define EMI_DIV_MAX     8
++#define NFC_DIV_MAX     8
++
++struct fixed_pll_mfd {
++    u32 ref_clk_hz;
++    u32 mfd;
++};
++
++const struct fixed_pll_mfd fixed_mfd[4] = {
++    {0,                   0},      /* reserved */
++    {0,                   0},      /* reserved */
++    {CONFIG_MX50_HCLK_FREQ, 24 * 16},    /* 384 */
++    {0,                   0},      /* reserved */
++};
++
++struct pll_param {
++    u32 pd;
++    u32 mfi;
++    u32 mfn;
++    u32 mfd;
++};
++
++#define PLL_FREQ_MAX(_ref_clk_) \
++		(4 * _ref_clk_ * PLL_MFI_MAX)
++#define PLL_FREQ_MIN(_ref_clk_) \
++		((2 * _ref_clk_ * (PLL_MFI_MIN - 1)) / PLL_PD_MAX)
++#define MAX_DDR_CLK     420000000
++#define AHB_CLK_MAX     133333333
++#define IPG_CLK_MAX     (AHB_CLK_MAX / 2)
++#define NFC_CLK_MAX     25000000
++#define HSP_CLK_MAX     133333333
++#endif
++
++static u32 __decode_pll(enum pll_clocks pll, u32 infreq)
++{
++	long mfi, mfn, mfd, pdf, ref_clk, mfn_abs;
++	unsigned long dp_op, dp_mfd, dp_mfn, dp_ctl, pll_hfsm, dbl;
++	s64 temp;
++
++	dp_ctl = __REG(pll + MXC_PLL_DP_CTL);
++	pll_hfsm = dp_ctl & MXC_PLL_DP_CTL_HFSM;
++	dbl = dp_ctl & MXC_PLL_DP_CTL_DPDCK0_2_EN;
++
++	if (pll_hfsm == 0) {
++		dp_op = __REG(pll + MXC_PLL_DP_OP);
++		dp_mfd = __REG(pll + MXC_PLL_DP_MFD);
++		dp_mfn = __REG(pll + MXC_PLL_DP_MFN);
++	} else {
++		dp_op = __REG(pll + MXC_PLL_DP_HFS_OP);
++		dp_mfd = __REG(pll + MXC_PLL_DP_HFS_MFD);
++		dp_mfn = __REG(pll + MXC_PLL_DP_HFS_MFN);
++	}
++	pdf = dp_op & MXC_PLL_DP_OP_PDF_MASK;
++	mfi = (dp_op & MXC_PLL_DP_OP_MFI_MASK) >> MXC_PLL_DP_OP_MFI_OFFSET;
++	mfi = (mfi <= 5) ? 5 : mfi;
++	mfd = dp_mfd & MXC_PLL_DP_MFD_MASK;
++	mfn = mfn_abs = dp_mfn & MXC_PLL_DP_MFN_MASK;
++	/* Sign extend to 32-bits */
++	if (mfn >= 0x04000000) {
++		mfn |= 0xFC000000;
++		mfn_abs = -mfn;
++	}
++
++	ref_clk = 2 * infreq;
++	if (dbl != 0)
++		ref_clk *= 2;
++
++	ref_clk /= (pdf + 1);
++	temp = (u64) ref_clk * mfn_abs;
++	do_div(temp, mfd + 1);
++	if (mfn < 0)
++		temp = -temp;
++	temp = (ref_clk * mfi) + temp;
++
++	return temp;
++}
++
++static u32 __get_mcu_main_clk(void)
++{
++	u32 reg, freq;
++	reg = (__REG(MXC_CCM_CACRR) & MXC_CCM_CACRR_ARM_PODF_MASK) >>
++	    MXC_CCM_CACRR_ARM_PODF_OFFSET;
++	freq = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++	return freq / (reg + 1);
++}
++
++/*
++ * This function returns the low power audio clock.
++ */
++u32 __get_lp_apm(void)
++{
++	u32 ret_val = 0;
++	u32 cbcmr = __REG(MXC_CCM_CBCMR);
++
++	if (((cbcmr >> MXC_CCM_CBCMR_LP_APM_SEL_OFFSET) & 0x1) == 0)
++		ret_val = CONFIG_MX50_HCLK_FREQ;
++	else
++		ret_val = ((32768 * 1024));
++
++	return ret_val;
++}
++
++static u32 __get_periph_clk(void)
++{
++	u32 reg;
++	reg = __REG(MXC_CCM_CBCDR);
++
++	switch ((reg & MXC_CCM_CBCDR_PERIPH_CLK_SEL_MASK) >>
++		MXC_CCM_CBCDR_PERIPH_CLK_SEL_OFFSET) {
++	case 0:
++		return __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++	case 1:
++		return __decode_pll(PLL2_CLK, CONFIG_MX50_HCLK_FREQ);
++	case 2:
++		return __decode_pll(PLL3_CLK, CONFIG_MX50_HCLK_FREQ);
++	default:
++		return __get_lp_apm();
++	}
++}
++
++static u32 __get_ipg_clk(void)
++{
++	u32 ahb_podf, ipg_podf;
++
++	ahb_podf = __REG(MXC_CCM_CBCDR);
++	ipg_podf = (ahb_podf & MXC_CCM_CBCDR_IPG_PODF_MASK) >>
++			MXC_CCM_CBCDR_IPG_PODF_OFFSET;
++	ahb_podf = (ahb_podf & MXC_CCM_CBCDR_AHB_PODF_MASK) >>
++			MXC_CCM_CBCDR_AHB_PODF_OFFSET;
++	return __get_periph_clk() / ((ahb_podf + 1) * (ipg_podf + 1));
++}
++
++static u32 __get_ipg_per_clk(void)
++{
++	u32 pred1, pred2, podf, clk;
++	if (__REG(MXC_CCM_CBCMR) & MXC_CCM_CBCMR_PERCLK_IPG_CLK_SEL)
++		return __get_ipg_clk();
++
++	clk = __REG(MXC_CCM_CBCMR) & MXC_CCM_CBCMR_PERCLK_LP_APM_CLK_SEL ?
++		__get_lp_apm() : __get_periph_clk();
++
++	podf = __REG(MXC_CCM_CBCDR);
++	pred1 = (podf & MXC_CCM_CBCDR_PERCLK_PRED1_MASK) >>
++		MXC_CCM_CBCDR_PERCLK_PRED1_OFFSET;
++	pred2 = (podf & MXC_CCM_CBCDR_PERCLK_PRED2_MASK) >>
++		MXC_CCM_CBCDR_PERCLK_PRED2_OFFSET;
++	podf = (podf & MXC_CCM_CBCDR_PERCLK_PODF_MASK) >>
++		MXC_CCM_CBCDR_PERCLK_PODF_OFFSET;
++
++	return clk / ((pred1 + 1) * (pred2 + 1) * (podf + 1));
++}
++
++static u32 __get_uart_clk(void)
++{
++	u32 freq = 0, reg, pred, podf;
++	reg = __REG(MXC_CCM_CSCMR1);
++	switch ((reg & MXC_CCM_CSCMR1_UART_CLK_SEL_MASK) >>
++		MXC_CCM_CSCMR1_UART_CLK_SEL_OFFSET) {
++	case 0x0:
++		freq = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 0x1:
++		freq = __decode_pll(PLL2_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 0x2:
++		freq = __decode_pll(PLL3_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 0x3:
++		freq = __get_lp_apm();
++		break;
++	default:
++		break;
++	}
++
++	reg = __REG(MXC_CCM_CSCDR1);
++
++	pred = (reg & MXC_CCM_CSCDR1_UART_CLK_PRED_MASK) >>
++		MXC_CCM_CSCDR1_UART_CLK_PRED_OFFSET;
++
++	podf = (reg & MXC_CCM_CSCDR1_UART_CLK_PODF_MASK) >>
++		MXC_CCM_CSCDR1_UART_CLK_PODF_OFFSET;
++	freq /= (pred + 1) * (podf + 1);
++
++	return freq;
++}
++
++
++static u32 __get_cspi_clk(void)
++{
++	u32 ret_val = 0, pdf, pre_pdf, clk_sel, div;
++	u32 cscmr1 = __REG(MXC_CCM_CSCMR1);
++	u32 cscdr2 = __REG(MXC_CCM_CSCDR2);
++
++	pre_pdf = (cscdr2 & MXC_CCM_CSCDR2_CSPI_CLK_PRED_MASK) \
++			>> MXC_CCM_CSCDR2_CSPI_CLK_PRED_OFFSET;
++	pdf = (cscdr2 & MXC_CCM_CSCDR2_CSPI_CLK_PODF_MASK) \
++			>> MXC_CCM_CSCDR2_CSPI_CLK_PODF_OFFSET;
++	clk_sel = (cscmr1 & MXC_CCM_CSCMR1_CSPI_CLK_SEL_MASK) \
++			>> MXC_CCM_CSCMR1_CSPI_CLK_SEL_OFFSET;
++
++	div = (pre_pdf + 1) * (pdf + 1);
++
++	switch (clk_sel) {
++	case 0:
++		ret_val = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ) / div;
++		break;
++	case 1:
++		ret_val = __decode_pll(PLL2_CLK, CONFIG_MX50_HCLK_FREQ) / div;
++		break;
++	case 2:
++		ret_val = __decode_pll(PLL3_CLK, CONFIG_MX50_HCLK_FREQ) / div;
++		break;
++	default:
++		ret_val = __get_lp_apm() / div;
++		break;
++	}
++
++	return ret_val;
++}
++
++static u32 __get_axi_a_clk(void)
++{
++	u32 cbcdr =  __REG(MXC_CCM_CBCDR);
++	u32 pdf = (cbcdr & MXC_CCM_CBCDR_AXI_A_PODF_MASK) \
++			>> MXC_CCM_CBCDR_AXI_A_PODF_OFFSET;
++
++	return  __get_periph_clk() / (pdf + 1);
++}
++
++static u32 __get_axi_b_clk(void)
++{
++	u32 cbcdr =  __REG(MXC_CCM_CBCDR);
++	u32 pdf = (cbcdr & MXC_CCM_CBCDR_AXI_B_PODF_MASK) \
++			>> MXC_CCM_CBCDR_AXI_B_PODF_OFFSET;
++
++	return  __get_periph_clk() / (pdf + 1);
++}
++
++static u32 __get_ahb_clk(void)
++{
++	u32 cbcdr =  __REG(MXC_CCM_CBCDR);
++	u32 pdf = (cbcdr & MXC_CCM_CBCDR_AHB_PODF_MASK) \
++			>> MXC_CCM_CBCDR_AHB_PODF_OFFSET;
++
++	return  __get_periph_clk() / (pdf + 1);
++}
++
++
++static u32 __get_emi_slow_clk(void)
++{
++	u32 cbcdr =  __REG(MXC_CCM_CBCDR);
++	u32 emi_clk_sel = cbcdr & MXC_CCM_CBCDR_WEIM_CLK_SEL;
++	u32 pdf = (cbcdr & MXC_CCM_CBCDR_WEIM_PODF_MASK) \
++			>> MXC_CCM_CBCDR_WEIM_PODF_OFFSET;
++
++	if (emi_clk_sel)
++		return  __get_ahb_clk() / (pdf + 1);
++
++	return  __get_periph_clk() / (pdf + 1);
++}
++
++static u32 __get_sys_clk(void)
++{
++	u32 ret_val = 0, clk, sys_pll_div;
++	u32 clkseq_bypass = __REG(MXC_CCM_CLKSEQ_BYPASS);
++
++	/* Fixme Not handle OSC and PFD1 mux */
++	if ((clkseq_bypass & MXC_CCM_CLKSEQ_BYPASS_SYS_CLK_1) &&
++	    clkseq_bypass & MXC_CCM_CLKSEQ_BYPASS_SYS_CLK_0) {
++		sys_pll_div = __REG(MXC_CCM_CLK_SYS) \
++				& MXC_CCM_CLK_SYS_DIV_PLL_MASK;
++		clk = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++		if (sys_pll_div)
++			clk /= sys_pll_div;
++		ret_val = clk;
++	} else if ((clkseq_bypass & MXC_CCM_CLKSEQ_BYPASS_SYS_CLK_0) == 0) {
++		ret_val = CONFIG_MX50_HCLK_FREQ; /* OSC */
++	}  else {
++
++		printf("Warning, Fixme Not handle PFD1 mux\n");
++	}
++
++	return ret_val;
++
++}
++static u32 __get_ddr_clk(void)
++{
++	u32 ret_val = 0, clk, ddr_pll_div;
++	u32 clk_ddr = __REG(MXC_CCM_CLK_DDR);
++	u32 ddr_clk_sel = clk_ddr & MXC_CCM_CLK_DDR_DDR_PFD_SEL;
++
++	if (!ddr_clk_sel) {
++		ddr_pll_div = clk_ddr & \
++			MXC_CCM_CLK_DDR_DDR_DIV_PLL_MASK;
++		clk = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++		if (ddr_pll_div)
++			clk /= ddr_pll_div;
++		ret_val = clk;
++	} else {
++
++		printf("Warning, Fixme Not handle PFD1 mux\n");
++	}
++
++	return ret_val;
++}
++
++#ifdef CONFIG_CMD_MMC
++static u32 __get_esdhc1_clk(void)
++{
++	u32 ret_val = 0, div, pre_pdf, pdf;
++	u32 cscmr1 = __REG(MXC_CCM_CSCMR1);
++	u32 cscdr1 = __REG(MXC_CCM_CSCDR1);
++	u32 esdh1_clk_sel;
++
++	esdh1_clk_sel = (cscmr1 & MXC_CCM_CSCMR1_ESDHC1_CLK_SEL_MASK) \
++				>> MXC_CCM_CSCMR1_ESDHC1_CLK_SEL_OFFSET;
++	pre_pdf = (cscdr1 & MXC_CCM_CSCDR1_ESDHC1_CLK_PRED_MASK) \
++			>> MXC_CCM_CSCDR1_ESDHC1_CLK_PRED_OFFSET;
++	pdf = (cscdr1 & MXC_CCM_CSCDR1_ESDHC1_CLK_PODF_MASK) \
++			>> MXC_CCM_CSCDR1_ESDHC1_CLK_PODF_OFFSET ;
++
++	div = (pre_pdf + 1) * (pdf + 1);
++
++	switch (esdh1_clk_sel) {
++	case 0:
++		ret_val = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 1:
++		ret_val = __decode_pll(PLL2_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 2:
++		ret_val = __decode_pll(PLL3_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 3:
++		ret_val = __get_lp_apm();
++		break;
++	default:
++		break;
++	}
++
++	ret_val /= div;
++
++	return ret_val;
++}
++
++static u32 __get_esdhc3_clk(void)
++{
++	u32 ret_val = 0, div, pre_pdf, pdf;
++	u32 esdh3_clk_sel;
++	u32 cscmr1 = __REG(MXC_CCM_CSCMR1);
++	u32 cscdr1 = __REG(MXC_CCM_CSCDR1);
++	esdh3_clk_sel = (cscmr1 & MXC_CCM_CSCMR1_ESDHC3_CLK_SEL_MASK) \
++				>> MXC_CCM_CSCMR1_ESDHC3_CLK_SEL_OFFSET;
++	pre_pdf = (cscdr1 & MXC_CCM_CSCDR1_ESDHC3_CLK_PRED_MASK) \
++			>> MXC_CCM_CSCDR1_ESDHC3_CLK_PRED_OFFSET;
++	pdf = (cscdr1 & MXC_CCM_CSCDR1_ESDHC3_CLK_PODF_MASK) \
++			>> MXC_CCM_CSCDR1_ESDHC3_CLK_PODF_OFFSET ;
++
++	div = (pre_pdf + 1) * (pdf + 1);
++
++	switch (esdh3_clk_sel) {
++	case 0:
++		ret_val = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 1:
++		ret_val = __decode_pll(PLL2_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 2:
++		ret_val = __decode_pll(PLL3_CLK, CONFIG_MX50_HCLK_FREQ);
++		break;
++	case 3:
++		ret_val = __get_lp_apm();
++		break;
++	case 5 ... 8:
++		puts("Warning, Fixme,not handle PFD mux\n");
++
++		break;
++	default:
++		break;
++	}
++
++	ret_val /= div;
++
++	return ret_val;
++}
++
++static u32 __get_esdhc2_clk(void)
++{
++	u32 cscmr1 = __REG(MXC_CCM_CSCMR1);
++	u32 esdh2_clk_sel = cscmr1 & MXC_CCM_CSCMR1_ESDHC2_CLK_SEL;
++	if (esdh2_clk_sel)
++		return __get_esdhc3_clk();
++
++	return __get_esdhc1_clk();
++}
++
++static u32 __get_esdhc4_clk(void)
++{
++	u32 cscmr1 = __REG(MXC_CCM_CSCMR1);
++	u32 esdh4_clk_sel = cscmr1 & MXC_CCM_CSCMR1_ESDHC4_CLK_SEL;
++	if (esdh4_clk_sel)
++		return __get_esdhc3_clk();
++
++	return __get_esdhc1_clk();
++}
++#endif
++
++unsigned int mxc_get_clock(enum mxc_clock clk)
++{
++	switch (clk) {
++	case MXC_ARM_CLK:
++		return __get_mcu_main_clk();
++	case MXC_PER_CLK:
++		return __get_periph_clk();
++	case MXC_AHB_CLK:
++		return __get_ahb_clk();
++	case MXC_IPG_CLK:
++		return __get_ipg_clk();
++	case MXC_IPG_PERCLK:
++		return __get_ipg_per_clk();
++	case MXC_UART_CLK:
++		return __get_uart_clk();
++#ifdef CONFIG_IMX_CSPI
++	case MXC_CSPI_CLK:
++		return __get_cspi_clk();
++#endif
++	case MXC_AXI_A_CLK:
++		return __get_axi_a_clk();
++	case MXC_AXI_B_CLK:
++		return __get_axi_b_clk();
++	case MXC_EMI_SLOW_CLK:
++		return __get_emi_slow_clk();
++	case MXC_DDR_CLK:
++		return __get_ddr_clk();
++#ifdef CONFIG_CMD_MMC
++	case MXC_ESDHC_CLK:
++		return __get_esdhc1_clk();
++	case MXC_ESDHC2_CLK:
++		return __get_esdhc2_clk();
++	case MXC_ESDHC3_CLK:
++		return __get_esdhc3_clk();
++	case MXC_ESDHC4_CLK:
++		return __get_esdhc4_clk();
++#endif
++	default:
++		break;
++	}
++	return -1;
++}
++
++void mxc_dump_clocks(void)
++{
++	u32 freq;
++	freq = __decode_pll(PLL1_CLK, CONFIG_MX50_HCLK_FREQ);
++	printf("mx50 pll1: %dMHz\n", freq / 1000000);
++	freq = __decode_pll(PLL2_CLK, CONFIG_MX50_HCLK_FREQ);
++	printf("mx50 pll2: %dMHz\n", freq / 1000000);
++	freq = __decode_pll(PLL3_CLK, CONFIG_MX50_HCLK_FREQ);
++	printf("mx50 pll3: %dMHz\n", freq / 1000000);
++	printf("ipg clock     : %dHz\n", mxc_get_clock(MXC_IPG_CLK));
++	printf("ipg per clock : %dHz\n", mxc_get_clock(MXC_IPG_PERCLK));
++	printf("uart clock    : %dHz\n", mxc_get_clock(MXC_UART_CLK));
++#ifdef CONFIG_IMX_ECSPI
++	printf("cspi clock    : %dHz\n", mxc_get_clock(MXC_CSPI_CLK));
++#endif
++	printf("ahb clock     : %dHz\n", mxc_get_clock(MXC_AHB_CLK));
++	printf("axi_a clock   : %dHz\n", mxc_get_clock(MXC_AXI_A_CLK));
++	printf("axi_b clock   : %dHz\n", mxc_get_clock(MXC_AXI_B_CLK));
++	printf("weim_clock    : %dHz\n", mxc_get_clock(MXC_EMI_SLOW_CLK));
++	printf("ddr clock     : %dHz\n", mxc_get_clock(MXC_DDR_CLK));
++#ifdef CONFIG_CMD_MMC
++	printf("esdhc1 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC_CLK));
++	printf("esdhc2 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC2_CLK));
++	printf("esdhc3 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC3_CLK));
++	printf("esdhc4 clock  : %dHz\n", mxc_get_clock(MXC_ESDHC4_CLK));
++#endif
++}
++
++#ifdef CONFIG_CMD_CLOCK
++/* precondition: m>0 and n>0.  Let g=gcd(m,n). */
++static int gcd(int m, int n)
++{
++	int t;
++	while (m > 0) {
++		if (n > m) {
++			t = m;
++			m = n;
++			n = t;
++		} /* swap */
++		m -= n;
++	}
++	return n;
++}
++
++/*!
++ * This is to calculate various parameters based on reference clock and
++ * targeted clock based on the equation:
++ *      t_clk = 2*ref_freq*(mfi + mfn/(mfd+1))/(pd+1)
++ * This calculation is based on a fixed MFD value for simplicity.
++ *
++ * @param ref       reference clock freq in Hz
++ * @param target    targeted clock in Hz
++ * @param pll		pll_param structure.
++ *
++ * @return          0 if successful; non-zero otherwise.
++ */
++static int calc_pll_params(u32 ref, u32 target, struct pll_param *pll)
++{
++	u64 pd, mfi = 1, mfn, mfd, t1;
++	u32 n_target = target;
++	u32 n_ref = ref, i;
++
++	/*
++	 * Make sure targeted freq is in the valid range.
++	 * Otherwise the following calculation might be wrong!!!
++	 */
++	if (n_target < PLL_FREQ_MIN(ref) ||
++		n_target > PLL_FREQ_MAX(ref)) {
++		printf("Targeted peripheral clock should be"
++			"within [%d - %d]\n",
++			PLL_FREQ_MIN(ref) / SZ_DEC_1M,
++			PLL_FREQ_MAX(ref) / SZ_DEC_1M);
++		return -1;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(fixed_mfd); i++) {
++		if (fixed_mfd[i].ref_clk_hz == ref) {
++			mfd = fixed_mfd[i].mfd;
++			break;
++		}
++	}
++
++	if (i == ARRAY_SIZE(fixed_mfd))
++		return -1;
++
++	/* Use n_target and n_ref to avoid overflow */
++	for (pd = 1; pd <= PLL_PD_MAX; pd++) {
++		t1 = n_target * pd;
++		do_div(t1, (4 * n_ref));
++		mfi = t1;
++		if (mfi > PLL_MFI_MAX)
++			return -1;
++		else if (mfi < 5)
++			continue;
++		break;
++	}
++	/* Now got pd and mfi already */
++	/*
++	mfn = (((n_target * pd) / 4 - n_ref * mfi) * mfd) / n_ref;
++	*/
++	t1 = n_target * pd;
++	do_div(t1, 4);
++	t1 -= n_ref * mfi;
++	t1 *= mfd;
++	do_div(t1, n_ref);
++	mfn = t1;
++#ifdef CMD_CLOCK_DEBUG
++	printf("%d: ref=%d, target=%d, pd=%d,"
++			"mfi=%d,mfn=%d, mfd=%d\n",
++			__LINE__, ref, (u32)n_target,
++			(u32)pd, (u32)mfi, (u32)mfn,
++			(u32)mfd);
++#endif
++	i = 1;
++	if (mfn != 0)
++		i = gcd(mfd, mfn);
++	pll->pd = (u32)pd;
++	pll->mfi = (u32)mfi;
++	do_div(mfn, i);
++	pll->mfn = (u32)mfn;
++	do_div(mfd, i);
++	pll->mfd = (u32)mfd;
++
++	return 0;
++}
++
++int clk_info(u32 clk_type)
++{
++	switch (clk_type) {
++	case CPU_CLK:
++		printf("CPU Clock: %dHz\n",
++			mxc_get_clock(MXC_ARM_CLK));
++		break;
++	case PERIPH_CLK:
++		printf("Peripheral Clock: %dHz\n",
++			mxc_get_clock(MXC_PER_CLK));
++		break;
++	case AHB_CLK:
++		printf("AHB Clock: %dHz\n",
++			mxc_get_clock(MXC_AHB_CLK));
++		break;
++	case IPG_CLK:
++		printf("IPG Clock: %dHz\n",
++			mxc_get_clock(MXC_IPG_CLK));
++		break;
++	case IPG_PERCLK:
++		printf("IPG_PER Clock: %dHz\n",
++			mxc_get_clock(MXC_IPG_PERCLK));
++		break;
++	case UART_CLK:
++		printf("UART Clock: %dHz\n",
++			mxc_get_clock(MXC_UART_CLK));
++		break;
++	case CSPI_CLK:
++		printf("CSPI Clock: %dHz\n",
++			mxc_get_clock(MXC_CSPI_CLK));
++		break;
++	case DDR_CLK:
++		printf("DDR Clock: %dHz\n",
++			mxc_get_clock(MXC_DDR_CLK));
++		break;
++	case ALL_CLK:
++		printf("cpu clock: %dMHz\n",
++			mxc_get_clock(MXC_ARM_CLK) / SZ_DEC_1M);
++		mxc_dump_clocks();
++		break;
++	default:
++		printf("Unsupported clock type! :(\n");
++	}
++
++	return 0;
++}
++
++#define calc_div(target_clk, src_clk, limit) ({	\
++		u32 tmp = 0;	\
++		if ((src_clk % target_clk) <= 100)	\
++			tmp = src_clk / target_clk;	\
++		else	\
++			tmp = (src_clk / target_clk) + 1;	\
++		if (tmp > limit)	\
++			tmp = limit;	\
++		(tmp - 1);	\
++	})
++
++u32 calc_per_cbcdr_val(u32 per_clk, u32 cbcmr)
++{
++	u32 cbcdr = __REG(MXC_CCM_CBCDR);
++	u32 tmp_clk = 0, div = 0, clk_sel = 0;
++
++	cbcdr &= ~MXC_CCM_CBCDR_PERIPH_CLK_SEL;
++
++	/* emi_slow_podf divider */
++	tmp_clk = __get_emi_slow_clk();
++	clk_sel = cbcdr & MXC_CCM_CBCDR_EMI_CLK_SEL;
++	if (clk_sel) {
++		div = calc_div(tmp_clk, per_clk, 8);
++		cbcdr &= ~MXC_CCM_CBCDR_EMI_PODF_MASK;
++		cbcdr |= (div << MXC_CCM_CBCDR_EMI_PODF_OFFSET);
++	}
++
++	/* axi_b_podf divider */
++	tmp_clk = __get_axi_b_clk();
++	div = calc_div(tmp_clk, per_clk, 8);
++	cbcdr &= ~MXC_CCM_CBCDR_AXI_B_PODF_MASK;
++	cbcdr |= (div << MXC_CCM_CBCDR_AXI_B_PODF_OFFSET);
++
++	/* axi_b_podf divider */
++	tmp_clk = __get_axi_a_clk();
++	div = calc_div(tmp_clk, per_clk, 8);
++	cbcdr &= ~MXC_CCM_CBCDR_AXI_A_PODF_MASK;
++	cbcdr |= (div << MXC_CCM_CBCDR_AXI_A_PODF_OFFSET);
++
++	/* ahb podf divider */
++	tmp_clk = AHB_CLK_ROOT;
++	div = calc_div(tmp_clk, per_clk, 8);
++	cbcdr &= ~MXC_CCM_CBCDR_AHB_PODF_MASK;
++	cbcdr |= (div << MXC_CCM_CBCDR_AHB_PODF_OFFSET);
++
++	return cbcdr;
++}
++
++#define CHANGE_PLL_SETTINGS(base, pd, mfi, mfn, mfd) \
++	{	\
++		writel(0x1232, base + PLL_DP_CTL); \
++		writel(0x2, base + PLL_DP_CONFIG);    \
++		writel(((pd - 1) << 0) | (mfi << 4),	\
++			base + PLL_DP_OP);	\
++		writel(mfn, base + PLL_DP_MFN);	\
++		writel(mfd - 1, base + PLL_DP_MFD);	\
++		writel(((pd - 1) << 0) | (mfi << 4),	\
++			base + PLL_DP_HFS_OP);	\
++		writel(mfn, base + PLL_DP_HFS_MFN);	\
++		writel(mfd - 1, base + PLL_DP_HFS_MFD);	\
++		writel(0x1232, base + PLL_DP_CTL); \
++		while (!readl(base + PLL_DP_CTL) & 0x1)  \
++			; \
++	}
++
++int config_pll_clk(enum pll_clocks pll, struct pll_param *pll_param)
++{
++	u32 ccsr = readl(CCM_BASE_ADDR + CLKCTL_CCSR);
++	u32 pll_base = pll;
++
++	switch (pll) {
++	case PLL1_CLK:
++		/* Switch ARM to PLL2 clock */
++		writel(ccsr | 0x4, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x4, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	case PLL2_CLK:
++		/* Switch to pll2 bypass clock */
++		writel(ccsr | 0x2, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x2, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	case PLL3_CLK:
++		/* Switch to pll3 bypass clock */
++		writel(ccsr | 0x1, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x1, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	default:
++		return -1;
++	}
++
++	return 0;
++}
++
++int config_core_clk(u32 ref, u32 freq)
++{
++	int ret = 0;
++	u32 pll = 0;
++	struct pll_param pll_param;
++
++	memset(&pll_param, 0, sizeof(struct pll_param));
++
++	/* The case that periph uses PLL1 is not considered here */
++	pll = freq;
++	ret = calc_pll_params(ref, pll, &pll_param);
++	if (ret != 0) {
++		printf("Can't find pll parameters: %d\n",
++			ret);
++		return ret;
++	}
++
++	return config_pll_clk(PLL1_CLK, &pll_param);
++}
++
++int config_periph_clk(u32 ref, u32 freq)
++{
++	int ret = 0;
++	u32 pll = freq;
++	struct pll_param pll_param;
++
++	memset(&pll_param, 0, sizeof(struct pll_param));
++
++	if (__REG(MXC_CCM_CBCDR) & MXC_CCM_CBCDR_PERIPH_CLK_SEL) {
++		/* Actually this case is not considered here */
++		ret = calc_pll_params(ref, pll, &pll_param);
++		if (ret != 0) {
++			printf("Can't find pll parameters: %d\n",
++				ret);
++			return ret;
++		}
++		switch ((__REG(MXC_CCM_CBCMR) & \
++			MXC_CCM_CBCMR_PERIPH_CLK_SEL_MASK) >>
++			MXC_CCM_CBCMR_PERIPH_CLK_SEL_OFFSET) {
++		case 0:
++			return config_pll_clk(PLL1_CLK, &pll_param);
++			break;
++		case 1:
++			return config_pll_clk(PLL3_CLK, &pll_param);
++			break;
++		default:
++			return -1;
++		}
++	} else {
++		u32 old_cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
++		u32 new_cbcdr = calc_per_cbcdr_val(pll, old_cbcmr);
++
++		/* Switch peripheral to PLL3 */
++		writel(0x00015154, CCM_BASE_ADDR + CLKCTL_CBCMR);
++		writel(0x02888945, CCM_BASE_ADDR + CLKCTL_CBCDR);
++
++		/* Make sure change is effective */
++		while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++			;
++
++		/* Setup PLL2 */
++		ret = calc_pll_params(ref, pll, &pll_param);
++		if (ret != 0) {
++			printf("Can't find pll parameters: %d\n",
++				ret);
++			return ret;
++		}
++		config_pll_clk(PLL2_CLK, &pll_param);
++
++		/* Switch peripheral back */
++		writel(new_cbcdr, CCM_BASE_ADDR + CLKCTL_CBCDR);
++		writel(old_cbcmr, CCM_BASE_ADDR + CLKCTL_CBCMR);
++
++		/* Make sure change is effective */
++		while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++			;
++		puts("\n");
++	}
++
++	return 0;
++}
++
++int config_ddr_clk(u32 emi_clk)
++{
++	u32 clk_src;
++	s32 shift = 0, clk_sel, div = 1;
++	u32 cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
++	u32 cbcdr = readl(CCM_BASE_ADDR + CLKCTL_CBCDR);
++
++	if (emi_clk > MAX_DDR_CLK) {
++		printf("DDR clock should be less than"
++			"%d MHz, assuming max value \n",
++			(MAX_DDR_CLK / SZ_DEC_1M));
++		emi_clk = MAX_DDR_CLK;
++	}
++
++	clk_src = __get_periph_clk();
++	/* Find DDR clock input */
++	clk_sel = (cbcmr >> 10) & 0x3;
++	switch (clk_sel) {
++	case 0:
++		shift = 16;
++		break;
++	case 1:
++		shift = 19;
++		break;
++	case 2:
++		shift = 22;
++		break;
++	case 3:
++		shift = 10;
++		break;
++	default:
++		return -1;
++	}
++
++	if ((clk_src % emi_clk) == 0)
++		div = clk_src / emi_clk;
++	else
++		div = (clk_src / emi_clk) + 1;
++	if (div > 8)
++		div = 8;
++
++	cbcdr = cbcdr & ~(0x7 << shift);
++	cbcdr |= ((div - 1) << shift);
++	writel(cbcdr, CCM_BASE_ADDR + CLKCTL_CBCDR);
++	while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++		;
++	writel(0x0, CCM_BASE_ADDR + CLKCTL_CCDR);
++
++	return 0;
++}
++
++/*!
++ * This function assumes the expected core clock has to be changed by
++ * modifying the PLL. This is NOT true always but for most of the times,
++ * it is. So it assumes the PLL output freq is the same as the expected
++ * core clock (presc=1) unless the core clock is less than PLL_FREQ_MIN.
++ * In the latter case, it will try to increase the presc value until
++ * (presc*core_clk) is greater than PLL_FREQ_MIN. It then makes call to
++ * calc_pll_params() and obtains the values of PD, MFI,MFN, MFD based
++ * on the targeted PLL and reference input clock to the PLL. Lastly,
++ * it sets the register based on these values along with the dividers.
++ * Note 1) There is no value checking for the passed-in divider values
++ *         so the caller has to make sure those values are sensible.
++ *      2) Also adjust the NFC divider such that the NFC clock doesn't
++ *         exceed NFC_CLK_MAX.
++ *      3) IPU HSP clock is independent of AHB clock. Even it can go up to
++ *         177MHz for higher voltage, this function fixes the max to 133MHz.
++ *      4) This function should not have allowed diag_printf() calls since
++ *         the serial driver has been stoped. But leave then here to allow
++ *         easy debugging by NOT calling the cyg_hal_plf_serial_stop().
++ *
++ * @param ref       pll input reference clock (24MHz)
++ * @param freq		core clock in Hz
++ * @param clk_type  clock type, e.g CPU_CLK, DDR_CLK, etc.
++ * @return          0 if successful; non-zero otherwise
++ */
++int clk_config(u32 ref, u32 freq, u32 clk_type)
++{
++	freq *= SZ_DEC_1M;
++
++	switch (clk_type) {
++	case CPU_CLK:
++		if (config_core_clk(ref, freq))
++			return -1;
++		break;
++	case PERIPH_CLK:
++		if (config_periph_clk(ref, freq))
++			return -1;
++		break;
++	case DDR_CLK:
++		if (config_ddr_clk(freq))
++			return -1;
++		break;
++	default:
++		printf("Unsupported or invalid clock type! :(\n");
++	}
++
++	return 0;
++}
++#endif
++
++#if defined(CONFIG_DISPLAY_CPUINFO)
++int print_cpuinfo(void)
++{
++	printf("CPU:   Freescale i.MX50 family %d.%dV at %d MHz\n",
++	       (get_board_rev() & 0xFF) >> 4,
++	       (get_board_rev() & 0xF),
++		__get_mcu_main_clk() / 1000000);
++#ifndef CONFIG_CMD_CLOCK
++		mxc_dump_clocks();
++#endif
++	return 0;
++}
++#endif
++
++#if defined(CONFIG_MXC_FEC)
++extern int mxc_fec_initialize(bd_t *bis);
++extern void mxc_fec_set_mac_from_env(char *mac_addr);
++#endif
++
++int cpu_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_MXC_FEC)
++	char *env = NULL;
++
++	rc = mxc_fec_initialize(bis);
++
++	env = getenv("fec_addr");
++	if (env)
++		mxc_fec_set_mac_from_env(env);
++#endif
++	return rc;
++}
++
++#if defined(CONFIG_ARCH_CPU_INIT)
++int arch_cpu_init(void)
++{
++	icache_enable();
++	dcache_enable();
++
++#ifdef CONFIG_L2_OFF
++	l2_cache_disable();
++#else
++	l2_cache_enable();
++#endif
++	return 0;
++}
++#endif
++
+diff --git a/cpu/arm_cortexa8/mx50/interrupts.c b/cpu/arm_cortexa8/mx50/interrupts.c
+new file mode 100644
+index 0000000..4576507
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/interrupts.c
+@@ -0,0 +1,39 @@
++/*
++ * (C) Copyright 2007
++ * Sascha Hauer, Pengutronix
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/mx50.h>
++
++/* nothing really to do with interrupts, just starts up a counter. */
++int interrupt_init(void)
++{
++	return 0;
++}
++
++void reset_cpu(ulong addr)
++{
++	__REG16(WDOG1_BASE_ADDR) = 4;
++}
+diff --git a/cpu/arm_cortexa8/mx50/iomux.c b/cpu/arm_cortexa8/mx50/iomux.c
+new file mode 100644
+index 0000000..66f1bf7
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/iomux.c
+@@ -0,0 +1,137 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/mx50.h>
++#include <asm/arch/mx50_pins.h>
++#include <asm/arch/iomux.h>
++
++/*!
++ * IOMUX register (base) addresses
++ */
++enum iomux_reg_addr {
++	IOMUXGPR0 = IOMUXC_BASE_ADDR,
++	IOMUXGPR1 = IOMUXC_BASE_ADDR + 0x004,
++	IOMUXGPR2 = IOMUXC_BASE_ADDR + 0x008,
++	IOMUXSW_MUX_CTL = IOMUXC_BASE_ADDR,
++	IOMUXSW_MUX_END = IOMUXC_BASE_ADDR + MUX_I_END,
++	IOMUXSW_PAD_CTL = IOMUXC_BASE_ADDR + PAD_I_START,
++	IOMUXSW_INPUT_CTL = IOMUXC_BASE_ADDR + INPUT_CTL_START,
++};
++
++static inline u32 _get_mux_reg(iomux_pin_name_t pin)
++{
++	u32 mux_reg = PIN_TO_IOMUX_MUX(pin);
++
++	mux_reg += IOMUXSW_MUX_CTL;
++
++	return mux_reg;
++}
++
++static inline u32 _get_pad_reg(iomux_pin_name_t pin)
++{
++	u32 pad_reg = PIN_TO_IOMUX_PAD(pin);
++
++	pad_reg += IOMUXSW_PAD_CTL;
++
++	return pad_reg;
++}
++
++static inline u32 _get_mux_end(void)
++{
++	return IOMUXSW_MUX_END;
++}
++
++/*!
++ * This function is used to configure a pin through the IOMUX module.
++ * FIXED ME: for backward compatible. Will be static function!
++ * @param  pin		a pin number as defined in \b #iomux_pin_name_t
++ * @param  cfg		an output function as defined in \b #iomux_pin_cfg_t
++ *
++ * @return 		0 if successful; Non-zero otherwise
++ */
++static int iomux_config_mux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg)
++{
++	u32 mux_reg = _get_mux_reg(pin);
++
++	if ((mux_reg > _get_mux_end()) || (mux_reg < IOMUXSW_MUX_CTL))
++		return -1;
++	if (cfg == IOMUX_CONFIG_GPIO)
++		writel(PIN_TO_ALT_GPIO(pin), mux_reg);
++	else
++		writel(cfg, mux_reg);
++
++	return 0;
++}
++
++/*!
++ * Request ownership for an IO pin. This function has to be the first one
++ * being called before that pin is used. The caller has to check the
++ * return value to make sure it returns 0.
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  cfg		an input function as defined in \b #iomux_pin_cfg_t
++ *
++ * @return		0 if successful; Non-zero otherwise
++ */
++int mxc_request_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg)
++{
++	int ret = iomux_config_mux(pin, cfg);
++
++	return ret;
++}
++
++/*!
++ * Release ownership for an IO pin
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  cfg		an input function as defined in \b #iomux_pin_cfg_t
++ */
++void mxc_free_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t cfg)
++{
++}
++
++/*!
++ * This function configures the pad value for a IOMUX pin.
++ *
++ * @param  pin     a pin number as defined in \b #iomux_pin_name_t
++ * @param  config  the ORed value of elements defined in \b #iomux_pad_config_t
++ */
++void mxc_iomux_set_pad(iomux_pin_name_t pin, u32 config)
++{
++	u32 pad_reg = _get_pad_reg(pin);
++
++	writel(config, pad_reg);
++}
++
++unsigned int mxc_iomux_get_pad(iomux_pin_name_t pin)
++{
++	u32 pad_reg = _get_pad_reg(pin);
++
++	return readl(pad_reg);
++}
++/*!
++ * This function configures input path.
++ *
++ * @param input index of input select register as defined in \b
++ *  			#iomux_input_select_t
++ * @param config the binary value of elements defined in \b
++ * 			#iomux_input_config_t
++ */
++void mxc_iomux_set_input(iomux_input_select_t input, u32 config)
++{
++	u32 reg = IOMUXSW_INPUT_CTL + (input << 2);
++
++	writel(config, reg);
++}
+diff --git a/cpu/arm_cortexa8/mx50/serial.c b/cpu/arm_cortexa8/mx50/serial.c
+new file mode 100644
+index 0000000..a0cef25
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/serial.c
+@@ -0,0 +1,226 @@
++/*
++ * (c) 2007 Sascha Hauer <s.hauer@pengutronix.de>
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ */
++
++#include <common.h>
++
++#if defined CONFIG_MX50_UART
++
++#include <asm/arch/mx50.h>
++
++#ifdef CONFIG_MX50_UART1
++#define UART_PHYS UART1_BASE_ADDR
++#elif defined(CONFIG_MX50_UART2)
++#define UART_PHYS UART2_BASE_ADDR
++#elif defined(CONFIG_MX50_UART3)
++#define UART_PHYS UART3_BASE_ADDR
++#else
++#error "define CFG_MX50_UARTx to use the mx50 UART driver"
++#endif
++
++/* Register definitions */
++#define URXD  0x0		/* Receiver Register */
++#define UTXD  0x40		/* Transmitter Register */
++#define UCR1  0x80		/* Control Register 1 */
++#define UCR2  0x84		/* Control Register 2 */
++#define UCR3  0x88		/* Control Register 3 */
++#define UCR4  0x8c		/* Control Register 4 */
++#define UFCR  0x90		/* FIFO Control Register */
++#define USR1  0x94		/* Status Register 1 */
++#define USR2  0x98		/* Status Register 2 */
++#define UESC  0x9c		/* Escape Character Register */
++#define UTIM  0xa0		/* Escape Timer Register */
++#define UBIR  0xa4		/* BRM Incremental Register */
++#define UBMR  0xa8		/* BRM Modulator Register */
++#define UBRC  0xac		/* Baud Rate Count Register */
++#define UTS   0xb4		/* UART Test Register (mx31) */
++
++/* UART Control Register Bit Fields.*/
++#define  URXD_CHARRDY    (1<<15)
++#define  URXD_ERR        (1<<14)
++#define  URXD_OVRRUN     (1<<13)
++#define  URXD_FRMERR     (1<<12)
++#define  URXD_BRK        (1<<11)
++#define  URXD_PRERR      (1<<10)
++#define  UCR1_ADEN       (1<<15)	/* Auto dectect interrupt */
++#define  UCR1_ADBR       (1<<14)	/* Auto detect baud rate */
++#define  UCR1_TRDYEN     (1<<13)	/* Transmitter ready interrupt enable */
++#define  UCR1_IDEN       (1<<12)	/* Idle condition interrupt */
++#define  UCR1_RRDYEN     (1<<9)	/* Recv ready interrupt enable */
++#define  UCR1_RDMAEN     (1<<8)	/* Recv ready DMA enable */
++#define  UCR1_IREN       (1<<7)	/* Infrared interface enable */
++#define  UCR1_TXMPTYEN   (1<<6)	/* Transimitter empty interrupt enable */
++#define  UCR1_RTSDEN     (1<<5)	/* RTS delta interrupt enable */
++#define  UCR1_SNDBRK     (1<<4)	/* Send break */
++#define  UCR1_TDMAEN     (1<<3)	/* Transmitter ready DMA enable */
++#define  UCR1_UARTCLKEN  (1<<2)	/* UART clock enabled */
++#define  UCR1_DOZE       (1<<1)	/* Doze */
++#define  UCR1_UARTEN     (1<<0)	/* UART enabled */
++#define  UCR2_ESCI     	 (1<<15)	/* Escape seq interrupt enable */
++#define  UCR2_IRTS  	 (1<<14)	/* Ignore RTS pin */
++#define  UCR2_CTSC  	 (1<<13)	/* CTS pin control */
++#define  UCR2_CTS        (1<<12)	/* Clear to send */
++#define  UCR2_ESCEN      (1<<11)	/* Escape enable */
++#define  UCR2_PREN       (1<<8)	/* Parity enable */
++#define  UCR2_PROE       (1<<7)	/* Parity odd/even */
++#define  UCR2_STPB       (1<<6)	/* Stop */
++#define  UCR2_WS         (1<<5)	/* Word size */
++#define  UCR2_RTSEN      (1<<4)	/* Request to send interrupt enable */
++#define  UCR2_TXEN       (1<<2)	/* Transmitter enabled */
++#define  UCR2_RXEN       (1<<1)	/* Receiver enabled */
++#define  UCR2_SRST 	 (1<<0)	/* SW reset */
++#define  UCR3_DTREN 	 (1<<13)	/* DTR interrupt enable */
++#define  UCR3_PARERREN   (1<<12)	/* Parity enable */
++#define  UCR3_FRAERREN   (1<<11)	/* Frame error interrupt enable */
++#define  UCR3_DSR        (1<<10)	/* Data set ready */
++#define  UCR3_DCD        (1<<9)	/* Data carrier detect */
++#define  UCR3_RI         (1<<8)	/* Ring indicator */
++#define  UCR3_TIMEOUTEN  (1<<7)	/* Timeout interrupt enable */
++#define  UCR3_RXDSEN	 (1<<6)	/* Receive status interrupt enable */
++#define  UCR3_AIRINTEN   (1<<5)	/* Async IR wake interrupt enable */
++#define  UCR3_AWAKEN	 (1<<4)	/* Async wake interrupt enable */
++#define  UCR3_REF25 	 (1<<3)	/* Ref freq 25 MHz */
++#define  UCR3_REF30 	 (1<<2)	/* Ref Freq 30 MHz */
++#define  UCR3_INVT  	 (1<<1)	/* Inverted Infrared transmission */
++#define  UCR3_BPEN  	 (1<<0)	/* Preset registers enable */
++#define  UCR4_CTSTL_32   (32<<10)	/* CTS trigger level (32 chars) */
++#define  UCR4_INVR  	 (1<<9)	/* Inverted infrared reception */
++#define  UCR4_ENIRI 	 (1<<8)	/* Serial infrared interrupt enable */
++#define  UCR4_WKEN  	 (1<<7)	/* Wake interrupt enable */
++#define  UCR4_REF16 	 (1<<6)	/* Ref freq 16 MHz */
++#define  UCR4_IRSC  	 (1<<5)	/* IR special case */
++#define  UCR4_TCEN  	 (1<<3)	/* Transmit complete interrupt enable */
++#define  UCR4_BKEN  	 (1<<2)	/* Break condition interrupt enable */
++#define  UCR4_OREN  	 (1<<1)	/* Receiver overrun interrupt enable */
++#define  UCR4_DREN  	 (1<<0)	/* Recv data ready interrupt enable */
++#define  UFCR_RXTL_SHF   0	/* Receiver trigger level shift */
++#define  UFCR_RFDIV      (7<<7)	/* Reference freq divider mask */
++#define  UFCR_TXTL_SHF   10	/* Transmitter trigger level shift */
++#define  USR1_PARITYERR  (1<<15)	/* Parity error interrupt flag */
++#define  USR1_RTSS  	 (1<<14)	/* RTS pin status */
++#define  USR1_TRDY  	 (1<<13)/* Transmitter ready interrupt/dma flag */
++#define  USR1_RTSD  	 (1<<12)	/* RTS delta */
++#define  USR1_ESCF  	 (1<<11)	/* Escape seq interrupt flag */
++#define  USR1_FRAMERR    (1<<10)	/* Frame error interrupt flag */
++#define  USR1_RRDY       (1<<9)	/* Receiver ready interrupt/dma flag */
++#define  USR1_TIMEOUT    (1<<7)	/* Receive timeout interrupt status */
++#define  USR1_RXDS  	 (1<<6)	/* Receiver idle interrupt flag */
++#define  USR1_AIRINT	 (1<<5)	/* Async IR wake interrupt flag */
++#define  USR1_AWAKE 	 (1<<4)	/* Aysnc wake interrupt flag */
++#define  USR2_ADET  	 (1<<15)	/* Auto baud rate detect complete */
++#define  USR2_TXFE  	 (1<<14)	/* Transmit buffer FIFO empty */
++#define  USR2_DTRF  	 (1<<13)	/* DTR edge interrupt flag */
++#define  USR2_IDLE  	 (1<<12)	/* Idle condition */
++#define  USR2_IRINT 	 (1<<8)	/* Serial infrared interrupt flag */
++#define  USR2_WAKE  	 (1<<7)	/* Wake */
++#define  USR2_RTSF  	 (1<<4)	/* RTS edge interrupt flag */
++#define  USR2_TXDC  	 (1<<3)	/* Transmitter complete */
++#define  USR2_BRCD  	 (1<<2)	/* Break condition */
++#define  USR2_ORE        (1<<1)	/* Overrun error */
++#define  USR2_RDR        (1<<0)	/* Recv data ready */
++#define  UTS_FRCPERR	 (1<<13)	/* Force parity error */
++#define  UTS_LOOP        (1<<12)	/* Loop tx and rx */
++#define  UTS_TXEMPTY	 (1<<6)	/* TxFIFO empty */
++#define  UTS_RXEMPTY	 (1<<5)	/* RxFIFO empty */
++#define  UTS_TXFULL 	 (1<<4)	/* TxFIFO full */
++#define  UTS_RXFULL 	 (1<<3)	/* RxFIFO full */
++#define  UTS_SOFTRST	 (1<<0)	/* Software reset */
++
++DECLARE_GLOBAL_DATA_PTR;
++
++void serial_setbrg(void)
++{
++	u32 clk = mxc_get_clock(MXC_UART_CLK);
++
++	if (!gd->baudrate)
++		gd->baudrate = CONFIG_BAUDRATE;
++	__REG(UART_PHYS + UFCR) = 0x4 << 7;	/* divide input clock by 2 */
++	__REG(UART_PHYS + UBIR) = 0xf;
++	__REG(UART_PHYS + UBMR) = clk / (2 * gd->baudrate);
++}
++
++int serial_getc(void)
++{
++	while (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
++		;
++	return __REG(UART_PHYS + URXD);
++}
++
++void serial_putc(const char c)
++{
++	__REG(UART_PHYS + UTXD) = c;
++
++	/* wait for transmitter to be ready */
++	while (!(__REG(UART_PHYS + UTS) & UTS_TXEMPTY))
++		;
++
++	/* If \n, also do \r */
++	if (c == '\n')
++		serial_putc('\r');
++}
++
++/*
++ * Test whether a character is in the RX buffer
++ */
++int serial_tstc(void)
++{
++	/* If receive fifo is empty, return false */
++	if (__REG(UART_PHYS + UTS) & UTS_RXEMPTY)
++		return 0;
++	return 1;
++}
++
++void serial_puts(const char *s)
++{
++	while (*s)
++		serial_putc(*s++);
++}
++
++/*
++ * Initialise the serial port with the given baudrate. The settings
++ * are always 8 data bits, no parity, 1 stop bit, no start bits.
++ *
++ */
++int serial_init(void)
++{
++	__REG(UART_PHYS + UCR1) = 0x0;
++	__REG(UART_PHYS + UCR2) = 0x0;
++
++	while (!(__REG(UART_PHYS + UCR2) & UCR2_SRST))
++		;
++
++	__REG(UART_PHYS + UCR3) = 0x0704;
++	__REG(UART_PHYS + UCR4) = 0x8000;
++	__REG(UART_PHYS + UESC) = 0x002b;
++	__REG(UART_PHYS + UTIM) = 0x0;
++
++	__REG(UART_PHYS + UTS) = 0x0;
++
++	serial_setbrg();
++
++	__REG(UART_PHYS + UCR2) =
++	    UCR2_WS | UCR2_IRTS | UCR2_RXEN | UCR2_TXEN | UCR2_SRST;
++
++	__REG(UART_PHYS + UCR1) = UCR1_UARTEN;
++
++	return 0;
++}
++
++#endif				/* CONFIG_MX50_UART */
+diff --git a/cpu/arm_cortexa8/mx50/timer.c b/cpu/arm_cortexa8/mx50/timer.c
+new file mode 100644
+index 0000000..00150ab
+--- /dev/null
++++ b/cpu/arm_cortexa8/mx50/timer.c
+@@ -0,0 +1,127 @@
++/*
++ * (C) Copyright 2007
++ * Sascha Hauer, Pengutronix
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/mx50.h>
++
++/* General purpose timers registers */
++#define GPTCR   __REG(GPT1_BASE_ADDR)	/* Control register */
++#define GPTPR  	__REG(GPT1_BASE_ADDR + 0x4)	/* Prescaler register */
++#define GPTSR   __REG(GPT1_BASE_ADDR + 0x8)	/* Status register */
++#define GPTCNT 	__REG(GPT1_BASE_ADDR + 0x24)	/* Counter register */
++
++/* General purpose timers bitfields */
++#define GPTCR_SWR       (1<<15)	/* Software reset */
++#define GPTCR_FRR       (1<<9)	/* Freerun / restart */
++#define GPTCR_CLKSOURCE_32   (0x100<<6)	/* Clock source */
++#define GPTCR_CLKSOURCE_IPG (0x001<<6)	/* Clock source */
++#define GPTCR_TEN       (1)	/* Timer enable */
++#define GPTPR_VAL	(50)
++
++static inline void setup_gpt(void)
++{
++	int i;
++	static int init_done;
++
++	if (init_done)
++		return;
++
++	init_done = 1;
++
++	/* setup GP Timer 1 */
++	GPTCR = GPTCR_SWR;
++	for (i = 0; i < 100; i++)
++		GPTCR = 0;      	/* We have no udelay by now */
++	GPTPR = GPTPR_VAL;	/* 50Mhz / 50 */
++	/* Freerun Mode, PERCLK1 input */
++	GPTCR |= GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
++}
++
++int timer_init(void)
++{
++	setup_gpt();
++
++	return 0;
++}
++
++void reset_timer_masked(void)
++{
++	GPTCR = 0;
++	/* Freerun Mode, PERCLK1 input */
++	GPTCR = GPTCR_CLKSOURCE_IPG | GPTCR_TEN;
++}
++
++inline ulong get_timer_masked(void)
++{
++	ulong val = GPTCNT;
++
++	return val;
++}
++
++void reset_timer(void)
++{
++	reset_timer_masked();
++}
++
++ulong get_timer(ulong base)
++{
++	ulong tmp;
++
++	tmp = get_timer_masked();
++
++	if (tmp <= (base * 1000)) {
++		/* Overflow */
++		tmp += (0xffffffff - base);
++	}
++
++	return (tmp / 1000) - base;
++}
++
++void set_timer(ulong t)
++{
++}
++
++/* delay x useconds AND perserve advance timstamp value */
++/* GPTCNT is now supposed to tick 1 by 1 us. */
++void udelay(unsigned long usec)
++{
++	ulong tmp;
++
++	setup_gpt();
++
++	tmp = get_timer_masked();	/* get current timestamp */
++
++	/* if setting this forward will roll time stamp */
++	if ((usec + tmp + 1) < tmp) {
++		/* reset "advancing" timestamp to 0, set lastinc value */
++		reset_timer_masked();
++	} else {
++		/* else, set advancing stamp wake up time */
++		tmp += usec;
++	}
++
++	while (get_timer_masked() < tmp)	/* loop till event */
++		 /*NOP*/;
++}
+diff --git a/include/asm-arm/arch-mx50/imx_spi_pmic.h b/include/asm-arm/arch-mx50/imx_spi_pmic.h
+new file mode 100644
+index 0000000..170c609
+--- /dev/null
++++ b/include/asm-arm/arch-mx50/imx_spi_pmic.h
+@@ -0,0 +1,33 @@
++/*
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef _IMX_SPI_PMIC_H_
++#define _IMX_SPI_PMIC_H_
++
++#include <linux/types.h>
++
++extern struct spi_slave *spi_pmic_probe(void);
++extern void spi_pmic_free(struct spi_slave *slave);
++extern u32 pmic_reg(struct spi_slave *slave,
++				u32 reg, u32 val, u32 write);
++
++#endif /* _IMX_SPI_PMIC_H_ */
+diff --git a/include/asm-arm/arch-mx50/iomux.h b/include/asm-arm/arch-mx50/iomux.h
+new file mode 100644
+index 0000000..87e73ea
+--- /dev/null
++++ b/include/asm-arm/arch-mx50/iomux.h
+@@ -0,0 +1,230 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#ifndef __MACH_MX50_IOMUX_H__
++#define __MACH_MX50_IOMUX_H__
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/mx50.h>
++#include <asm/arch/mx50_pins.h>
++
++typedef unsigned int iomux_pin_name_t;
++
++/* various IOMUX output functions */
++typedef enum iomux_config {
++	IOMUX_CONFIG_ALT0,	/*!< used as alternate function 0 */
++	IOMUX_CONFIG_ALT1,	/*!< used as alternate function 1 */
++	IOMUX_CONFIG_ALT2,	/*!< used as alternate function 2 */
++	IOMUX_CONFIG_ALT3,	/*!< used as alternate function 3 */
++	IOMUX_CONFIG_ALT4,	/*!< used as alternate function 4 */
++	IOMUX_CONFIG_ALT5,	/*!< used as alternate function 5 */
++	IOMUX_CONFIG_ALT6,	/*!< used as alternate function 6 */
++	IOMUX_CONFIG_ALT7,	/*!< used as alternate function 7 */
++	IOMUX_CONFIG_GPIO,	/*!< added to help user use GPIO mode */
++	IOMUX_CONFIG_SION = 0x1 << 4,	/*!< used as LOOPBACK:MUX SION bit */
++} iomux_pin_cfg_t;
++
++/* various IOMUX pad functions */
++typedef enum iomux_pad_config {
++	PAD_CTL_SRE_SLOW = 0x0 << 0,
++	PAD_CTL_SRE_FAST = 0x1 << 0,
++	PAD_CTL_DRV_LOW = 0x0 << 1,
++	PAD_CTL_DRV_MEDIUM = 0x1 << 1,
++	PAD_CTL_DRV_HIGH = 0x2 << 1,
++	PAD_CTL_DRV_MAX = 0x3 << 1,
++	PAD_CTL_ODE_OPENDRAIN_NONE = 0x0 << 3,
++	PAD_CTL_ODE_OPENDRAIN_ENABLE = 0x1 << 3,
++	PAD_CTL_100K_PD = 0x0 << 4,
++	PAD_CTL_47K_PU = 0x1 << 4,
++	PAD_CTL_100K_PU = 0x2 << 4,
++	PAD_CTL_22K_PU = 0x3 << 4,
++	PAD_CTL_PUE_KEEPER = 0x0 << 6,
++	PAD_CTL_PUE_PULL = 0x1 << 6,
++	PAD_CTL_PKE_NONE = 0x0 << 7,
++	PAD_CTL_PKE_ENABLE = 0x1 << 7,
++	PAD_CTL_HYS_NONE = 0x0 << 8,
++	PAD_CTL_HYS_ENABLE = 0x1 << 8,
++	PAD_CTL_DDR_INPUT_CMOS = 0x0 << 9,
++	PAD_CTL_DDR_INPUT_DDR = 0x1 << 9,
++	PAD_CTL_DRV_VOT_LOW = 0x0 << 13,
++	PAD_CTL_DRV_VOT_HIGH = 0x1 << 13,
++} iomux_pad_config_t;
++
++/* various IOMUX input select register index */
++typedef enum iomux_input_select {
++	MUX_IN_AUDMUX_P4_INPUT_DA_AMX_SELECT_I = 0,
++	MUX_IN_AUDMUX_P4_INPUT_DB_AMX_SELECT_I,
++	MUX_IN_AUDMUX_P4_INPUT_RXCLK_AMX_SELECT_INPUT,
++	MUX_IN_AUDMUX_P4_INPUT_RXFS_AMX_SELECT_INPUT,
++	MUX_IN_AUDMUX_P4_INPUT_TXCLK_AMX_SELECT_INPUT,
++	MUX_IN_AUDMUX_P4_INPUT_TXFS_AMX_SELECT_INPUT,
++	MUX_IN_CCM_PLL1_BYPASS_CLK_SELECT_INPUT,
++	MUX_IN_CCM_PLL2_BYPASS_CLK_SELECT_INPUT,
++	MUX_IN_CCM_PLL3_BYPASS_CLK_SELECT_INPUT,
++	MUX_IN_CSPI_IPP_IND_DATAREADY_B_SELECT_INPUT,
++	MUX_IN_CSPI_IPP_IND_SS1_B_SELECT_INPUT,
++	MUX_IN_CSPI_IPP_IND_SS2_B_SELECT_INPUT,
++	MUX_IN_CSPI_IPP_IND_SS3_B_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_BUSY_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_0_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_1_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_2_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_3_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_4_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_5_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_6_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_7_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_8_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_9_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_10_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_11_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_12_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_13_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_14_SELECT_INPUT,
++	MUX_IN_ELCDIF_LCDIF_RXDATA_15_SELECT_INPUT,
++	MUX_IN_ELCDIF_VSYNC_I_SELECT_INPUT,
++	MUX_IN_ESDHC2_IPP_CARD_DET_SELECT_INPUT,
++	MUX_IN_ESDHC2_IPP_WP_ON_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_CARD_CLK_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_CMD_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT0_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT1_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT2_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT3_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT4_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT5_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT6_IN_SELECT_INPUT,
++	MUX_IN_ESDHC4_IPP_DAT7_IN_SELECT_INPUT,
++	MUX_IN_FEC_FEC_COL_SELECT_INPUT,
++	MUX_IN_FEC_FEC_MDI_SELECT_INPUT,
++	MUX_IN_FEC_FEC_RDATA_0_SELECT_INPUT,
++	MUX_IN_FEC_FEC_RDATA_1_SELECT_INPUT,
++	MUX_IN_FEC_FEC_RX_CLK_SELECT_INPUT,
++	MUX_IN_FEC_FEC_RX_DV_SELECT_INPUT,
++	MUX_IN_FEC_FEC_RX_ER_SELECT_INPUT,
++	MUX_IN_FEC_FEC_TX_CLK_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_COL_4_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_COL_5_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_COL_6_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_COL_7_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_ROW_4_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_ROW_5_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_ROW_6_SELECT_INPUT,
++	MUX_IN_KPP_IPP_IND_ROW_7_SELECT_INPUT,
++	MUX_IN_RAWNAND_U_GPMI_INPUT_GPMI_DQS_IN_SELECT_INPUT,
++	MUX_IN_RAWNAND_U_GPMI_INPUT_GPMI_RDY0_IN_SELECT_INPUT,
++	MUX_IN_SDMA_EVENTS_14_SELECT_INPUT,
++	MUX_IN_SDMA_EVENTS_15_SELECT_INPUT,
++	MUX_IN_UART1_IPP_UART_RTS_B_SELECT_INPUT,
++	MUX_IN_UART1_IPP_UART_RXD_MUX_SELECT_INPUT,
++	MUX_IN_UART2_IPP_UART_RTS_B_SELECT_INPUT,
++	MUX_IN_UART2_IPP_UART_RXD_MUX_SELECT_INPUT,
++	MUX_IN_UART3_IPP_UART_RTS_B_SELECT_INPUT,
++	MUX_IN_UART3_IPP_UART_RXD_MUX_SELECT_INPUT,
++	MUX_IN_UART4_IPP_UART_RTS_B_SELECT_INPUT,
++	MUX_IN_UART4_IPP_UART_RXD_MUX_SELECT_INPUT,
++	MUX_IN_UART5_IPP_UART_RTS_B_SELECT_INPUT,
++	MUX_IN_UART5_IPP_UART_RXD_MUX_SELECT_INPUT,
++	MUX_IN_USBOH1_IPP_IND_OTG_OC_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_0_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_1_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_2_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_3_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_4_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_5_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_6_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_7_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_8_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_9_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_10_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_11_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_12_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_13_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_14_SELECT_INPUT,
++	MUX_IN_WEIMV2_IPP_IND_READ_DATA_15_SELECT_INPUT,
++	MUX_INPUT_NUM_MUX,
++} iomux_input_select_t;
++
++/* various IOMUX input functions */
++typedef enum iomux_input_config {
++	INPUT_CTL_PATH0 = 0x0,
++	INPUT_CTL_PATH1,
++	INPUT_CTL_PATH2,
++	INPUT_CTL_PATH3,
++	INPUT_CTL_PATH4,
++	INPUT_CTL_PATH5,
++	INPUT_CTL_PATH6,
++	INPUT_CTL_PATH7,
++} iomux_input_config_t;
++
++struct mxc_iomux_pin_cfg {
++	iomux_pin_name_t pin;
++	u8 mux_mode;
++	u16 pad_cfg;
++	u8 in_select;
++	u8 in_mode;
++};
++
++/*
++ * Request ownership for an IO pin. This function has to be the first one
++ * being called before that pin is used. The caller has to check the
++ * return value to make sure it returns 0.
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  config	config as defined in \b #iomux_pin_ocfg_t
++ *
++ * @return		0 if successful; Non-zero otherwise
++ */
++int mxc_request_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t config);
++
++/*
++ * Release ownership for an IO pin
++ *
++ * @param  pin		a name defined by \b iomux_pin_name_t
++ * @param  config	config as defined in \b #iomux_pin_ocfg_t
++ */
++void mxc_free_iomux(iomux_pin_name_t pin, iomux_pin_cfg_t config);
++
++/*
++ * This function configures the pad value for a IOMUX pin.
++ *
++ * @param  pin          a pin number as defined in \b #iomux_pin_name_t
++ * @param  config      the ORed value of elements defined in
++ *                             \b #iomux_pad_config_t
++ */
++void mxc_iomux_set_pad(iomux_pin_name_t pin, u32 config);
++
++/*
++ * This function gets the current pad value for a IOMUX pin.
++ *
++ * @param  pin          a pin number as defined in \b #iomux_pin_name_t
++ * @return		current pad value
++ */
++unsigned int mxc_iomux_get_pad(iomux_pin_name_t pin);
++
++/*
++ * This function configures input path.
++ *
++ * @param  input        index of input select register as defined in
++ *                              \b #iomux_input_select_t
++ * @param  config       the binary value of elements defined in \b #iomux_input_config_t
++ */
++void mxc_iomux_set_input(iomux_input_select_t input, u32 config);
++
++#endif				/*  __MACH_MX50_IOMUX_H__ */
+diff --git a/include/asm-arm/arch-mx50/mmu.h b/include/asm-arm/arch-mx50/mmu.h
+new file mode 100644
+index 0000000..5fa2fc0
+--- /dev/null
++++ b/include/asm-arm/arch-mx50/mmu.h
+@@ -0,0 +1,174 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#ifndef __ARM_ARCH_MMU_H
++#define __ARM_ARCH_MMU_H
++
++#include <linux/types.h>
++
++/*
++ * Translation Table Base Bit Masks
++ */
++#define ARM_TRANSLATION_TABLE_MASK               0xFFFFC000
++
++/*
++ * Domain Access Control Bit Masks
++ */
++#define ARM_ACCESS_TYPE_NO_ACCESS(domain_num)    (0x0 << (domain_num)*2)
++#define ARM_ACCESS_TYPE_CLIENT(domain_num)       (0x1 << (domain_num)*2)
++#define ARM_ACCESS_TYPE_MANAGER(domain_num)      (0x3 << (domain_num)*2)
++
++struct ARM_MMU_FIRST_LEVEL_FAULT {
++	unsigned int id:2;
++	unsigned int sbz:30;
++};
++
++#define ARM_MMU_FIRST_LEVEL_FAULT_ID 0x0
++
++struct ARM_MMU_FIRST_LEVEL_PAGE_TABLE {
++	unsigned int id:2;
++	unsigned int imp:2;
++	unsigned int domain:4;
++	unsigned int sbz:1;
++	unsigned int base_address:23;
++};
++
++#define ARM_MMU_FIRST_LEVEL_PAGE_TABLE_ID 0x1
++
++struct ARM_MMU_FIRST_LEVEL_SECTION {
++	unsigned int id:2;
++	unsigned int b:1;
++	unsigned int c:1;
++	unsigned int imp:1;
++	unsigned int domain:4;
++	unsigned int sbz0:1;
++	unsigned int ap:2;
++	unsigned int sbz1:8;
++	unsigned int base_address:12;
++};
++
++#define ARM_MMU_FIRST_LEVEL_SECTION_ID 0x2
++
++struct ARM_MMU_FIRST_LEVEL_RESERVED {
++	unsigned int id:2;
++	unsigned int sbz:30;
++};
++
++#define ARM_MMU_FIRST_LEVEL_RESERVED_ID 0x3
++
++#define ARM_MMU_FIRST_LEVEL_DESCRIPTOR_ADDRESS(ttb_base, table_index) \
++	(unsigned long *)((unsigned long)(ttb_base) + ((table_index) << 2))
++
++#define ARM_FIRST_LEVEL_PAGE_TABLE_SIZE 0x4000
++
++#define ARM_MMU_SECTION(ttb_base, actual_base, virtual_base,		\
++			cacheable, bufferable, perm)			\
++	{								\
++	register union ARM_MMU_FIRST_LEVEL_DESCRIPTOR desc;		\
++	desc.word = 0;							\
++	desc.section.id = ARM_MMU_FIRST_LEVEL_SECTION_ID;		\
++	desc.section.domain = 0;					\
++	desc.section.c = (cacheable);					\
++	desc.section.b = (bufferable);					\
++	desc.section.ap = (perm);					\
++	desc.section.base_address = (actual_base);			\
++	*ARM_MMU_FIRST_LEVEL_DESCRIPTOR_ADDRESS(ttb_base, (virtual_base)) \
++				= desc.word;				\
++	}
++
++#define X_ARM_MMU_SECTION(abase, vbase, size, cache, buff, access)	\
++	{								\
++		int i; int j = abase; int k = vbase;			\
++		for (i = size; i > 0 ; i--, j++, k++)			\
++			ARM_MMU_SECTION(ttb_base, j, k, cache, buff, access); \
++	}
++
++union ARM_MMU_FIRST_LEVEL_DESCRIPTOR {
++	unsigned long word;
++	struct ARM_MMU_FIRST_LEVEL_FAULT fault;
++	struct ARM_MMU_FIRST_LEVEL_PAGE_TABLE page_table;
++	struct ARM_MMU_FIRST_LEVEL_SECTION section;
++	struct ARM_MMU_FIRST_LEVEL_RESERVED reserved;
++};
++
++#define ARM_UNCACHEABLE		0
++#define ARM_CACHEABLE		1
++#define ARM_UNBUFFERABLE	0
++#define ARM_BUFFERABLE		1
++
++#define ARM_ACCESS_PERM_NONE_NONE	0
++#define ARM_ACCESS_PERM_RO_NONE		0
++#define ARM_ACCESS_PERM_RO_RO		0
++#define ARM_ACCESS_PERM_RW_NONE		1
++#define ARM_ACCESS_PERM_RW_RO		2
++#define ARM_ACCESS_PERM_RW_RW		3
++
++/*
++ * Initialization for the Domain Access Control Register
++ */
++#define ARM_ACCESS_DACR_DEFAULT      (	\
++	ARM_ACCESS_TYPE_MANAGER(0)    |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(1)  |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(2)  |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(3)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(4)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(5)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(6)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(7)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(8)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(9)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(10) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(11) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(12) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(13) |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(14) |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(15))
++
++/*
++ * Translate the virtual address of ram space to physical address
++ * It is dependent on the implementation of mmu_init
++ */
++inline void *iomem_to_phys(unsigned long virt)
++{
++	if (virt >= 0xB0000000)
++		return (void *)((virt - 0xB0000000) + PHYS_SDRAM_1);
++
++	return (void *)virt;
++}
++
++/*
++ * remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void *__ioremap(unsigned long offset, size_t size, unsigned long flags)
++{
++	if (1 == flags) {
++		if (offset >= PHYS_SDRAM_1 &&
++			offset < (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++			return (void *)(offset - PHYS_SDRAM_1) + 0xB0000000;
++		else
++			return NULL;
++	} else
++		return (void *)offset;
++}
++
++/*
++ * Remap the physical address of ram space to uncacheable virtual address space
++ * It is dependent on the implementation of hal_mmu_init
++ */
++void __iounmap(void *addr)
++{
++	return;
++}
++
++#endif
+diff --git a/include/asm-arm/arch-mx50/mx50.h b/include/asm-arm/arch-mx50/mx50.h
+new file mode 100644
+index 0000000..da51cc3
+--- /dev/null
++++ b/include/asm-arm/arch-mx50/mx50.h
+@@ -0,0 +1,300 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#ifndef __ASM_ARCH_MXC_MX50_H__
++#define __ASM_ARCH_MXC_MX50_H__
++
++#define __REG(x)        (*((volatile u32 *)(x)))
++#define __REG16(x)      (*((volatile u16 *)(x)))
++#define __REG8(x)       (*((volatile u8 *)(x)))
++
++ /*
++ * IRAM
++ */
++#define IRAM_BASE_ADDR		0xF8000000	/* internal ram */
++#define IRAM_PARTITIONS		16
++#define IRAM_SIZE		(IRAM_PARTITIONS*SZ_8K)	/* 128KB */
++
++#define TZIC_BASE_ADDR		0x0FFFC000
++#define DATABAHN_BASE_ADDR	0x14000000
++
++#define DEBUG_BASE_ADDR		0x40000000
++#define ETB_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00001000)
++#define ETM_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00002000)
++#define TPIU_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00003000)
++#define CTI0_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00004000)
++#define CTI1_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00005000)
++#define CTI2_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00006000)
++#define CTI3_BASE_ADDR		(DEBUG_BASE_ADDR + 0x00007000)
++#define CORTEX_DBG_BASE_ADDR	(DEBUG_BASE_ADDR + 0x00008000)
++
++/*
++ * SPBA global module enabled #0
++ */
++#define SPBA0_BASE_ADDR 	0x50000000
++
++#define MMC_SDHC1_BASE_ADDR	(SPBA0_BASE_ADDR + 0x00004000)
++#define MMC_SDHC2_BASE_ADDR	(SPBA0_BASE_ADDR + 0x00008000)
++#define UART3_BASE_ADDR 	(SPBA0_BASE_ADDR + 0x0000C000)
++#define CSPI1_BASE_ADDR 	(SPBA0_BASE_ADDR + 0x00010000)
++#define SSI2_BASE_ADDR		(SPBA0_BASE_ADDR + 0x00014000)
++#define MMC_SDHC3_BASE_ADDR	(SPBA0_BASE_ADDR + 0x00020000)
++#define MMC_SDHC4_BASE_ADDR	(SPBA0_BASE_ADDR + 0x00024000)
++#define SPBA_CTRL_BASE_ADDR	(SPBA0_BASE_ADDR + 0x0003C000)
++
++/*
++ * defines for SPBA modules
++ */
++#define SPBA_SDHC1	0x04
++#define SPBA_SDHC2	0x08
++#define SPBA_UART3	0x0C
++#define SPBA_CSPI1	0x10
++#define SPBA_SSI2	0x14
++#define SPBA_ESAI	0x18
++#define SPBA_SDHC3	0x20
++#define SPBA_SDHC4	0x24
++#define SPBA_SPDIF	0x28
++#define SPBA_ASRC	0x2C
++#define SPBA_ATA	0x30
++#define SPBA_CTRL	0x3C
++
++/*
++ * AIPS 1
++ */
++#define AIPS1_BASE_ADDR 	0x53F00000
++
++#define OTG_BASE_ADDR		(AIPS1_BASE_ADDR + 0x00080000)
++#define GPIO1_BASE_ADDR		(AIPS1_BASE_ADDR + 0x00084000)
++#define GPIO2_BASE_ADDR		(AIPS1_BASE_ADDR + 0x00088000)
++#define GPIO3_BASE_ADDR		(AIPS1_BASE_ADDR + 0x0008C000)
++#define GPIO4_BASE_ADDR		(AIPS1_BASE_ADDR + 0x00090000)
++#define KPP_BASE_ADDR		(AIPS1_BASE_ADDR + 0x00094000)
++#define WDOG1_BASE_ADDR		(AIPS1_BASE_ADDR + 0x00098000)
++#define GPT1_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000A0000)
++#define SRTC_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000A4000)
++#define IOMUXC_BASE_ADDR	(AIPS1_BASE_ADDR + 0x000A8000)
++#define EPIT1_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000AC000)
++#define PWM1_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000B4000)
++#define PWM2_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000B8000)
++#define UART1_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000BC000)
++#define UART2_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000C0000)
++#define USBOH1_BASE_ADDR        (AIPS1_BASE_ADDR + 0x000C4000)
++#define SRC_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000D0000)
++#define CCM_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000D4000)
++#define GPC_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000D8000)
++#define GPIO5_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000DC000)
++#define GPIO6_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000E0000)
++#define GPIO7_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000E4000)
++#define ATA_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000E8000)
++#define I2C3_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000EC000)
++#define UART4_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000F0000)
++#define MSHC_BASE_ADDR		(AIPS1_BASE_ADDR + 0x000F4000)
++#define RNGB_BASE_ADDR          (AIPS1_BASE_ADDR + 0x000F8000)
++
++/*
++ * AIPS 2
++ */
++#define AIPS2_BASE_ADDR		0x63F00000
++
++#define PLL1_BASE_ADDR		(AIPS2_BASE_ADDR + 0x00080000)
++#define PLL2_BASE_ADDR		(AIPS2_BASE_ADDR + 0x00084000)
++#define PLL3_BASE_ADDR		(AIPS2_BASE_ADDR + 0x00088000)
++#define UART5_BASE_ADDR		(AIPS2_BASE_ADDR + 0x00090000)
++#define AHBMAX_BASE_ADDR	(AIPS2_BASE_ADDR + 0x00094000)
++#define ARM_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000A0000)
++#define OWIRE_BASE_ADDR 	(AIPS2_BASE_ADDR + 0x000A4000)
++#define CSPI2_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000AC000)
++#define SDMA_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000B0000)
++#define ROMCP_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000B8000)
++#define CSPI3_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000C0000)
++#define I2C2_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000C4000)
++#define I2C1_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000C8000)
++#define SSI1_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000CC000)
++#define AUDMUX_BASE_ADDR	(AIPS2_BASE_ADDR + 0x000D0000)
++#define M4IF_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000D8000)
++#define ESDCTL_BASE_ADDR	(AIPS2_BASE_ADDR + 0x000D9000)
++#define WEIM_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000DA000)
++#define NFC_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000DB000)
++#define EMI_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000DBF00)
++#define FEC_BASE_ADDR		(AIPS2_BASE_ADDR + 0x000EC000)
++
++/*
++ * Memory regions and CS
++ */
++#define CSD0_BASE_ADDR		0x70000000
++#define CSD1_BASE_ADDR		0xB0000000
++
++/* gpio and gpio based interrupt handling */
++#define GPIO_DR                 0x00
++#define GPIO_GDIR               0x04
++#define GPIO_PSR                0x08
++#define GPIO_ICR1               0x0C
++#define GPIO_ICR2               0x10
++#define GPIO_IMR                0x14
++#define GPIO_ISR                0x18
++#define GPIO_INT_LOW_LEV        0x0
++#define GPIO_INT_HIGH_LEV       0x1
++#define GPIO_INT_RISE_EDGE      0x2
++#define GPIO_INT_FALL_EDGE      0x3
++#define GPIO_INT_NONE           0x4
++
++#define CLKCTL_CCR              0x00
++#define	CLKCTL_CCDR             0x04
++#define CLKCTL_CSR              0x08
++#define CLKCTL_CCSR             0x0C
++#define CLKCTL_CACRR            0x10
++#define CLKCTL_CBCDR            0x14
++#define CLKCTL_CBCMR            0x18
++#define CLKCTL_CSCMR1           0x1C
++#define CLKCTL_CSCMR2           0x20
++#define CLKCTL_CSCDR1           0x24
++#define CLKCTL_CS1CDR           0x28
++#define CLKCTL_CS2CDR           0x2C
++#define CLKCTL_CDCDR            0x30
++#define CLKCTL_CHSCDR           0x34
++#define CLKCTL_CSCDR2           0x38
++#define CLKCTL_CSCDR3           0x3C
++#define CLKCTL_CSCDR4           0x40
++#define CLKCTL_CWDR             0x44
++#define CLKCTL_CDHIPR           0x48
++#define CLKCTL_CDCR             0x4C
++#define CLKCTL_CTOR             0x50
++#define CLKCTL_CLPCR            0x54
++#define CLKCTL_CISR             0x58
++#define CLKCTL_CIMR             0x5C
++#define CLKCTL_CCOSR            0x60
++#define CLKCTL_CGPR             0x64
++#define CLKCTL_CCGR0            0x68
++#define CLKCTL_CCGR1            0x6C
++#define CLKCTL_CCGR2            0x70
++#define CLKCTL_CCGR3            0x74
++#define CLKCTL_CCGR4            0x78
++#define CLKCTL_CCGR5            0x7C
++#define CLKCTL_CCGR6            0x80
++#define CLKCTL_CCGR7            0x84
++#define CLKCTL_CMEOR            0x88
++
++#define CLKCTL_CSR2            0x8C
++#define CLKCTL_CLKSEQ_BYPASS   0x90
++#define CLKCTL_CLK_SYS         0x94
++#define CLKCTL_CLK_DDR         0x98
++
++#define CHIP_REV_1_0            0x10
++#define PLATFORM_ICGC           0x14
++
++/* Assuming 24MHz input clock with doubler ON */
++/*                            MFI         PDF */
++#define DP_OP_850       ((8 << 4) + ((1 - 1)  << 0))
++#define DP_MFD_850      (48 - 1)
++#define DP_MFN_850      41
++
++#define DP_OP_800       ((8 << 4) + ((1 - 1)  << 0))
++#define DP_MFD_800      (3 - 1)
++#define DP_MFN_800      1
++
++#define DP_OP_700       ((7 << 4) + ((1 - 1)  << 0))
++#define DP_MFD_700      (24 - 1)
++#define DP_MFN_700      7
++
++#define DP_OP_600       ((6 << 4) + ((1 - 1)  << 0))
++#define DP_MFD_600      (4 - 1)
++#define DP_MFN_600      1
++
++#define DP_OP_665       ((6 << 4) + ((1 - 1)  << 0))
++#define DP_MFD_665      (96 - 1)
++#define DP_MFN_665      89
++
++#define DP_OP_532       ((5 << 4) + ((1 - 1)  << 0))
++#define DP_MFD_532      (24 - 1)
++#define DP_MFN_532      13
++
++#define DP_OP_400       ((8 << 4) + ((2 - 1)  << 0))
++#define DP_MFD_400      (3 - 1)
++#define DP_MFN_400      1
++
++#define DP_OP_216       ((6 << 4) + ((3 - 1)  << 0))
++#define DP_MFD_216      (4 - 1)
++#define DP_MFN_216      3
++
++#define PLL_DP_CTL      0x00
++#define PLL_DP_CONFIG   0x04
++#define PLL_DP_OP       0x08
++#define PLL_DP_MFD      0x0C
++#define PLL_DP_MFN      0x10
++#define PLL_DP_MFNMINUS 0x14
++#define PLL_DP_MFNPLUS  0x18
++#define PLL_DP_HFS_OP   0x1C
++#define PLL_DP_HFS_MFD  0x20
++#define PLL_DP_HFS_MFN  0x24
++#define PLL_DP_TOGC     0x28
++#define PLL_DP_DESTAT   0x2C
++
++#ifndef __ASSEMBLER__
++
++enum boot_device {
++	WEIM_NOR_BOOT,
++	ONE_NAND_BOOT,
++	PATA_BOOT,
++	SATA_BOOT,
++	I2C_BOOT,
++	SPI_NOR_BOOT,
++	SD_BOOT,
++	MMC_BOOT,
++	NAND_BOOT,
++	UNKNOWN_BOOT
++};
++
++enum mxc_clock {
++	MXC_ARM_CLK = 0,
++	MXC_PER_CLK,
++	MXC_AHB_CLK,
++	MXC_IPG_CLK,
++	MXC_IPG_PERCLK,
++	MXC_UART_CLK,
++	MXC_CSPI_CLK,
++	MXC_AXI_A_CLK,
++	MXC_AXI_B_CLK,
++	MXC_EMI_SLOW_CLK,
++	MXC_DDR_CLK,
++	MXC_ESDHC_CLK,
++	MXC_ESDHC2_CLK,
++	MXC_ESDHC3_CLK,
++	MXC_ESDHC4_CLK,
++};
++
++enum mxc_peri_clocks {
++	MXC_UART1_BAUD,
++	MXC_UART2_BAUD,
++	MXC_UART3_BAUD,
++	MXC_SSI1_BAUD,
++	MXC_SSI2_BAUD,
++	MXC_CSI_BAUD,
++	MXC_MSTICK1_CLK,
++	MXC_MSTICK2_CLK,
++	MXC_SPI1_CLK,
++	MXC_SPI2_CLK,
++};
++
++extern unsigned int mxc_get_clock(enum mxc_clock clk);
++extern unsigned int get_board_rev(void);
++extern int is_soc_rev(int rev);
++extern enum boot_device get_boot_device(void);
++
++#endif /* __ASSEMBLER__*/
++
++#endif				/*  __ASM_ARCH_MXC_MX50_H__ */
+diff --git a/include/asm-arm/arch-mx50/mx50_pins.h b/include/asm-arm/arch-mx50/mx50_pins.h
+new file mode 100644
+index 0000000..05935c9
+--- /dev/null
++++ b/include/asm-arm/arch-mx50/mx50_pins.h
+@@ -0,0 +1,285 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++#ifndef __ASM_ARCH_MXC_MX50_PINS_H__
++#define __ASM_ARCH_MXC_MX50_PINS_H__
++
++#ifndef __ASSEMBLY__
++
++/*
++ * In order to identify pins more effectively, each mux-controlled pin's
++ * enumerated value is constructed in the following way:
++ *
++ * -------------------------------------------------------------------
++ * 31-29 | 28 - 24 |  23 - 21 | 20  - 10| 9 - 0
++ * -------------------------------------------------------------------
++ * IO_P  |  IO_I  | GPIO_I | PAD_I  | MUX_I
++ * -------------------------------------------------------------------
++ *
++ * Bit 0 to 9 contains MUX_I used to identify the register
++ * offset (0-based. base is IOMUX_module_base) defined in the Section
++ * "sw_pad_ctl & sw_mux_ctl details" of the IC Spec. The
++ * similar field definitions are used for the pad control register.
++ * For example, the MX50_PIN_GPIO_19 is defined in the enumeration:
++ *    ( (0x20 - MUX_I_START) << MUX_I)|( (0x348 - PAD_I_START) << PAD_I)
++ * It means the mux control register is at register offset 0x20. The pad control
++ * register offset is: 0x348 and also occupy the least significant bits
++ * within the register.
++ */
++
++/*
++ * Starting bit position within each entry of \b iomux_pins to represent the
++ * MUX control register offset
++ */
++#define MUX_I			0
++/*
++ * Starting bit position within each entry of \b iomux_pins to represent the
++ * PAD control register offset
++ */
++#define PAD_I			10
++/*
++ * Starting bit position within each entry of \b iomux_pins to represent which
++ * mux mode is for GPIO (0-based)
++ */
++#define GPIO_I			21
++
++#define MUX_IO_P                29
++#define MUX_IO_I                24
++
++#define NON_GPIO_PORT		0x7
++#define PIN_TO_MUX_MASK		((1 << (PAD_I - MUX_I)) - 1)
++#define PIN_TO_PAD_MASK		((1 << (GPIO_I - PAD_I)) - 1)
++#define PIN_TO_ALT_GPIO_MASK	((1 << (MUX_IO_I - GPIO_I)) - 1)
++
++#define NON_MUX_I		PIN_TO_MUX_MASK
++#define NON_PAD_I		PIN_TO_PAD_MASK
++#define MUX_I_START		0x0020
++#define PAD_I_START		0x2CC
++#define INPUT_CTL_START		0x6C4
++#define MUX_I_END		(PAD_I_START - 4)
++
++#define _MXC_BUILD_PIN(gp, gi, ga, mi, pi) \
++	(((gp) << MUX_IO_P) | ((gi) << MUX_IO_I) | \
++	((mi) << MUX_I) | \
++	((pi - PAD_I_START) << PAD_I) | \
++	((ga) << GPIO_I))
++
++#define _MXC_BUILD_GPIO_PIN(gp, gi, ga, mi, pi) \
++    _MXC_BUILD_PIN(gp, gi, ga, mi, pi)
++
++#define _MXC_BUILD_NON_GPIO_PIN(mi, pi) \
++    _MXC_BUILD_PIN(NON_GPIO_PORT, 0, 0, mi, pi)
++
++#define PIN_TO_IOMUX_MUX(pin)	((pin >> MUX_I) & PIN_TO_MUX_MASK)
++#define PIN_TO_IOMUX_PAD(pin)	((pin >> PAD_I) & PIN_TO_PAD_MASK)
++#define PIN_TO_ALT_GPIO(pin)	((pin >> GPIO_I) & PIN_TO_ALT_GPIO_MASK)
++#define PIN_TO_IOMUX_INDEX(pin)	(PIN_TO_IOMUX_MUX(pin) >> 2)
++
++/*
++ * This enumeration is constructed based on the Section
++ * "sw_pad_ctl & sw_mux_ctl details" of the MX50 IC Spec. Each enumerated
++ * value is constructed based on the rules described above.
++ */
++enum iomux_pins {
++	MX50_PIN_KEY_COL0 = _MXC_BUILD_GPIO_PIN(3, 0, 1, 0x20, 0x2CC),
++	MX50_PIN_KEY_ROW0 = _MXC_BUILD_GPIO_PIN(3, 1, 1, 0x24, 0x2D0),
++	MX50_PIN_KEY_COL1 = _MXC_BUILD_GPIO_PIN(3, 2, 1, 0x28, 0x2D4),
++	MX50_PIN_KEY_ROW1 = _MXC_BUILD_GPIO_PIN(3, 3, 1, 0x2C, 0x2D8),
++	MX50_PIN_KEY_COL2 = _MXC_BUILD_GPIO_PIN(3, 4, 1, 0x30, 0x2DC),
++	MX50_PIN_KEY_ROW2 = _MXC_BUILD_GPIO_PIN(3, 5, 1, 0x34, 0x2E0),
++	MX50_PIN_KEY_COL3 = _MXC_BUILD_GPIO_PIN(3, 6, 1, 0x38, 0x2E4),
++	MX50_PIN_KEY_ROW3 = _MXC_BUILD_GPIO_PIN(3, 7, 1, 0x3C, 0x2E8),
++	MX50_PIN_I2C1_SCL = _MXC_BUILD_GPIO_PIN(5, 18, 1, 0x40, 0x2EC),
++	MX50_PIN_I2C1_SDA = _MXC_BUILD_GPIO_PIN(5, 19, 1, 0x44, 0x2F0),
++	MX50_PIN_I2C2_SCL = _MXC_BUILD_GPIO_PIN(5, 20, 1, 0x48, 0x2F4),
++	MX50_PIN_I2C2_SDA = _MXC_BUILD_GPIO_PIN(5, 21, 1, 0x4C, 0x2F8),
++	MX50_PIN_I2C3_SCL = _MXC_BUILD_GPIO_PIN(5, 22, 1, 0x50, 0x2FC),
++	MX50_PIN_I2C3_SDA = _MXC_BUILD_GPIO_PIN(5, 23, 1, 0x54, 0x300),
++	MX50_PIN_PWM1 = _MXC_BUILD_GPIO_PIN(5, 24, 1, 0x58, 0x304),
++	MX50_PIN_PWM2 = _MXC_BUILD_GPIO_PIN(5, 25, 1, 0x5C, 0x308),
++	MX50_PIN_OWIRE = _MXC_BUILD_GPIO_PIN(5, 26, 1, 0x60, 0x30C),
++	MX50_PIN_EPITO = _MXC_BUILD_GPIO_PIN(5, 27, 1, 0x64, 0x310),
++	MX50_PIN_WDOG = _MXC_BUILD_GPIO_PIN(5, 28, 1, 0x68, 0x314),
++	MX50_PIN_SSI_TXFS = _MXC_BUILD_GPIO_PIN(5, 0, 1, 0x6C, 0x318),
++	MX50_PIN_SSI_TXC = _MXC_BUILD_GPIO_PIN(5, 1, 1, 0x70, 0x31C),
++	MX50_PIN_SSI_TXD = _MXC_BUILD_GPIO_PIN(5, 2, 1, 0x74, 0x320),
++	MX50_PIN_SSI_RXD = _MXC_BUILD_GPIO_PIN(5, 3, 1, 0x78, 0x324),
++	MX50_PIN_SSI_RXFS = _MXC_BUILD_GPIO_PIN(5, 4, 1, 0x7C, 0x328),
++	MX50_PIN_SSI_RXC = _MXC_BUILD_GPIO_PIN(5, 5, 1, 0x80, 0x32C),
++	MX50_PIN_UART1_TXD = _MXC_BUILD_GPIO_PIN(5, 6, 1, 0x84, 0x330),
++	MX50_PIN_UART1_RXD = _MXC_BUILD_GPIO_PIN(5, 7, 1, 0x88, 0x334),
++	MX50_PIN_UART1_CTS = _MXC_BUILD_GPIO_PIN(5, 8, 1, 0x8C, 0x338),
++	MX50_PIN_UART1_RTS = _MXC_BUILD_GPIO_PIN(5, 9, 1, 0x90, 0x33C),
++	MX50_PIN_UART2_TXD = _MXC_BUILD_GPIO_PIN(5, 10, 1, 0x94, 0x340),
++	MX50_PIN_UART2_RXD = _MXC_BUILD_GPIO_PIN(5, 11, 1, 0x98, 0x344),
++	MX50_PIN_UART2_CTS = _MXC_BUILD_GPIO_PIN(5, 12, 1, 0x9C, 0x348),
++	MX50_PIN_UART2_RTS = _MXC_BUILD_GPIO_PIN(5, 13, 1, 0xA0, 0x34C),
++	MX50_PIN_UART3_TXD = _MXC_BUILD_GPIO_PIN(5, 14, 1, 0xA4, 0x350),
++	MX50_PIN_UART3_RXD = _MXC_BUILD_GPIO_PIN(5, 15, 1, 0xA8, 0x354),
++	MX50_PIN_UART4_TXD = _MXC_BUILD_GPIO_PIN(5, 16, 1, 0xAC, 0x358),
++	MX50_PIN_UART4_RXD = _MXC_BUILD_GPIO_PIN(5, 17, 1, 0xB0, 0x35C),
++	MX50_PIN_CSPI_SCLK = _MXC_BUILD_GPIO_PIN(3, 8, 1, 0xB4, 0x360),
++	MX50_PIN_CSPI_MOSI = _MXC_BUILD_GPIO_PIN(3, 9, 1, 0xB8, 0x364),
++	MX50_PIN_CSPI_MISO = _MXC_BUILD_GPIO_PIN(3, 10, 1, 0xBC, 0x368),
++	MX50_PIN_CSPI_SS0 = _MXC_BUILD_GPIO_PIN(3, 11, 1, 0xC0, 0x36C),
++	MX50_PIN_ECSPI1_SCLK = _MXC_BUILD_GPIO_PIN(3, 12, 1, 0xC4, 0x370),
++	MX50_PIN_ECSPI1_MOSI = _MXC_BUILD_GPIO_PIN(3, 13, 1, 0xC8, 0x374),
++	MX50_PIN_ECSPI1_MISO = _MXC_BUILD_GPIO_PIN(3, 14, 1, 0xCC, 0x378),
++	MX50_PIN_ECSPI1_SS0 = _MXC_BUILD_GPIO_PIN(3, 15, 1, 0xD0, 0x37C),
++	MX50_PIN_ECSPI2_SCLK = _MXC_BUILD_GPIO_PIN(3, 16, 1, 0xD4, 0x380),
++	MX50_PIN_ECSPI2_MOSI = _MXC_BUILD_GPIO_PIN(3, 17, 1, 0xD8, 0x384),
++	MX50_PIN_ECSPI2_MISO = _MXC_BUILD_GPIO_PIN(3, 18, 1, 0xDC, 0x388),
++	MX50_PIN_ECSPI2_SS0 = _MXC_BUILD_GPIO_PIN(3, 19, 1, 0xE0, 0x38C),
++	MX50_PIN_SD1_CLK = _MXC_BUILD_GPIO_PIN(4, 0, 1, 0xE4, 0x390),
++	MX50_PIN_SD1_CMD = _MXC_BUILD_GPIO_PIN(4, 1, 1, 0xE8, 0x394),
++	MX50_PIN_SD1_D0 = _MXC_BUILD_GPIO_PIN(4, 2, 1, 0xEC, 0x398),
++	MX50_PIN_SD1_D1 = _MXC_BUILD_GPIO_PIN(4, 3, 1, 0xF0, 0x39C),
++	MX50_PIN_SD1_D2 = _MXC_BUILD_GPIO_PIN(4, 4, 1, 0xF4, 0x3A0),
++	MX50_PIN_SD1_D3 = _MXC_BUILD_GPIO_PIN(4, 5, 1, 0xF8, 0x3A4),
++	MX50_PIN_SD2_CLK = _MXC_BUILD_GPIO_PIN(4, 6, 1, 0xFC, 0x3A8),
++	MX50_PIN_SD2_CMD = _MXC_BUILD_GPIO_PIN(4, 7, 1, 0x100, 0x3AC),
++	MX50_PIN_SD2_D0 = _MXC_BUILD_GPIO_PIN(4, 8, 1, 0x104, 0x3B0),
++	MX50_PIN_SD2_D1 = _MXC_BUILD_GPIO_PIN(4, 9, 1, 0x108, 0x3B4),
++	MX50_PIN_SD2_D2 = _MXC_BUILD_GPIO_PIN(4, 10, 1, 0x10C, 0x3B8),
++	MX50_PIN_SD2_D3 = _MXC_BUILD_GPIO_PIN(4, 11, 1, 0x110, 0x3BC),
++	MX50_PIN_SD2_D4 = _MXC_BUILD_GPIO_PIN(4, 12, 1, 0x114, 0x3C0),
++	MX50_PIN_SD2_D5 = _MXC_BUILD_GPIO_PIN(4, 13, 1, 0x118, 0x3C4),
++	MX50_PIN_SD2_D6 = _MXC_BUILD_GPIO_PIN(4, 14, 1, 0x11C, 0x3C8),
++	MX50_PIN_SD2_D7 = _MXC_BUILD_GPIO_PIN(4, 15, 1, 0x120, 0x3CC),
++	MX50_PIN_SD2_WP = _MXC_BUILD_GPIO_PIN(4, 16, 1, 0x124, 0x3D0),
++	MX50_PIN_SD2_CD = _MXC_BUILD_GPIO_PIN(4, 17, 1, 0x128, 0x3D4),
++	MX50_PIN_PMIC_ON_REQ = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3D8),
++	MX50_PIN_PMIC_STBY_REQ = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3DC),
++	MX50_PIN_PMIC_PORT_B = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3E0),
++	MX50_PIN_PMIC_BOOT_MODE1 = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3E4),
++	MX50_PIN_PMIC_RESET_IN_B = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3E8),
++	MX50_PIN_PMIC_BOOT_MODE0 = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3EC),
++	MX50_PIN_PMIC_TEST_MODE = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3F0),
++	MX50_PIN_PMIC_JTAG_TMS = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3F4),
++	MX50_PIN_PMIC_JTAG_MOD = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3F8),
++	MX50_PIN_PMIC_JTAG_TRSTB = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x3FC),
++	MX50_PIN_PMIC_JTAG_TDI = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x400),
++	MX50_PIN_PMIC_JTAG_TCK = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x404),
++	MX50_PIN_PMIC_JTAG_TDO = _MXC_BUILD_NON_GPIO_PIN(NON_MUX_I, 0x408),
++	MX50_PIN_DISP_D0 = _MXC_BUILD_GPIO_PIN(1, 0, 1, 0x12C, 0x40C),
++	MX50_PIN_DISP_D1 = _MXC_BUILD_GPIO_PIN(1, 1, 1, 0x130, 0x410),
++	MX50_PIN_DISP_D2 = _MXC_BUILD_GPIO_PIN(1, 2, 1, 0x134, 0x414),
++	MX50_PIN_DISP_D3 = _MXC_BUILD_GPIO_PIN(1, 3, 1, 0x138, 0x418),
++	MX50_PIN_DISP_D4 = _MXC_BUILD_GPIO_PIN(1, 4, 1, 0x13C, 0x41C),
++	MX50_PIN_DISP_D5 = _MXC_BUILD_GPIO_PIN(1, 5, 1, 0x140, 0x420),
++	MX50_PIN_DISP_D6 = _MXC_BUILD_GPIO_PIN(1, 6, 1, 0x144, 0x424),
++	MX50_PIN_DISP_D7 = _MXC_BUILD_GPIO_PIN(1, 7, 1, 0x148, 0x428),
++	MX50_PIN_DISP_WR = _MXC_BUILD_GPIO_PIN(1, 16, 1, 0x14C, 0x42C),
++	MX50_PIN_DISP_RD = _MXC_BUILD_GPIO_PIN(1, 19, 1, 0x150, 0x430),
++	MX50_PIN_DISP_RS = _MXC_BUILD_GPIO_PIN(1, 17, 1, 0x154, 0x434),
++	MX50_PIN_DISP_CS = _MXC_BUILD_GPIO_PIN(1, 21, 1, 0x158, 0x438),
++	MX50_PIN_DISP_BUSY = _MXC_BUILD_GPIO_PIN(1, 18, 1, 0x15C, 0x43C),
++	MX50_PIN_DISP_RESET = _MXC_BUILD_GPIO_PIN(1, 20, 1, 0x160, 0x440),
++	MX50_PIN_SD3_CMD = _MXC_BUILD_GPIO_PIN(4, 18, 1, 0x164, 0x444),
++	MX50_PIN_SD3_CLK = _MXC_BUILD_GPIO_PIN(4, 19, 1, 0x168, 0x448),
++	MX50_PIN_SD3_D0 = _MXC_BUILD_GPIO_PIN(4, 20, 1, 0x16C, 0x44C),
++	MX50_PIN_SD3_D1 = _MXC_BUILD_GPIO_PIN(4, 21, 1, 0x170, 0x450),
++	MX50_PIN_SD3_D2 = _MXC_BUILD_GPIO_PIN(4, 22, 1, 0x174, 0x454),
++	MX50_PIN_SD3_D3 = _MXC_BUILD_GPIO_PIN(4, 23, 1, 0x178, 0x458),
++	MX50_PIN_SD3_D4 = _MXC_BUILD_GPIO_PIN(4, 24, 1, 0x17C, 0x45C),
++	MX50_PIN_SD3_D5 = _MXC_BUILD_GPIO_PIN(4, 25, 1, 0x180, 0x460),
++	MX50_PIN_SD3_D6 = _MXC_BUILD_GPIO_PIN(4, 26, 1, 0x184, 0x464),
++	MX50_PIN_SD3_D7 = _MXC_BUILD_GPIO_PIN(4, 27, 1, 0x188, 0x468),
++	MX50_PIN_SD3_WP = _MXC_BUILD_GPIO_PIN(4, 28, 1, 0x18C, 0x46C),
++	MX50_PIN_DISP_D8 = _MXC_BUILD_GPIO_PIN(1, 8, 1, 0x190, 0x470),
++	MX50_PIN_DISP_D9 = _MXC_BUILD_GPIO_PIN(1, 9, 1, 0x194, 0x474),
++	MX50_PIN_DISP_D10 = _MXC_BUILD_GPIO_PIN(1, 10, 1, 0x198, 0x478),
++	MX50_PIN_DISP_D11 = _MXC_BUILD_GPIO_PIN(1, 11, 1, 0x19C, 0x47C),
++	MX50_PIN_DISP_D12 = _MXC_BUILD_GPIO_PIN(1, 12, 1, 0x1A0, 0x480),
++	MX50_PIN_DISP_D13 = _MXC_BUILD_GPIO_PIN(1, 13, 1, 0x1A4, 0x484),
++	MX50_PIN_DISP_D14 = _MXC_BUILD_GPIO_PIN(1, 14, 1, 0x1A8, 0x488),
++	MX50_PIN_DISP_D15 = _MXC_BUILD_GPIO_PIN(1, 15, 1, 0x1AC, 0x48C),
++	MX50_PIN_EPDC_D0 = _MXC_BUILD_GPIO_PIN(2, 0, 1, 0x1B0, 0x54C),
++	MX50_PIN_EPDC_D1 = _MXC_BUILD_GPIO_PIN(2, 1, 1, 0x1B4, 0x550),
++	MX50_PIN_EPDC_D2 = _MXC_BUILD_GPIO_PIN(2, 2, 1, 0x1B8, 0x554),
++	MX50_PIN_EPDC_D3 = _MXC_BUILD_GPIO_PIN(2, 3, 1, 0x1BC, 0x558),
++	MX50_PIN_EPDC_D4 = _MXC_BUILD_GPIO_PIN(2, 4, 1, 0x1C0, 0x55C),
++	MX50_PIN_EPDC_D5 = _MXC_BUILD_GPIO_PIN(2, 5, 1, 0x1C4, 0x560),
++	MX50_PIN_EPDC_D6 = _MXC_BUILD_GPIO_PIN(2, 6, 1, 0x1C8, 0x564),
++	MX50_PIN_EPDC_D7 = _MXC_BUILD_GPIO_PIN(2, 7, 1, 0x1CC, 0x568),
++	MX50_PIN_EPDC_D8 = _MXC_BUILD_GPIO_PIN(2, 8, 1, 0x1D0, 0x56C),
++	MX50_PIN_EPDC_D9 = _MXC_BUILD_GPIO_PIN(2, 9, 1, 0x1D4, 0x570),
++	MX50_PIN_EPDC_D10 = _MXC_BUILD_GPIO_PIN(2, 10, 1, 0x1D8, 0x574),
++	MX50_PIN_EPDC_D11 = _MXC_BUILD_GPIO_PIN(2, 11, 1, 0x1DC, 0x578),
++	MX50_PIN_EPDC_D12 = _MXC_BUILD_GPIO_PIN(2, 12, 1, 0x1E0, 0x57C),
++	MX50_PIN_EPDC_D13 = _MXC_BUILD_GPIO_PIN(2, 13, 1, 0x1E4, 0x580),
++	MX50_PIN_EPDC_D14 = _MXC_BUILD_GPIO_PIN(2, 14, 1, 0x1E8, 0x584),
++	MX50_PIN_EPDC_D15 = _MXC_BUILD_GPIO_PIN(2, 15, 1, 0x1EC, 0x588),
++	MX50_PIN_EPDC_GDCLK = _MXC_BUILD_GPIO_PIN(2, 16, 1, 0x1F0, 0x58C),
++	MX50_PIN_EPDC_GDSP = _MXC_BUILD_GPIO_PIN(2, 17, 1, 0x1F4, 0x590),
++	MX50_PIN_EPDC_GDOE = _MXC_BUILD_GPIO_PIN(2, 18, 1, 0x1F8, 0x594),
++	MX50_PIN_EPDC_GDRL = _MXC_BUILD_GPIO_PIN(2, 19, 1, 0x1FC, 0x598),
++	MX50_PIN_EPDC_SDCLK = _MXC_BUILD_GPIO_PIN(2, 20, 1, 0x200, 0x59C),
++	MX50_PIN_EPDC_SDOEZ = _MXC_BUILD_GPIO_PIN(2, 21, 1, 0x204, 0x5A0),
++	MX50_PIN_EPDC_SDOED = _MXC_BUILD_GPIO_PIN(2, 22, 1, 0x208, 0x5A4),
++	MX50_PIN_EPDC_SDOE = _MXC_BUILD_GPIO_PIN(2, 23, 1, 0x20C, 0x5A8),
++	MX50_PIN_EPDC_SDLE = _MXC_BUILD_GPIO_PIN(2, 24, 1, 0x210, 0x5AC),
++	MX50_PIN_EPDC_SDCLKN = _MXC_BUILD_GPIO_PIN(2, 25, 1, 0x214, 0x5B0),
++	MX50_PIN_EPDC_SDSHR = _MXC_BUILD_GPIO_PIN(2, 26, 1, 0x218, 0x5B4),
++	MX50_PIN_EPDC_PWRCOM = _MXC_BUILD_GPIO_PIN(2, 27, 1, 0x21C, 0x5B8),
++	MX50_PIN_EPDC_PWRSTAT = _MXC_BUILD_GPIO_PIN(2, 28, 1, 0x220, 0x5BC),
++	MX50_PIN_EPDC_PWRCTRL0 = _MXC_BUILD_GPIO_PIN(2, 29, 1, 0x224, 0x5C0),
++	MX50_PIN_EPDC_PWRCTRL1 = _MXC_BUILD_GPIO_PIN(2, 30, 1, 0x228, 0x5C4),
++	MX50_PIN_EPDC_PWRCTRL2 = _MXC_BUILD_GPIO_PIN(2, 31, 1, 0x22C, 0x5C8),
++	MX50_PIN_EPDC_PWRCTRL3 = _MXC_BUILD_GPIO_PIN(3, 20, 1, 0x230, 0x5CC),
++	MX50_PIN_EPDC_VCOM0 = _MXC_BUILD_GPIO_PIN(3, 21, 1, 0x234, 0x5D0),
++	MX50_PIN_EPDC_VCOM1 = _MXC_BUILD_GPIO_PIN(3, 22, 1, 0x238, 0x5D4),
++	MX50_PIN_EPDC_BDR0 = _MXC_BUILD_GPIO_PIN(3, 23, 1, 0x23C, 0x5D8),
++	MX50_PIN_EPDC_BDR1 = _MXC_BUILD_GPIO_PIN(3, 24, 1, 0x240, 0x5DC),
++	MX50_PIN_EPDC_SDCE0 = _MXC_BUILD_GPIO_PIN(3, 25, 1, 0x244, 0x5E0),
++	MX50_PIN_EPDC_SDCE1 = _MXC_BUILD_GPIO_PIN(3, 26, 1, 0x248, 0x5E4),
++	MX50_PIN_EPDC_SDCE2 = _MXC_BUILD_GPIO_PIN(3, 27, 1, 0x24C, 0x5E8),
++	MX50_PIN_EPDC_SDCE3 = _MXC_BUILD_GPIO_PIN(3, 28, 1, 0x250, 0x5EC),
++	MX50_PIN_EPDC_SDCE4 = _MXC_BUILD_GPIO_PIN(3, 29, 1, 0x254, 0x5F0),
++	MX50_PIN_EPDC_SDCE5 = _MXC_BUILD_GPIO_PIN(3, 30, 1, 0x258, 0x5F4),
++	MX50_PIN_EIM_DA0 = _MXC_BUILD_GPIO_PIN(0, 0, 1, 0x25C, 0x5F8),
++	MX50_PIN_EIM_DA1 = _MXC_BUILD_GPIO_PIN(0, 1, 1, 0x260, 0x5FC),
++	MX50_PIN_EIM_DA2 = _MXC_BUILD_GPIO_PIN(0, 2, 1, 0x264, 0x600),
++	MX50_PIN_EIM_DA3 = _MXC_BUILD_GPIO_PIN(0, 3, 1, 0x268, 0x604),
++	MX50_PIN_EIM_DA4 = _MXC_BUILD_GPIO_PIN(0, 4, 1, 0x26C, 0x608),
++	MX50_PIN_EIM_DA5 = _MXC_BUILD_GPIO_PIN(0, 5, 1, 0x270, 0x60C),
++	MX50_PIN_EIM_DA6 = _MXC_BUILD_GPIO_PIN(0, 6, 1, 0x274, 0x610),
++	MX50_PIN_EIM_DA7 = _MXC_BUILD_GPIO_PIN(0, 7, 1, 0x278, 0x614),
++	MX50_PIN_EIM_DA8 = _MXC_BUILD_GPIO_PIN(0, 8, 1, 0x27C, 0x618),
++	MX50_PIN_EIM_DA9 = _MXC_BUILD_GPIO_PIN(0, 9, 1, 0x280, 0x61C),
++	MX50_PIN_EIM_DA10 = _MXC_BUILD_GPIO_PIN(0, 10, 1, 0x284, 0x620),
++	MX50_PIN_EIM_DA11 = _MXC_BUILD_GPIO_PIN(0, 11, 1, 0x288, 0x624),
++	MX50_PIN_EIM_DA12 = _MXC_BUILD_GPIO_PIN(0, 12, 1, 0x28C, 0x628),
++	MX50_PIN_EIM_DA13 = _MXC_BUILD_GPIO_PIN(0, 13, 1, 0x290, 0x62C),
++	MX50_PIN_EIM_DA14 = _MXC_BUILD_GPIO_PIN(0, 14, 1, 0x294, 0x630),
++	MX50_PIN_EIM_DA15 = _MXC_BUILD_GPIO_PIN(0, 15, 1, 0x298, 0x634),
++	MX50_PIN_EIM_CS2 = _MXC_BUILD_GPIO_PIN(0, 16, 1, 0x29C, 0x638),
++	MX50_PIN_EIM_CS1 = _MXC_BUILD_GPIO_PIN(0, 17, 1, 0x2A0, 0x63C),
++	MX50_PIN_EIM_CS0 = _MXC_BUILD_GPIO_PIN(0, 18, 1, 0x2A4, 0x640),
++	MX50_PIN_EIM_EB0 = _MXC_BUILD_GPIO_PIN(0, 19, 1, 0x2A8, 0x644),
++	MX50_PIN_EIM_EB1 = _MXC_BUILD_GPIO_PIN(0, 20, 1, 0x2AC, 0x648),
++	MX50_PIN_EIM_WAIT = _MXC_BUILD_GPIO_PIN(0, 21, 1, 0x2B0, 0x64C),
++	MX50_PIN_EIM_BCLK = _MXC_BUILD_GPIO_PIN(0, 22, 1, 0x2B4, 0x650),
++	MX50_PIN_EIM_RDY = _MXC_BUILD_GPIO_PIN(0, 23, 1, 0x2B8, 0x654),
++	MX50_PIN_EIM_OE = _MXC_BUILD_GPIO_PIN(0, 24, 1, 0x2BC, 0x658),
++	MX50_PIN_EIM_RW = _MXC_BUILD_GPIO_PIN(0, 25, 1, 0x2C0, 0x65C),
++	MX50_PIN_EIM_LBA = _MXC_BUILD_GPIO_PIN(0, 26, 1, 0x2C4, 0x660),
++	MX50_PIN_EIM_CRE = _MXC_BUILD_GPIO_PIN(0, 27, 1, 0x2C8, 0x664),
++};
++
++#endif				/* __ASSEMBLY__ */
++#endif				/* __ASM_ARCH_MXC_MX50_PINS_H__ */
+diff --git a/include/asm-arm/mach-types.h b/include/asm-arm/mach-types.h
+index 66fdc4c..3b9fc43 100644
+--- a/include/asm-arm/mach-types.h
++++ b/include/asm-arm/mach-types.h
+@@ -2513,6 +2513,7 @@ extern unsigned int __machine_arch_type;
+ #define MACH_TYPE_MX28EVK              2531
+ #define MACH_TYPE_MX23EVK              2629
+ #define MACH_TYPE_MX53_EVK             2716
++#define MACH_TYPE_MX50_ARM2            2955
+ 
+ #ifdef CONFIG_ARCH_EBSA110
+ # ifdef machine_arch_type
+@@ -32526,6 +32527,18 @@ extern unsigned int __machine_arch_type;
+ # define machine_is_mx53_evk()	(0)
+ #endif
+ 
++#ifdef CONFIG_MACH_MX50_ARM2
++# ifdef machine_arch_type
++#  undef machine_arch_type
++#  define machine_arch_type     __machine_arch_type
++# else
++#  define machine_arch_type     MACH_TYPE_MX50_ARM2
++# endif
++# define machine_is_mx50_arm2()  (machine_arch_type == MACH_TYPE_MX50_ARM2)
++#else
++# define machine_is_mx50_arm2()  (0)
++#endif
++
+ /*
+  * These have not yet been registered
+  */
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+new file mode 100644
+index 0000000..4f3a6ff
+--- /dev/null
++++ b/include/configs/mx50_arm2.h
+@@ -0,0 +1,248 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX50-ARM2 Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx50.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_MXC
++#define CONFIG_MX50
++#define CONFIG_MX50_ARM2
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX50_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX50_UART	1
++#define CONFIG_MX50_UART1	1
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++/*#define CONFIG_CMD */
++#define CONFIG_REF_CLK_FREQ CONFIG_MX50_HCLK_FREQ
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootargs_mmc=setenv bootargs ${bootargs} ip=dhcp "     \
++			"root=/dev/mmcblk0p2 rootwait\0"                \
++		"bootcmd_mmc=run bootargs_base bootargs_mmc; bootm\0"   \
++		"bootcmd=run bootcmd_net\0"                             \
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"ARM2 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_CSPI
++#define IMX_CSPI_VER_0_7        1
++#define MAX_SPI_BYTES		(8 * 4)
++#define CONFIG_IMX_SPI_PMIC
++#define CONFIG_IMX_SPI_PMIC_CS 0
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        3
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	/* detect whether ESDHC1 or ESDHC3 is boot device */
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++
++#endif
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx50_arm2_iram.h b/include/configs/mx50_arm2_iram.h
+new file mode 100644
+index 0000000..0e7f4b4
+--- /dev/null
++++ b/include/configs/mx50_arm2_iram.h
+@@ -0,0 +1,194 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX50-ARM2 Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx50.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
++
++#define CONFIG_MXC
++#define CONFIG_MX50
++#define CONFIG_MX50_ARM2
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++/*
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++*/
++
++#define CONFIG_MX50_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    600
++#define CONFIG_SYS_AHB_PODF     4
++#define CONFIG_SYS_AXIA_PODF    1
++#define CONFIG_SYS_AXIB_PODF    2
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(3 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX50_UART	1
++#define CONFIG_MX50_UART1	1
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#define CONFIG_CMD_BDI		/* bdinfo			*/
++#define CONFIG_CMD_BOOTD	/* bootd			*/
++#define CONFIG_CMD_CONSOLE	/* coninfo			*/
++#define CONFIG_CMD_RUN		/* run command in env variable	*/
++
++/*
++ * SPI Configs
++ * */
++
++/*
++ * MMC Configs
++ * */
++/*
++ * Eth Configs
++ */
++
++
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_ENV
++
++#define CONFIG_REF_CLK_FREQ CONFIG_MX50_HCLK_FREQ
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define CONFIG_BOOTARGS         "console=ttymxc0,115200 "\
++				"rdinit=/linuxrc"
++
++#define CONFIG_BOOTCOMMAND      "bootm"
++#define CONFIG_ENV_IS_EMBEDDED
++/*
++ * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
++ * U-Boot, RedBoot and Linux: the ethernet Rx signal is reaching the CS8900A
++ * controller inverted. The controller is capable of detecting and correcting
++ * this, but it needs 4 network packets for that. Which means, at startup, you
++ * will not receive answers to the first 4 packest, unless there have been some
++ * broadcasts on the network, or your board is on a hub. Reducing the ARP
++ * timeout from default 5 seconds to 200ms we speed up the initial TFTP
++ * transfer, should the user wish one, significantly.
++ */
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_PROMPT		"ARM2 U-Boot > "
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(6 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++/* TO1 boards */
++/* #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024) */
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++/* #define CONFIG_FSL_ENV_IN_SF
++*/
++/* #define CONFIG_FSL_ENV_IN_MMC */
++
++#define CONFIG_ENV_SECT_SIZE    (1 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++#define CONFIG_ENV_IS_NOWHERE
++
++/*
++ * JFFS2 partitions
++ */
++/*
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++*/
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+new file mode 100644
+index 0000000..548629e
+--- /dev/null
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -0,0 +1,249 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX50-ARM2 Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx50.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_MXC
++#define CONFIG_MX50
++#define CONFIG_MX50_ARM2
++#define CONFIG_LPDDR2
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX50_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MX50_UART	1
++#define CONFIG_MX50_UART1	1
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++/*#define CONFIG_CMD */
++#define CONFIG_REF_CLK_FREQ CONFIG_MX50_HCLK_FREQ
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootargs_mmc=setenv bootargs ${bootargs} ip=dhcp "     \
++			"root=/dev/mmcblk0p2 rootwait\0"                \
++		"bootcmd_mmc=run bootargs_base bootargs_mmc; bootm\0"   \
++		"bootcmd=run bootcmd_net\0"                             \
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"ARM2 U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE 	-1
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_CSPI
++#define IMX_CSPI_VER_0_7        1
++#define MAX_SPI_BYTES		(8 * 4)
++#define CONFIG_IMX_SPI_PMIC
++#define CONFIG_IMX_SPI_PMIC_CS 0
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        3
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	/* detect whether ESDHC1 or ESDHC3 is boot device */
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++
++#endif
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

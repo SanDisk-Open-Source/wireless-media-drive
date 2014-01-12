@@ -1,0 +1,57 @@
+From d6c3005c574a277e2e24333b53d05e9deba87ff0 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Thu, 14 Oct 2010 18:56:28 +0800
+Subject: [PATCH] ENGR00132615-2 mx50: delete AHB_HIGH_SET_POINT flag of esdhc clock
+
+This is another work-around for esdhc crc error issue when AHB is
+down to 24Mhz in low power mode.
+But an expensive one since AHB will go back to 133Mhz and it will switch
+the entire LP domain frequencies whenever the SDHC is accessed
+
+With the workaround of switching esdhc clock to 20Mhz when AHB is 24Mhz,
+we do not need to have this flag set anymore.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |    4 ----
+ 1 files changed, 0 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index a60a181..01611dc 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2088,7 +2088,6 @@ static struct clk esdhc1_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG1_OFFSET,
+ 	 .disable = _clk_disable,
+ 	 .secondary = &esdhc1_clk[1],
+-	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ 	 },
+ 	{
+ 	 .id = 0,
+@@ -2132,7 +2131,6 @@ static struct clk esdhc2_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG3_OFFSET,
+ 	 .disable = _clk_disable,
+ 	 .secondary = &esdhc2_clk[1],
+-	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ 	 },
+ 	{
+ 	 .id = 1,
+@@ -2216,7 +2214,6 @@ static struct clk esdhc3_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG5_OFFSET,
+ 	 .disable = _clk_disable,
+ 	 .secondary = &esdhc3_clk[1],
+-	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ 	 },
+ 	{
+ 	 .id = 2,
+@@ -2260,7 +2257,6 @@ static struct clk esdhc4_clk[] = {
+ 	 .enable_shift = MXC_CCM_CCGRx_CG7_OFFSET,
+ 	 .disable = _clk_disable,
+ 	 .secondary = &esdhc4_clk[1],
+-	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
+ 	 },
+ 	{
+ 	 .id = 3,
+-- 
+1.5.4.4
+

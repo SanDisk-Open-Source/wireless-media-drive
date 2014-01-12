@@ -1,0 +1,61 @@
+From 05bc6380a6c407471791d7bc70b29f8c57deebc6 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Tue, 18 Jan 2011 18:38:14 +0800
+Subject: [PATCH] ENGR00138138 Add workaround to fix irq wakeup for mx53 smd &loco
+
+Make sure only DA9053 irq configured as wakeup source for mx53 smd &loco
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/pm.c |   27 ++++++++++++++++++++++++++-
+ 1 files changed, 26 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index 7df6753..c2b10ce 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -69,6 +69,29 @@ void *suspend_iram_base;
+ void (*suspend_in_iram)(void *sdclk_iomux_addr) = NULL;
+ void __iomem *suspend_param1;
+ 
++#define TZIC_WAKEUP0_OFFSET            0x0E00
++#define TZIC_WAKEUP1_OFFSET            0x0E04
++#define TZIC_WAKEUP2_OFFSET            0x0E08
++#define TZIC_WAKEUP3_OFFSET            0x0E0C
++#define GPIO7_0_11_IRQ_BIT		(0x1<<11)
++
++static void mx53_smd_loco_irq_wake_fixup(void)
++{
++	void __iomem *tzic_base;
++	tzic_base = ioremap(MX53_TZIC_BASE_ADDR, SZ_4K);
++	if (NULL == tzic_base) {
++		pr_err("fail to map MX53_TZIC_BASE_ADDR\n");
++		return;
++	}
++	__raw_writel(0, tzic_base + TZIC_WAKEUP0_OFFSET);
++	__raw_writel(0, tzic_base + TZIC_WAKEUP1_OFFSET);
++	__raw_writel(0, tzic_base + TZIC_WAKEUP2_OFFSET);
++	/* only enable irq wakeup for da9053 */
++	__raw_writel(GPIO7_0_11_IRQ_BIT, tzic_base + TZIC_WAKEUP3_OFFSET);
++	iounmap(tzic_base);
++	pr_debug("only da9053 irq is wakeup-enabled\n");
++}
++
+ static int mx5_suspend_enter(suspend_state_t state)
+ {
+ 	if (gpc_dvfs_clk == NULL)
+@@ -95,8 +118,10 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 
+ 		if (cpu_is_mx51() || cpu_is_mx53()) {
+ 			if (machine_is_mx53_smd() ||
+-				machine_is_mx53_loco())
++				machine_is_mx53_loco()) {
++				mx53_smd_loco_irq_wake_fixup();
+ 				da9053_suspend_cmd();
++			}
+ 			/* Run the suspend code from iRAM. */
+ 			suspend_in_iram(suspend_param1);
+ 
+-- 
+1.5.4.4
+

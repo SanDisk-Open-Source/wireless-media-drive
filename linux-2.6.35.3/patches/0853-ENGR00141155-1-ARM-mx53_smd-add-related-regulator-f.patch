@@ -1,0 +1,29 @@
+From ec3f2784542685cb478dee4b6b85c69c80583683 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Fri, 25 Mar 2011 11:18:34 +0800
+Subject: [PATCH] ENGR00141155-1 ARM mx53_smd: add related regulator for hdmi
+
+add related regulator for hdmi.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_smd.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 75480c1..55917da 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -601,7 +601,8 @@ static void sii902x_hdmi_reset(void)
+ }
+ 
+ static struct mxc_lcd_platform_data sii902x_hdmi_data = {
+-       .reset = sii902x_hdmi_reset,
++	.reset = sii902x_hdmi_reset,
++	.analog_reg = "DA9052_LDO2",
+ };
+ 
+ static struct imxi2c_platform_data mxci2c_data = {
+-- 
+1.5.4.4
+

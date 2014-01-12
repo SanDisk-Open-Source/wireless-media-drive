@@ -1,0 +1,32 @@
+From 85cfa213c2557ebbd4bd469e63a898dd1f7e408e Mon Sep 17 00:00:00 2001
+From: Arnaud Patard (Rtp) <arnaud.patard@rtp-net.org>
+Date: Wed, 3 Nov 2010 15:54:36 +0100
+Subject: [PATCH] imx: fix iomux v3
+
+Commit "ARM: i.MX IOMUX-V3 replace struct pad_desc with bitmapped cookie"
+(b705cb4d42e95a4a43a8945571c8613e71526c3d) introduced a typo which was
+preventing my efikamx to boot. This patch is fixing that.
+
+Signed-off-by: Arnaud Patard <arnaud.patard@rtp-net.org>
+Tested-by: Fabio Estevam <fabio.estevam@freescale.com>
+Signed-off-by: Sascha Hauer <s.hauer@pengutronix.de>
+---
+ arch/arm/plat-mxc/iomux-v3.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/iomux-v3.c b/arch/arm/plat-mxc/iomux-v3.c
+index 25c3a2b..6d41658 100644
+--- a/arch/arm/plat-mxc/iomux-v3.c
++++ b/arch/arm/plat-mxc/iomux-v3.c
+@@ -71,7 +71,7 @@ int mxc_iomux_v3_setup_pad(iomux_v3_cfg_t *pad)
+ 
+ 	if (MUX_SELECT_INPUT_OFS(pad))
+ 		__raw_writel(MUX_SELECT_INPUT(pad),
+-			base + MUX_SELECT_INPUT(pad));
++			base + MUX_SELECT_INPUT_OFS(pad));
+ 
+ 	if (!(MUX_PAD_CTRL(pad) & NO_PAD_CTRL) && MUX_PAD_CTRL_OFS(pad))
+ 		__raw_writel(MUX_PAD_CTRL(pad), base + MUX_PAD_CTRL_OFS(pad));
+-- 
+1.5.4.4
+

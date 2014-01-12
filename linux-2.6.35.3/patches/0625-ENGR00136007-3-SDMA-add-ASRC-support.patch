@@ -1,0 +1,82 @@
+From e8a50f135f45aa606b7be249c40c71322b6f7ca3 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 5 Jan 2011 17:50:37 +0800
+Subject: [PATCH] ENGR00136007-3 SDMA: add ASRC support
+
+Upgrade SDMA codes to support ASRC
+
+Signed-off-by: William Lai<b04597@freescale.com>
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ arch/arm/plat-mxc/sdma/dma_sdma.c |    7 ++-----
+ arch/arm/plat-mxc/sdma/sdma.c     |   17 +++++------------
+ 2 files changed, 7 insertions(+), 17 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/sdma/dma_sdma.c b/arch/arm/plat-mxc/sdma/dma_sdma.c
+index 9094911..156127d 100644
+--- a/arch/arm/plat-mxc/sdma/dma_sdma.c
++++ b/arch/arm/plat-mxc/sdma/dma_sdma.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -345,10 +345,7 @@ int mxc_dma_config(int channel_num, mxc_dma_requestbuf_t *dma_buf,
+ 		}
+ 		request_t.destAddr = (__u8 *) dma_buf->dst_addr;
+ 		request_t.sourceAddr = (__u8 *) dma_buf->src_addr;
+-		if (chnl_param.peripheral_type == ASRC)
+-			request_t.count = dma_buf->num_of_bytes / 4;
+-		else
+-			request_t.count = dma_buf->num_of_bytes;
++		request_t.count = dma_buf->num_of_bytes;
+ 		request_t.bd_cont = 1;
+ 		ret = mxc_dma_set_config(channel_num, &request_t,
+ 					 chnl_info->curr_buf);
+diff --git a/arch/arm/plat-mxc/sdma/sdma.c b/arch/arm/plat-mxc/sdma/sdma.c
+index 7fa3cb8..8a9e8e7 100644
+--- a/arch/arm/plat-mxc/sdma/sdma.c
++++ b/arch/arm/plat-mxc/sdma/sdma.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -357,10 +357,10 @@ static unsigned short sdma_get_pc(sdma_periphT peripheral_type,
+ 	} else if (peripheral_type == ASRC) {
+ 		switch (transfer_type) {
+ 		case per_2_emi:
+-			res = sdma_script_addrs.mxc_sdma_asrc_2_mcu_addr;
++			res = sdma_script_addrs.mxc_sdma_shp_2_mcu_addr;
+ 			break;
+ 		case emi_2_per:
+-			res = sdma_script_addrs.mxc_sdma_asrc_2_mcu_addr;
++			res = sdma_script_addrs.mxc_sdma_mcu_2_shp_addr;
+ 			break;
+ 		case per_2_per:
+ 			res = sdma_script_addrs.mxc_sdma_per_2_per_addr;
+@@ -583,15 +583,8 @@ static int sdma_load_context(int channel, dma_channel_params *p)
+ 			if (p->ext)
+ 				context.wml = ep->info_bits;
+ 			/* Watermark Level */
+-			if (p->peripheral_type == ASRC) {
+-				context.wml |= sdma_asrc_set_info(p,
+-								  &context,
+-								  event2_greater_than_32
+-								  |
+-								  event1_greater_than_32);
+-			} else
+-				context.wml |= event2_greater_than_32 |
+-				    event1_greater_than_32 | p->watermark_level;
++			context.wml |= event2_greater_than_32 |
++				event1_greater_than_32 | p->watermark_level;
+ 
+ 			/* Address */
+ 			context.shp_addr = (unsigned long)(p->per_address);
+-- 
+1.5.4.4
+

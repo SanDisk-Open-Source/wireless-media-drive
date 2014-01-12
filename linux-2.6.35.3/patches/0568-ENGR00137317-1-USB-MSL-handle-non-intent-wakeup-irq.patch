@@ -1,0 +1,90 @@
+From 39eec5265cb217092fa0dce48e9f95f53c341660 Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Fri, 24 Dec 2010 10:42:11 +0800
+Subject: [PATCH] ENGR00137317-1 USB MSL: handle non-intent wakeup irq triggered by PHCD change
+
+PORTSC PHCD will be changed while system shuts down usb host. This triggers
+wake-up interrupt. But it's not host wake-up or device wake-up. OWIR bit in
+USBCTRL doesn't be cleared. It keeps bring interrupt on. So
+- Clear OWIR bit in wakeup ISR if host/device doesn't need to wake up.
+- Close wakeup irq before shut down USB host.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ arch/arm/mach-mx5/usb_dr.c     |   18 ++++++++++++++++++
+ arch/arm/plat-mxc/usb_wakeup.c |    6 ++++++
+ 2 files changed, 24 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/usb_dr.c b/arch/arm/mach-mx5/usb_dr.c
+index c94ace6..19bad00 100644
+--- a/arch/arm/mach-mx5/usb_dr.c
++++ b/arch/arm/mach-mx5/usb_dr.c
+@@ -27,6 +27,7 @@ static void usbotg_clock_gate(bool on);
+ static struct clk *usb_phy1_clk;
+ static struct clk *usb_oh3_clk;
+ static struct clk *usb_ahb_clk;
++static void usbotg_wakeup_event_clear(void);
+ extern int clk_get_usecount(struct clk *clk);
+ /*
+  * platform data structs
+@@ -47,6 +48,7 @@ static struct fsl_usb2_platform_data dr_utmi_config = {
+ static struct fsl_usb2_wakeup_platform_data dr_wakeup_config = {
+ 	.name = "DR wakeup",
+ 	.usb_clock_for_pm  = usbotg_clock_gate,
++	.usb_wakeup_exhandle = usbotg_wakeup_event_clear,
+ };
+ /* Notes: configure USB clock*/
+ static int usbotg_init_ext(struct platform_device *pdev)
+@@ -203,6 +205,22 @@ static bool _is_device_wakeup(struct fsl_usb2_platform_data *pdata)
+ 	return false;
+ 
+ }
++
++static void usbotg_wakeup_event_clear(void)
++{
++	int wakeup_req = USBCTRL & UCTRL_OWIR;
++
++	if (wakeup_req != 0) {
++		printk(KERN_INFO "Unknown wakeup.(OTGSC 0x%x)\n", UOG_OTGSC);
++		/* Disable OWIE to clear OWIR, wait 3 clock
++		 * cycles of standly clock(32KHz)
++		 */
++		USBCTRL &= ~UCTRL_OWIE;
++		udelay(100);
++		USBCTRL |= UCTRL_OWIE;
++	}
++}
++
+ static void usbotg_clock_gate(bool on)
+ {
+ 	pr_debug("%s: on is %d\n", __func__, on);
+diff --git a/arch/arm/plat-mxc/usb_wakeup.c b/arch/arm/plat-mxc/usb_wakeup.c
+index d588413..8fed330 100644
+--- a/arch/arm/plat-mxc/usb_wakeup.c
++++ b/arch/arm/plat-mxc/usb_wakeup.c
+@@ -92,6 +92,7 @@ static bool is_wakeup(struct fsl_usb2_platform_data *pdata)
+ static void wakeup_event_handler(struct wakeup_ctrl *ctrl)
+ {
+ 	struct fsl_usb2_wakeup_platform_data *pdata = ctrl->pdata;
++	int already_waked = 0;
+ 	int i;
+ 
+ 	wakeup_clk_gate(ctrl->pdata, true);
+@@ -110,9 +111,14 @@ static void wakeup_event_handler(struct wakeup_ctrl *ctrl)
+ 				if (usb_pdata->usb_clock_for_pm)
+ 					usb_pdata->usb_clock_for_pm(true);
+ 				usb_pdata->lowpower = 0;
++				already_waked = 1;
+ 			}
+ 		}
+ 	}
++	/* If nothing to wakeup, clear wakeup event */
++	if ((already_waked == 0) && pdata->usb_wakeup_exhandle)
++		pdata->usb_wakeup_exhandle();
++
+ 	wakeup_clk_gate(ctrl->pdata, false);
+ 	pdata->usb_wakeup_is_pending = false;
+ 	wake_up(&pdata->wq);
+-- 
+1.5.4.4
+

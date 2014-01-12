@@ -1,0 +1,38 @@
+From 3bbd20aafdad1c06ca7c6155701de8c230694a21 Mon Sep 17 00:00:00 2001
+From: Richard Zhao <richard.zhao@freescale.com>
+Date: Tue, 21 Sep 2010 11:12:00 +0800
+Subject: [PATCH] ENGR00131788 MX50: add support uncompress putc
+
+Add uart1 base address for MACH_TYPE_MX50_ARM2 and MACH_TYPE_MX50_RDP.
+
+Signed-off-by: Richard Zhao <richard.zhao@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/uncompress.h |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/uncompress.h b/arch/arm/plat-mxc/include/mach/uncompress.h
+index d679f81..1de9b8b 100644
+--- a/arch/arm/plat-mxc/include/mach/uncompress.h
++++ b/arch/arm/plat-mxc/include/mach/uncompress.h
+@@ -69,6 +69,7 @@ static inline void flush(void)
+ #define MX3X_UART2_BASE_ADDR	0x43F94000
+ #define MX51_UART1_BASE_ADDR	0x73fbc000
+ #define MX53_UART1_BASE_ADDR	0x53fbc000
++#define MX50_UART1_BASE_ADDR	0x53fbc000
+ 
+ static __inline__ void __arch_decomp_setup(unsigned long arch_id)
+ {
+@@ -110,6 +111,10 @@ static __inline__ void __arch_decomp_setup(unsigned long arch_id)
+ 	case MACH_TYPE_MX53_EVK:
+ 		uart_base = MX53_UART1_BASE_ADDR;
+ 		break;
++	case MACH_TYPE_MX50_ARM2:
++	case MACH_TYPE_MX50_RDP:
++		uart_base = MX50_UART1_BASE_ADDR;
++		break;
+ 	default:
+ 		break;
+ 	}
+-- 
+1.5.4.4
+

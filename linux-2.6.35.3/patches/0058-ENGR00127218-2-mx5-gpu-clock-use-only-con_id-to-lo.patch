@@ -1,0 +1,31 @@
+From 5897ef121aa3c8aba0524705b385b0597e3290fb Mon Sep 17 00:00:00 2001
+From: Richard Zhao <richard.zhao@freescale.com>
+Date: Tue, 7 Sep 2010 15:10:24 +0800
+Subject: [PATCH] ENGR00127218-2 mx5: gpu clock: use only con_id to lookup clock
+
+It matches how gpu driver uses clk_get.
+
+Signed-off-by: Richard Zhao <richard.zhao@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 18ffc87..f86df41 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4148,9 +4148,9 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("pata_fsl", NULL, ata_clk),
+ 	_REGISTER_CLOCK("mxc_w1.0", NULL, owire_clk),
+ 	_REGISTER_CLOCK(NULL, "sahara_clk", sahara_clk[0]),
+-	_REGISTER_CLOCK("mxc_gpu.0", NULL, gpu3d_clk),
++	_REGISTER_CLOCK(NULL, "gpu3d_clk", gpu3d_clk),
+ 	_REGISTER_CLOCK(NULL, "garb_clk", garb_clk),
+-	_REGISTER_CLOCK("mxc_gpu.0", "gpu2d_clk", gpu2d_clk),
++	_REGISTER_CLOCK(NULL, "gpu2d_clk", gpu2d_clk),
+ 	_REGISTER_CLOCK("mxc_scc.0", NULL, scc_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "cko1", cko1_clk),
+ 	_REGISTER_CLOCK(NULL, "gpt", gpt_clk[0]),
+-- 
+1.5.4.4
+

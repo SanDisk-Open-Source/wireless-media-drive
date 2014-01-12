@@ -1,0 +1,86 @@
+From 2fc4fafc0d81f9d5b598936509a2b973b2d6bdff Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 18 Nov 2010 17:36:30 +0800
+Subject: [PATCH] ENGR12345678 Change ddr write delay in the PHY
+
+Total 5 registers:
+0x1400023c/244/24c/254/25c: from 0x000a1401 to 0x000a0b01
+
+Without this patch, kernel on RDP board with Elpida DDR
+is not able to boot, or not stable.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ board/freescale/mx50_arm2/flash_header.S |   12 ++++++------
+ board/freescale/mx50_rdp/flash_header.S  |   20 ++++++++++----------
+ 2 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/board/freescale/mx50_arm2/flash_header.S b/board/freescale/mx50_arm2/flash_header.S
+index 055d947..8bdc530 100644
+--- a/board/freescale/mx50_arm2/flash_header.S
++++ b/board/freescale/mx50_arm2/flash_header.S
+@@ -396,16 +396,16 @@ wait_pll1_lock:
+ 	str r1, [r0, #0x250]
+ /* setmem /32 0x14000258	= 0x20099414 */
+ 	str r1, [r0, #0x258]
+-/* setmem /32 0x1400023c	= 0x000a1401 */
+-	ldr r1, =0x000a1401
++/* setmem /32 0x1400023c	= 0x000a0b01 */
++	ldr r1, =0x000a0b01
+ 	str r1, [r0, #0x23c]
+-/* setmem /32 0x14000244	= 0x000a1401 */
++/* setmem /32 0x14000244	= 0x000a0b01 */
+ 	str r1, [r0, #0x244]
+-/* setmem /32 0x1400024c	= 0x000a1401 */
++/* setmem /32 0x1400024c	= 0x000a0b01 */
+ 	str r1, [r0, #0x24c]
+-/* setmem /32 0x14000254	= 0x000a1401 */
++/* setmem /32 0x14000254	= 0x000a0b01 */
+ 	str r1, [r0, #0x254]
+-/* setmem /32 0x1400025c	= 0x000a1401 */
++/* setmem /32 0x1400025c	= 0x000a0b01 */
+ 	str r1, [r0, #0x25c]
+ 
+ /* Start ddr */
+diff --git a/board/freescale/mx50_rdp/flash_header.S b/board/freescale/mx50_rdp/flash_header.S
+index 530a079..51ee20a 100644
+--- a/board/freescale/mx50_rdp/flash_header.S
++++ b/board/freescale/mx50_rdp/flash_header.S
+@@ -531,24 +531,24 @@ delay1:
+     ldr r1, =0x60099414
+     str r1, [r0, #0x258]
+ 
+-//setmem /32 0x1400023c = 0x000a1401
+-    ldr r1, =0x000a1401
++//setmem /32 0x1400023c = 0x000a0b01
++    ldr r1, =0x000a0b01
+     str r1, [r0, #0x23c]
+ 
+-//setmem /32 0x14000244 = 0x000a1401
+-    ldr r1, =0x000a1401
++//setmem /32 0x14000244 = 0x000a0b01
++    ldr r1, =0x000a0b01
+     str r1, [r0, #0x244]
+ 
+-//setmem /32 0x1400024c = 0x000a1401
+-    ldr r1, =0x000a1401
++//setmem /32 0x1400024c = 0x000a0b01
++    ldr r1, =0x000a0b01
+     str r1, [r0, #0x24c]
+ 
+-//setmem /32 0x14000254 = 0x000a1401
+-    ldr r1, =0x000a1401
++//setmem /32 0x14000254 = 0x000a0b01
++    ldr r1, =0x000a0b01
+     str r1, [r0, #0x254]
+ 
+-//setmem /32 0x1400025c = 0x000a1401
+-    ldr r1, =0x000a1401
++//setmem /32 0x1400025c = 0x000a0b01
++    ldr r1, =0x000a0b01
+     str r1, [r0, #0x25c]
+ 
+ 
+-- 
+1.5.4.4
+

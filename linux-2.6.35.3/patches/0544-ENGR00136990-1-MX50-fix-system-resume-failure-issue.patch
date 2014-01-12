@@ -1,0 +1,55 @@
+From 076bfa4aea25270b5af919ef344620aad91ec807 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Wed, 15 Dec 2010 14:55:28 +0800
+Subject: [PATCH] ENGR00136990-1 MX50: fix system resume failure issue due to ZQ calibration
+
+need to make sure last ZQ calib run completed and no more ZQ calib to be run
+during suspend, and resume ZQ calib until the system resumes.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/plat-mxc/zq_calib.c |   21 +++++++++++++++++++++
+ 1 files changed, 21 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/zq_calib.c b/arch/arm/plat-mxc/zq_calib.c
+index bf0a693..db9a669 100644
+--- a/arch/arm/plat-mxc/zq_calib.c
++++ b/arch/arm/plat-mxc/zq_calib.c
+@@ -355,6 +355,25 @@ static int __devexit mxc_zq_calib_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PM
++static int zq_calib_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	flush_delayed_work(&zq_work);
++
++	return 0;
++}
++
++static int zq_calib_resume(struct platform_device *pdev)
++{
++	mxc_zq_main(NULL);
++
++	return 0;
++}
++#else
++#define	zq_calib_suspend	NULL
++#define	zq_calib_resume		NULL
++#endif
++
+ static struct platform_driver mxc_zq_calib_driver = {
+ 	.driver = {
+ 		.owner = THIS_MODULE,
+@@ -362,6 +381,8 @@ static struct platform_driver mxc_zq_calib_driver = {
+ 	},
+ 	.probe = mxc_zq_calib_probe,
+ 	.remove =  __exit_p(mxc_zq_calib_remove),
++	.suspend = zq_calib_suspend,
++	.resume = zq_calib_resume,
+ };
+ 
+ static int __init mxc_zq_calib_init(void)
+-- 
+1.5.4.4
+

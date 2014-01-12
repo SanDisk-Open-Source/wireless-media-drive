@@ -1,0 +1,31 @@
+From 85202dce946013054ce2dc807ef4768cbb8691bd Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 2 Nov 2010 14:15:03 +0800
+Subject: [PATCH] ENGR00133261 MX53 EVK:Correct PWM backlight frequency
+
+This patch sets CLAA WVGA LCD panel's PWM backlight frequency
+to be 19.9KHz, which meets the LCD data sheet's requirement.
+The change can get rid of high frequency howling on some
+LCD panels.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 7a07ccd..cf5fb65 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -511,7 +511,7 @@ static struct platform_pwm_backlight_data mxc_pwm_backlight_data = {
+ 	.pwm_id = 1,
+ 	.max_brightness = 255,
+ 	.dft_brightness = 128,
+-	.pwm_period_ns = 78770,
++	.pwm_period_ns = 50000,
+ };
+ 
+ static void flexcan_xcvr_enable(int id, int en)
+-- 
+1.5.4.4
+

@@ -1,0 +1,39 @@
+From b5d8c00948b95dede9efb8740b07e7d3f43e74ef Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Thu, 6 Jan 2011 16:51:19 +0800
+Subject: [PATCH] ENGR00137667-2 usb-host: hcd needs to be removed if the host's probe is error
+
+Hcd needs to be removed if the host's probe meets error, if not,
+the system hang will occur.
+
+Reported-by: Robby Cai <r63905@freescale.com>
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/host/ehci-arc.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index 4702587..849ffc5 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -264,7 +264,7 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 		if (!ehci->transceiver) {
+ 			printk(KERN_ERR "can't find transceiver\n");
+ 			retval = -ENODEV;
+-			goto err5;
++			goto err6;
+ 		}
+ 
+ 		retval = otg_set_host(ehci->transceiver, &ehci_to_hcd(ehci)->self);
+@@ -282,6 +282,8 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 	fsl_platform_set_ahb_burst(hcd);
+ 	ehci_testmode_init(hcd_to_ehci(hcd));
+ 	return retval;
++err6:
++	usb_remove_hcd(hcd);
+ err5:
+ 	free_irq(irq, (void *)pdev);
+ err4:
+-- 
+1.5.4.4
+

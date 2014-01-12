@@ -1,0 +1,50 @@
+From 38de1fb8941a52d43b3c0991b16a99b51e54941b Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 17 Nov 2010 13:49:44 +0800
+Subject: [PATCH] ENGR00133795-2 MX53 ARD:Support ADV7180 TVin
+
+1)Set TVin pwr gpio to be output in io_init.
+2)Add V4L2 capture device.
+3)Set CVBS to be true for TVin platform data.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index c91e10a..87b95b4 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -679,11 +679,11 @@ static void mx53_ard_host1_driver_vbus(bool on)
+ static void adv7180_pwdn(int pwdn)
+ {
+ 	gpio_request(ARD_VIDEOIN_PWR, "tvin-pwr");
+-	gpio_direction_output(ARD_VIDEOIN_PWR, 0);
+ 	if (pwdn)
+ 		gpio_set_value(ARD_VIDEOIN_PWR, 0);
+ 	else
+ 		gpio_set_value(ARD_VIDEOIN_PWR, 1);
++	gpio_free(ARD_VIDEOIN_PWR);
+ }
+ 
+ static struct mxc_tvin_platform_data adv7180_data = {
+@@ -693,6 +693,7 @@ static struct mxc_tvin_platform_data adv7180_data = {
+ 	.pvdd_reg = NULL,
+ 	.pwdn = adv7180_pwdn,
+ 	.reset = NULL,
++	.cvbs = true,
+ };
+ 
+ static struct resource mxcfb_resources[] = {
+@@ -1439,6 +1440,7 @@ static void __init mxc_board_init(void)
+ 			&mxc_surround_audio_data);
+ 
+ 	mxc_register_device(&mxc_v4l2out_device, NULL);
++	mxc_register_device(&mxc_v4l2_device, NULL);
+ }
+ 
+ static void __init mx53_ard_timer_init(void)
+-- 
+1.5.4.4
+

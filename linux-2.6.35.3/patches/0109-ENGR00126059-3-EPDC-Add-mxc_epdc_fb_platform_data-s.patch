@@ -1,0 +1,33 @@
+From f78ff644650922c9f87eea3aef50ac62eb51971c Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Tue, 14 Sep 2010 21:04:29 -0500
+Subject: [PATCH] ENGR00126059-3 EPDC: Add mxc_epdc_fb_platform_data structure
+
+Add mxc_epdc_fb_platform_data to fsl_devices.h
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ include/linux/fsl_devices.h |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index e2a87fe..7ebf495 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -294,6 +294,13 @@ struct mxc_tvin_platform_data {
+ 	void (*reset) (void);
+ };
+ 
++struct mxc_epdc_fb_platform_data {
++	void (*get_pins) (void);
++	void (*put_pins) (void);
++	void (*enable_pins) (void);
++	void (*disable_pins) (void);
++};
++
+ /*! Platform data for the IDE drive structure. */
+ struct mxc_ide_platform_data {
+ 	char *power_drive;	/*!< The power pointer */
+-- 
+1.5.4.4
+

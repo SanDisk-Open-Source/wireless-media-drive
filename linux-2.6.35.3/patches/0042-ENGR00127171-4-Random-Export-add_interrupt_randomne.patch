@@ -1,0 +1,29 @@
+From 454d48c92009092fcb1fb6c20b251675f20b5a0b Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 6 Sep 2010 14:52:03 +0800
+Subject: [PATCH] ENGR00127171-4 Random: Export add_interrupt_randomness at random.c
+
+Fix can build error when build as module
+Export add_interrupt_randomness at random.c
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/char/random.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/char/random.c b/drivers/char/random.c
+index 8d85587..66c28c3 100644
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+@@ -702,6 +702,8 @@ void add_interrupt_randomness(int irq)
+ 	add_timer_randomness(state, 0x100 + irq);
+ }
+ 
++EXPORT_SYMBOL_GPL(add_interrupt_randomness);
++
+ #ifdef CONFIG_BLOCK
+ void add_disk_randomness(struct gendisk *disk)
+ {
+-- 
+1.5.4.4
+

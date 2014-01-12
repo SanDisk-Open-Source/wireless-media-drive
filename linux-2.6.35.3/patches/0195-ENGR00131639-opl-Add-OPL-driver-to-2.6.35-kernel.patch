@@ -1,0 +1,1225 @@
+From 3aa5110dae99eb82b4ec1c2106efb4766d879f37 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Thu, 16 Sep 2010 09:19:20 -0500
+Subject: [PATCH] ENGR00131639 opl: Add OPL driver to 2.6.35 kernel
+
+The OPL driver needs to be brought over to 2.6.35 from 2.6.31.
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ drivers/media/video/mxc/opl/Makefile               |    5 +
+ .../media/video/mxc/opl/hmirror_rotate180_u16.c    |  259 ++++++++++++++++++
+ drivers/media/video/mxc/opl/opl.h                  |  162 +++++++++++
+ drivers/media/video/mxc/opl/opl_mod.c              |   30 ++
+ drivers/media/video/mxc/opl/rotate270_u16.c        |  285 ++++++++++++++++++++
+ drivers/media/video/mxc/opl/rotate270_u16_qcif.S   |   70 +++++
+ drivers/media/video/mxc/opl/rotate90_u16.c         |  220 +++++++++++++++
+ drivers/media/video/mxc/opl/rotate90_u16_qcif.S    |   71 +++++
+ drivers/media/video/mxc/opl/vmirror_u16.c          |   46 ++++
+ 9 files changed, 1148 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/media/video/mxc/opl/Makefile b/drivers/media/video/mxc/opl/Makefile
+new file mode 100644
+index 0000000..092a62c
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/Makefile
+@@ -0,0 +1,5 @@
++opl-objs	:= opl_mod.o rotate90_u16.o rotate270_u16.o	\
++		   rotate90_u16_qcif.o rotate270_u16_qcif.o	\
++		   vmirror_u16.o hmirror_rotate180_u16.o
++
++obj-$(CONFIG_VIDEO_MXC_OPL)	+= opl.o
+diff --git a/drivers/media/video/mxc/opl/hmirror_rotate180_u16.c b/drivers/media/video/mxc/opl/hmirror_rotate180_u16.c
+new file mode 100644
+index 0000000..6737f3a
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/hmirror_rotate180_u16.c
+@@ -0,0 +1,259 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/module.h>
++#include "opl.h"
++
++static inline u32 rot_left_u16(u16 x, unsigned int n)
++{
++	return (x << n) | (x >> (16 - n));
++}
++
++static inline u32 rot_left_u32(u32 x, unsigned int n)
++{
++	return (x << n) | (x >> (32 - n));
++}
++
++static inline u32 byte_swap_u32(u32 x)
++{
++	u32 t1, t2, t3;
++
++	t1 = x ^ ((x << 16) | x >> 16);
++	t2 = t1 & 0xff00ffff;
++	t3 = (x >> 8) | (x << 24);
++	return t3 ^ (t2 >> 8);
++}
++
++static int opl_hmirror_u16_by1(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror);
++static int opl_hmirror_u16_by2(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror);
++static int opl_hmirror_u16_by4(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror);
++static int opl_hmirror_u16_by8(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror);
++
++int opl_hmirror_u16(const u8 *src, int src_line_stride, int width, int height,
++		    u8 *dst, int dst_line_stride)
++{
++	if (!src || !dst)
++		return OPLERR_NULL_PTR;
++
++	if (width == 0 || height == 0 || src_line_stride == 0
++	    || dst_line_stride == 0)
++		return OPLERR_BAD_ARG;
++
++	if (width % 8 == 0)
++		return opl_hmirror_u16_by8(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 0);
++	else if (width % 4 == 0)
++		return opl_hmirror_u16_by4(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 0);
++	else if (width % 2 == 0)
++		return opl_hmirror_u16_by2(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 0);
++	else			/* (width % 1) */
++		return opl_hmirror_u16_by1(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 0);
++}
++
++int opl_rotate180_u16(const u8 *src, int src_line_stride, int width,
++		      int height, u8 *dst, int dst_line_stride)
++{
++	if (!src || !dst)
++		return OPLERR_NULL_PTR;
++
++	if (width == 0 || height == 0 || src_line_stride == 0
++	    || dst_line_stride == 0)
++		return OPLERR_BAD_ARG;
++
++	if (width % 8 == 0)
++		return opl_hmirror_u16_by8(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 1);
++	else if (width % 4 == 0)
++		return opl_hmirror_u16_by4(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 1);
++	else if (width % 2 == 0)
++		return opl_hmirror_u16_by2(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 1);
++	else			/* (width % 1) */
++		return opl_hmirror_u16_by1(src, src_line_stride, width, height,
++					   dst, dst_line_stride, 1);
++}
++
++static int opl_hmirror_u16_by1(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror)
++{
++	const u8 *src_row_addr;
++	const u8 *psrc;
++	u8 *dst_row_addr, *pdst;
++	int i, j;
++	u16 pixel;
++
++	src_row_addr = src;
++	if (vmirror) {
++		dst_row_addr = dst + dst_line_stride * (height - 1);
++		dst_line_stride = -dst_line_stride;
++	} else
++		dst_row_addr = dst;
++
++	/* Loop over all rows */
++	for (i = 0; i < height; i++) {
++		/* Loop over each pixel */
++		psrc = src_row_addr;
++		pdst = dst_row_addr + (width - 1) * BYTES_PER_PIXEL
++		    - (BYTES_PER_PIXEL - BYTES_PER_PIXEL);
++		for (j = 0; j < width; j++) {
++			pixel = *(u16 *) psrc;
++			*(u16 *) pdst = pixel;
++			psrc += BYTES_PER_PIXEL;
++			pdst -= BYTES_PER_PIXEL;
++		}
++		src_row_addr += src_line_stride;
++		dst_row_addr += dst_line_stride;
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++static int opl_hmirror_u16_by2(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror)
++{
++	const u8 *src_row_addr;
++	const u8 *psrc;
++	u8 *dst_row_addr, *pdst;
++	int i, j;
++	u32 pixelsin, pixelsout;
++
++	src_row_addr = src;
++	if (vmirror) {
++		dst_row_addr = dst + dst_line_stride * (height - 1);
++		dst_line_stride = -dst_line_stride;
++	} else
++		dst_row_addr = dst;
++
++	/* Loop over all rows */
++	for (i = 0; i < height; i++) {
++		/* Loop over each pixel */
++		psrc = src_row_addr;
++		pdst = dst_row_addr + (width - 2) * BYTES_PER_PIXEL;
++		for (j = 0; j < (width >> 1); j++) {
++			pixelsin = *(u32 *) psrc;
++			pixelsout = rot_left_u32(pixelsin, 16);
++			*(u32 *) pdst = pixelsout;
++			psrc += BYTES_PER_2PIXEL;
++			pdst -= BYTES_PER_2PIXEL;
++		}
++		src_row_addr += src_line_stride;
++		dst_row_addr += dst_line_stride;
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++static int opl_hmirror_u16_by4(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror)
++{
++	const u8 *src_row_addr;
++	const u8 *psrc;
++	u8 *dst_row_addr, *pdst;
++	int i, j;
++
++	union doubleword {
++		u64 dw;
++		u32 w[2];
++	};
++
++	union doubleword inbuf;
++	union doubleword outbuf;
++
++	src_row_addr = src;
++	if (vmirror) {
++		dst_row_addr = dst + dst_line_stride * (height - 1);
++		dst_line_stride = -dst_line_stride;
++	} else
++		dst_row_addr = dst;
++
++	/* Loop over all rows */
++	for (i = 0; i < height; i++) {
++		/* Loop over each pixel */
++		psrc = src_row_addr;
++		pdst = dst_row_addr + (width - 4) * BYTES_PER_PIXEL;
++		for (j = 0; j < (width >> 2); j++) {
++			inbuf.dw = *(u64 *) psrc;
++			outbuf.w[0] = rot_left_u32(inbuf.w[1], 16);
++			outbuf.w[1] = rot_left_u32(inbuf.w[0], 16);
++			*(u64 *) pdst = outbuf.dw;
++			psrc += BYTES_PER_4PIXEL;
++			pdst -= BYTES_PER_4PIXEL;
++		}
++		src_row_addr += src_line_stride;
++		dst_row_addr += dst_line_stride;
++	}
++	return OPLERR_SUCCESS;
++}
++
++static int opl_hmirror_u16_by8(const u8 *src, int src_line_stride, int width,
++			       int height, u8 *dst, int dst_line_stride,
++			       int vmirror)
++{
++	const u8 *src_row_addr;
++	const u8 *psrc;
++	u8 *dst_row_addr, *pdst;
++	int i, j;
++
++	src_row_addr = src;
++	if (vmirror) {
++		dst_row_addr = dst + dst_line_stride * (height - 1);
++		dst_line_stride = -dst_line_stride;
++	} else
++		dst_row_addr = dst;
++
++	/* Loop over all rows */
++	for (i = 0; i < height; i++) {
++		/* Loop over each pixel */
++		psrc = src_row_addr;
++		pdst = dst_row_addr + (width - 1) * BYTES_PER_PIXEL - 2;
++		for (j = (width >> 3); j > 0; j--) {
++			__asm__ volatile (
++				"ldmia	%0!,{r2-r5}\n\t"
++				"mov	r6, r2\n\t"
++				"mov	r7, r3\n\t"
++				"mov	r2, r5, ROR #16\n\t"
++				"mov	r3, r4, ROR #16\n\t"
++				"mov	r4, r7, ROR #16\n\t"
++				"mov	r5, r6, ROR #16\n\t"
++				"stmda	%1!,{r2-r5}\n\t"
++
++				: "+r"(psrc), "+r"(pdst)
++				: "0"(psrc), "1"(pdst)
++				: "r2", "r3", "r4", "r5", "r6", "r7",
++				"memory"
++			);
++		}
++		src_row_addr += src_line_stride;
++		dst_row_addr += dst_line_stride;
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++EXPORT_SYMBOL(opl_hmirror_u16);
++EXPORT_SYMBOL(opl_rotate180_u16);
+diff --git a/drivers/media/video/mxc/opl/opl.h b/drivers/media/video/mxc/opl/opl.h
+new file mode 100644
+index 0000000..0f6519d
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/opl.h
+@@ -0,0 +1,162 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++/*!
++ * @defgroup OPLIP OPL Image Processing
++ */
++/*!
++ * @file opl.h
++ *
++ * @brief The OPL (Open Primitives Library) Image Processing library defines
++ * efficient functions for rotation and mirroring.
++ *
++ * It includes ARM9-optimized rotation and mirroring functions. It is derived
++ * from the original OPL project which is found at sourceforge.freescale.net.
++ *
++ * @ingroup OPLIP
++ */
++#ifndef __OPL_H__
++#define __OPL_H__
++
++#include <linux/types.h>
++
++#define BYTES_PER_PIXEL			2
++#define CACHE_LINE_WORDS		8
++#define BYTES_PER_WORD			4
++
++#define BYTES_PER_2PIXEL		(BYTES_PER_PIXEL * 2)
++#define BYTES_PER_4PIXEL		(BYTES_PER_PIXEL * 4)
++#define BYTES_PER_8PIXEL		(BYTES_PER_PIXEL * 8)
++
++#define QCIF_Y_WIDTH			176
++#define QCIF_Y_HEIGHT			144
++
++/*! Enumerations of opl error code */
++enum opl_error {
++	OPLERR_SUCCESS = 0,
++	OPLERR_NULL_PTR,
++	OPLERR_BAD_ARG,
++	OPLERR_DIV_BY_ZERO,
++	OPLERR_OVER_FLOW,
++	OPLERR_UNDER_FLOW,
++	OPLERR_MISALIGNED,
++};
++
++/*!
++ * @brief Rotate a 16bbp buffer 90 degrees clockwise.
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_rotate90_u16(const u8 *src, int src_line_stride, int width, int height,
++		     u8 *dst, int dst_line_stride);
++
++/*!
++ * @brief Rotate a 16bbp buffer 180 degrees clockwise.
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_rotate180_u16(const u8 *src, int src_line_stride, int width,
++		      int height, u8 *dst, int dst_line_stride);
++
++/*!
++ * @brief Rotate a 16bbp buffer 270 degrees clockwise
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_rotate270_u16(const u8 *src, int src_line_stride, int width,
++		      int height, u8 *dst, int dst_line_stride);
++
++/*!
++ * @brief Mirror a 16bpp buffer horizontally
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_hmirror_u16(const u8 *src, int src_line_stride, int width, int height,
++		    u8 *dst, int dst_line_stride);
++
++/*!
++ * @brief Mirror a 16bpp buffer vertically
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_vmirror_u16(const u8 *src, int src_line_stride, int width, int height,
++		    u8 *dst, int dst_line_stride);
++
++/*!
++ * @brief Rotate a 16bbp buffer 90 degrees clockwise and mirror vertically
++ *	  It is equivalent to rotate 270 degree and mirror horizontally
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_rotate90_vmirror_u16(const u8 *src, int src_line_stride, int width,
++			     int height, u8 *dst, int dst_line_stride);
++
++/*!
++ * @brief Rotate a 16bbp buffer 270 degrees clockwise and mirror vertically
++ *	  It is equivalent to rotate 90 degree and mirror horizontally
++ *
++ * @param src             Pointer to the input buffer
++ * @param src_line_stride Length in bytes of a raster line of the input buffer
++ * @param width           Width in pixels of the region in the input buffer
++ * @param height          Height in pixels of the region in the input buffer
++ * @param dst             Pointer to the output buffer
++ * @param dst_line_stride Length in bytes of a raster line of the output buffer
++ *
++ * @return Standard OPL error code. See enumeration for possible result codes.
++ */
++int opl_rotate270_vmirror_u16(const u8 *src, int src_line_stride, int width,
++			      int height, u8 *dst, int dst_line_stride);
++
++#endif				/* __OPL_H__ */
+diff --git a/drivers/media/video/mxc/opl/opl_mod.c b/drivers/media/video/mxc/opl/opl_mod.c
+new file mode 100644
+index 0000000..6761f37
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/opl_mod.c
+@@ -0,0 +1,30 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/module.h>
++
++static __init int opl_init(void)
++{
++	return 0;
++}
++
++static void __exit opl_exit(void)
++{
++}
++
++module_init(opl_init);
++module_exit(opl_exit);
++
++MODULE_AUTHOR("Freescale Semiconductor, Inc.");
++MODULE_DESCRIPTION("OPL Software Rotation/Mirroring");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/media/video/mxc/opl/rotate270_u16.c b/drivers/media/video/mxc/opl/rotate270_u16.c
+new file mode 100644
+index 0000000..8b99521
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/rotate270_u16.c
+@@ -0,0 +1,285 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/module.h>
++#include "opl.h"
++
++static int opl_rotate270_u16_by16(const u8 *src, int src_line_stride,
++				  int width, int height, u8 *dst,
++				  int dst_line_stride, int vmirror);
++static int opl_rotate270_u16_by4(const u8 *src, int src_line_stride, int width,
++				 int height, u8 *dst, int dst_line_stride,
++				 int vmirror);
++static int opl_rotate270_vmirror_u16_both(const u8 *src, int src_line_stride,
++					  int width, int height, u8 *dst,
++					  int dst_line_stride, int vmirror);
++int opl_rotate270_u16_qcif(const u8 *src, u8 *dst);
++
++int opl_rotate270_u16(const u8 *src, int src_line_stride, int width,
++		      int height, u8 *dst, int dst_line_stride)
++{
++	return opl_rotate270_vmirror_u16_both(src, src_line_stride, width,
++					      height, dst, dst_line_stride, 0);
++}
++
++int opl_rotate270_vmirror_u16(const u8 *src, int src_line_stride, int width,
++			      int height, u8 *dst, int dst_line_stride)
++{
++	return opl_rotate270_vmirror_u16_both(src, src_line_stride, width,
++					      height, dst, dst_line_stride, 1);
++}
++
++static int opl_rotate270_vmirror_u16_both(const u8 *src, int src_line_stride,
++					  int width, int height, u8 *dst,
++					  int dst_line_stride, int vmirror)
++{
++	const int BLOCK_SIZE_PIXELS = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL;
++	const int BLOCK_SIZE_PIXELS_BY4 = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL / 4;
++
++	if (!src || !dst)
++		return OPLERR_NULL_PTR;
++
++	if (width == 0 || height == 0 || src_line_stride == 0
++	    || dst_line_stride == 0)
++		return OPLERR_BAD_ARG;
++
++	/* The QCIF algorithm doesn't support vertical mirroring */
++	if (vmirror == 0 && width == QCIF_Y_WIDTH && height == QCIF_Y_HEIGHT
++	    && src_line_stride == QCIF_Y_WIDTH * 2
++	    && src_line_stride == QCIF_Y_HEIGHT * 2)
++		return opl_rotate270_u16_qcif(src, dst);
++	else if (width % BLOCK_SIZE_PIXELS == 0
++		 && height % BLOCK_SIZE_PIXELS == 0)
++		return opl_rotate270_u16_by16(src, src_line_stride, width,
++					      height, dst, dst_line_stride,
++					      vmirror);
++	else if (width % BLOCK_SIZE_PIXELS_BY4 == 0
++		 && height % BLOCK_SIZE_PIXELS_BY4 == 0)
++		return opl_rotate270_u16_by4(src, src_line_stride, width,
++					     height, dst, dst_line_stride,
++					     vmirror);
++	else
++		return OPLERR_BAD_ARG;
++}
++
++/*
++ * Rotate Counter Clockwise, divide RGB component into 16 row strips, read
++ * non sequentially and write sequentially. This is done in 16 line strips
++ * so that the cache is used better. Cachelines are 8 words = 32 bytes. Pixels
++ * are 2 bytes. The 16 reads will be cache misses, but the next 240 should
++ * be from cache. The writes to the output buffer will be sequential for 16
++ * writes.
++ *
++ * Example:
++ * Input data matrix:	    output matrix
++ *
++ * 0 | 1 | 2 | 3 | 4 |      4 | 0 | 0 | 3 |
++ * 4 | 3 | 2 | 1 | 0 |      3 | 1 | 9 | 6 |
++ * 6 | 7 | 8 | 9 | 0 |      2 | 2 | 8 | 2 |
++ * 5 | 3 | 2 | 6 | 3 |      1 | 3 | 7 | 3 |
++ * ^			    0 | 4 | 6 | 5 | < Write the input data sequentially
++ * Read first column
++ * Start at the bottom
++ * Move to next column and repeat
++ *
++ * Loop over k decreasing (blocks)
++ * in_block_ptr = src + (((RGB_HEIGHT_PIXELS / BLOCK_SIZE_PIXELS) - k)
++ *                * BLOCK_SIZE_PIXELS) * (RGB_WIDTH_BYTES)
++ * out_block_ptr = dst + (((RGB_HEIGHT_PIXELS / BLOCK_SIZE_PIXELS) - k)
++ *                * BLOCK_SIZE_BYTES) + (RGB_WIDTH_PIXELS - 1)
++ *                * RGB_HEIGHT_PIXELS * BYTES_PER_PIXEL
++ *
++ * Loop over i decreasing (width)
++ * Each pix:
++ * in_block_ptr += RGB_WIDTH_BYTES
++ * out_block_ptr += 4
++ *
++ * Each row of block:
++ * in_block_ptr -= RGB_WIDTH_BYTES * BLOCK_SIZE_PIXELS - 2
++ * out_block_ptr -= RGB_HEIGHT_PIXELS * BYTES_PER_PIXEL + 2 * BLOCK_SIZE_PIXELS;
++ *
++ * It may perform vertical mirroring too depending on the vmirror flag.
++ */
++static int opl_rotate270_u16_by16(const u8 *src, int src_line_stride,
++				  int width, int height, u8 *dst,
++				  int dst_line_stride, int vmirror)
++{
++	const int BLOCK_SIZE_PIXELS = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL;
++	const int IN_INDEX = src_line_stride * BLOCK_SIZE_PIXELS
++	    - BYTES_PER_PIXEL;
++	const int OUT_INDEX = vmirror ?
++	    -dst_line_stride + BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS
++	    : dst_line_stride + BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS;
++	const u8 *in_block_ptr;
++	u8 *out_block_ptr;
++	int i, k;
++
++	for (k = height / BLOCK_SIZE_PIXELS; k > 0; k--) {
++		in_block_ptr = src + (((height / BLOCK_SIZE_PIXELS) - k)
++				      * BLOCK_SIZE_PIXELS) * src_line_stride;
++		out_block_ptr = dst + (((height / BLOCK_SIZE_PIXELS) - k)
++				       * BLOCK_SIZE_PIXELS * BYTES_PER_PIXEL) +
++		    (width - 1) * dst_line_stride;
++
++		/*
++		* For vertical mirroring the writing starts from the
++		* first line
++		*/
++		if (vmirror)
++			out_block_ptr -= dst_line_stride * (width - 1);
++
++		for (i = width; i > 0; i--) {
++			__asm__ volatile (
++				"ldrh	r2, [%0], %4\n\t"
++				"ldrh	r3, [%0], %4\n\t"
++				"ldrh	r4, [%0], %4\n\t"
++				"ldrh	r5, [%0], %4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				"ldrh	r2, [%0], %4\n\t"
++				"ldrh	r3, [%0], %4\n\t"
++				"ldrh	r4, [%0], %4\n\t"
++				"ldrh	r5, [%0], %4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				"ldrh	r2, [%0], %4\n\t"
++				"ldrh	r3, [%0], %4\n\t"
++				"ldrh	r4, [%0], %4\n\t"
++				"ldrh	r5, [%0], %4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				"ldrh	r2, [%0], %4\n\t"
++				"ldrh	r3, [%0], %4\n\t"
++				"ldrh	r4, [%0], %4\n\t"
++				"ldrh	r5, [%0], %4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				: "+r" (in_block_ptr), "+r"(out_block_ptr)	/* output */
++				: "0"(in_block_ptr), "1"(out_block_ptr), "r"(src_line_stride)	/* input  */
++				: "r2", "r3", "r4", "r5", "memory"	/* modify */
++			);
++			in_block_ptr -= IN_INDEX;
++			out_block_ptr -= OUT_INDEX;
++		}
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++/*
++ * Rotate Counter Clockwise, divide RGB component into 4 row strips, read
++ * non sequentially and write sequentially. This is done in 4 line strips
++ * so that the cache is used better. Cachelines are 8 words = 32 bytes. Pixels
++ * are 2 bytes. The 4 reads will be cache misses, but the next 60 should
++ * be from cache. The writes to the output buffer will be sequential for 4
++ * writes.
++ *
++ * Example:
++ * Input data matrix:	    output matrix
++ *
++ * 0 | 1 | 2 | 3 | 4 |      4 | 0 | 0 | 3 |
++ * 4 | 3 | 2 | 1 | 0 |      3 | 1 | 9 | 6 |
++ * 6 | 7 | 8 | 9 | 0 |      2 | 2 | 8 | 2 |
++ * 5 | 3 | 2 | 6 | 3 |      1 | 3 | 7 | 3 |
++ * ^			    0 | 4 | 6 | 5 | < Write the input data sequentially
++ * Read first column
++ * Start at the bottom
++ * Move to next column and repeat
++ *
++ * Loop over k decreasing (blocks)
++ * in_block_ptr = src + (((RGB_HEIGHT_PIXELS / BLOCK_SIZE_PIXELS) - k)
++ *                * BLOCK_SIZE_PIXELS) * (RGB_WIDTH_BYTES)
++ * out_block_ptr = dst + (((RGB_HEIGHT_PIXELS / BLOCK_SIZE_PIXELS) - k)
++ *                * BLOCK_SIZE_BYTES) + (RGB_WIDTH_PIXELS - 1)
++ *                * RGB_HEIGHT_PIXELS * BYTES_PER_PIXEL
++ *
++ * Loop over i decreasing (width)
++ * Each pix:
++ * in_block_ptr += RGB_WIDTH_BYTES
++ * out_block_ptr += 4
++ *
++ * Each row of block:
++ * in_block_ptr -= RGB_WIDTH_BYTES * BLOCK_SIZE_PIXELS - 2
++ * out_block_ptr -= RGB_HEIGHT_PIXELS * BYTES_PER_PIXEL + 2 * BLOCK_SIZE_PIXELS;
++ *
++ * It may perform vertical mirroring too depending on the vmirror flag.
++ */
++static int opl_rotate270_u16_by4(const u8 *src, int src_line_stride, int width,
++				 int height, u8 *dst, int dst_line_stride,
++				 int vmirror)
++{
++	const int BLOCK_SIZE_PIXELS = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL / 4;
++	const int IN_INDEX = src_line_stride * BLOCK_SIZE_PIXELS
++	    - BYTES_PER_PIXEL;
++	const int OUT_INDEX = vmirror ?
++	    -dst_line_stride + BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS
++	    : dst_line_stride + BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS;
++	const u8 *in_block_ptr;
++	u8 *out_block_ptr;
++	int i, k;
++
++	for (k = height / BLOCK_SIZE_PIXELS; k > 0; k--) {
++		in_block_ptr = src + (((height / BLOCK_SIZE_PIXELS) - k)
++				      * BLOCK_SIZE_PIXELS) * src_line_stride;
++		out_block_ptr = dst + (((height / BLOCK_SIZE_PIXELS) - k)
++				       * BLOCK_SIZE_PIXELS * BYTES_PER_PIXEL)
++		    + (width - 1) * dst_line_stride;
++
++		/*
++		* For vertical mirroring the writing starts from the
++		* first line
++		*/
++		if (vmirror)
++			out_block_ptr -= dst_line_stride * (width - 1);
++
++		for (i = width; i > 0; i--) {
++			__asm__ volatile (
++				"ldrh	r2, [%0], %4\n\t"
++				"ldrh	r3, [%0], %4\n\t"
++				"ldrh	r4, [%0], %4\n\t"
++				"ldrh	r5, [%0], %4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				: "+r" (in_block_ptr), "+r"(out_block_ptr)	/* output */
++				: "0"(in_block_ptr), "1"(out_block_ptr), "r"(src_line_stride)	/* input  */
++				: "r2", "r3", "r4", "r5", "memory"	/* modify */
++			);
++			in_block_ptr -= IN_INDEX;
++			out_block_ptr -= OUT_INDEX;
++		}
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++EXPORT_SYMBOL(opl_rotate270_u16);
++EXPORT_SYMBOL(opl_rotate270_vmirror_u16);
+diff --git a/drivers/media/video/mxc/opl/rotate270_u16_qcif.S b/drivers/media/video/mxc/opl/rotate270_u16_qcif.S
+new file mode 100644
+index 0000000..84e6630
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/rotate270_u16_qcif.S
+@@ -0,0 +1,70 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#include <linux/linkage.h>
++
++	.text
++	.align	2
++ENTRY(opl_rotate270_u16_qcif)
++	STMFD    sp!,{r4-r10}
++        MOV      r12,#0x160
++        MOV      r10,#0x90
++        MOV      r3,r10,LSR #4
++.L1.16:
++        RSB      r2,r3,r10,LSR #4
++        MOV      r5,r2,LSL #5
++        MOV      r4,r12,LSR #1
++        SMULBB   r4,r5,r4
++        ADD      r2,r1,r2,LSL #5
++        ADD      r5,r2,#0xc000
++        ADD      r5,r5,#0x4e0
++        MOV      r2,r12,LSR #1
++        ADD      r4,r0,r4
++.L1.52:
++        LDRH     r6,[r4],r12
++        LDRH     r7,[r4],r12
++        LDRH     r8,[r4],r12
++        LDRH     r9,[r4],r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        STMIA    r5!,{r6,r7}
++        SUBS     r2,r2,#1
++        LDRH     r6,[r4],r12
++        LDRH     r7,[r4],r12
++        LDRH     r8,[r4],r12
++        LDRH     r9,[r4],r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        STMIA    r5!,{r6,r7}
++        LDRH     r6,[r4],r12
++        LDRH     r7,[r4],r12
++        LDRH     r8,[r4],r12
++        LDRH     r9,[r4],r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        STMIA    r5!,{r6,r7}
++        LDRH     r6,[r4],r12
++        LDRH     r7,[r4],r12
++        LDRH     r8,[r4],r12
++        LDRH     r9,[r4],r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        SUB      r4,r4,#0x1500
++        STMIA    r5,{r6,r7}
++        SUB      r5,r5,#0x138
++        SUB      r4,r4,#0xfe
++        BGT      .L1.52
++        SUBS     r3,r3,#1
++        BGT      .L1.16
++        LDMFD    sp!,{r4-r10}
++        BX       lr
++	.size	opl_rotate270_u16_qcif, . - opl_rotate270_u16_qcif
+diff --git a/drivers/media/video/mxc/opl/rotate90_u16.c b/drivers/media/video/mxc/opl/rotate90_u16.c
+new file mode 100644
+index 0000000..f52ca87
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/rotate90_u16.c
+@@ -0,0 +1,220 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/module.h>
++#include "opl.h"
++
++static int opl_rotate90_u16_by16(const u8 *src, int src_line_stride, int width,
++				 int height, u8 *dst, int dst_line_stride,
++				 int vmirror);
++static int opl_rotate90_u16_by4(const u8 *src, int src_line_stride, int width,
++				int height, u8 *dst, int dst_line_stride,
++				int vmirror);
++static int opl_rotate90_vmirror_u16_both(const u8 *src, int src_line_stride,
++					 int width, int height, u8 *dst,
++					 int dst_line_stride, int vmirror);
++int opl_rotate90_u16_qcif(const u8 *src, u8 *dst);
++
++int opl_rotate90_u16(const u8 *src, int src_line_stride, int width, int height,
++		     u8 *dst, int dst_line_stride)
++{
++	return opl_rotate90_vmirror_u16_both(src, src_line_stride, width,
++					    height, dst, dst_line_stride, 0);
++}
++
++int opl_rotate90_vmirror_u16(const u8 *src, int src_line_stride, int width,
++			    int height, u8 *dst, int dst_line_stride)
++{
++	return opl_rotate90_vmirror_u16_both(src, src_line_stride, width,
++					    height, dst, dst_line_stride, 1);
++}
++
++static int opl_rotate90_vmirror_u16_both(const u8 *src, int src_line_stride,
++					 int width, int height, u8 *dst,
++					 int dst_line_stride, int vmirror)
++{
++	const int BLOCK_SIZE_PIXELS = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL;
++	const int BLOCK_SIZE_PIXELS_BY4 = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL / 4;
++
++	if (!src || !dst)
++		return OPLERR_NULL_PTR;
++
++	if (width == 0 || height == 0 || src_line_stride == 0
++	    || dst_line_stride == 0)
++		return OPLERR_BAD_ARG;
++
++	/* The QCIF algorithm doesn't support vertical mirroring */
++	if (vmirror == 0 && width == QCIF_Y_WIDTH && height == QCIF_Y_HEIGHT
++	    && src_line_stride == QCIF_Y_WIDTH * 2
++	    && src_line_stride == QCIF_Y_HEIGHT * 2)
++		return opl_rotate90_u16_qcif(src, dst);
++	else if (width % BLOCK_SIZE_PIXELS == 0
++		 && height % BLOCK_SIZE_PIXELS == 0)
++		return opl_rotate90_u16_by16(src, src_line_stride, width,
++					     height, dst, dst_line_stride,
++					     vmirror);
++	else if (width % BLOCK_SIZE_PIXELS_BY4 == 0
++		 && height % BLOCK_SIZE_PIXELS_BY4 == 0)
++		return opl_rotate90_u16_by4(src, src_line_stride, width, height,
++					    dst, dst_line_stride, vmirror);
++	else
++		return OPLERR_BAD_ARG;
++}
++
++/*
++ * Performs clockwise rotation (and possibly vertical mirroring depending
++ * on the vmirror flag) using block sizes of 16x16
++ * The algorithm is similar to 270 degree clockwise rotation algorithm
++ */
++static int opl_rotate90_u16_by16(const u8 *src, int src_line_stride, int width,
++				 int height, u8 *dst, int dst_line_stride,
++				 int vmirror)
++{
++	const int BLOCK_SIZE_PIXELS = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL;
++	const int BLOCK_SIZE_BYTES = BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS;
++	const int IN_INDEX = src_line_stride * BLOCK_SIZE_PIXELS
++	    + BYTES_PER_PIXEL;
++	const int OUT_INDEX = vmirror ?
++	    -dst_line_stride - BLOCK_SIZE_BYTES
++	    : dst_line_stride - BLOCK_SIZE_BYTES;
++	const u8 *in_block_ptr;
++	u8 *out_block_ptr;
++	int i, k;
++
++	for (k = height / BLOCK_SIZE_PIXELS; k > 0; k--) {
++		in_block_ptr = src + src_line_stride * (height - 1)
++		    - (src_line_stride * BLOCK_SIZE_PIXELS *
++		       (height / BLOCK_SIZE_PIXELS - k));
++		out_block_ptr = dst + BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS *
++		    ((height / BLOCK_SIZE_PIXELS) - k);
++
++		/*
++		 * For vertical mirroring the writing starts from the
++		 * bottom line
++		 */
++		if (vmirror)
++			out_block_ptr += dst_line_stride * (width - 1);
++
++		for (i = width; i > 0; i--) {
++			__asm__ volatile (
++				"ldrh	r2, [%0], -%4\n\t"
++				"ldrh	r3, [%0], -%4\n\t"
++				"ldrh	r4, [%0], -%4\n\t"
++				"ldrh	r5, [%0], -%4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				"ldrh	r2, [%0], -%4\n\t"
++				"ldrh	r3, [%0], -%4\n\t"
++				"ldrh	r4, [%0], -%4\n\t"
++				"ldrh	r5, [%0], -%4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				"ldrh	r2, [%0], -%4\n\t"
++				"ldrh	r3, [%0], -%4\n\t"
++				"ldrh	r4, [%0], -%4\n\t"
++				"ldrh	r5, [%0], -%4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				"ldrh	r2, [%0], -%4\n\t"
++				"ldrh	r3, [%0], -%4\n\t"
++				"ldrh	r4, [%0], -%4\n\t"
++				"ldrh	r5, [%0], -%4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				: "+r" (in_block_ptr), "+r"(out_block_ptr)	/* output */
++				: "0"(in_block_ptr), "1"(out_block_ptr), "r"(src_line_stride)	/* input  */
++				: "r2", "r3", "r4", "r5", "memory"	/* modify */
++			);
++			in_block_ptr += IN_INDEX;
++			out_block_ptr += OUT_INDEX;
++		}
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++/*
++ * Performs clockwise rotation (and possibly vertical mirroring depending
++ * on the vmirror flag) using block sizes of 4x4
++ * The algorithm is similar to 270 degree clockwise rotation algorithm
++ */
++static int opl_rotate90_u16_by4(const u8 *src, int src_line_stride, int width,
++				int height, u8 *dst, int dst_line_stride,
++				int vmirror)
++{
++	const int BLOCK_SIZE_PIXELS = CACHE_LINE_WORDS * BYTES_PER_WORD
++	    / BYTES_PER_PIXEL / 4;
++	const int BLOCK_SIZE_BYTES = BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS;
++	const int IN_INDEX = src_line_stride * BLOCK_SIZE_PIXELS
++	    + BYTES_PER_PIXEL;
++	const int OUT_INDEX = vmirror ?
++	    -dst_line_stride - BLOCK_SIZE_BYTES
++	    : dst_line_stride - BLOCK_SIZE_BYTES;
++	const u8 *in_block_ptr;
++	u8 *out_block_ptr;
++	int i, k;
++
++	for (k = height / BLOCK_SIZE_PIXELS; k > 0; k--) {
++		in_block_ptr = src + src_line_stride * (height - 1)
++		    - (src_line_stride * BLOCK_SIZE_PIXELS *
++		       (height / BLOCK_SIZE_PIXELS - k));
++		out_block_ptr = dst + BYTES_PER_PIXEL * BLOCK_SIZE_PIXELS
++		    * ((height / BLOCK_SIZE_PIXELS) - k);
++
++		/*
++		 * For horizontal mirroring the writing starts from the
++		 * bottom line
++		 */
++		if (vmirror)
++			out_block_ptr += dst_line_stride * (width - 1);
++
++		for (i = width; i > 0; i--) {
++			__asm__ volatile (
++				"ldrh	r2, [%0], -%4\n\t"
++				"ldrh	r3, [%0], -%4\n\t"
++				"ldrh	r4, [%0], -%4\n\t"
++				"ldrh	r5, [%0], -%4\n\t"
++				"orr	r2, r2, r3, lsl #16\n\t"
++				"orr	r4, r4, r5, lsl #16\n\t"
++				"str	r2, [%1], #4\n\t"
++				"str	r4, [%1], #4\n\t"
++
++				: "+r" (in_block_ptr), "+r"(out_block_ptr)	/* output */
++				: "0"(in_block_ptr), "1"(out_block_ptr), "r"(src_line_stride)	/* input  */
++				: "r2", "r3", "r4", "r5", "memory"	/* modify */
++			);
++			in_block_ptr += IN_INDEX;
++			out_block_ptr += OUT_INDEX;
++		}
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++EXPORT_SYMBOL(opl_rotate90_u16);
++EXPORT_SYMBOL(opl_rotate90_vmirror_u16);
+diff --git a/drivers/media/video/mxc/opl/rotate90_u16_qcif.S b/drivers/media/video/mxc/opl/rotate90_u16_qcif.S
+new file mode 100644
+index 0000000..082b32f
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/rotate90_u16_qcif.S
+@@ -0,0 +1,71 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#include <linux/linkage.h>
++
++	.text
++	.align	2
++ENTRY(opl_rotate90_u16_qcif)
++        STMFD    sp!,{r4-r10}
++        MOV      r12,#0x160
++        MOV      r10,#0x90
++        MOV      r3,r10,LSR #4
++.L1.216:
++        RSB      r2,r3,r10,LSR #4
++        MOV      r4,#0x20
++        SMULBB   r5,r4,r2
++        MOV      r4,#0x1600
++        SMULBB   r2,r4,r2
++        ADD      r4,r0,#0xc000
++        ADD      r4,r4,#0x4a0
++        SUB      r4,r4,r2
++        MOV      r2,r12,LSR #1
++        ADD      r5,r1,r5
++.L1.256:
++        LDRH     r6,[r4],-r12
++        LDRH     r7,[r4],-r12
++        LDRH     r8,[r4],-r12
++        LDRH     r9,[r4],-r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        STMIA    r5!,{r6,r7}
++        SUBS     r2,r2,#1
++        LDRH     r6,[r4],-r12
++        LDRH     r7,[r4],-r12
++        LDRH     r8,[r4],-r12
++        LDRH     r9,[r4],-r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        STMIA    r5!,{r6,r7}
++        LDRH     r6,[r4],-r12
++        LDRH     r7,[r4],-r12
++        LDRH     r8,[r4],-r12
++        LDRH     r9,[r4],-r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        STMIA    r5!,{r6,r7}
++        LDRH     r6,[r4],-r12
++        LDRH     r7,[r4],-r12
++        LDRH     r8,[r4],-r12
++        LDRH     r9,[r4],-r12
++        ORR      r6,r6,r7,LSL #16
++        ORR      r7,r8,r9,LSL #16
++        ADD      r4,r4,#0x1600
++        STMIA    r5!,{r6,r7}
++        ADD      r5,r5,#0x100
++        ADD      r4,r4,#2
++        BGT      .L1.256
++        SUBS     r3,r3,#1
++        BGT      .L1.216
++        LDMFD    sp!,{r4-r10}
++        BX       lr
++	.size	opl_rotate90_u16_qcif, . - opl_rotate90_u16_qcif
+diff --git a/drivers/media/video/mxc/opl/vmirror_u16.c b/drivers/media/video/mxc/opl/vmirror_u16.c
+new file mode 100644
+index 0000000..03e51ef
+--- /dev/null
++++ b/drivers/media/video/mxc/opl/vmirror_u16.c
+@@ -0,0 +1,46 @@
++/*
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/module.h>
++#include <linux/string.h>
++#include "opl.h"
++
++int opl_vmirror_u16(const u8 *src, int src_line_stride, int width, int height,
++		    u8 *dst, int dst_line_stride)
++{
++	const u8 *src_row_addr;
++	u8 *dst_row_addr;
++	int i;
++
++	if (!src || !dst)
++		return OPLERR_NULL_PTR;
++
++	if (width == 0 || height == 0 || src_line_stride == 0
++	    || dst_line_stride == 0)
++		return OPLERR_BAD_ARG;
++
++	src_row_addr = src;
++	dst_row_addr = dst + (height - 1) * dst_line_stride;
++
++	/* Loop over all rows */
++	for (i = 0; i < height; i++) {
++		/* memcpy each row */
++		memcpy(dst_row_addr, src_row_addr, BYTES_PER_PIXEL * width);
++		src_row_addr += src_line_stride;
++		dst_row_addr -= dst_line_stride;
++	}
++
++	return OPLERR_SUCCESS;
++}
++
++EXPORT_SYMBOL(opl_vmirror_u16);
+-- 
+1.5.4.4
+

@@ -1,0 +1,95 @@
+From 822c5738877939febdf3941f856683a3dc22bff7 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Fri, 30 Jul 2010 16:08:41 +0800
+Subject: [PATCH] ENGR00125843 usb: Add clock disable to uninit function for mx23/mx28
+
+1. Add clock disable to uninit function for mx23/mx28
+2. The platform init function for usb module should execute
+before module_init if the usb module is build-in.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/mach-mx23/usb_dr.c    |    2 +-
+ arch/arm/mach-mx28/usb_dr.c    |    2 +-
+ arch/arm/plat-mxs/usb_common.c |   10 ++++++++++
+ arch/arm/plat-mxs/utmixc.c     |    2 +-
+ 4 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx23/usb_dr.c b/arch/arm/mach-mx23/usb_dr.c
+index ed4bde7..1ab8ed0 100644
+--- a/arch/arm/mach-mx23/usb_dr.c
++++ b/arch/arm/mach-mx23/usb_dr.c
+@@ -167,5 +167,5 @@ void fsl_phy_set_power(struct fsl_xcvr_ops *this,
+ #ifdef CONFIG_MXS_VBUS_CURRENT_DRAW
+ 	fs_initcall(usb_dr_init);
+ #else
+-	module_init(usb_dr_init);
++	subsys_initcall(usb_dr_init);
+ #endif
+diff --git a/arch/arm/mach-mx28/usb_dr.c b/arch/arm/mach-mx28/usb_dr.c
+index 13344ef..c815588 100644
+--- a/arch/arm/mach-mx28/usb_dr.c
++++ b/arch/arm/mach-mx28/usb_dr.c
+@@ -156,5 +156,5 @@ void fsl_phy_set_power(struct fsl_xcvr_ops *this,
+ #ifdef CONFIG_MXS_VBUS_CURRENT_DRAW
+ 	fs_initcall(usb_dr_init);
+ #else
+-	module_init(usb_dr_init);
++	subsys_initcall(usb_dr_init);
+ #endif
+diff --git a/arch/arm/plat-mxs/usb_common.c b/arch/arm/plat-mxs/usb_common.c
+index fa94660..2294c08 100644
+--- a/arch/arm/plat-mxs/usb_common.c
++++ b/arch/arm/plat-mxs/usb_common.c
+@@ -293,6 +293,7 @@ EXPORT_SYMBOL(usbotg_init);
+ void usbotg_uninit(struct fsl_usb2_platform_data *pdata)
+ {
+ 	int tmp;
++	struct clk *usb_clk;
+ 	pr_debug("%s\n", __func__);
+ 
+ 	if (pdata->xcvr_ops && pdata->xcvr_ops->uninit)
+@@ -303,6 +304,10 @@ void usbotg_uninit(struct fsl_usb2_platform_data *pdata)
+ 	tmp |= PORTSC_PHCD;
+ 	__raw_writel(tmp, pdata->regs + UOG_PORTSC1);
+ 
++	usb_clk = clk_get(NULL, "usb_clk0");
++	clk_disable(usb_clk);
++	clk_put(usb_clk);
++
+ 	pdata->regs = NULL;
+ 	otg_used--;
+ }
+@@ -341,11 +346,16 @@ EXPORT_SYMBOL(fsl_usb_host_init);
+ 
+ void fsl_usb_host_uninit(struct fsl_usb2_platform_data *pdata)
+ {
++	struct clk *usb_clk;
+ 	pr_debug("%s\n", __func__);
+ 
+ 	if (pdata->xcvr_ops && pdata->xcvr_ops->uninit)
+ 		pdata->xcvr_ops->uninit(pdata->xcvr_ops);
+ 
++	usb_clk = clk_get(NULL, "usb_clk1");
++	clk_disable(usb_clk);
++	clk_put(usb_clk);
++
+ 	pdata->regs = NULL;
+ }
+ EXPORT_SYMBOL(fsl_usb_host_uninit);
+diff --git a/arch/arm/plat-mxs/utmixc.c b/arch/arm/plat-mxs/utmixc.c
+index 8ad6bd4..8e84284 100644
+--- a/arch/arm/plat-mxs/utmixc.c
++++ b/arch/arm/plat-mxs/utmixc.c
+@@ -80,7 +80,7 @@ static void __exit utmixc_exit(void)
+ #ifdef CONFIG_MXS_VBUS_CURRENT_DRAW
+ 	fs_initcall(utmixc_init);
+ #else
+-	module_init(utmixc_init);
++	subsys_initcall(utmixc_init);
+ #endif
+ module_exit(utmixc_exit);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,53 @@
+From e2b8545c2dea2731797020fea9340da5947486e4 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Tue, 14 Sep 2010 16:14:53 +0800
+Subject: [PATCH] ENGR00131470 Fix MX53 SATA failed bug after upgrade to 2.6.35 kernel
+
+Wrong sata clock configuration after upgrade the 2.6.35 kernel.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c    |    2 +-
+ arch/arm/mach-mx5/mx53_evk.c |    6 ++++--
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index c94c028..d7d88bd 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4178,7 +4178,7 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK("imx-i2c.2", NULL, i2c_clk[2]),
+ 	_REGISTER_CLOCK(NULL, "usb_phy2_clk", usb_phy_clk[1]),
+ 	_REGISTER_CLOCK(NULL, "ocram_clk", ocram_clk),
+-	_REGISTER_CLOCK("imx-sata.0", NULL, sata_clk),
++	_REGISTER_CLOCK(NULL, "imx_sata_clk", sata_clk),
+ 	_REGISTER_CLOCK(NULL, "ieee_1588_clk", ieee_1588_clk),
+ 	_REGISTER_CLOCK("mxc_mlb.0", NULL, mlb_clk[0]),
+ 	_REGISTER_CLOCK("FlexCAN.0", NULL, can1_clk[0]),
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index f9f4269..bd610f2 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1081,7 +1081,9 @@ static int sata_init(struct device *dev)
+ 	int rc = 0;
+ 	u32 tmpdata;
+ 
+-	clk = clk_get(dev, "sata_clk");
++	clk = clk_get(dev, "imx_sata_clk");
++	if (IS_ERR(clk))
++		printk(KERN_ERR "IMX SATA can't get clock.\n");
+ 	clk_enable(clk);
+ 
+ 	mmio = ioremap(MX53_SATA_BASE_ADDR, SZ_4K);
+@@ -1174,7 +1176,7 @@ static void sata_exit(struct device *dev)
+ {
+ 	struct clk *clk;
+ 
+-	clk = clk_get(dev, "sata_clk");
++	clk = clk_get(dev, "imx_sata_clk");
+ 	clk_disable(clk);
+ 	clk_put(clk);
+ }
+-- 
+1.5.4.4
+

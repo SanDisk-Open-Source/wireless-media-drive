@@ -1,0 +1,27 @@
+From 1ac8b36f6d01194caf3c40547a0c6fb6c2056b3a Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 8 Dec 2010 15:59:34 +0800
+Subject: [PATCH] ENGR00136097-2 mx50 rdp: add support to addon board's power key event
+
+Register the PWRON3 event when probe the power key device.
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 8e974c7..c934483 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1173,6 +1173,7 @@ static void mxc_register_powerkey(key_press_call_back kp_cb, void *param)
+ 	power_key_event.param = param;
+ 	power_key_event.func = (void *)kp_cb;
+ 	pmic_event_subscribe(EVENT_PWRONI, power_key_event);
++	pmic_event_subscribe(EVENT_PWRON3I, power_key_event);
+ }
+ 
+ static struct power_key_platform_data pwrkey_data = {
+-- 
+1.5.4.4
+

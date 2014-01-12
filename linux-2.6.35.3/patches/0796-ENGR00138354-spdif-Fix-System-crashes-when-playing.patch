@@ -1,0 +1,68 @@
+From 7cb98657ec8c5c2e722979ad4a4a191c38b83a5a Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Fri, 25 Feb 2011 04:49:33 +0800
+Subject: [PATCH] ENGR00138354 spdif: Fix System crashes when playing video with HDMI
+
+System hangs at low probability when play HD video
+with spdif enabled. This is because spdif dma trigger register
+updates every data transfer loop.
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ sound/arm/mxc-alsa-spdif.c |   13 +++++++------
+ 1 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/sound/arm/mxc-alsa-spdif.c b/sound/arm/mxc-alsa-spdif.c
+index a35a33b..282cd6c 100644
+--- a/sound/arm/mxc-alsa-spdif.c
++++ b/sound/arm/mxc-alsa-spdif.c
+@@ -1,8 +1,6 @@
+ /*
+  * Copyright (C) 2007-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+- */
+-
+-/*
++ *
+  * The code contained herein is licensed under the GNU General Public
+  * License. You may obtain a copy of the GNU General Public License
+  * Version 2 or later at the following locations:
+@@ -738,7 +736,7 @@ static void spdif_tx_init(void)
+ 
+ 	regval = __raw_readl(spdif_base_addr + SPDIF_REG_SCR);
+ 
+-	regval &= 0xfc32e3;
++	regval &= 0xfc33e3;
+ 	regval |= SCR_TXFIFO_AUTOSYNC | SCR_TXFIFO_NORMAL |
+ 	    SCR_TXSEL_NORMAL | SCR_USRC_SEL_CHIP | (2 << SCR_TXFIFO_ESEL_BIT);
+ 	__raw_writel(regval, SPDIF_REG_SCR + spdif_base_addr);
+@@ -985,7 +983,6 @@ static void spdif_start_tx(struct mxc_spdif_stream *s)
+ 		mxc_dma_config(s->dma_wchannel, &dma_request, 1,
+ 			       MXC_DMA_MODE_WRITE);
+ 		ret = mxc_dma_enable(s->dma_wchannel);
+-		spdif_dma_enable(SCR_DMA_TX_EN, 1);
+ 		if (ret) {
+ 			pr_info("audio_process_dma: cannot queue DMA \
+ 				buffer\n");
+@@ -1037,7 +1034,9 @@ static void spdif_start_tx(struct mxc_spdif_stream *s)
+ 		s->period++;
+ 		s->period %= runtime->periods;
+ 
+-	}
++	} else
++		spdif_dma_enable(SCR_DMA_TX_EN, 0);
++
+ 	return;
+ }
+ 
+@@ -1647,6 +1646,8 @@ static int snd_mxc_spdif_hw_params(struct snd_pcm_substream
+ 		return ret;
+ 	}
+ 	runtime->dma_addr = virt_to_phys(runtime->dma_area);
++	spdif_dma_enable(SCR_DMA_TX_EN, 1);
++
+ 	return ret;
+ }
+ 
+-- 
+1.5.4.4
+

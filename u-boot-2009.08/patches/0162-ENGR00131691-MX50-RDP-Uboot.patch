@@ -1,0 +1,2155 @@
+From a8e2d7b371963585736d34c3e589b9309ddff493 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Mon, 20 Sep 2010 17:26:19 -0500
+Subject: [PATCH] ENGR00131691 MX50 RDP Uboot
+
+Add support for building uboot for MX50 reference design platform:
+1) LPDDR2 init script (v0.3 from Mike Kjar, dated 9/14)
+2) iomux
+3) new board file and machine id for RDP
+4) Updates for iram boot on RDP
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ Makefile                                 |    8 +
+ board/freescale/mx50_rdp/Makefile        |   49 +++
+ board/freescale/mx50_rdp/config.mk       |    7 +
+ board/freescale/mx50_rdp/flash_header.S  |  563 ++++++++++++++++++++++++
+ board/freescale/mx50_rdp/lowlevel_init.S |  207 +++++++++
+ board/freescale/mx50_rdp/mx50_rdp.c      |  691 ++++++++++++++++++++++++++++++
+ board/freescale/mx50_rdp/u-boot.lds      |   73 ++++
+ include/asm-arm/mach-types.h             |   12 +
+ include/configs/mx50_rdp.h               |  254 +++++++++++
+ include/configs/mx50_rdp_iram.h          |  193 +++++++++
+ 10 files changed, 2057 insertions(+), 0 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 9a35b9d..291bf5d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3258,6 +3258,14 @@ mx50_arm2_mfg_config	: unconfig
+ 		}
+ 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx50_arm2 freescale mx50
+ 
++mx50_rdp_iram_config \
++mx50_rdp_config      : unconfig
++	@[ -z "$(findstring iram_,$@)" ] || \
++		{ echo "TEXT_BASE = 0xF8008400" >$(obj)board/freescale/mx50_rdp/config.tmp ; \
++		  echo "... with iram configuration" ; \
++		}
++	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx50_rdp freescale mx50
++
+ mx51_bbg_android_config	\
+ mx51_bbg_mfg_config \
+ mx51_bbg_iram_config \
+diff --git a/board/freescale/mx50_rdp/Makefile b/board/freescale/mx50_rdp/Makefile
+new file mode 100644
+index 0000000..8cfedd0
+--- /dev/null
++++ b/board/freescale/mx50_rdp/Makefile
+@@ -0,0 +1,49 @@
++#
++# Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++#
++# (C) Copyright 2010 Freescale Semiconductor, Inc.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= mx50_rdp.o
++SOBJS	:= lowlevel_init.o flash_header.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/freescale/mx50_rdp/config.mk b/board/freescale/mx50_rdp/config.mk
+new file mode 100644
+index 0000000..fcb4c00
+--- /dev/null
++++ b/board/freescale/mx50_rdp/config.mk
+@@ -0,0 +1,7 @@
++LDSCRIPT := $(SRCTREE)/board/$(VENDOR)/$(BOARD)/u-boot.lds
++
++sinclude $(OBJTREE)/board/$(VENDOR)/$(BOARD)/config.tmp
++
++ifndef TEXT_BASE
++	TEXT_BASE = 0x77800000
++endif
+diff --git a/board/freescale/mx50_rdp/flash_header.S b/board/freescale/mx50_rdp/flash_header.S
+new file mode 100644
+index 0000000..44e0d56
+--- /dev/null
++++ b/board/freescale/mx50_rdp/flash_header.S
+@@ -0,0 +1,563 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx50.h>
++
++#ifdef	CONFIG_FLASH_HEADER
++#ifndef CONFIG_FLASH_HEADER_OFFSET
++# error "Must define the offset of flash header"
++#endif
++
++.section ".text.flasheader", "x"
++	b	_start
++	.org	CONFIG_FLASH_HEADER_OFFSET
++
++/* First IVT to copy the plugin that initializes the system into OCRAM */
++ivt_header:        .long 0x402000D1    /* Tag=0xD1, Len=0x0020, Ver=0x40 */
++app_code_jump_v:   .long 0xF8006458    /* Plugin entry point */
++reserv1:           .long 0x0
++dcd_ptr:           .long 0x0
++boot_data_ptr:     .long 0xF8006420
++self_ptr:          .long 0xF8006400
++app_code_csf:      .long 0x0 	       /* reserve 4K for csf */
++reserv2:           .long 0x0
++boot_data:         .long 0xF8006000
++image_len:         .long 4*1024        /* Can copy upto 72K, OCRAM free space */
++plugin:            .long 0x1  	       /* Enable plugin flag */
++
++/* Second IVT to give entry point into the bootloader copied to DDR */
++ivt2_header:       .long 0x402000D1    //Tag=0xD1, Len=0x0020, Ver=0x40
++app2_code_jump_v:  .long _start   // Entry point for the bootloader
++reserv3:           .long 0x0
++dcd2_ptr:          .long 0x0
++boot_data2_ptr:    .long boot_data2
++self_ptr2:         .long ivt2_header
++app_code_csf2:     .long 0x0 // reserve 4K for csf
++reserv4:           .long 0x0
++boot_data2:        .long TEXT_BASE
++image_len2:        .long _end - TEXT_BASE
++plugin2:           .long 0x0
++
++/*=============================================================================
++ * Here starts the plugin code
++ *===========================================================================*/
++
++plugin_start:
++/* Save the return address and the function arguments */
++	push    {r0-r2, lr}
++
++/*=============================================================================
++ *init script for codex LPDDR1-200MHz CPU board
++ *===========================================================================*/
++
++/* Setup PLL1 to be 800 MHz */
++	ldr r0, =CCM_BASE_ADDR
++
++/* Switch ARM domain to be clocked from LP-APM */
++	mov r1, #0x4
++	str r1, [r0, #CLKCTL_CCSR]
++
++	ldr r0, =PLL1_BASE_ADDR
++	ldr r1, =0x1232
++	str r1, [r0, #PLL_DP_CTL]     /* Set DPLL ON (set UPEN bit); BRMO=1 */
++	ldr r1, =0x2
++	str r1, [r0, #PLL_DP_CONFIG]  /* Enable auto-restart AREN bit */
++
++	ldr r1, =DP_OP_800
++	str r1, [r0, #PLL_DP_OP]
++	str r1, [r0, #PLL_DP_HFS_OP]
++
++	ldr r1, =DP_MFD_800
++	str r1, [r0, #PLL_DP_MFD]
++	str r1, [r0, #PLL_DP_HFS_MFD]
++
++	ldr r1, =DP_MFN_800
++	str r1, [r0, #PLL_DP_MFN]
++	str r1, [r0, #PLL_DP_HFS_MFN]
++
++	/* Now restart PLL */
++	ldr r1, =0x1232
++	str r1, [r0, #PLL_DP_CTL]
++wait_pll1_lock:
++	ldr r1, [r0, #PLL_DP_CTL]
++	ands r1, r1, #0x1
++	beq wait_pll1_lock
++
++/* Switch ARM back to PLL1 */
++	ldr r0, =CCM_BASE_ADDR
++	ldr r1, =0x0
++	str r1, [r0,#CLKCTL_CCSR]
++
++/*=============================================================================
++ * Enable all clocks (they are disabled by ROM code)
++ *===========================================================================*/
++
++	mov r1, #0xffffffff
++	str r1, [r0, #0x68]
++	str r1, [r0, #0x6c]
++	str r1, [r0, #0x70]
++	str r1, [r0, #0x74]
++	str r1, [r0, #0x78]
++	str r1, [r0, #0x7c]
++	str r1, [r0, #0x80]
++	str r1, [r0, #0x84]
++
++/* DDR clock setting -- Set DDR to be div 3 to get 266MHz */
++/* setmem /32 0x53FD4098 = 0x80000003 */
++	ldr r1, =0x80000003
++	str r1, [r0, #0x98]
++
++/* poll to make sure DDR dividers take effect */
++1:
++	ldr r1, [r0, #0x8c]
++	ands r1, r1, #0x4
++	bne 1b
++
++/*=============================================================================
++ * IOMUX
++ *===========================================================================*/
++    ldr r0, =0x53fa8600
++    mov r1, #0x02000000
++    mov r3, #0x00200000
++    mov r2, #0x0
++//setmem /32 0x53fa86ac = 0x02000000
++//IOMUXC_SW_PAD_CTL_GRP_DDR_TYPE, ddr_sel=2'b01 (LPDDR2)
++    str r1, [r0, #0xac]
++//setmem /32 0x53fa86a4 = 0x00200000
++//IOMUXC_SW_PAD_CTL_GRP_CTLDS, dse=3'b100
++    str r3, [r0, #0xa4]
++//setmem /32 0x53fa8668 = 0x00200000
++//IOMUXC_SW_PAD_CTL_GRP_ADDDS, dse=3'b100
++    str r3, [r0, #0x68]
++//setmem /32 0x53fa8698 = 0x00200000
++//IOMUXC_SW_PAD_CTL_GRP_B0DS, dse=3'b100
++    str r3, [r0, #0x98]
++//setmem /32 0x53fa86a0 = 0x00200000
++//IOMUXC_SW_PAD_CTL_GRP_B1DS, dse=3'b100
++    str r3, [r0, #0xa0]
++//setmem /32 0x53fa86a8 = 0x00200000
++//IOMUXC_SW_PAD_CTL_GRP_B2DS, dse=3'b100
++    str r3, [r0, #0xa8]
++//setmem /32 0x53fa86b4 = 0x00200000
++//IOMUXC_SW_PAD_CTL_GRP_B3DS, dse=3'b100
++    str r3, [r0, #0xb4]
++
++    ldr r0, =0x53fa8400
++//setmem /32 0x53fa8498 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_SDCLK_1
++    str r3, [r0, #0x98]
++//setmem /32 0x53fa849c = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_SDCLK_0
++    str r3, [r0, #0x9c]
++//setmem /32 0x53fa84f0 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_DQM0, dse=3'b100
++    str r3, [r0, #0xf0]
++//setmem /32 0x53fa8500 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_DQM1, dse=3'b100
++    str r3, [r0, #0x100]
++//setmem /32 0x53fa84c8 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_DQM2, dse=3'b100
++    str r3, [r0, #0xc8]
++//setmem /32 0x53fa8528 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_DQM3, dse=3'b100
++    str r3, [r0, #0x128]
++//setmem /32 0x53fa84f4 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_SDQS0, dse=3'b100
++    str r3, [r0, #0xf4]
++//setmem /32 0x53fa84fc = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_SDQS1, dse=3'b100
++    str r3, [r0, #0xfc]
++//setmem /32 0x53fa84cc = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_SDQS2, dse=3'b100
++    str r3, [r0, #0xcc]
++//setmem /32 0x53fa8524 = 0x00200000
++//IOMUXC_SW_PAD_CTL_PAD_DRAM_SDQS3, dse=3'b100
++    str r3, [r0, #0x124]
++
++//*===========================================
++//   DDR controller setting
++//*===========================================
++// CTL setting
++    ldr r0, =DATABAHN_BASE_ADDR
++//setmem /32 0x14000000 = 0x00000500
++    ldr r1, =0x00000500
++    str r1, [r0, #0x0]
++//setmem /32 0x14000004 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x4]
++//setmem /32 0x14000008 = 0x0000001b
++    ldr r1, =0x0000001b
++    str r1, [r0, #0x8]
++//setmem /32 0x1400000c = 0x0000d056
++    ldr r1, =0x0000d056
++    str r1, [r0, #0xc]
++//setmem /32 0x14000010 = 0x0000010b
++    ldr r1, =0x0000010b
++    str r1, [r0, #0x10]
++//setmem /32 0x14000014 = 0x00000a6b
++    ldr r1, =0x00000a6b
++    str r1, [r0, #0x14]
++//setmem /32 0x14000018 = 0x02030d0c
++    ldr r1, =0x02030d0c
++    str r1, [r0, #0x18]
++//setmem /32 0x1400001c = 0x0c110304
++    ldr r1, =0x0c110304
++    str r1, [r0, #0x1c]
++//setmem /32 0x14000020 = 0x05020503
++    ldr r1, =0x05020503
++    str r1, [r0, #0x20]
++//setmem /32 0x14000024 = 0x0048EB05
++    ldr r1, =0x0048EB05
++    str r1, [r0, #0x24]
++//setmem /32 0x14000028 = 0x01000403
++    ldr r1, =0x01000403
++    str r1, [r0, #0x28]
++//setmem /32 0x1400002c = 0x09040501
++    ldr r1, =0x09040501
++    str r1, [r0, #0x2c]
++//setmem /32 0x14000030 = 0x02000000
++    ldr r1, =0x02000000
++    str r1, [r0, #0x30]
++//setmem /32 0x14000034 = 0x00000e02
++    ldr r1, =0x00000e02
++    str r1, [r0, #0x34]
++//setmem /32 0x14000038 = 0x00000006
++    ldr r1, =0x00000006
++    str r1, [r0, #0x38]
++//setmem /32 0x1400003c = 0x00002301
++    ldr r1, =0x00002301
++    str r1, [r0, #0x3c]
++//setmem /32 0x14000040 = 0x00050300
++    ldr r1, =0x00050300
++    str r1, [r0, #0x40]
++//setmem /32 0x14000044 = 0x00000300
++    ldr r1, =0x00000300
++    str r1, [r0, #0x44]
++//setmem /32 0x14000048 = 0x00260026
++    ldr r1, =0x00260026
++    str r1, [r0, #0x48]
++//setmem /32 0x1400004c = 0x00010000
++    ldr r1, =0x00010000
++    str r1, [r0, #0x4c]
++//setmem /32 0x1400005c = 0x02000000
++    ldr r1, =0x02000000
++    str r1, [r0, #0x5c]
++//setmem /32 0x14000060 = 0x00000002
++    ldr r1, =0x00000002
++    str r1, [r0, #0x60]
++//setmem /32 0x14000064 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x64]
++//setmem /32 0x14000068 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x68]
++//setmem /32 0x1400006c = 0x00040042
++    ldr r1, =0x00040042
++    str r1, [r0, #0x6c]
++//setmem /32 0x14000070 = 0x00000001
++    ldr r1, =0x00000001
++    str r1, [r0, #0x70]
++//setmem /32 0x14000074 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x74]
++//setmem /32 0x14000078 = 0x00040042
++    ldr r1, =0x00040042
++    str r1, [r0, #0x78]
++//setmem /32 0x1400007c = 0x00000001
++    ldr r1, =0x00000001
++    str r1, [r0, #0x7c]
++//setmem /32 0x14000080 = 0x010b0000
++    ldr r1, =0x010b0000
++    str r1, [r0, #0x80]
++//setmem /32 0x14000084 = 0x00000060
++    ldr r1, =0x00000060
++    str r1, [r0, #0x84]
++//setmem /32 0x14000088 = 0x02400018
++    ldr r1, =0x02400018
++    str r1, [r0, #0x88]
++//setmem /32 0x1400008c = 0x01000e00
++    ldr r1, =0x01000e00
++    str r1, [r0, #0x8c]
++//setmem /32 0x14000090 = 0x0a010101
++    ldr r1, =0x0a010101
++    str r1, [r0, #0x90]
++//setmem /32 0x14000094 = 0x01011f1f
++    ldr r1, =0x01011f1f
++    str r1, [r0, #0x94]
++//setmem /32 0x14000098 = 0x01010101
++    ldr r1, =0x01010101
++    str r1, [r0, #0x98]
++//setmem /32 0x1400009c = 0x00030101
++    ldr r1, =0x00030101
++    str r1, [r0, #0x9c]
++//setmem /32 0x140000a0 = 0x00010000
++    ldr r1, =0x00010000
++    str r1, [r0, #0xa0]
++//setmem /32 0x140000a4 = 0x00010000
++    ldr r1, =0x00010000
++    str r1, [r0, #0xa4]
++//setmem /32 0x140000a8 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0xa8]
++//setmem /32 0x140000ac = 0x0000ffff
++    ldr r1, =0x0000ffff
++    str r1, [r0, #0xac]
++//setmem /32 0x140000c8 = 0x02020101
++    ldr r1, =0x02020101
++    str r1, [r0, #0xc8]
++//setmem /32 0x140000cc = 0x01000000
++    ldr r1, =0x01000000
++    str r1, [r0, #0xcc]
++//setmem /32 0x140000d0 = 0x01000201
++    ldr r1, =0x01000201
++    str r1, [r0, #0xd0]
++
++//setmem /32 0x140000d4 = 0x00000200
++    ldr r1, =0x00000200
++    str r1, [r0, #0xd4]
++
++//setmem /32 0x140000d8 = 0x00000102
++    ldr r1, =0x00000102
++    str r1, [r0, #0xd8]
++
++//setmem /32 0x140000dc = 0x0000ffff
++    ldr r1, =0x0000ffff
++    str r1, [r0, #0xdc]
++
++//setmem /32 0x140000e0 = 0x0000ffff
++    ldr r1, =0x0000ffff
++    str r1, [r0, #0xe0]
++
++//setmem /32 0x140000e4 = 0x02020000
++    ldr r1, =0x02020000
++    str r1, [r0, #0xe4]
++
++//setmem /32 0x140000e8 = 0x02020202
++    ldr r1, =0x02020202
++    str r1, [r0, #0xe8]
++
++//setmem /32 0x140000ec = 0x00000202
++    ldr r1, =0x00000202
++    str r1, [r0, #0xec]
++
++//setmem /32 0x140000f0 = 0x01010064
++    ldr r1, =0x01010064
++    str r1, [r0, #0xf0]
++
++//setmem /32 0x140000f4 = 0x01010101
++    ldr r1, =0x01010101
++    str r1, [r0, #0xf4]
++
++//setmem /32 0x140000f8 = 0x00010101
++    ldr r1, =0x00010101
++    str r1, [r0, #0xf8]
++
++//setmem /32 0x140000fc = 0x00000064
++    ldr r1, =0x00000064
++    str r1, [r0, #0xfc]
++
++//setmem /32 0x14000100 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x100]
++
++//setmem /32 0x14000104 = 0x02000802
++    ldr r1, =0x02000802
++    str r1, [r0, #0x104]
++
++//setmem /32 0x14000108 = 0x04080000
++    ldr r1, =0x04080000
++    str r1, [r0, #0x108]
++
++//setmem /32 0x1400010c = 0x04080408
++    ldr r1, =0x04080408
++    str r1, [r0, #0x10c]
++
++//setmem /32 0x14000110 = 0x04080408
++    ldr r1, =0x04080408
++    str r1, [r0, #0x110]
++
++//setmem /32 0x14000114 = 0x03060408
++    ldr r1, =0x03060408
++    str r1, [r0, #0x114]
++
++//setmem /32 0x14000118 = 0x01010002
++    ldr r1, =0x01010002
++    str r1, [r0, #0x118]
++
++//setmem /32 0x1400011c = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x11c]
++
++// PHY setting
++//setmem /32 0x14000200 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x200]
++
++//setmem /32 0x14000204 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x204]
++
++//setmem /32 0x14000208 = 0xf5003a27
++    ldr r1, =0xf5003a27
++    str r1, [r0, #0x208]
++
++//setmem /32 0x14000210 = 0xf5003a27
++    ldr r1, =0xf5003a27
++    str r1, [r0, #0x210]
++
++//setmem /32 0x14000218 = 0xf5003a27
++    ldr r1, =0xf5003a27
++    str r1, [r0, #0x218]
++
++//setmem /32 0x14000220 = 0xf5003a27
++    ldr r1, =0xf5003a27
++    str r1, [r0, #0x220]
++
++//setmem /32 0x14000228 = 0xf5003a27
++    ldr r1, =0xf5003a27
++    str r1, [r0, #0x228]
++
++//setmem /32 0x1400020c = 0x074002e1
++    ldr r1, =0x074002e1
++    str r1, [r0, #0x20c]
++
++//setmem /32 0x14000214 = 0x074002e1
++    ldr r1, =0x074002e1
++    str r1, [r0, #0x214]
++
++//setmem /32 0x1400021c = 0x074002e1
++    ldr r1, =0x074002e1
++    str r1, [r0, #0x21c]
++
++//setmem /32 0x14000224 = 0x074002e1
++    ldr r1, =0x074002e1
++    str r1, [r0, #0x224]
++
++//setmem /32 0x1400022c = 0x074002e1
++    ldr r1, =0x074002e1
++    str r1, [r0, #0x22c]
++
++//setmem /32 0x14000230 = 0x00000000
++    ldr r1, =0x00000000
++    str r1, [r0, #0x230]
++
++//setmem /32 0x14000234 = 0x00810006
++    ldr r1, =0x00810006
++    str r1, [r0, #0x234]
++
++//setmem /32 0x14000238 = 0x60099414
++    ldr r1, =0x60099414
++    str r1, [r0, #0x238]
++
++//setmem /32 0x14000240 = 0x60099414
++    ldr r1, =0x60099414
++    str r1, [r0, #0x240]
++
++//setmem /32 0x14000248 = 0x60099414
++    ldr r1, =0x60099414
++    str r1, [r0, #0x248]
++
++//setmem /32 0x14000250 = 0x60099414
++    ldr r1, =0x60099414
++    str r1, [r0, #0x250]
++
++//setmem /32 0x14000258 = 0x60099414
++    ldr r1, =0x60099414
++    str r1, [r0, #0x258]
++
++//setmem /32 0x1400023c = 0x000a1401
++    ldr r1, =0x000a1401
++    str r1, [r0, #0x23c]
++
++//setmem /32 0x14000244 = 0x000a1401
++    ldr r1, =0x000a1401
++    str r1, [r0, #0x244]
++
++//setmem /32 0x1400024c = 0x000a1401
++    ldr r1, =0x000a1401
++    str r1, [r0, #0x24c]
++
++//setmem /32 0x14000254 = 0x000a1401
++    ldr r1, =0x000a1401
++    str r1, [r0, #0x254]
++
++//setmem /32 0x1400025c = 0x000a1401
++    ldr r1, =0x000a1401
++    str r1, [r0, #0x25c]
++
++
++//*===================================
++// Start ddr init sequence
++//*===================================
++//setmem /32 0x14000000 = 0x00000501  // bit[0]: start
++    ldr r1, =0x00000501
++    str r1, [r0, #0x0]
++/* poll to make sure it is done */
++1:
++	ldr r1, [r0, #0xa8]
++	ands r1, r1, #0x10
++	beq 1b
++
++/*
++ * The following is to fill in those arguments for this ROM function
++ * pu_irom_hwcnfg_setup(void **start, size_t *bytes, const void *boot_data)
++ *
++ * This function is used to copy data from the storage media into DDR.
++
++ * start - Initial (possibly partial) image load address on entry.
++ * Final image load address on exit.
++ * bytes - Initial (possibly partial) image size on entry.
++ * Final image size on exit.
++ * boot_data - Initial @ref ivt Boot Data load address.
++ */
++	adr r0, DDR_DEST_ADDR
++	adr r1, COPY_SIZE
++	adr r2, BOOT_DATA
++
++before_calling_rom___pu_irom_hwcnfg_setup:
++	mov r4, #0x2a00
++	add r4, r4, #0x19
++	blx r4 // This address might change in future ROM versions
++after_calling_rom___pu_irom_hwcnfg_setup:
++
++
++/* To return to ROM from plugin, we need to fill in these argument.
++ * Here is what need to do:
++ * Need to construct the paramters for this function before return to ROM:
++ * plugin_download(void **start, size_t *bytes, UINT32 *ivt_offset)
++ */
++	pop {r0-r2, lr}
++	ldr r3, DDR_DEST_ADDR
++	str r3, [r0]
++	ldr r3, COPY_SIZE
++	str r3, [r1]
++	mov r3, #0x400  /* Point to the second IVT table at offset 0x42C */
++	add r3, r3, #0x2C
++	str r3, [r2]
++	mov r0, #1
++	bx lr          /* return back to ROM code */
++
++DDR_DEST_ADDR:    .word   TEXT_BASE
++COPY_SIZE:        .word   _end - TEXT_BASE
++BOOT_DATA:        .word   TEXT_BASE
++                  .word   _end - TEXT_BASE
++                  .word   0
++
++#endif
+diff --git a/board/freescale/mx50_rdp/lowlevel_init.S b/board/freescale/mx50_rdp/lowlevel_init.S
+new file mode 100644
+index 0000000..4e031c7
+--- /dev/null
++++ b/board/freescale/mx50_rdp/lowlevel_init.S
+@@ -0,0 +1,207 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx50.h>
++
++/*
++ * L2CC Cache setup/invalidation/disable
++ */
++.macro init_l2cc
++	/* explicitly disable L2 cache */
++        mrc 15, 0, r0, c1, c0, 1
++        bic r0, r0, #0x2
++        mcr 15, 0, r0, c1, c0, 1
++
++        /* reconfigure L2 cache aux control reg */
++        mov r0, #0xC0                   /* tag RAM */
++        add r0, r0, #0x4                /* data RAM */
++        orr r0, r0, #(1 << 24)          /* disable write allocate delay */
++        orr r0, r0, #(1 << 23)          /* disable write allocate combine */
++        orr r0, r0, #(1 << 22)          /* disable write allocate */
++
++	mcr 15, 1, r0, c9, c0, 2
++.endm /* init_l2cc */
++
++/* AIPS setup - Only setup MPROTx registers.
++ * The PACR default values are good.*/
++.macro init_aips
++	/*
++	 * Set all MPROTx to be non-bufferable, trusted for R/W,
++	 * not forced to user-mode.
++	 */
++	ldr r0, =AIPS1_BASE_ADDR
++	ldr r1, =0x77777777
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++	ldr r0, =AIPS2_BASE_ADDR
++	str r1, [r0, #0x0]
++	str r1, [r0, #0x4]
++.endm /* init_aips */
++
++.macro setup_pll pll, freq
++	ldr r0, =\pll
++	ldr r1, =0x00001232
++	str r1, [r0, #PLL_DP_CTL]
++	mov r1, #0x2
++	str r1, [r0, #PLL_DP_CONFIG]
++
++	ldr r1, W_DP_OP_\freq
++	str r1, [r0, #PLL_DP_OP]
++	str r1, [r0, #PLL_DP_HFS_OP]
++
++	ldr r1,	W_DP_MFD_\freq
++	str r1, [r0, #PLL_DP_MFD]
++	str r1, [r0, #PLL_DP_HFS_MFD]
++
++	ldr r1,  W_DP_MFN_\freq
++	str r1, [r0, #PLL_DP_MFN]
++	str r1, [r0, #PLL_DP_HFS_MFN]
++
++	ldr r1, =0x00001232
++	str r1, [r0, #PLL_DP_CTL]
++1:	ldr r1, [r0, #PLL_DP_CTL]
++	ands r1, r1, #0x1
++	beq 1b
++.endm
++
++.macro init_clock
++
++	setup_pll PLL3_BASE_ADDR, 400
++
++	/* Switch peripheral to PLL3 */
++	/* Set periph_clk_sel[1:0]=0b10 to PLL3 */
++
++	ldr r0, CCM_BASE_ADDR_W
++	ldr r1, [r0, #CLKCTL_CBCDR]
++	orr r1, r1, #(3 << 25)
++	eor r1, r1, #(3 << 25)
++	orr r1, r1, #(2 << 25)
++	str r1, [r0, #CLKCTL_CBCDR]
++
++	/* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++	cmp r1, #0x0
++	bne 1b
++
++        setup_pll PLL2_BASE_ADDR, CONFIG_SYS_PLL2_FREQ
++
++	/* Switch peripheral to PLL2 */
++	/* Set periph_clk_sel[1:0]=0b01 to PLL2 */
++
++        ldr r0, CCM_BASE_ADDR_W
++        ldr r1, [r0, #CLKCTL_CBCDR]
++        orr r1, r1, #(3 << 25)
++        eor r1, r1, #(3 << 25)
++        orr r1, r1, #(1 << 25)
++
++	orr r1, r1, #(CONFIG_SYS_AHB_PODF << 10)
++	orr r1, r1, #(CONFIG_SYS_AXIA_PODF << 16)
++	orr r1, r1, #(CONFIG_SYS_AXIB_PODF << 19)
++	str r1, [r0, #CLKCTL_CBCDR]
++
++	/* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++	cmp r1, #0x0
++	bne 1b
++
++        setup_pll PLL3_BASE_ADDR, 216
++
++	/* Set the platform clock dividers */
++	ldr r0, PLATFORM_BASE_ADDR_W
++	ldr r1, PLATFORM_CLOCK_DIV_W
++	str r1, [r0, #PLATFORM_ICGC]
++
++	/* ARM2 run at full speed */
++	ldr r0, CCM_BASE_ADDR_W
++	mov r1, #0
++	str r1, [r0, #CLKCTL_CACRR]
++
++        /* make sure change is effective */
++1:      ldr r1, [r0, #CLKCTL_CDHIPR]
++        cmp r1, #0x0
++        bne 1b
++
++	/* Restore the default values in the Gate registers */
++	ldr r1, =0xFFFFFFFF
++	str r1, [r0, #CLKCTL_CCGR0]
++	str r1, [r0, #CLKCTL_CCGR1]
++	str r1, [r0, #CLKCTL_CCGR2]
++	str r1, [r0, #CLKCTL_CCGR3]
++	str r1, [r0, #CLKCTL_CCGR4]
++	str r1, [r0, #CLKCTL_CCGR5]
++	str r1, [r0, #CLKCTL_CCGR6]
++	str r1, [r0, #CLKCTL_CCGR7]
++
++        /* for cko - for ARM div by 8 */
++        mov r1, #0x000A0000
++        add r1, r1, #0x00000F0
++        str r1, [r0, #CLKCTL_CCOSR]
++.endm
++
++.section ".text.init", "x"
++
++.globl lowlevel_init
++lowlevel_init:
++
++#ifdef ENABLE_IMPRECISE_ABORT
++        mrs r1, spsr            /* save old spsr */
++        mrs r0, cpsr            /* read out the cpsr */
++	bic r0, r0, #0x100      /* clear the A bit */
++	msr spsr, r0            /* update spsr */
++	add lr, pc, #0x8        /* update lr */
++        movs pc, lr             /* update cpsr */
++        nop
++        nop
++        nop
++	nop
++	msr spsr, r1            /* restore old spsr */
++#endif
++
++	/* ARM errata ID #468414 */
++	mrc 15, 0, r1, c1, c0, 1
++	orr r1, r1, #(1 << 5)    /* enable L1NEON bit */
++	mcr 15, 0, r1, c1, c0, 1
++
++	init_l2cc
++
++	init_aips
++
++	init_clock /* not finished */
++
++	mov pc, lr
++
++/* Board level setting value */
++CCM_BASE_ADDR_W:        .word CCM_BASE_ADDR
++W_DP_OP_800:           	.word DP_OP_800
++W_DP_MFD_800:           .word DP_MFD_800
++W_DP_MFN_800:           .word DP_MFN_800
++W_DP_OP_600:            .word DP_OP_600
++W_DP_MFD_600:           .word DP_MFD_600
++W_DP_MFN_600:           .word DP_MFN_600
++W_DP_OP_400:            .word DP_OP_400
++W_DP_MFD_400:           .word DP_MFD_400
++W_DP_MFN_400:           .word DP_MFN_400
++W_DP_OP_216:            .word DP_OP_216
++W_DP_MFD_216:           .word DP_MFD_216
++W_DP_MFN_216:           .word DP_MFN_216
++PLATFORM_BASE_ADDR_W:   .word ARM_BASE_ADDR
++PLATFORM_CLOCK_DIV_W:   .word 0x00000124
+diff --git a/board/freescale/mx50_rdp/mx50_rdp.c b/board/freescale/mx50_rdp/mx50_rdp.c
+new file mode 100644
+index 0000000..1a736b4
+--- /dev/null
++++ b/board/freescale/mx50_rdp/mx50_rdp.c
+@@ -0,0 +1,691 @@
++/*
++ * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
++ *
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/mx50.h>
++#include <asm/arch/mx50_pins.h>
++#include <asm/arch/iomux.h>
++#include <asm/errno.h>
++
++#ifdef CONFIG_IMX_CSPI
++#include <imx_spi.h>
++#include <asm/arch/imx_spi_pmic.h>
++#endif
++
++#if CONFIG_I2C_MXC
++#include <i2c.h>
++#endif
++
++#ifdef CONFIG_CMD_MMC
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#endif
++
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
++
++#ifdef CONFIG_CMD_CLOCK
++#include <asm/clock.h>
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++static u32 system_rev;
++static enum boot_device boot_dev;
++u32	mx51_io_base_addr;
++
++static inline void setup_boot_device(void)
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	uint bt_mem_ctl = (soc_sbmr & 0x000000FF) >> 4 ;
++	uint bt_mem_type = (soc_sbmr & 0x00000008) >> 3;
++
++	switch (bt_mem_ctl) {
++	case 0x0:
++		if (bt_mem_type)
++			boot_dev = ONE_NAND_BOOT;
++		else
++			boot_dev = WEIM_NOR_BOOT;
++		break;
++	case 0x2:
++		if (bt_mem_type)
++			boot_dev = SATA_BOOT;
++		else
++			boot_dev = PATA_BOOT;
++		break;
++	case 0x3:
++		if (bt_mem_type)
++			boot_dev = SPI_NOR_BOOT;
++		else
++			boot_dev = I2C_BOOT;
++		break;
++	case 0x4:
++	case 0x5:
++		boot_dev = SD_BOOT;
++		break;
++	case 0x6:
++	case 0x7:
++		boot_dev = MMC_BOOT;
++		break;
++	case 0x8 ... 0xf:
++		boot_dev = NAND_BOOT;
++		break;
++	default:
++		boot_dev = UNKNOWN_BOOT;
++		break;
++	}
++}
++
++enum boot_device get_boot_device(void)
++{
++	return boot_dev;
++}
++
++u32 get_board_rev(void)
++{
++	return system_rev;
++}
++
++static inline void setup_soc_rev(void)
++{
++	system_rev = 0x50000 | CHIP_REV_1_0;
++}
++
++static inline void setup_board_rev(int rev)
++{
++	system_rev |= (rev & 0xF) << 8;
++}
++
++inline int is_soc_rev(int rev)
++{
++	return (system_rev & 0xFF) - rev;
++}
++
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
++	unsigned long i;
++
++	/*
++	* Set the TTB register
++	*/
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	* Set the Domain Access Control Register
++	*/
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	* First clear all TT entries - ie Set them to Faulting
++	*/
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes          Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0x000, 0x10,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* ROM, 16M */
++	X_ARM_MMU_SECTION(0x070, 0x070, 0x010,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IRAM */
++	X_ARM_MMU_SECTION(0x100, 0x100, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SATA */
++	X_ARM_MMU_SECTION(0x180, 0x180, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IPUv3M */
++	X_ARM_MMU_SECTION(0x200, 0x200, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* GPU */
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x300,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* periperals */
++	X_ARM_MMU_SECTION(0x700, 0x700, 0x400,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 1G */
++	X_ARM_MMU_SECTION(0x700, 0xB00, 0x400,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CSD0 1G */
++	X_ARM_MMU_SECTION(0xF00, 0xF00, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS1 EIM control*/
++	X_ARM_MMU_SECTION(0xF80, 0xF80, 0x001,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* iRam */
++
++	/* Workaround for arm errata #709718 */
++	/* Setup PRRR so device is always mapped to non-shared */
++	asm volatile ("mrc p15, 0, %0, c10, c2, 0" : "=r"(i) : /*:*/);
++	i &= (~(3 << 0x10));
++	asm volatile ("mcr p15, 0, %0, c10, c2, 0" : : "r"(i) /*:*/);
++
++	/* Enable MMU */
++	MMU_ON();
++}
++#endif
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++	return 0;
++}
++
++static void setup_uart(void)
++{
++
++	/* UART1 RXD */
++	mxc_request_iomux(MX50_PIN_UART1_RXD, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX50_PIN_UART1_RXD, 0x1E4);
++	mxc_iomux_set_input(MUX_IN_UART1_IPP_UART_RXD_MUX_SELECT_INPUT, 0x1);
++
++	/* UART1 TXD */
++	mxc_request_iomux(MX50_PIN_UART1_TXD, IOMUX_CONFIG_ALT0);
++	mxc_iomux_set_pad(MX50_PIN_UART1_TXD, 0x1E4);
++}
++
++#ifdef CONFIG_I2C_MXC
++static void setup_i2c(unsigned int module_base)
++{
++	switch (module_base) {
++	case I2C1_BASE_ADDR:
++		/* i2c1 SDA */
++		mxc_request_iomux(MX50_PIN_I2C1_SDA,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C1_SDA, PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		/* i2c1 SCL */
++		mxc_request_iomux(MX50_PIN_I2C1_SCL,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C1_SCL, PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		break;
++	case I2C2_BASE_ADDR:
++		/* i2c2 SDA */
++		mxc_request_iomux(MX50_PIN_I2C2_SDA,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C2_SDA,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++
++		/* i2c2 SCL */
++		mxc_request_iomux(MX50_PIN_I2C2_SCL,
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX50_PIN_I2C2_SCL,
++				PAD_CTL_SRE_FAST |
++				PAD_CTL_ODE_OPENDRAIN_ENABLE |
++				PAD_CTL_DRV_HIGH | PAD_CTL_100K_PU |
++				PAD_CTL_HYS_ENABLE);
++		break;
++	default:
++		printf("Invalid I2C base: 0x%x\n", module_base);
++		break;
++	}
++}
++
++#endif
++
++#ifdef CONFIG_IMX_CSPI
++s32 spi_get_cfg(struct imx_spi_dev_t *dev)
++{
++	switch (dev->slave.cs) {
++	case 0:
++		/* PMIC */
++		dev->base = CSPI3_BASE_ADDR;
++		dev->freq = 25000000;
++		dev->ss_pol = IMX_SPI_ACTIVE_HIGH;
++		dev->ss = 0;
++		dev->fifo_sz = 32;
++		dev->us_delay = 0;
++		break;
++	case 1:
++		/* SPI-NOR */
++		dev->base = CSPI3_BASE_ADDR;
++		dev->freq = 25000000;
++		dev->ss_pol = IMX_SPI_ACTIVE_LOW;
++		dev->ss = 1;
++		dev->fifo_sz = 32;
++		dev->us_delay = 0;
++		break;
++	default:
++		printf("Invalid Bus ID!\n");
++	}
++
++	return 0;
++}
++
++void spi_io_init(struct imx_spi_dev_t *dev)
++{
++	switch (dev->base) {
++	case CSPI3_BASE_ADDR:
++		mxc_request_iomux(MX50_PIN_CSPI_MOSI, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX50_PIN_CSPI_MOSI, 0x4);
++
++		mxc_request_iomux(MX50_PIN_CSPI_MISO, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX50_PIN_CSPI_MISO, 0x4);
++
++		if (dev->ss == 0) {
++			/* de-select SS1 of instance: cspi */
++			mxc_request_iomux(MX50_PIN_ECSPI1_MOSI,
++						IOMUX_CONFIG_ALT1);
++
++			mxc_request_iomux(MX50_PIN_CSPI_SS0, IOMUX_CONFIG_ALT0);
++			mxc_iomux_set_pad(MX50_PIN_CSPI_SS0, 0xE4);
++		} else if (dev->ss == 1) {
++			/* de-select SS0 of instance: cspi */
++			mxc_request_iomux(MX50_PIN_CSPI_SS0, IOMUX_CONFIG_ALT1);
++
++			mxc_request_iomux(MX50_PIN_ECSPI1_MOSI,
++						IOMUX_CONFIG_ALT2);
++			mxc_iomux_set_pad(MX50_PIN_ECSPI1_MOSI, 0xE4);
++			mxc_iomux_set_input(
++			MUX_IN_CSPI_IPP_IND_SS1_B_SELECT_INPUT, 0x1);
++		}
++
++		mxc_request_iomux(MX50_PIN_CSPI_SCLK, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX50_PIN_CSPI_SCLK, 0x4);
++		break;
++	case CSPI2_BASE_ADDR:
++	case CSPI1_BASE_ADDR:
++		/* ecspi1-2 fall through */
++		break;
++	default:
++		break;
++	}
++}
++#endif
++
++#ifdef CONFIG_MXC_FEC
++
++#ifdef CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++#define HW_OCOTP_MACn(n)	(0x00000250 + (n) * 0x10)
++
++int fec_get_mac_addr(unsigned char *mac)
++{
++	u32 *ocotp_mac_base =
++		(u32 *)(OCOTP_CTRL_BASE_ADDR + HW_OCOTP_MACn(0));
++	int i;
++
++	for (i = 0; i < 6; ++i, ++ocotp_mac_base)
++		mac[6 - 1 - i] = readl(++ocotp_mac_base);
++
++	return 0;
++}
++#endif
++
++static void setup_fec(void)
++{
++	volatile unsigned int reg;
++
++	/* FEC_EN: gpio6-23 set to 0 to enable FEC */
++	mxc_request_iomux(MX50_PIN_I2C3_SDA, IOMUX_CONFIG_ALT1);
++
++	reg = readl(GPIO6_BASE_ADDR + 0x0);
++	reg &= ~(1 << 23);
++	writel(reg, GPIO6_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO6_BASE_ADDR + 0x4);
++	reg |= (1 << 23);
++	writel(reg, GPIO6_BASE_ADDR + 0x4);
++
++
++	/*FEC_MDIO*/
++	mxc_request_iomux(MX50_PIN_SSI_RXC, IOMUX_CONFIG_ALT6);
++	mxc_iomux_set_pad(MX50_PIN_SSI_RXC, 0xC);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_MDI_SELECT_INPUT, 0x1);
++
++	/*FEC_MDC*/
++	mxc_request_iomux(MX50_PIN_SSI_RXFS, IOMUX_CONFIG_ALT6);
++	mxc_iomux_set_pad(MX50_PIN_SSI_RXFS, 0x004);
++
++	/* FEC RXD1 */
++	mxc_request_iomux(MX50_PIN_DISP_D3, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D3, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RDATA_1_SELECT_INPUT, 0x0);
++
++	/* FEC RXD0 */
++	mxc_request_iomux(MX50_PIN_DISP_D4, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D4, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RDATA_0_SELECT_INPUT, 0x0);
++
++	 /* FEC TXD1 */
++	mxc_request_iomux(MX50_PIN_DISP_D6, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D6, 0x004);
++
++	/* FEC TXD0 */
++	mxc_request_iomux(MX50_PIN_DISP_D7, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D7, 0x004);
++
++	/* FEC TX_EN */
++	mxc_request_iomux(MX50_PIN_DISP_D5, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D5, 0x004);
++
++	/* FEC TX_CLK */
++	mxc_request_iomux(MX50_PIN_DISP_D0, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D0, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_TX_CLK_SELECT_INPUT, 0x0);
++
++	/* FEC RX_ER */
++	mxc_request_iomux(MX50_PIN_DISP_D1, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D1, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RX_ER_SELECT_INPUT, 0);
++
++	/* FEC CRS */
++	mxc_request_iomux(MX50_PIN_DISP_D2, IOMUX_CONFIG_ALT2);
++	mxc_iomux_set_pad(MX50_PIN_DISP_D2, 0x0);
++	mxc_iomux_set_input(MUX_IN_FEC_FEC_RX_DV_SELECT_INPUT, 0);
++
++	/* FEC_RESET_B: gpio4-12 */
++	mxc_request_iomux(MX50_PIN_ECSPI1_SCLK, IOMUX_CONFIG_ALT1);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg &= ~(1 << 12);
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x4);
++	reg |= (1 << 12);
++	writel(reg, GPIO4_BASE_ADDR + 0x4);
++
++	udelay(500);
++
++	reg = readl(GPIO4_BASE_ADDR + 0x0);
++	reg |= (1 << 12);
++	writel(reg, GPIO4_BASE_ADDR + 0x0);
++}
++#endif
++
++#ifdef CONFIG_CMD_MMC
++
++struct fsl_esdhc_cfg esdhc_cfg[3] = {
++	{MMC_SDHC1_BASE_ADDR, 1, 1},
++	{MMC_SDHC2_BASE_ADDR, 1, 1},
++	{MMC_SDHC3_BASE_ADDR, 1, 1},
++};
++
++
++#ifdef CONFIG_DYNAMIC_MMC_DEVNO
++int get_mmc_env_devno()
++{
++	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
++	int mmc_devno = 0;
++
++	switch (soc_sbmr & 0x00300000) {
++	default:
++	case 0x0:
++		mmc_devno = 0;
++		break;
++	case 0x00100000:
++		mmc_devno = 1;
++		break;
++	case 0x00200000:
++		mmc_devno = 2;
++		break;
++	}
++
++	return mmc_devno;
++}
++#endif
++
++
++int esdhc_gpio_init(bd_t *bis)
++{
++	s32 status = 0;
++	u32 index = 0;
++
++	for (index = 0; index < CONFIG_SYS_FSL_ESDHC_NUM;
++		++index) {
++		switch (index) {
++		case 0:
++			mxc_request_iomux(MX50_PIN_SD1_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D0,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D1,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D2,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD1_D3,  IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX50_PIN_SD1_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_CLK, 0xD4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D0,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D1,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D2,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD1_D3,  0x1D4);
++
++			break;
++		case 1:
++			mxc_request_iomux(MX50_PIN_SD2_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D0,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D1,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D2,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D3,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D4,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D5,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D6,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD2_D7,  IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX50_PIN_SD2_CMD, 0x14);
++			mxc_iomux_set_pad(MX50_PIN_SD2_CLK, 0xD4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D0,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D1,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D2,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D3,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D4,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D5,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D6,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_D7,  0x1D4);
++
++			break;
++		case 2:
++			mxc_request_iomux(MX50_PIN_SD3_CMD, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_CLK, IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D0,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D1,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D2,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D3,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D4,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D5,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D6,  IOMUX_CONFIG_ALT0);
++			mxc_request_iomux(MX50_PIN_SD3_D7,  IOMUX_CONFIG_ALT0);
++
++			mxc_iomux_set_pad(MX50_PIN_SD3_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_CLK, 0xD4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D0,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D1,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D2,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D3,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D4,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D5,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D6,  0x1D4);
++			mxc_iomux_set_pad(MX50_PIN_SD3_D7,  0x1D4);
++
++			break;
++		default:
++			printf("Warning: you configured more ESDHC controller"
++				"(%d) as supported by the board(2)\n",
++				CONFIG_SYS_FSL_ESDHC_NUM);
++			return status;
++			break;
++		}
++		status |= fsl_esdhc_initialize(bis, &esdhc_cfg[index]);
++	}
++
++	return status;
++}
++
++int board_mmc_init(bd_t *bis)
++{
++	if (!esdhc_gpio_init(bis))
++		return 0;
++	else
++		return -1;
++}
++
++#endif
++
++#ifdef CONFIG_IMX_CSPI
++static void setup_power(void)
++{
++	struct spi_slave *slave;
++	unsigned int val;
++	unsigned int reg;
++
++	puts("PMIC Mode: SPI\n");
++
++	/* Enable VGEN1 to enable ethernet */
++	slave = spi_pmic_probe();
++
++	val = pmic_reg(slave, 30, 0, 0);
++	val |= 0x3;
++	pmic_reg(slave, 30, val, 1);
++
++	val = pmic_reg(slave, 32, 0, 0);
++	val |= 0x1;
++	pmic_reg(slave, 32, val, 1);
++
++	/* Enable VCAM   */
++	val = pmic_reg(slave, 33, 0, 0);
++	val |= 0x40;
++	pmic_reg(slave, 33, val, 1);
++
++	spi_pmic_free(slave);
++}
++
++void setup_voltage_cpu(void)
++{
++	/* Currently VDDGP 1.05v
++	 * no one tell me we need increase the core
++	 * voltage to let CPU run at 800Mhz, not do it
++	 */
++
++	/* Raise the core frequency to 800MHz */
++	writel(0x0, CCM_BASE_ADDR + CLKCTL_CACRR);
++
++}
++#endif
++
++int board_init(void)
++{
++	/* boot device */
++	setup_boot_device();
++
++	/* soc rev */
++	setup_soc_rev();
++
++	/* arch id for linux */
++	gd->bd->bi_arch_number = MACH_TYPE_MX50_RDP;
++
++	/* boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
++
++	/* iomux for uart */
++	setup_uart();
++
++#ifdef CONFIG_MXC_FEC
++	/* iomux for fec */
++	setup_fec();
++#endif
++
++	return 0;
++}
++
++int board_late_init(void)
++{
++#ifdef CONFIG_IMX_CSPI
++	setup_power();
++#endif
++	return 0;
++}
++
++int checkboard(void)
++{
++	printf("Board: MX50 RDP board\n");
++
++	printf("Boot Reason: [");
++
++	switch (__REG(SRC_BASE_ADDR + 0x8)) {
++	case 0x0001:
++		printf("POR");
++		break;
++	case 0x0009:
++		printf("RST");
++		break;
++	case 0x0010:
++	case 0x0011:
++		printf("WDOG");
++		break;
++	default:
++		printf("unknown");
++	}
++	printf("]\n");
++
++	printf("Boot Device: ");
++	switch (get_boot_device()) {
++	case WEIM_NOR_BOOT:
++		printf("NOR\n");
++		break;
++	case ONE_NAND_BOOT:
++		printf("ONE NAND\n");
++		break;
++	case PATA_BOOT:
++		printf("PATA\n");
++		break;
++	case SATA_BOOT:
++		printf("SATA\n");
++		break;
++	case I2C_BOOT:
++		printf("I2C\n");
++		break;
++	case SPI_NOR_BOOT:
++		printf("SPI NOR\n");
++		break;
++	case SD_BOOT:
++		printf("SD\n");
++		break;
++	case MMC_BOOT:
++		printf("MMC\n");
++		break;
++	case NAND_BOOT:
++		printf("NAND\n");
++		break;
++	case UNKNOWN_BOOT:
++	default:
++		printf("UNKNOWN\n");
++		break;
++	}
++
++	return 0;
++}
+diff --git a/board/freescale/mx50_rdp/u-boot.lds b/board/freescale/mx50_rdp/u-boot.lds
+new file mode 100644
+index 0000000..072fcf8
+--- /dev/null
++++ b/board/freescale/mx50_rdp/u-boot.lds
+@@ -0,0 +1,73 @@
++/*
++ * January 2004 - Changed to support H4 device
++ * Copyright (c) 2004 Texas Instruments
++ *
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text	   :
++	{
++	  /* WARNING - the following is hand-optimized to fit within	*/
++	  /* the sector layout of our flash chips!	XXX FIXME XXX	*/
++	  board/freescale/mx50_rdp/flash_header.o	(.text.flasheader)
++	  cpu/arm_cortexa8/start.o
++	  board/freescale/mx50_rdp/libmx50_rdp.a	(.text)
++	  lib_arm/libarm.a		(.text)
++	  net/libnet.a			(.text)
++	  drivers/mtd/libmtd.a		(.text)
++	  drivers/mmc/libmmc.a		(.text)
++
++	  . = DEFINED(env_offset) ? env_offset : .;
++	  common/env_embedded.o(.text)
++
++	  *(.text)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(.rodata) }
++
++	. = ALIGN(4);
++	.data : { *(.data) }
++
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/include/asm-arm/mach-types.h b/include/asm-arm/mach-types.h
+index fbebae1..7f222bf 100644
+--- a/include/asm-arm/mach-types.h
++++ b/include/asm-arm/mach-types.h
+@@ -39780,6 +39780,18 @@ extern unsigned int __machine_arch_type;
+ # define machine_is_torbreck()	(0)
+ #endif
+ 
++#ifdef CONFIG_MACH_MX50_RDP
++# ifdef machine_arch_type
++#  undef machine_arch_type
++#  define machine_arch_type     __machine_arch_type
++# else
++#  define machine_arch_type     MACH_TYPE_MX50_RDP
++# endif
++# define machine_is_mx50_rdp()  (machine_arch_type == MACH_TYPE_MX50_RDP)
++#else
++# define machine_is_mx50_rdp()  (0)
++#endif
++
+ /*
+  * These have not yet been registered
+  */
+diff --git a/include/configs/mx50_rdp.h b/include/configs/mx50_rdp.h
+new file mode 100644
+index 0000000..fcfe4e0
+--- /dev/null
++++ b/include/configs/mx50_rdp.h
+@@ -0,0 +1,254 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX50-RDP Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx50.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_MXC
++#define CONFIG_MX50
++#define CONFIG_MX50_RDP
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
++#define CONFIG_MX50_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     2
++#define CONFIG_SYS_AXIA_PODF    0
++#define CONFIG_SYS_AXIB_PODF    1
++
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++#define BOARD_LATE_INIT
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MXC_UART
++#define CONFIG_UART_BASE_ADDR	UART1_BASE_ADDR
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++#define CONFIG_NET_RETRY_COUNT  100
++#define CONFIG_NET_MULTI 1
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++#define CONFIG_CMD_MMC
++#define CONFIG_CMD_ENV
++
++/*#define CONFIG_CMD */
++#define CONFIG_REF_CLK_FREQ CONFIG_MX50_HCLK_FREQ
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define	CONFIG_EXTRA_ENV_SETTINGS					\
++		"netdev=eth0\0"						\
++		"ethprime=FEC0\0"					\
++		"uboot=u-boot.bin\0"			\
++		"kernel=uImage\0"				\
++		"nfsroot=/opt/eldk/arm\0"				\
++		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
++		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
++			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
++		"bootargs_mmc=setenv bootargs ${bootargs} ip=dhcp "     \
++			"root=/dev/mmcblk0p2 rootwait\0"                \
++		"bootcmd_mmc=run bootargs_base bootargs_mmc; bootm\0"   \
++		"bootcmd=run bootcmd_net\0"                             \
++
++
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP		/* undef to save memory */
++#define CONFIG_SYS_PROMPT		"RDP U-Boot > "
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	-1
++#define CONFIG_FEC0_MIIBASE	-1
++
++#define CONFIG_GET_FEC_MAC_ADDR_FROM_IIM
++
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_MII_GASKET
++#define CONFIG_DISCOVER_PHY
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            100000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
++
++
++/*
++ * SPI Configs
++ */
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX_ATMEL	1
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_CSPI
++#define IMX_CSPI_VER_0_7        1
++#define MAX_SPI_BYTES		(8 * 4)
++#define CONFIG_IMX_SPI_PMIC
++#define CONFIG_IMX_SPI_PMIC_CS 0
++
++/*
++ * MMC Configs
++ */
++#ifdef CONFIG_CMD_MMC
++	#define CONFIG_MMC				1
++	#define CONFIG_GENERIC_MMC
++	#define CONFIG_IMX_MMC
++	#define CONFIG_SYS_FSL_ESDHC_NUM        3
++	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++	#define CONFIG_SYS_MMC_ENV_DEV  0
++	#define CONFIG_DOS_PARTITION	1
++	#define CONFIG_CMD_FAT		1
++	#define CONFIG_CMD_EXT2		1
++
++	/* detect whether ESDHC1, ESDHC2, or ESDHC3 is boot device */
++	#define CONFIG_DYNAMIC_MMC_DEVNO
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_MODE
++
++	/* Indicate to esdhc driver which ports support 8-bit data */
++	#define CONFIG_MMC_8BIT_PORTS		0x6   /* ports 1 and 2 */
++
++#endif
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(128 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++#define CONFIG_FSL_ENV_IN_MMC
++
++#define CONFIG_ENV_SECT_SIZE    (128 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET	0x100000
++#elif defined(CONFIG_FSL_ENV_IN_MMC)
++	#define CONFIG_ENV_IS_IN_MMC	1
++	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
++#else
++	#define CONFIG_ENV_IS_NOWHERE	1
++#endif
++#endif				/* __CONFIG_H */
+diff --git a/include/configs/mx50_rdp_iram.h b/include/configs/mx50_rdp_iram.h
+new file mode 100644
+index 0000000..ed6b70e
+--- /dev/null
++++ b/include/configs/mx50_rdp_iram.h
+@@ -0,0 +1,193 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the MX50-RDP Freescale board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include <asm/arch/mx50.h>
++
++ /* High Level Configuration Options */
++#define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
++
++#define CONFIG_MXC
++#define CONFIG_MX50
++#define CONFIG_MX50_RDP
++#define CONFIG_FLASH_HEADER
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++/*
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++*/
++
++#define CONFIG_MX50_HCLK_FREQ	24000000
++#define CONFIG_SYS_PLL2_FREQ    400
++#define CONFIG_SYS_AHB_PODF     4
++#define CONFIG_SYS_AXIA_PODF    1
++#define CONFIG_SYS_AXIB_PODF    2
++#define CONFIG_DISPLAY_CPUINFO
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define BOARD_LATE_INIT
++
++/*
++ * Disabled for now due to build problems under Debian and a significant
++ * increase in the final file size: 144260 vs. 109536 Bytes.
++ */
++
++#define CONFIG_CMDLINE_TAG		1	/* enable passing of ATAGs */
++#define CONFIG_REVISION_TAG		1
++#define CONFIG_SETUP_MEMORY_TAGS	1
++#define CONFIG_INITRD_TAG		1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN		(3 * 1024)
++/* size in bytes reserved for initial data */
++#define CONFIG_SYS_GBL_DATA_SIZE	128
++
++/*
++ * Hardware drivers
++ */
++#define CONFIG_MXC_UART
++#define CONFIG_UART_BASE_ADDR	UART1_BASE_ADDR
++
++/* allow to overwrite serial and ethaddr */
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_CONS_INDEX		1
++#define CONFIG_BAUDRATE			115200
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++
++/***********************************************************
++ * Command definition
++ ***********************************************************/
++
++#define CONFIG_CMD_BDI		/* bdinfo			*/
++#define CONFIG_CMD_BOOTD	/* bootd			*/
++#define CONFIG_CMD_CONSOLE	/* coninfo			*/
++#define CONFIG_CMD_RUN		/* run command in env variable	*/
++
++/*
++ * SPI Configs
++ * */
++
++/*
++ * MMC Configs
++ * */
++/*
++ * Eth Configs
++ */
++
++
++/* Enable below configure when supporting nand */
++#define CONFIG_CMD_ENV
++
++#define CONFIG_REF_CLK_FREQ CONFIG_MX50_HCLK_FREQ
++
++#undef CONFIG_CMD_IMLS
++
++#define CONFIG_BOOTDELAY	3
++
++#define CONFIG_PRIME	"FEC0"
++
++#define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
++#define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
++
++#define CONFIG_BOOTARGS         "console=ttymxc0,115200 "\
++				"rdinit=/linuxrc"
++
++#define CONFIG_BOOTCOMMAND      "bootm"
++#define CONFIG_ENV_IS_EMBEDDED
++/*
++ * The MX51 3stack board seems to have a hardware "peculiarity" confirmed under
++ * U-Boot, RedBoot and Linux: the ethernet Rx signal is reaching the CS8900A
++ * controller inverted. The controller is capable of detecting and correcting
++ * this, but it needs 4 network packets for that. Which means, at startup, you
++ * will not receive answers to the first 4 packest, unless there have been some
++ * broadcasts on the network, or your board is on a hub. Reducing the ARP
++ * timeout from default 5 seconds to 200ms we speed up the initial TFTP
++ * transfer, should the user wish one, significantly.
++ */
++#define CONFIG_ARP_TIMEOUT	200UL
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_PROMPT		"RDP U-Boot > "
++#define CONFIG_SYS_CBSIZE		256	/* Console I/O Buffer Size */
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
++
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
++
++#undef	CONFIG_SYS_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++
++#define CONFIG_SYS_HZ				1000
++
++#define CONFIG_CMDLINE_EDITING	1
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE	(6 * 1024)	/* regular stack */
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS	1
++#define PHYS_SDRAM_1		CSD0_BASE_ADDR
++/* TO1 boards */
++#define PHYS_SDRAM_1_SIZE	(512 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
++
++/*-----------------------------------------------------------------------
++ * FLASH and environment organization
++ */
++#define CONFIG_SYS_NO_FLASH
++
++/* Monitor at beginning of flash */
++/* #define CONFIG_FSL_ENV_IN_SF
++*/
++/* #define CONFIG_FSL_ENV_IN_MMC */
++
++#define CONFIG_ENV_SECT_SIZE    (1 * 1024)
++#define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
++#define CONFIG_ENV_IS_NOWHERE
++
++/*
++ * JFFS2 partitions
++ */
++/*
++#undef CONFIG_JFFS2_CMDLINE
++#define CONFIG_JFFS2_DEV	"nand0"
++*/
++#endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

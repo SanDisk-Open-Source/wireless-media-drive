@@ -1,0 +1,48 @@
+From b189ab8e686fe53e07101c3f7b65305f805151ad Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 29 Dec 2010 10:42:50 +0800
+Subject: [PATCH] ENGR00136863-2: Fix mx53 CMD12 issue.
+
+As in mx53 and lster socs, when using CMD12, cmdtype need to be set
+to ABORT, otherwise, next read command will hang.
+
+This is a software Software Restrictions in spec 29.7.8.
+
+  For pre-defined multi-block read operation,
+  i.e.,
+  The number of blocks to read has been defined by previous
+CMD23 for MMC, or pre-defined number of blocks in CMD53
+for SDIO/SDCombo, or whatever multi-block read without abort
+command at card side, an abort command, either automatic
+or manual CMD12/CMD52, is still required by ESDHCV2 after the
+pre-defined number of blocks are done, to drive the internal
+state machine to idle mode.
+
+  In this case, the card may not respond to this extra
+abort command and ESDHCV2 gets Response Timeout.
+
+  It is recommended to manually send an abort command with
+RSPTYP[1:0] both bits cleared.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/mmc/imx_esdhc.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index c0eaa97..0dff3ca 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -104,6 +104,9 @@ uint esdhc_xfertyp(struct mmc_cmd *cmd, struct mmc_data *data)
+ 	else if (cmd->resp_type & MMC_RSP_PRESENT)
+ 		xfertyp |= XFERTYP_RSPTYP_48;
+ 
++	if (cmd->cmdidx == MMC_CMD_STOP_TRANSMISSION)
++		xfertyp |= XFERTYP_CMDTYP_ABORT;
++
+ 	return XFERTYP_CMD(cmd->cmdidx) | xfertyp;
+ }
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,40 @@
+From af4f50aef99a5d30ccc612e406515ff87ed5a2be Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Fri, 15 Oct 2010 16:40:03 +0800
+Subject: [PATCH] ENGR00132653 MLB: add regulator check
+
+Add regulator check in MLB driver.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ drivers/mxc/mlb/mxc_mlb.c |   14 +++++++++-----
+ 1 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mxc/mlb/mxc_mlb.c b/drivers/mxc/mlb/mxc_mlb.c
+index 1364f27..48c160a 100644
+--- a/drivers/mxc/mlb/mxc_mlb.c
++++ b/drivers/mxc/mlb/mxc_mlb.c
+@@ -939,11 +939,15 @@ static int __devinit mxc_mlb_probe(struct platform_device *pdev)
+ 	/* enable GPIO */
+ 	gpio_mlb_active();
+ 
+-	/* power on MLB */
+-	reg_nvcc = regulator_get(&pdev->dev, plat_data->reg_nvcc);
+-	/* set MAX LDO6 for NVCC to 2.5V */
+-	regulator_set_voltage(reg_nvcc, 2500000, 2500000);
+-	regulator_enable(reg_nvcc);
++	if (plat_data->reg_nvcc) {
++		/* power on MLB */
++		reg_nvcc = regulator_get(&pdev->dev, plat_data->reg_nvcc);
++		if (!IS_ERR(reg_nvcc)) {
++			/* set MAX LDO6 for NVCC to 2.5V */
++			regulator_set_voltage(reg_nvcc, 2500000, 2500000);
++			regulator_enable(reg_nvcc);
++		}
++	}
+ 
+ 	/* enable clock */
+ 	mlb_clk = clk_get(&pdev->dev, plat_data->mlb_clk);
+-- 
+1.5.4.4
+

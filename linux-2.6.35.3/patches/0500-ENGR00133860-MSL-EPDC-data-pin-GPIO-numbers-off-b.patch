@@ -1,0 +1,71 @@
+From 957f7a60dc2847b9d0429b786c1e9fd7e1355569 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 18 Nov 2010 16:25:57 -0600
+Subject: [PATCH] ENGR00133860 - MSL: EPDC data pin GPIO numbers off by 1
+
+The #defines for EPDC data lines were all off by 1. This
+is now fixed.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c |   16 ++++++++--------
+ arch/arm/mach-mx5/mx50_rdp.c  |   16 ++++++++--------
+ 2 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index ca966d2..e673838 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -75,14 +75,14 @@
+ #define HP_DETECT	(3*32 + 15)	/*GPIO_4_15 */
+ #define PWR_INT		(3*32 + 18)	/*GPIO_4_18 */
+ 
+-#define EPDC_D0		(2*32 + 1)	/*GPIO_3_0 */
+-#define EPDC_D1		(2*32 + 2)	/*GPIO_3_1 */
+-#define EPDC_D2		(2*32 + 3)	/*GPIO_3_2 */
+-#define EPDC_D3		(2*32 + 4)	/*GPIO_3_3 */
+-#define EPDC_D4		(2*32 + 5)	/*GPIO_3_4 */
+-#define EPDC_D5		(2*32 + 6)	/*GPIO_3_5 */
+-#define EPDC_D6		(2*32 + 7)	/*GPIO_3_6 */
+-#define EPDC_D7		(2*32 + 8)	/*GPIO_3_7 */
++#define EPDC_D0		(2*32 + 0)	/*GPIO_3_0 */
++#define EPDC_D1		(2*32 + 1)	/*GPIO_3_1 */
++#define EPDC_D2		(2*32 + 2)	/*GPIO_3_2 */
++#define EPDC_D3		(2*32 + 3)	/*GPIO_3_3 */
++#define EPDC_D4		(2*32 + 4)	/*GPIO_3_4 */
++#define EPDC_D5		(2*32 + 5)	/*GPIO_3_5 */
++#define EPDC_D6		(2*32 + 6)	/*GPIO_3_6 */
++#define EPDC_D7		(2*32 + 7)	/*GPIO_3_7 */
+ #define EPDC_GDCLK	(2*32 + 16)	/*GPIO_3_16 */
+ #define EPDC_GDSP	(2*32 + 17)	/*GPIO_3_17 */
+ #define EPDC_GDOE	(2*32 + 18)	/*GPIO_3_18 */
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index b5b3705..d45e3d6 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -76,14 +76,14 @@
+ #define SD2_CD	(4*32 + 17) /*GPIO_5_17 */
+ #define HP_DETECT	(3*32 + 15)	/*GPIO_4_15 */
+ #define PWR_INT		(3*32 + 18)	/*GPIO_4_18 */
+-#define EPDC_D0		(2*32 + 1)	/*GPIO_3_0 */
+-#define EPDC_D1		(2*32 + 2)	/*GPIO_3_1 */
+-#define EPDC_D2		(2*32 + 3)	/*GPIO_3_2 */
+-#define EPDC_D3		(2*32 + 4)	/*GPIO_3_3 */
+-#define EPDC_D4		(2*32 + 5)	/*GPIO_3_4 */
+-#define EPDC_D5		(2*32 + 6)	/*GPIO_3_5 */
+-#define EPDC_D6		(2*32 + 7)	/*GPIO_3_6 */
+-#define EPDC_D7		(2*32 + 8)	/*GPIO_3_7 */
++#define EPDC_D0		(2*32 + 0)	/*GPIO_3_0 */
++#define EPDC_D1		(2*32 + 1)	/*GPIO_3_1 */
++#define EPDC_D2		(2*32 + 2)	/*GPIO_3_2 */
++#define EPDC_D3		(2*32 + 3)	/*GPIO_3_3 */
++#define EPDC_D4		(2*32 + 4)	/*GPIO_3_4 */
++#define EPDC_D5		(2*32 + 5)	/*GPIO_3_5 */
++#define EPDC_D6		(2*32 + 6)	/*GPIO_3_6 */
++#define EPDC_D7		(2*32 + 7)	/*GPIO_3_7 */
+ #define EPDC_GDCLK	(2*32 + 16)	/*GPIO_3_16 */
+ #define EPDC_GDSP	(2*32 + 17)	/*GPIO_3_17 */
+ #define EPDC_GDOE	(2*32 + 18)	/*GPIO_3_18 */
+-- 
+1.5.4.4
+

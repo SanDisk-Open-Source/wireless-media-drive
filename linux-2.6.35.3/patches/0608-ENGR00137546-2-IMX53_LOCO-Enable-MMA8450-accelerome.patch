@@ -1,0 +1,36 @@
+From 91a1458499a8864f51eb3b40643a7b1aa07b0809 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Tue, 4 Jan 2011 14:38:23 +0800
+Subject: [PATCH] ENGR00137546-2 IMX53_LOCO: Enable MMA8450 accelerometer sensor
+
+Enable MMA8450 accelerometer sensor on imx53_loco board.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 9d51ba9..605e0a0 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Thu Dec 30 19:50:11 2010
++# Tue Jan  4 13:26:33 2011
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -1228,6 +1228,7 @@ CONFIG_SENSORS_MAX17135=y
+ # CONFIG_SENSORS_LIS3_I2C is not set
+ CONFIG_SENSORS_ISL29003=y
+ CONFIG_MXC_MMA8451=y
++CONFIG_MXC_MMA8450=y
+ # CONFIG_THERMAL is not set
+ CONFIG_WATCHDOG=y
+ CONFIG_WATCHDOG_NOWAYOUT=y
+-- 
+1.5.4.4
+

@@ -1,0 +1,28 @@
+From 9aa1f378ddc40de25b9e34c5c458c682c7553046 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Mon, 14 Mar 2011 12:07:44 +0800
+Subject: [PATCH] ENGR00140543 ISL29023:Add device head file to Kbuild
+
+This patch adds device head file to Kbuild to pass
+unit test build.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ include/linux/Kbuild |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/Kbuild b/include/linux/Kbuild
+index ee0062a..deb90ba 100644
+--- a/include/linux/Kbuild
++++ b/include/linux/Kbuild
+@@ -390,6 +390,7 @@ unifdef-y += xfrm.h
+ 
+ ## i.MX specific files
+ unifdef-y += fsl_devices.h
++unifdef-y += isl29023.h
+ unifdef-y += imx_adc.h
+ unifdef-y += ipu.h
+ unifdef-y += mxc_asrc.h
+-- 
+1.5.4.4
+

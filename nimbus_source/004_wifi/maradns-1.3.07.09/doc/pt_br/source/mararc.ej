@@ -1,0 +1,813 @@
+<HEAD>
+<TH>MARARC 5 "Janeiro 2002" MARADNS "MaraDNS referencia"</TH>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<BODY>
+
+<h1>NOME</h1>
+mararc - Formato do arquivo de zona do mararc que MaraDNS utiliza.
+
+<h1>FORMATO DO AQUIVO MARARC</h1>
+O arquivo Mararc sua um syntax que é derivada do Python 2.3.3. Em
+particular, Python 2.3.3 (e possivilmente outras versões do Python) podem ler
+um arquivo corretamente formatado do mararc sem erro. 
+<p>
+Ao contrário de Python, entretanto, um arquivo mararc pode somente 
+usar determinados nomes de variáveis, e as variáveis podem 
+somente ser declaradas como descritas abaixo. 
+
+<p>
+<h1>COMENTÁRIOS</h1>
+Comentários (linhas ignoradas pelo analizador do MaraDNS) começam com o 
+caractere '#', como assim:
+<pre>
+# Isto é um comentário
+</pre>
+O analizador MaraDNS ignora também as linhas que contêm somente o espaço branco. 
+
+<h1>OPERADORES</h1>
+O arquivo MaraRC suporta dois operadores: = and +=
+<p>
+O operador = pode ser usado para atribuir valores numéricos a uma string.
+<p>
+O operador += pode somente ser usado em valores de string, e concatena 
+o valor à direita do operador += da string especificada, à esquerda do operador +=. 
+<p>
+Exemplos:
+<pre>
+ipv4_bind_addresses = "10.2.19.83"
+ipv4_bind_addresses += ",10.2.66.74"
+ipv4_bind_addresses += ",10.3.87.13"
+</pre>
+
+ipv4_bind_addresses agora tem os valores "10.2.19.83,10.2.66.74,10.3.87.13"
+
+<pre>
+ipv4_alias["icann"] = "198.41.0.4"
+ipv4_alias["icann"] += ",192.228.79.201"
+ipv4_alias["icann"] += ",192.33.4.12,128.8.10.90"
+</pre>
+
+<h1>VARIÁVEIS MARARC</h1>
+Segue é uma lista das variáveis que podem ser declaradas no arquivo mararc. 
+
+<h1>FORMATO DAS VARIÁVEIS DE DICIONÁRIO</h1>
+
+Uma <b>variável de dicionário</b>
+é uma array que pode ter múltiplos elementos. Ao contrário de uma array
+tradicional, estas array são posicionadas por string em vez de números. 
+Estes são analogos às arrays associativas, ou que o Perl chama de hashes. 
+
+<p>
+A sintaxe de uma variável de dicionário está na seguinte forma:
+<pre>
+name["index"] = "value"
+</pre>
+Onde <b>name</b> é o nome da variável de dicionário,
+<b>index</b> é o índice da array, e 
+<b>value</b> é o valor armazenado nesse índice. 
+<p>
+Cada vez que nós temos uma variável do tipo dicionário
+(tal como csv2), nós devemos primeiramente inicializá-la
+usando uma linha no seguinte formato: 
+<pre>
+csv2 = {}
+</pre>
+Aqui, csv2 é o nome da variável de "dicionário" que nós 
+estamos inicializando. 
+
+<h1>VARIÁVEIS DE DICIONÁRIO</h1>
+
+Está aqui uma lista de todos os estilos de variáveis de 
+dicionario que MaraDNS usa: 
+
+<h2>csv2</h2>
+A variável do dicionário csv2 armazena todos os nomes de zona e nomes
+de arquivos para as zonas de arquivos que MaraDNS usa.  Note que os
+arquivos csv2 são lidos depois que MaraDNS é chrooted.  Portanto o nome
+de arquivo é relativo ao chroot _dir. 
+
+Exemplo:
+
+<pre>
+csv2["example.net."] = "db.example.net"
+</pre>
+
+Veja <b>csv2(5)</b> para uma descrição do formato deste arquivo.
+
+<h2>csv1</h2>
+
+csv1: Usada para indicar o nome de arquivo para uso de uma deterninada
+zona armazenada no formato de arquivo de zona csv1.  Isto é 
+primeiramente para a compatibilidade com quem têm arquivos de
+zona maradns-1.0. 
+
+<pre>
+csv1["zone"] = "filename"
+</pre>
+<b>csv1</b>:
+Um arquivo pipe-separado. Veja
+<b>csv1(5)</b>.
+<p>
+<b>zone</b>:
+a zona que o arquivo em questão é autoritativo para  
+<p>
+<b>nome de arquivo</b>:
+no arquivo com os dados da zona CSV1
+<p>
+Note que os arquivos csv1 são lidos após MaraDNS ser chrooted,
+e, portanto o nome de arquivo é relativo ao chroot_dir. 
+
+<p>
+Veja o man page <b>csv1(5)</b> para mais informações sobre este 
+formato de arquivo.
+
+<h2>ipv4_alias</h2>
+
+ipv4_alias: Usado para dar apelidos ou pseudônimos para pares 
+de ip/netmask endereços de IP ipv4 (32-bit padrão). 
+
+<pre>
+ipv4_alias["name"] = "ip1/netmask,ip2/netmask,etc"
+</pre>
+
+<b>name</b>: O nome do alias em questão.
+<p>
+
+<b>ip</b>: A parcela do IP de um par de ip/netmask
+<p>
+
+<b>netmask</b>: a parcela da máscara de um par de ip/netmask 
+<p>
+
+<b>,</b>: Usado para separar pares de ip/netmask. Os espaços podem
+ser colocados antes ou depois desta vírgula.
+<p>
+
+Um IP está no formato decimal-pontilhado, e.g. "10.1.2.3".
+<p>
+O netmask pode estar em dois formatos:  Um único número entre 
+1 e 32, que indica o número de bits "1" seguidos no netmask,
+ou um netmask decimal-pontilhado de 4-digitos. 
+
+<p>
+
+O netmask é usado para especificar uma faixa de IPs. 
+<p>
+
+<h2>ipv4_alias examples</h2>
+
+<b>10.1.1.1/24</b> indica que qualquer IP de 10.1.1.0 a 10.1.1.255
+combinará. 
+<p>
+
+<b>10.1.1.1/255.255.255.0</b> é idêntico a  10.1.1.1/24
+<p>
+
+<b>10.2.3.4/16</b> indica que qualquer IP de 10.2.0.0 a 10.2.255.255 
+combinará. 
+<p>
+
+<b>10.2.3.4/255.255.0.0</b>é idêntico a 10.2.3.4/16
+<p>
+
+<b>127.0.0.0/8</b> indica que qualquer IP com "127" como o primeiro
+octeto (número) combinará. 
+<p>
+
+<b>127.0.0.0/255.0.0.0</b> é idêntico a 127.0.0.0/8
+<p>
+
+O netmask é opcional, e, se não estiver presente, indica que somente
+um único IP combinará. por exemplo: 
+<p>
+
+<b>10.9.9.9/32</b>, <b>10.9.9.9/255.255.255.255</b>, e <b>10.9.9.9</b>
+são todos funcionalmente idênticos, e indicam que somente o 
+IP 10.9.9.9 combinará. 
+<p>
+O significado de "combinar" depende para que nós usamos o ipv4 aliás. 
+<p>
+
+ipv4 aliases can nest.  E.g:
+<pre>
+ipv4_alias["susan"] = "10.6.7.8/24" 
+ipv4_alias["office"] = "susan,10.9.9.9"
+</pre>
+
+Onde "susan" em "office" alias combina com o valor do
+ipv4_alias susan.
+<p>
+
+Multiple levels of nesting are allowed.  Self-referring nests will
+result in an error.
+<p>
+
+<h2>root_servers</h2>
+
+root_servers:  Este é um elemento de "dicionário" especial que 
+pode (atualmente) ter somente um elemento:  ".",  que aponta 
+tanto para um IP, ou um ponteiro para um ipv4 aliás que seja 
+uma lista de servidores raízes. 
+
+<pre>
+root_servers["."] = "list_of_servers"
+</pre>
+
+Onde "."  é a única array permitida para os servidores de raiz
+(este formato é usado permitir uma potencial expansão futura),
+e list_of_servers é uma lista dos servidores de nomes raiz 
+no mesmo formato que ipv4_aliases. 
+
+<p>
+Note que, enquanto o ips na lista dos servidores raizes puder
+ter netmasks, a parcela do netmask é ignorada.
+
+<p>
+
+Os root_servers devem somente apontar para os servidores raizes.  
+Se desejar usar MaraDNS como um servidor de nome forwarding, que envía 
+consultas DNS para um outro servidor, use a variável upstream_servers. 
+
+
+<h2>upstream_servers</h2>
+
+Isto é idêntico à variável do root_servers (pode ter somente um 
+elemento, o elemento é uma lista de ipv4_addresses, etc.), mas é usado 
+quando se deseja usar MaraDNS para consultar outros servidores recursivo,
+em vez de consultar os servidores raizes para uma resposta. 
+<p>
+
+Note que não se pode ter ambos root_servers e upstream_servers
+setados em um dado arquivo mararc;  MaraDNS retornará com
+um erro fatal se um tentar fazer isso.
+
+<h2>Nota final em variáveis do dicionário </h2>
+
+csv1, csv2, ipv4_alias, e root_servers são atualmente as únicas 
+variáveis de dicionário existentes. 
+
+<h1>FORMATO DE UMA VARIÁVEL NORMAL </h1>
+
+Variáveis normais.  Estas são as variáveis que podem somente
+ter um único valor. 
+<p>
+
+A sintaxe de uma variável normal está na forma
+<pre>
+name = "value"
+</pre>
+
+Onde <b>name</b > é o nome da variável normal, e
+ <b>value</b > é o valor da variável em questão.
+
+<h1> VARIÁVEIS NORMAIS</h1>
+
+Aqui está uma lista das variáveis normais que MaraDNS usa: 
+
+<h2>ipv4_bind_addresses</h2>
+
+ipv4_bind_addresses:  O endereço IP dado ao servidor MaraDNS.
+<p>
+Ista aceita um ou mais IPs ipv4 em notação pontilhado-decimal 
+(por exemplo "127.0.0.1"), e especifica em qual IP o servidor MaraDNS
+estará escutando.  Os endereços múltiplos são separados com uma 
+vírgula, como estes:  "10,1,2,3, 10,1,2,4, 127,0,0,1" 
+<p>
+
+<h2>bind_address</h2>
+
+bind_address:   O endereço IP dado ao servidor MaraDNS.
+<p>
+
+Ista aceita um ou mais IPs ipv4 em notação pontilhado-decimal 
+(por exemplo "127.0.0.1"), e especifica em qual IP o servidor MaraDNS
+estará escutando.  Note que ipv4_bind_addresses tem a mesma
+funcionalidade. Este nome é incluído de modo que os arquivos de 
+configuração do MaraDNS 1.0 continuem a trabalhar com MaraDNS 1.2 
+<p>
+
+<h2>bind_star_handling</h2>
+
+In the case where there is both a star record for a given name and recordtype,
+a non-star record with the same name but a different recordtype, and no record
+for the given name and recordtype, MaraDNS will usually return the
+star record.  BIND, on the other hand, will return a "not there" reply.
+
+Em outras palavras:
+
+<ul>
+<li>Se um registro não A para <tt>foo.example.com</tt> existir
+<li>Um registro A para <tt>*.example.com</tt> existir
+<li>Registro não A para <tt>foo.example.com</tt> exisir
+<li>E o usuário pergunta por um registro A para <tt>foo.example.com</tt>
+<li>MaraDNS geralmente retornará um registro A anexado em <tt>*.example.com</tt>
+<li>BIND, por outro lado, returnará "not there" para <tt>foo.example.com</tt>
+</ul>
+
+If the BIND behavior is desired, set <tt>bind_star_handling</tt> to 1.  
+Otherwise, set this to 0 (the default value if this is not set at all
+in the <tt>mararc</tt> file).  
+
+<p>
+
+MaraDNS finalizará com um erro fatal se <tt>bind_star_handling</tt> tiver
+qualquer valor além de 0 ou 1.
+
+<h2>chroot_dir</h2>
+chroot_dir: The directory MaraDNS chroots to
+<p>
+
+Isto aceita um único valor:  O caminho completo ao diretório
+ao usar-se como chroot. 
+<p>
+
+Note que os arquivos de zonas csv1 são lidos após a 
+operação do chroot. Portanto, o chroot necessita ter 
+qualquer e todas as zona de arquivos que MaraDNS irá carreguar. 
+
+<h2>csv2_default_zonefile</h2>
+Este é um arquivo especial de zona que permite lá para ser 
+estrelas no <i>final</i > dos hostnames.  Este arquivo é 
+similar a um arquivo   normal da zona csv2, mas tem as 
+seguintes características e limitações: 
+
+<ul>
+<li>As estrelas são permitidas no final dos hostnames 
+<li>Um registro SOA é imperativo 
+<li>Registro NS são imperativos
+<li>Registros CNAME não são permitidos em um arquivo zona
+<li>Delegação de registros NSnão são permitidos no arquivo de zona 
+<li>Arquivo de zona padrão não pode ser transferido através da 
+transferência da zona
+<li>Tanto os arquivos de zona recursivo e padrão não podem ser 
+ativados ao mesmo tempo. 
+</ul>
+
+<h2>csv2_synthip_list</h2>
+Às vezes a lista de IP dos servidores de nomes serão 
+diferente do que os servidores de nomes no qual um é
+conectado. Isto permite que a lista sintética de servidor tenha IPs diferente. 
+
+<p>
+Note que isto pode agir em uma maneira inesperada se endereços 
+roteáveis e não roteáveisl (localhost e RFC1918) forem combinados;  
+em particular, uma lista com endereços roteáveis e não roteáveis 
+rejeitará os endereços IP não roteáveis, e uma lista com rfc1918 e 
+endereços do localhost rejeitará os endereços do localhost. 
+
+<h2>debug_msg_level</h2>
+
+Este é um número indicando qual é o nível da informação sobre um 
+processo em execução do MaraDNS que deve ser feito público.  
+Quando ajustado para 0, nenhuma informação será feita pública. 
+<p>
+
+Quando ajustada para um (padrão), ou maior, uma consulta 
+Terre-con-erre-cigarro.maradns.org.  retornará o número da 
+versão do MaraDNS. 
+
+<p>
+Quando ajustado para dois ou mais alto, um Tnumthreads. consulta
+devolverá o número de threads que MaraDNS está atualmente 
+executando, e uns Tcache-elementos. a consulta devolverá o 
+número de elementos no cache do MaraDNS.  Se MaraDNS é 
+compilado com depuração de informação, um Tmemusage.
+a consulta devolverá; a quantia de memória que MaraDNS alocou.
+<p>
+Quando ajustado a três ou mais, um Ttimestamp. consulta devolverá, 
+em segundos desde a época de UNIX, o timestamp para o sistema 
+que MaraDNS está executando.
+
+<br>
+
+<h2>default_rrany_set</h2>
+Esta variável determinava que tipo de registros de recurso foi devolvido
+quando uma QUALQUER consulta foi enviada. No MaraDNS 1.2, as estruturas
+de dados foram revisadas para devolver qualquer tipo de registro de recurso
+quando uma consultar QUALQUER é enviada; esta variável não faz nada, e 
+está só aqui de forma que os arquivos do MaraDNS 1.0 continuem funcionando.
+
+Os únicos valores aceitos para esta variável eram 3 e 15. 
+
+<h2>dos_protection_level</h2>
+Se isto é fixado a um valor não-zero, certas características do MaraDNS
+serão incapacitadas  de acelerar o tempo de resposta do MaraDNS.
+Isto é projetado para situações quando um servidor MaraDNS está 
+recebendo um número grande de consultas, como durante uma 
+negação de ataque de serviço (DOS).
+
+<p>
+Esta é uma variável numérica; seu valor padrão é zero, indicando que
+todas as características normais do MaraDNS estão habilitadas.
+Valores numéricos mais altos incapacitam mais características:
+
+<ul>
+<li>Um dos_protection_level de 1 ou acima incapacita MaraDNS de adquir 
+informação de estado remotamente
+
+<li>Um dos_protection_level de 8 ou acima incapacita lookups de CNAME. 
+
+<li>Um dos_protection_level de 12 ou acima incapacita a delegação registros de NS. 
+
+<li>Um dos_protection_level de 14 ou acima incapacita QUALQUER processo de registro 	
+
+<li>Um dos_protection_level de 18 ou acima incapacita processo de registro de 
+estrela no começo de hostnames (default_zonefiles ainda trabalham, porém)
+</ul>
+
+<h2>ipv6_bind_address</h2>
+Se MaraDNS é compilado como um servidor autoritativo, então esta
+variável contará para MaraDNS para o qual ipv6 se dirigem para o
+servidor UDP; para esta variável ser ajustada, MaraDNS precisa ser
+ligado a pelo menos um endereço ipv4.
+
+<h2>hide_disclaimer</h2>
+Se isto é ajustado para "YES", MaraDNS não exibirá a retratação legal ao começar.
+
+
+<h2>long_packet_ipv4</h2>
+Esta é uma lista de IPs que nós enviaremos pacotes UDP mais longo que 
+512 bytes RFC1035 permite se necessário. Isto foi projetado para permitir
+<TT>zoneserver</TT> quando usado, enviar pacotes regulares de DNS 
+em cima de TCP,  para receber pacotes com mais dados que pode caber
+em um pacote de DNS de  512 bytes.
+<p>
+Esta variável só funciona se MaraDNS é compilado somente como
+servidor autoritativo.
+
+<h2>maradns_uid</h2>
+maradns_uid: O UID numérico com que MaraDNS será executado
+<p>
+
+Isto aceita um único valor numérico: O UID que MaraDNS executará.
+<p>
+
+MaraDNS, o mais cedo possível finaliza os privilégios de root, 
+minimizando o dano que um potencial ataca pode causar.
+Isto é o que o UID maradns se torna. 
+
+<p>
+O UID padrão é 99.
+
+<h2>maradns_gid</h2>
+maradns_gid: O GID numérico com que MaraDNS será executado
+<p>
+
+Isto aceita um único valor numérico: O GID que MaraDNS executará.
+<p>
+
+O GID padrão é 99.
+
+<h2>maximum_cache_elements</h2>
+maximum_cache_elements: O número máximo de elementos que nós podemos
+ter no cache das consultas recursivas.
+
+<p>
+Este cache de consultas recursivas é usado para armazenar entradas
+nós previamente obtivemos de consultas recursivas..
+
+<p>
+Se nós chegarmos neste limite, o "guarda" começa a trabalhar. 
+O guarda remove elementos ao acaso do cache (8 elementos
+removidos por consulta) até que nós tenhamos 99% ou tão
+nivelado novamente.
+
+<p>O valor padrão para está variável é 1024.
+
+
+<h2>maxprocs</h2>
+maxprocs:  O número de máximo de threads ou processos que MaraDNS
+é permitido executar ao mesmo tempo.
+<p>
+Esta variável é usada para minimizar o impacto no servidor quando
+MaraDNS estiver fortemente carregado. Quando este número é alcançado, 
+é impossível MaraDNS gerar novos threads/processos até o número de 
+threads/processos estar reduzido.
+
+<p> O valor padrão para esta variável é 64. 
+
+<p>
+O valor de máximo que pode ter é 500.
+
+<h2>max_ar_chain</h2>
+max_ar_chain: O número máximo de registros para exibir se um
+registro na seção adicional (por exemplo, o IP de um servidor 
+NS ou o ip de servidor MX) tem mais de um valor.
+
+<p>
+Isto é semelhante ao max_chain, mas aplica-se a registros na 
+seção "adicional" (ou AR) .
+
+<p>
+Devido as limitações nas estruturas de dados internas que MaraDNS
+usa para armazenar RRs, se isto tiver um valor além de um, a rotação 
+round robin de registros é desabilitada.
+
+<p>  O valor padrão para esta variável é 1. 
+
+<h2>max_chain</h2>
+max_chain: O número de máximo de registros para exibir em uma cadeia
+de registros.
+<p>
+Com DNS, é possível ter mais de um RR para um determinada etiqueta 
+de domínio. Por exemplo, "example.com" pode ter, como registro A, 
+uma lista de endereços de ip múltiplos.
+
+<p>
+
+Isto fixa o número máximo de registros que MaraDNS mostrará para um único RR.
+<p>
+MaraDNS normalmente faz rotaçã round-robin de registros.  
+Consequentemente, todos os registros para um determinada etiqueta
+de DNS (por exemplo "example.com".) será visível, embora não ao 
+mesmo tempo se há mais registros que o valor max_chain  permitiu.
+
+<p>O valor padrão para esta variável é 8. 
+
+<h2>max_glueless_level</h2>
+Nível de glueless máximo permitido ao executar lookups recursivos. 
+O valor padrão é 10.
+
+<p>
+Este é o número máximo de vezes que MaraDNS voltará para os "servidores
+raizes" para descobrir o IP de um servidor de nome para o qual nós não
+temos uma cola para o IP, ou descobrir o valor A para um determinado
+registro de CNAME.
+
+<h2>max_queries_total</h2>
+Número máximo de consultas para executar quando realizamos lookups 
+recursivos.  O valor padrão é 32.
+
+<p>
+Este é o número máximo de vezes que MaraDNS enviará uma
+consulta para um servidor de nomes para descobrir a resposta de 
+uma consulta DNS.
+
+<h2>max_tcp_procs</h2>
+max_tcp_procs: O (opcional) número máximo de processos que o servidor de zona é
+permitido executar.
+
+<p>
+Às vezes, é desejável ter um número máximo diferente de processos 
+tcp permitidos do que o máximo permitido de threads. Se esta variável
+não for setada, o número de máximo de processos tcp permitidos 
+é "maxprocs."
+
+<h2>max_total</h2>
+max_total: O número máximo de registros para mostrar total 
+para uma determinada consulta de DNS.
+<p>
+
+Este é o máximo número total de registros que MaraDNS fará 
+disponível em uma resposta DNS.
+
+<p> O valor padrão para esta variável é 20. 
+
+<h2>min_ttl</h2>
+min_ttl: A quantia mínima de tempo que um registro de recurso ficará no 
+cache do MaraDNS, sem levar em conta o TTL o servidor remoto
+ especifica. 
+<p>
+
+Fixando este valor muda a quantia mínima de tempo que o servidor
+recursivo MaraDNS manterá um registro no cache. O valor está em segundos.
+
+<p>
+O valor padrão disto é 300 (5 minutos); o valor mínimo para isto
+é 180 (2 minutos).
+
+<h2>min_ttl_cname</h2>
+min_ttl_cname: A quantia mínima de tempo que um registro de recurso ficará no 
+cache do MaraDNS, sem levar em conta o TTL o servidor remoto
+ especifica. 
+<p>
+Fixando este valor muda a quantia mínima de tempo que o servidor
+recursivo MaraDNS manterá um registro CNAME no cache. 
+O valor está em segundos.
+
+<p>
+O valor padrão para isto é o valor do min_ttl de; o valor
+mínimo para isto é 180 (2 minutos).
+
+<h2>no_fingerprint</h2>
+no_fingerprint: Flag permite MaraDNS para ser mais difícil descobrir. 
+
+<p>
+Algumas pessoas não sentem que é apropriado ter alguma informação,
+como o número da versão do MaraDNS sendo executado, esteja 
+publicamente disponível.
+<p>
+
+O valor padrão é 0.
+<p>
+
+Fixando no_fingerprint para 1, é possível mandar MaraDNS não 
+revelar publicamente esta informação .
+
+<h2>random_seed_file</h2>
+randsom_seed_file:  O arquivo do qual nós lemos 16 bytes para adquirir 128-bit  
+para o pseudo seguro gerador de números aleatório. 
+<p>
+
+Esta localização deste arquivo é relativo ao root do
+sistema de arquivos não ao diretório de chroot do MaraDNS.
+<p>
+
+Este é idealmente um arquivo que é uma boa fonte de números aleatórios
+(por exemplo / dev/urandom), mas também pode ser um arquivo fixo se 
+seu SO não tiver um gerador de número aleatório decente. Neste caso, 
+tenha certeza que o conteúdo daquele arquivo é aleatório e com permissões
+600, possuido através do root.. Nós lemos o arquivo <B>antes de</B>
+de derrubar os privilégios do root.. 
+
+<h2>recursive_acl</h2>
+Lista dos ips permitidos a executar consultas recursiva com o parte
+recursiva do servidor MaraDNS
+
+<p>
+O formato desta string é idêntico ao formato de uma entrada de ipv4_alias.
+
+<h2>spammers</h2>
+spammers: Uma lista dos servidores DNS que o resolver recursivo não
+consultará. 
+<p>
+
+Isto é usado principalmente para não permitir que domínios Spam-amigáveis
+resolvam, desde que os spammers estão começando o hábito de usar 
+servidores de DNS Spam-amigáveis para resolver seus domínios, 
+permitindo pular de provedor a provedor. 
+<p>
+
+O formato desta string é idêntico ao formato de uma entrada de ipv4_alias.
+
+<h2>synth_soa_origin</h2>
+Quando uma zona de arquivo CSV2 não tiver um registro SOA, 
+MaraDNS gera um registro SOA automaticamente. Esta variável 
+determina o nome do host para "SOA de origem" (que é chamado
+o MNAME em RFC1035); este é o nome do host do servidor de 
+DNS que tem a "cópia mestre" do arquivo de uma determinada 
+zona de DNS.
+<p>
+Este nome do host está em formato humano-legível sem um ponto
+no final, por exemplo:
+<pre>
+synth_soa_origin = "ns1.example.com"
+</pre>
+Se isto não for setado, um registro SOA sintético usará o nome da 
+zona para campo SOA origem (MNAME).
+<p>
+
+<h2>synth_soa_serial</h2>
+Isto determina se nós seguimos estritamente o RFC1912 seção 2.2 
+com números de série de SOA. Se isto é fixado para 1 (valor padrão),
+nós não seguimos estritamente  o RFC1912 seção 2.2 (o serial é um número, 
+baseado no timestamp do arquivo de zona que é atualizado a cada seis
+segundos), mas faz isto de forma que um número de série é garantido 
+a ser atualizado automaticamente toda vez a pessoa edita um arquivo de zona.
+
+<p>
+Se isto é fixado para 2, o número de série de SOA estará em formato
+YYYYMMDDHH onde YYYY é o ano de 4-dígitos, MM é o mês de 2-dígitos, 
+DD é o dia de 2-dígitos, e HH é a hora 2-dígitos do tempo que o arquivo
+de zona foi por último atualizado (GMT; localtime não funciona
+em um ambiente chroot ()).Enquanto este formato é estritamente RFC1912
+compatível, a desvantagem é que mais de uma edição num arquivo de 
+zona em uma hora não atualizará o número de série.
+
+<p>
+Eu fortemente recomendo, a menos que seja extremamente importante
+em ter uma zona de DNS que não gera nenhuma advertência quando testada
+no dnsreport.com, ter isto fixado para 1 (o valor padrão). Tendo isto fixado
+para 2 pode resultar em zona de arquivo atualizada não ser vista servidor
+escravo nenhum.
+
+<h2>tcp_convert_acl</h2>
+Isto só se aplica ao programa zoneserver (geral DNS-em cima de-TCP ). 
+
+<p>
+Esta é uma lista dos IPs que são permitidos conectar-se ao zoneserver
+e enviar normais requisiçoes de TCP DNS. O zoneserver converterá a 
+requisão TCP DNS para UDP DNS requisições, e enviará a requisião UDP
+em questão para o servidor especificado em <B>tcp_convert_server.</B>
+Uma vez obtida a resposta do servidor UDP DNS, converterá a resposta 
+para uma requisição TCP e mandará de volta a resposta ao cliente TCP original.
+
+<p>
+Se a flag RD (recursão desejada) é setada ou não quando convertendo
+um TCP DNS pedem dentro para um UDP que o pedido de DNS é determinado
+se o cliente de TCP está na lista <B>recursive_acl.</B>
+
+<h2>tcp_convert_server</h2>
+Isto só se aplica ao programa zoneserver (geral DNS-em cima de-TCP ). 
+<p>
+Este é o servidor UDP para o qual nós enviamos uma consulta quando 
+convertendo o DNS TCP requisições para servidores UDP. Note que, 
+enquanto este valor permitir os múltiplos IPs, todos os valores exceto
+o primeiro é ignorado.
+
+<h2>timeout_seconds</h2>
+Isto só aplica ao se realizar lookups recursivos.  
+<p>
+A quantia de tempo, em segundos, para esperar por uma resposta de 
+um servidor de DNS remoto antes de disistir e tentar o próximo servidor
+na lista. O valor padrão é 2 segundos.
+<p>
+Isto é para instalações onde um servidor recursivo MaraDNS está em 
+uma rede lenta que leva mais que dois segundos para enviar e receber
+um pacote de DNS.
+
+<p>
+Note que, quanto maior for este valor, mais lentamente MaraDNS 
+processará consultas recursivas quando um servidor DNS não 
+está respondendo às consultas do DNS. 
+
+<h2>timestamp_type</h2>
+timestamp_type: O tipo do timestamp para mostrar.  A finalidade principal
+ desta opção é suprir a saída dos timestamps.  Desde que o duende usa
+o syslog() para exibir dados, e desde que o syslog() adiciona seu próprio
+timestamp, esta opção deve ser ajustada para 5 quando o maradns é 
+invocado com a ferramenta do duende. 
+
+<p>
+Esta opção permite também para quem não usam a ferramenta do 
+duende ver timestamps em formato humano. Esta opção permite 
+somente timestamps no GMT,  devido aos problemas em mostrar
+horários locais em um ambiente chroot(). 
+
+<p>
+
+Pode ter os seguintes valores:
+<dl>
+<dt>0
+<dd>A string "Timestamp" seguida por um UNIX timestamp
+<dt>1
+<dd>Apenas o timestamp do UNIX 
+<dt>2
+<dd>Um GMT timestamp na língua espanhola 
+<dt>3
+<dd>Um GMT timestamp na língua espanhola 
+<dt>4
+<dd>Um timestamp usando asctime(gmtime()); geralmente na língua inglesa 
+<dt>5
+<dd>Nenhum timestamp qualquer é mostrado (esta é a  melhor opção 
+quando o maradns é invocado com a ferramenta <tt>duende</tt >) .
+</dl>
+
+<p> O valor padrão para variável é 5.
+
+<h2>verbose_level</h2>
+verbose_level: O número das mensagens que nós registramos para stdout 
+<P>
+
+Pode ter cinco valores:
+<dl>
+<dt>0
+<dd>Nenhuma mensagem exceção a retratação legal  e erros fatais de analise
+<dt>1
+<dd>Somente mensagens de inicialização registradas (Nível padrão)
+<dt>2
+<dd>Erro de consultas registradas
+<dt>3
+<dd>Todas as consultadas registradas
+<dt>4
+<dd>Todas as ações que adicionam e removem registros do cache estão registradas
+</dl>
+
+<p> O valor padrão para variável é 1.
+
+<h2>zone_transfer_acl</h2>
+zone_transfer_acl: Lista dos ips permitidos em realiazar transferências
+de zonas com o servidor de zona.
+
+<p>
+O formato desta string é idêntico ao formato de uma entrada ipv4_alias. 
+
+<h1>EXEMPLO DO ARQUIVO MARARC</h1>
+
+<pre>
+<include "../source/example_mararc">
+</pre>
+
+<h1>BUGS</h1>
+Se declarar o mesmo índice duas vezes com uma variável de dicionário,
+MaraDNS finalizará com um erro fatal.  Isto porque versões antigas do
+MaraDNS agiram de maneira diferente do que Python 2.3.3.  Com 
+Python 2.3.3, a última declaração é usada, enquanto MaraDNS
+usou para usar a primeira declaração. 
+
+
+
+<h1>RETRATAÇÃO LEGAL</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS 
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE 
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+</body>

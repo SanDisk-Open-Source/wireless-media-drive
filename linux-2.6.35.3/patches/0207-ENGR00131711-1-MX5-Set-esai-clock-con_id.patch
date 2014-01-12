@@ -1,0 +1,30 @@
+From 32acc7b24d829f3d7d5b651668f6b8fa54a0c610 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Tue, 21 Sep 2010 11:16:43 +0800
+Subject: [PATCH] ENGR00131711-1 MX5: Set esai clock con_id
+
+Set the esai clock with con_id to lookup in the driver.
+
+Signed-off-by: William Lai <b04597@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 46022c5..b143946 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4185,8 +4185,8 @@ static struct clk_lookup mx53_lookups[] = {
+ 	_REGISTER_CLOCK("FlexCAM.1", NULL, can2_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ldb_di0_clk", ldb_di_clk[0]),
+ 	_REGISTER_CLOCK(NULL, "ldb_di1_clk", ldb_di_clk[1]),
+-	_REGISTER_CLOCK("esai_clk", NULL, esai_clk[0]),
+-	_REGISTER_CLOCK("esai_ipg_clk", NULL, esai_clk[1]),
++	_REGISTER_CLOCK(NULL, "esai_clk", esai_clk[0]),
++	_REGISTER_CLOCK(NULL, "esai_ipg_clk", esai_clk[1]),
+ 
+ };
+ 
+-- 
+1.5.4.4
+

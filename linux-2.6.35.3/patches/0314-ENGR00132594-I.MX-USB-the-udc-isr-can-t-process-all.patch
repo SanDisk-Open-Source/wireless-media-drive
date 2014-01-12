@@ -1,0 +1,33 @@
+From 5fcdbc8f6dbe113fdfde367710f1383185fc3ec1 Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Thu, 14 Oct 2010 12:09:12 +0800
+Subject: [PATCH] ENGR00132594 I.MX USB: the udc isr can't process all normal event
+
+the udc isr can not process all normal event, it is caused by the
+unconditional "goto irq_end" sentence.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 90edc55..b86d293 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -2184,10 +2184,10 @@ static irqreturn_t fsl_udc_irq(int irq, void *_udc)
+ 	}
+ #ifdef CONFIG_USB_OTG
+ 	/* if no gadget register in this driver, we need do noting */
+-	if (udc->transceiver->gadget == NULL)
++	if (udc->transceiver->gadget == NULL) {
+ 		clr_remain_irq = 1;
+ 		goto irq_end;
+-
++	}
+ 	/* only handle device interrupt event */
+ 	if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
+ 		clr_remain_irq = 1;
+-- 
+1.5.4.4
+

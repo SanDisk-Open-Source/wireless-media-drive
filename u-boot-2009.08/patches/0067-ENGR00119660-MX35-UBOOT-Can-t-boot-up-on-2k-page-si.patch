@@ -1,0 +1,32 @@
+From 67b3137678e0ef7f405130b76671f35d0cba4617 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Fri, 25 Dec 2009 15:30:36 +0800
+Subject: [PATCH] ENGR00119660 MX35 UBOOT: Can't boot up on 2k page size nand
+
+1. Write boot image into nand flash.
+2. Switch to external boot mode from nand flash
+3. Can not show any message.
+
+Signed-off-by:Fred Fan <r01011@freescale.com>
+---
+ include/configs/mx35_3stack.h |    4 ----
+ 1 files changed, 0 insertions(+), 4 deletions(-)
+
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 789424e..b2fb714 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -35,10 +35,6 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+-#define CONFIG_FLASH_HEADER     1
+-#define CONFIG_FLASH_HEADER_OFFSET 0x400
+-#define CONFIG_FLASH_HEADER_BARKER 0xB1
+-
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant increase
+-- 
+1.5.4.4
+

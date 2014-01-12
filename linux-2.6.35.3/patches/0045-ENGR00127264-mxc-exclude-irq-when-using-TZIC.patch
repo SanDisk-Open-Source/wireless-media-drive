@@ -1,0 +1,38 @@
+From ff8a2edcf050fed9c0f019644900d5fb9561ac31 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 8 Sep 2010 09:52:15 +0800
+Subject: [PATCH] ENGR00127264 mxc: exclude irq when using TZIC
+
+Exclude irq module when CONFIG_MXC_TZIC is selected
+for plat-mxc
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/plat-mxc/Makefile |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/Makefile b/arch/arm/plat-mxc/Makefile
+index 37e8dc9..0266184 100644
+--- a/arch/arm/plat-mxc/Makefile
++++ b/arch/arm/plat-mxc/Makefile
+@@ -3,12 +3,16 @@
+ #
+ 
+ # Common support
+-obj-y := irq.o cpu.o cpu_common.o system.o gpio.o clock.o snoop.o io.o time.o devices.o
++obj-y :=cpu.o cpu_common.o system.o gpio.o clock.o snoop.o io.o time.o devices.o
+ 
+ obj-$(CONFIG_IRAM_ALLOC) += iram.o
+ 
+ # MX51 uses the TZIC interrupt controller, older platforms use AVIC (irq.o)
++ifeq ($(CONFIG_MXC_TZIC),y)
+ obj-$(CONFIG_MXC_TZIC) += tzic.o
++else
++obj-y += irq.o
++endif
+ 
+ obj-$(CONFIG_ARCH_MX1) += dma-mx1-mx2.o
+ obj-$(CONFIG_ARCH_MX2) += dma-mx1-mx2.o
+-- 
+1.5.4.4
+

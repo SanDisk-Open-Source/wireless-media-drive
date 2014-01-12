@@ -1,0 +1,240 @@
+From d293115ed756b0b2912eb62ead1ddee647ec2fee Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 4 Sep 2009 10:07:20 +0800
+Subject: [PATCH] ENGR00116243: I2C support for mx51 3ds board.
+
+I2C support for mx51 3ds board.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/mx51_3stack.c |   62 ++++++++++++++++++++++++++++-
+ cpu/arm_cortexa8/mx51/interrupts.c        |   25 +++++++++--
+ drivers/i2c/mxc_i2c.c                     |    2 +
+ include/configs/mx51_3stack.h             |   44 ++++++++++++---------
+ 4 files changed, 108 insertions(+), 25 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 3d8756e..4ee342e 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -159,6 +159,63 @@ static void setup_expio(void)
+ 	writew(reg, mx51_io_base_addr + PBC_SW_RESET);
+ }
+ 
++#ifdef CONFIG_I2C_MXC
++static setup_i2c(unsigned int module_base)
++{
++	unsigned int reg;
++
++	switch (module_base) {
++	case I2C1_BASE_ADDR:
++		reg = IOMUXC_BASE_ADDR + 0x210; /* i2c SDA */
++		writel(0x11, reg);
++		reg = IOMUXC_BASE_ADDR + 0x600;
++		writel(0x1ad, reg);
++		reg = IOMUXC_BASE_ADDR + 0x9B4;
++		writel(0x1, reg);
++
++		reg = IOMUXC_BASE_ADDR + 0x224; /* i2c SCL */
++		writel(0x11, reg);
++		reg = IOMUXC_BASE_ADDR + 0x614;
++		writel(0x1ad, reg);
++		reg = IOMUXC_BASE_ADDR + 0x9B0;
++		writel(0x1, reg);
++		break;
++	case I2C2_BASE_ADDR:
++		/* Workaround for Atlas Lite */
++		writel(0x0, IOMUXC_BASE_ADDR + 0x3CC); /* i2c SCL */
++		writel(0x0, IOMUXC_BASE_ADDR + 0x3D0); /* i2c SDA */
++		reg = readl(GPIO1_BASE_ADDR + 0x0);
++		reg |= 0xC;  /* write a 1 on the SCL and SDA lines */
++		writel(reg, GPIO1_BASE_ADDR + 0x0);
++		reg = readl(GPIO1_BASE_ADDR + 0x4);
++		reg |= 0xC;  /* configure GPIO lines as output */
++		writel(reg, GPIO1_BASE_ADDR + 0x4);
++		reg = readl(GPIO1_BASE_ADDR + 0x0);
++		reg &= ~0x4 ; /* set SCL low for a few milliseconds */
++		writel(reg, GPIO1_BASE_ADDR + 0x0);
++		udelay(20000);
++		reg |= 0x4;
++		writel(reg, GPIO1_BASE_ADDR + 0x0);
++		udelay(10);
++		reg = readl(GPIO1_BASE_ADDR + 0x4);
++		reg &= ~0xC;  /* configure GPIO lines back as input */
++		writel(reg, GPIO1_BASE_ADDR + 0x4);
++
++		writel(0x12, IOMUXC_BASE_ADDR + 0x3CC);  /* i2c SCL */
++		writel(0x3, IOMUXC_BASE_ADDR + 0x9B8);
++		writel(0x1ed, IOMUXC_BASE_ADDR + 0x7D4);
++
++		writel(0x12, IOMUXC_BASE_ADDR + 0x3D0); /* i2c SDA */
++		writel(0x3, IOMUXC_BASE_ADDR + 0x9BC);
++		writel(0x1ed, IOMUXC_BASE_ADDR + 0x7D8);
++		break;
++	default:
++		printf("Invalid I2C base: 0x%x\n", module_base);
++		break;
++	}
++}
++#endif
++
+ int board_init(void)
+ {
+ 	int pad;
+@@ -171,6 +228,9 @@ int board_init(void)
+ 	setup_uart();
+ 	setup_nfc();
+ 	setup_expio();
++#ifdef CONFIG_I2C_MXC
++	setup_i2c(I2C2_BASE_ADDR);
++#endif
+ 	return 0;
+ }
+ 
+@@ -285,7 +345,7 @@ int checkboard(void)
+ 	default:
+ 		printf("unknown");
+ 	}
+-	printf("]\n");
++	printf("]]\n");
+ 	return 0;
+ }
+ 
+diff --git a/cpu/arm_cortexa8/mx51/interrupts.c b/cpu/arm_cortexa8/mx51/interrupts.c
+index 1277d4e..484b961 100644
+--- a/cpu/arm_cortexa8/mx51/interrupts.c
++++ b/cpu/arm_cortexa8/mx51/interrupts.c
+@@ -38,17 +38,30 @@
+ #define GPTCR_CLKSOURCE_32 (4<<6)	/* Clock source */
+ #define GPTCR_TEN       (1)	/* Timer enable */
+ 
+-/* nothing really to do with interrupts, just starts up a counter. */
+-int interrupt_init(void)
++static inline void setup_gpt()
+ {
+ 	int i;
++	static int init_done;
++
++	if (init_done)
++	    return;
++
++	init_done = 1;
++
+ 	/* setup GP Timer 1 */
+ 	GPTCR = GPTCR_SWR;
+ 	for (i = 0; i < 100; i++)
+-		GPTCR = 0;	/* We have no udelay by now */
+-	GPTPR = 0;		/* 32Khz */
++		GPTCR = 0;      /* We have no udelay by now */
++	GPTPR = 0;              /* 32Khz */
+ 	/* Freerun Mode, PERCLK1 input */
+ 	GPTCR |= GPTCR_CLKSOURCE_32 | GPTCR_TEN;
++}
++
++/* nothing really to do with interrupts, just starts up a counter. */
++int interrupt_init(void)
++{
++	setup_gpt();
++
+ 	return 0;
+ }
+ 
+@@ -84,7 +97,9 @@ void udelay(unsigned long usec)
+ {
+ 	ulong tmo, tmp;
+ 
+-		/* if "big" number, spread normalization to seconds */
++	setup_gpt();
++
++	/* if "big" number, spread normalization to seconds */
+ 	if (usec >= 1000) {
+ 		/* start to normalize for usec to ticks per sec */
+ 		tmo = usec / 1000;
+diff --git a/drivers/i2c/mxc_i2c.c b/drivers/i2c/mxc_i2c.c
+index 3c13efe..7b7d894 100644
+--- a/drivers/i2c/mxc_i2c.c
++++ b/drivers/i2c/mxc_i2c.c
+@@ -36,6 +36,8 @@
+ #include <asm/arch/mx31-regs.h>
+ #elif defined(CONFIG_MX35)
+ #include <asm/arch/mx35.h>
++#elif defined(CONFIG_MX51_3DS)
++#include <asm/arch/mx51.h>
+ #else
+ #error "Please include specific headfile "
+ #endif
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index bf9440b..236de3c 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -68,23 +68,6 @@
+ #define CONFIG_MX51_UART	1
+ #define CONFIG_MX51_UART1	1
+ 
+-
+-/*
+- * MMC Configs
+- * */
+-#define CONFIG_FSL_MMC		1
+-
+-#define CONFIG_MMC              1
+-#define CONFIG_CMD_MMC
+-#define CONFIG_DOS_PARTITION	1
+-#define CONFIG_CMD_FAT		1
+-#define CONFIG_MMC_BASE         0x0
+-
+-#define CONFIG_CMD_PING
+-#define CONFIG_CMD_DHCP
+-#define CONFIG_CMD_MII
+-#define CONFIG_CMD_NET
+-
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+ #define CONFIG_CONS_INDEX	1
+@@ -100,10 +83,33 @@
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_DHCP
+ /* Enable below configure when supporting nand */
+-#define CONFIG_CMD_NAND
++/* #define CONFIG_CMD_NAND */
+ #define CONFIG_MXC_NAND
+ #define CONFIG_CMD_ENV
+ #undef CONFIG_CMD_IMLS
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_NET
++
++/*
++ * MMC Configs
++ */
++#define CONFIG_FSL_MMC          1
++
++#define CONFIG_MMC              1
++#define CONFIG_CMD_MMC
++#define CONFIG_DOS_PARTITION    1
++#define CONFIG_CMD_FAT          1
++#define CONFIG_MMC_BASE         0x0
++
++/*
++ * I2C Configs
++ */
++#define CONFIG_CMD_I2C          1
++#define CONFIG_HARD_I2C         1
++#define CONFIG_I2C_MXC          1
++#define CONFIG_SYS_I2C_PORT             I2C2_BASE_ADDR
++#define CONFIG_SYS_I2C_SPEED            400000
++#define CONFIG_SYS_I2C_SLAVE            0xfe
+ 
+ #define CONFIG_BOOTDELAY	3
+ 
+@@ -197,7 +203,7 @@
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ 
+ /* Monitor at beginning of flash */
+-#define CONFIG_FSL_ENV_IN_NAND
++#define CONFIG_FSL_ENV_IN_MMC
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE		CONFIG_ENV_SECT_SIZE
+ #if defined(CONFIG_FSL_ENV_IN_NAND)
+-- 
+1.5.4.4
+

@@ -1,0 +1,188 @@
+From 1fa19862acbd764533c0d3d6e09cca768e7a9d81 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 18 Sep 2009 14:02:11 +0800
+Subject: [PATCH] ENGR00116504-2: Add mx51 bbg to3 support.
+
+Add mx51 bbg to3 support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_bbg/lowlevel_init.S |    9 ++-
+ board/freescale/mx51_bbg/mx51_bbg.c      |   90 ++++++++++++++++++++++++-----
+ 2 files changed, 81 insertions(+), 18 deletions(-)
+
+diff --git a/board/freescale/mx51_bbg/lowlevel_init.S b/board/freescale/mx51_bbg/lowlevel_init.S
+index b8abae4..b937067 100644
+--- a/board/freescale/mx51_bbg/lowlevel_init.S
++++ b/board/freescale/mx51_bbg/lowlevel_init.S
+@@ -49,7 +49,7 @@
+         orr r0, r0, #(1 << 22)          /* disable write allocate */
+ 
+ 	cmp r3, #0x10    /* r3 contains the silicon rev */
+-	orrls r0, r0, #(1 << 25)    /* ENGcm09124: disable write combine for TO 2 and lower revs */
++	orrls r0, r0, #(1 << 25)    /* disable write combine for TO 2 and lower revs */
+ 
+ 	mcr 15, 1, r0, c9, c0, 2
+ .endm /* init_l2cc */
+@@ -210,7 +210,12 @@
+ 	str r1, [r0, #0x14]
+ 
+ 	ldr r0, =CCM_BASE_ADDR
+-	mov r1, #0x1
++	/* Run TO 3.0 at Full speed, for other TO's wait till we increase VDDGP */
++	ldr r1, =0x0
++	ldr r3, [r1, #ROM_SI_REV]
++	cmp r3, #0x10
++	movls r1, #0x1
++	movhi r1, #0
+ 	str r1, [r0, #CLKCTL_CACRR]
+ 
+ 	/* Switch ARM back to PLL 1 */
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 9e1bb1a..8ea4e2e 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -64,6 +64,9 @@ static inline void setup_soc_rev(void)
+ 			system_rev = 0x51000 | CHIP_REV_2_0;
+ 		}
+ 		break;
++	case 0x20:
++		system_rev = 0x51000 | CHIP_REV_3_0;
++		break;
+ 	default:
+ 		system_rev = 0x51000 | CHIP_REV_1_0;
+ 	}
+@@ -98,6 +101,9 @@ static void setup_uart(void)
+ 	mxc_iomux_set_pad(MX51_PIN_UART1_RTS, pad);
+ 	mxc_request_iomux(MX51_PIN_UART1_CTS, IOMUX_CONFIG_ALT0);
+ 	mxc_iomux_set_pad(MX51_PIN_UART1_CTS, pad);
++	/* enable GPIO1_9 for CLK0 and GPIO1_8 for CLK02 */
++	writel(0x00000004, 0x73fa83e8);
++	writel(0x00000004, 0x73fa83ec);
+ }
+ 
+ void setup_nfc(void)
+@@ -302,27 +308,79 @@ static void power_init(void)
+ 	unsigned int val;
+ 	unsigned int reg;
+ 
++#define REV_ATLAS_LITE_1_0         0x8
++#define REV_ATLAS_LITE_1_1         0x9
++#define REV_ATLAS_LITE_2_0         0x10
++#define REV_ATLAS_LITE_2_1         0x11
++
+ 	slave = spi_pmic_probe();
+ 
++	/* Write needed to Power Gate 2 register */
++	val = pmic_reg(slave, 34, 0, 0);
++	val &= ~0x10000;
++	pmic_reg(slave, 34, val, 1);
++
++	/* Write needed to update Charger 0 */
++	pmic_reg(slave, 48, 0x0023807F, 1);
++
+ 	/* power up the system first */
+ 	pmic_reg(slave, 34, 0x00200000, 1);
+ 
+-	if (mxc_get_clock(MXC_FEC_CLK) > 800000000) {
+-		/* Set core voltage to 1.175V */
++	if (is_soc_rev(CHIP_REV_2_0) >= 0) {
++		/* Set core voltage to 1.1V */
+ 		val = pmic_reg(slave, 24, 0, 0);
+-		val = (val & (~0x1F)) | 0x17;
++		val = (val & (~0x1F)) | 0x14;
+ 		pmic_reg(slave, 24, val, 1);
+-	}
+ 
+-	/* Setup VCC (SW2) to 1.225 */
+-	val = pmic_reg(slave, 25, 0, 0);
+-	val = (val & (~0x1F)) | 0x19;
+-	pmic_reg(slave, 25, val, 1);
++		/* Setup VCC (SW2) to 1.25 */
++		val = pmic_reg(slave, 25, 0, 0);
++		val = (val & (~0x1F)) | 0x1A;
++		pmic_reg(slave, 25, val, 1);
++
++		/* Setup 1V2_DIG1 (SW3) to 1.25 */
++		val = pmic_reg(slave, 26, 0, 0);
++		val = (val & (~0x1F)) | 0x1A;
++		pmic_reg(slave, 26, val, 1);
++		udelay(50);
++		/* Raise the core frequency to 800MHz */
++		writel(0x0, CCM_BASE_ADDR + CLKCTL_CACRR);
++	} else {
++		/* TO 3.0 */
++		/* Setup VCC (SW2) to 1.225 */
++		val = pmic_reg(slave, 25, 0, 0);
++		val = (val & (~0x1F)) | 0x19;
++		pmic_reg(slave, 25, val, 1);
++
++		/* Setup 1V2_DIG1 (SW3) to 1.2 */
++		val = pmic_reg(slave, 26, 0, 0);
++		val = (val & (~0x1F)) | 0x18;
++		pmic_reg(slave, 26, val, 1);
++	}
+ 
+-	/* Setup 1V2_DIG1 (SW3) to 1.2 */
+-	val = pmic_reg(slave, 26, 0, 0);
+-	val = (val & (~0x1F)) | 0x18;
+-	pmic_reg(slave, 25, val, 1);
++	if (((pmic_reg(slave, 7, 0, 0) & 0x1F) < REV_ATLAS_LITE_2_0) ||
++		(((pmic_reg(slave, 7, 0, 0) >> 9) & 0x3) == 0)) {
++		/* Set switchers in PWM mode for Atlas 2.0 and lower */
++		/* Setup the switcher mode for SW1 & SW2*/
++		val = pmic_reg(slave, 28, 0, 0);
++		val = (val & (~0x3C0F)) | 0x1405;
++		pmic_reg(slave, 28, val, 1);
++
++		/* Setup the switcher mode for SW3 & SW4 */
++		val = pmic_reg(slave, 29, 0, 0);
++		val = (val & (~0xF0F)) | 0x505;
++		pmic_reg(slave, 29, val, 1);
++	} else {
++		/* Set switchers in Auto in NORMAL mode & STANDBY mode for Atlas 2.0a */
++		/* Setup the switcher mode for SW1 & SW2*/
++		val = pmic_reg(slave, 28, 0, 0);
++		val = (val & (~0x3C0F)) | 0x2008;
++		pmic_reg(slave, 28, val, 1);
++
++		/* Setup the switcher mode for SW3 & SW4 */
++		val = pmic_reg(slave, 29, 0, 0);
++		val = (val & (~0xF0F)) | 0x808;
++		pmic_reg(slave, 29, val, 1);
++	}
+ 
+ 	/* Set VDIG to 1.65V, VGEN3 to 1.8V, VCAM to 2.5V */
+ 	val = pmic_reg(slave, 30, 0, 0);
+@@ -362,9 +420,6 @@ static void power_init(void)
+ 	reg |= 0x4000;
+ 	writel(reg, GPIO2_BASE_ADDR + 0x0);
+ 
+-	/* Setup the FEC after enabling the regulators */
+-	setup_fec();
+-
+ 	spi_pmic_free(slave);
+ }
+ 
+@@ -497,6 +552,7 @@ int board_init(void)
+ 	setup_uart();
+ 	setup_nfc();
+ 	setup_expio();
++	setup_fec();
+ 	return 0;
+ }
+ 
+@@ -650,7 +706,9 @@ int checkboard(void)
+ {
+ 	printf("Board: MX51 BABBAGE ");
+ 
+-	if (system_rev & CHIP_REV_2_5) {
++	if (system_rev & CHIP_REV_3_0) {
++		printf("3.0 [");
++	} else if (system_rev & CHIP_REV_2_5) {
+ 		printf("2.5 [");
+ 	} else if (system_rev & CHIP_REV_2_0) {
+ 		printf("2.0 [");
+-- 
+1.5.4.4
+

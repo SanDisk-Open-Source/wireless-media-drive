@@ -1,0 +1,98 @@
+From 4261b59d898846bf9ce93393554bf0c04e6f387c Mon Sep 17 00:00:00 2001
+From: Ran Ferderber <Ran.Ferderber@freescale.com>
+Date: Thu, 25 Nov 2010 16:54:39 +0200
+Subject: [PATCH] ENGR00134077-1 Add TVE 1080P30/25/24, 1080I60/50 support for iMX53
+
+Set the new video modes values
+
+Signed-off-by: Ran Ferderber r53561@freescale.com
+---
+ arch/arm/mach-mx5/mx53_evk.c |   40 ++++++++++++++++++++--------------------
+ 1 files changed, 20 insertions(+), 20 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 2591f6d..e61cf16 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -452,20 +452,20 @@ static struct fb_videomode video_modes[] = {
+ 	{
+ 	 /* 1080i50 TV output */
+ 	 "1080I50", 50, 1920, 1080, 13468,
+-	 148, 528,
+-	 36, 4,
+-	 44, 5,
++	 192, 527,
++	 20, 24,
++	 1, 1,
+ 	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+-	 FB_VMODE_INTERLACED,
++	 FB_VMODE_INTERLACED | FB_VMODE_ODD_FLD_FIRST,
+ 	 0,},
+ 	{
+ 	 /* 1080i60 TV output */
+ 	 "1080I60", 60, 1920, 1080, 13468,
+-	 148, 88,
+-	 36, 4,
+-	 44, 5,
++	 192, 87,
++	 20, 24,
++	 1, 1,
+ 	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+-	 FB_VMODE_INTERLACED,
++	 FB_VMODE_INTERLACED | FB_VMODE_ODD_FLD_FIRST,
+ 	 0,},
+ 	{
+ 	 /* 800x480 @ 57 Hz , pixel clk @ 27MHz */
+@@ -484,9 +484,9 @@ static struct fb_videomode video_modes[] = {
+ 	{
+ 	 /* 720p30 TV output */
+ 	 "720P30", 30, 1280, 720, 13468,
+-	 256, 1760,
+-	 20, 5,
+-	 4, 5,
++	 260, 1759,
++	 25, 4,
++	 1, 1,
+ 	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+@@ -519,27 +519,27 @@ static struct fb_videomode video_modes[] = {
+ 	{
+ 	 /* 1080p24 TV output */
+ 	 "1080P24", 24, 1920, 1080, 13468,
+-	 148, 638,
+-	 36, 4,
+-	 44, 5,
++	 192, 637,
++	 38, 6,
++	 1, 1,
+ 	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+ 	 /* 1080p25 TV output */
+ 	 "1080P25", 25, 1920, 1080, 13468,
+-	 148, 528,
+-	 36, 4,
+-	 44, 5,
++	 192, 527,
++	 38, 6,
++	 1, 1,
+ 	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+ 	 /* 1080p30 TV output */
+ 	 "1080P30", 30, 1920, 1080, 13468,
+-	 148, 88,
+-	 36, 4,
+-	 44, 5,
++	 192, 87,
++	 38, 6,
++	 1, 1,
+ 	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+-- 
+1.5.4.4
+

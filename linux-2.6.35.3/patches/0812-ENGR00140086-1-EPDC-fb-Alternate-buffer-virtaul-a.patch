@@ -1,0 +1,29 @@
+From 7dce35abe43a65f659b3e08263852226678590fc Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Fri, 4 Mar 2011 15:38:51 -0600
+Subject: [PATCH] ENGR00140086-1 - EPDC fb: Alternate buffer virtaul address handled incorrectly
+
+- Removed virtual address parameter (virt_addr) for alternate buffer feature,
+as it is no longer used.
+NOTE: This file was accidentally omitted from first commit for this CR.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ include/linux/mxcfb.h |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/include/linux/mxcfb.h b/include/linux/mxcfb.h
+index 58158ee..c097eef 100644
+--- a/include/linux/mxcfb.h
++++ b/include/linux/mxcfb.h
+@@ -89,7 +89,6 @@ struct mxcfb_rect {
+ #define FB_POWERDOWN_DISABLE			-1
+ 
+ struct mxcfb_alt_buffer_data {
+-	void *virt_addr;
+ 	__u32 phys_addr;
+ 	__u32 width;	/* width of entire buffer */
+ 	__u32 height;	/* height of entire buffer */
+-- 
+1.5.4.4
+

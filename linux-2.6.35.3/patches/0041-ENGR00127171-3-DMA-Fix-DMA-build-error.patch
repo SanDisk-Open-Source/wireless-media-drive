@@ -1,0 +1,32 @@
+From 13e34c2a16ab9c311035b104880944f282f947db Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 23 Aug 2010 14:32:28 +0800
+Subject: [PATCH] ENGR00127171-3 DMA: Fix DMA build error.
+
+Revert "ENGR00114911 make video buffer cacheable to improve video performance"
+
+to fix build error
+
+This reverts commit 34aadc593a85e475d885db12a7faa0bdd9e11277.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/media/video/videobuf-dma-contig.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/media/video/videobuf-dma-contig.c b/drivers/media/video/videobuf-dma-contig.c
+index 67a3df1..74730c6 100644
+--- a/drivers/media/video/videobuf-dma-contig.c
++++ b/drivers/media/video/videobuf-dma-contig.c
+@@ -306,7 +306,7 @@ static int __videobuf_mmap_mapper(struct videobuf_queue *q,
+ 	size = vma->vm_end - vma->vm_start;
+ 	size = (size < mem->size) ? size : mem->size;
+ 
+-	vma->vm_page_prot = pgprot_writethru(vma->vm_page_prot);
++	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+ 	retval = remap_pfn_range(vma, vma->vm_start,
+ 				 mem->dma_handle >> PAGE_SHIFT,
+ 				 size, vma->vm_page_prot);
+-- 
+1.5.4.4
+

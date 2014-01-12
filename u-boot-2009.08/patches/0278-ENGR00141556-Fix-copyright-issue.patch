@@ -1,0 +1,469 @@
+From 1d230f43d31a21d9c34c91fd5f65b9919dcd54db Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Sat, 2 Apr 2011 12:42:11 +0800
+Subject: [PATCH] ENGR00141556: Fix copyright issue
+
+We're following the following rules:
+1. FSL copyright should be added for freescale added and modified files.
+2. FSL copyright should go after existing copyrights.
+3. For Duplicate FSL copyright, Our copyright will go after that also.
+4. FSL copyright should not include personal names as part.
+5. For only FSL copyright, "All rights reserved" is not mattered.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx23_evk/lowlevel_init.S |    4 ++--
+ board/freescale/mx23_evk/mx23_evk.c      |    2 +-
+ board/freescale/mx28_evk/lowlevel_init.S |    5 +----
+ common/cmd_fastboot.c                    |    4 ++--
+ common/cmd_iim.c                         |    9 +--------
+ common/cmd_mmc.c                         |    5 ++---
+ common/cmd_nvedit.c                      |    4 +++-
+ common/cmd_sata.c                        |    5 ++---
+ common/lcd.c                             |    2 ++
+ cpu/arm926ejs/mx23/reset.S               |    4 ++--
+ cpu/arm_cortexa8/cpu.c                   |    2 ++
+ drivers/block/ahci.c                     |    5 ++---
+ drivers/block/dwc_ahsata.h               |    3 +--
+ drivers/misc/imx_iim.c                   |   10 +---------
+ drivers/mmc/imx_esdhc.c                  |    5 ++---
+ drivers/mmc/imx_ssp_mmc.c                |   10 +---------
+ drivers/mtd/nand/gpmi_nfc_hal.c          |    3 ++-
+ drivers/mtd/nand/gpmi_nfc_mil.c          |    3 ++-
+ include/ahci.h                           |    5 ++---
+ include/asm-arm/cache-cp15.h             |    4 ++--
+ include/configs/mx25_3stack.h            |    7 +------
+ include/configs/mx25_3stack_mfg.h        |    7 +------
+ include/fastboot.h                       |    4 ++--
+ include/lcd.h                            |    4 ++--
+ include/mmc.h                            |    4 ++--
+ include/mx2fb.h                          |    2 +-
+ 26 files changed, 44 insertions(+), 78 deletions(-)
+
+diff --git a/board/freescale/mx23_evk/lowlevel_init.S b/board/freescale/mx23_evk/lowlevel_init.S
+index 7e7811a..9886a30 100644
+--- a/board/freescale/mx23_evk/lowlevel_init.S
++++ b/board/freescale/mx23_evk/lowlevel_init.S
+@@ -1,11 +1,11 @@
+ /*
+  * Board specific setup info
+  *
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+- *
+  * (C) Copyright 2003, ARM Ltd.
+  * Philippe Robin, <philippe.robin@arm.com>
+  *
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc.
++
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/board/freescale/mx23_evk/mx23_evk.c b/board/freescale/mx23_evk/mx23_evk.c
+index 343c6d6..1f28873 100644
+--- a/board/freescale/mx23_evk/mx23_evk.c
++++ b/board/freescale/mx23_evk/mx23_evk.c
+@@ -2,7 +2,7 @@
+  *
+  * (c) 2008 Embedded Alley Solutions, Inc.
+  *
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/board/freescale/mx28_evk/lowlevel_init.S b/board/freescale/mx28_evk/lowlevel_init.S
+index 1c62a31..fb4c4b3 100644
+--- a/board/freescale/mx28_evk/lowlevel_init.S
++++ b/board/freescale/mx28_evk/lowlevel_init.S
+@@ -1,10 +1,7 @@
+ /*
+  * Board specific setup info
+  *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+- *
+- * (C) Copyright 2003, ARM Ltd.
+- * Philippe Robin, <philippe.robin@arm.com>
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/common/cmd_fastboot.c b/common/cmd_fastboot.c
+index 8d49b88..089a225 100644
+--- a/common/cmd_fastboot.c
++++ b/common/cmd_fastboot.c
+@@ -1,9 +1,9 @@
+ /*
+- * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+- *
+  * Copyright 2008 - 2009 (C) Wind River Systems, Inc.
+  * Tom Rix <Tom.Rix@windriver.com>
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+  * published by the Free Software Foundation; either version 2 of
+diff --git a/common/cmd_iim.c b/common/cmd_iim.c
+index 56e3804..feb10e3 100644
+--- a/common/cmd_iim.c
++++ b/common/cmd_iim.c
+@@ -1,12 +1,5 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- *
+- * Copyright 2007, Freescale Semiconductor, Inc
+- * Andy Fleming
+- *
+- * Based vaguely on the pxa mmc code:
+- * (C) Copyright 2003
+- * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index 0769cf6..31a4f05 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -1,10 +1,9 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+- * Terry Lv <r65388@freescale.com>
+- *
+  * (C) Copyright 2003
+  * Kyle Harris, kharris@nexus-tech.net
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/common/cmd_nvedit.c b/common/cmd_nvedit.c
+index f5cef1b..cf718e7 100644
+--- a/common/cmd_nvedit.c
++++ b/common/cmd_nvedit.c
+@@ -4,7 +4,9 @@
+  *
+  * (C) Copyright 2001 Sysgo Real-Time Solutions, GmbH <www.elinos.com>
+  * Andreas Heppel <aheppel@sysgo.de>
+-
++ *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/common/cmd_sata.c b/common/cmd_sata.c
+index cd21f2a..6da926a 100644
+--- a/common/cmd_sata.c
++++ b/common/cmd_sata.c
+@@ -1,7 +1,4 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv <r65388@freescale.com>
+- *
+  * Copyright (C) 2000-2005, DENX Software Engineering
+  *		Wolfgang Denk <wd@denx.de>
+  * Copyright (C) Procsys. All rights reserved.
+@@ -10,6 +7,8 @@
+  * Copyright (C) 2008 Freescale Semiconductor, Inc.
+  *		Dave Liu <daveliu@freescale.com>
+  *
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc.
++ *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+  * published by the Free Software Foundation; either version 2 of
+diff --git a/common/lcd.c b/common/lcd.c
+index c46422e..ac3d00e 100644
+--- a/common/lcd.c
++++ b/common/lcd.c
+@@ -4,6 +4,8 @@
+  * (C) Copyright 2001-2002
+  * Wolfgang Denk, DENX Software Engineering -- wd@denx.de
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/cpu/arm926ejs/mx23/reset.S b/cpu/arm926ejs/mx23/reset.S
+index a53ca57..9e1161b 100644
+--- a/cpu/arm926ejs/mx23/reset.S
++++ b/cpu/arm926ejs/mx23/reset.S
+@@ -1,10 +1,10 @@
+ /*
+  * Processor reset for Freescale MX23 SoC.
+  *
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+- *
+  * Copyright (C) 2007 Sergey Kubushyn <ksi@koi8.net>
+  *
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc.
++
+  * -----------------------------------------------------
+  *
+  * This program is free software; you can redistribute it and/or
+diff --git a/cpu/arm_cortexa8/cpu.c b/cpu/arm_cortexa8/cpu.c
+index 70590ee..ac7ac13 100644
+--- a/cpu/arm_cortexa8/cpu.c
++++ b/cpu/arm_cortexa8/cpu.c
+@@ -8,6 +8,8 @@
+  * (C) Copyright 2002
+  * Gary Jennejohn, DENX Software Engineering, <garyj@denx.de>
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/drivers/block/ahci.c b/drivers/block/ahci.c
+index 0ca220d..bd630e1 100644
+--- a/drivers/block/ahci.c
++++ b/drivers/block/ahci.c
+@@ -1,11 +1,10 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv <r65388@freescale.com>
+- *
+  * Copyright (C) Freescale Semiconductor, Inc. 2006.
+  * Author: Jason Jin<Jason.jin@freescale.com>
+  *         Zhang Wei<wei.zhang@freescale.com>
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/drivers/block/dwc_ahsata.h b/drivers/block/dwc_ahsata.h
+index 4dac5dc..896b04f 100644
+--- a/drivers/block/dwc_ahsata.h
++++ b/drivers/block/dwc_ahsata.h
+@@ -1,6 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+- * Terry Lv <r65388@freescale.com>
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+diff --git a/drivers/misc/imx_iim.c b/drivers/misc/imx_iim.c
+index a720791..bd935a1 100644
+--- a/drivers/misc/imx_iim.c
++++ b/drivers/misc/imx_iim.c
+@@ -1,13 +1,5 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv
+- *
+- * Copyright 2007, Freescale Semiconductor, Inc
+- * Andy Fleming
+- *
+- * Based vaguely on the pxa mmc code:
+- * (C) Copyright 2003
+- * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index 0dff3ca..fa32827 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -1,10 +1,9 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv, Jason Liu
+- *
+  * Copyright 2007, Freescale Semiconductor, Inc
+  * Andy Fleming
+  *
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc.
++ *
+  * Based vaguely on the pxa mmc code:
+  * (C) Copyright 2003
+  * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
+diff --git a/drivers/mmc/imx_ssp_mmc.c b/drivers/mmc/imx_ssp_mmc.c
+index fc480a5..9966e98 100644
+--- a/drivers/mmc/imx_ssp_mmc.c
++++ b/drivers/mmc/imx_ssp_mmc.c
+@@ -1,13 +1,5 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv
+- *
+- * Copyright 2007, Freescale Semiconductor, Inc
+- * Andy Fleming
+- *
+- * Based vaguely on the pxa mmc code:
+- * (C) Copyright 2003
+- * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/drivers/mtd/nand/gpmi_nfc_hal.c b/drivers/mtd/nand/gpmi_nfc_hal.c
+index 568e3c5..316385b 100644
+--- a/drivers/mtd/nand/gpmi_nfc_hal.c
++++ b/drivers/mtd/nand/gpmi_nfc_hal.c
+@@ -1,9 +1,10 @@
+ /*
+  * Freescale GPMI NFC NAND Flash Driver
+  *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+diff --git a/drivers/mtd/nand/gpmi_nfc_mil.c b/drivers/mtd/nand/gpmi_nfc_mil.c
+index 8d50da6..889144c 100644
+--- a/drivers/mtd/nand/gpmi_nfc_mil.c
++++ b/drivers/mtd/nand/gpmi_nfc_mil.c
+@@ -1,9 +1,10 @@
+ /*
+  * Freescale GPMI NFC NAND Flash Driver
+  *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+diff --git a/include/ahci.h b/include/ahci.h
+index 12f653a..45295f6 100644
+--- a/include/ahci.h
++++ b/include/ahci.h
+@@ -1,11 +1,10 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- * Terry Lv <r65388@freescale.com>
+- *
+  * Copyright (C) Freescale Semiconductor, Inc. 2006.
+  * Author: Jason Jin<Jason.jin@freescale.com>
+  *         Zhang Wei<wei.zhang@freescale.com>
+  *
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/include/asm-arm/cache-cp15.h b/include/asm-arm/cache-cp15.h
+index 4996ee0..016b00d 100644
+--- a/include/asm-arm/cache-cp15.h
++++ b/include/asm-arm/cache-cp15.h
+@@ -1,9 +1,9 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- *
+  * (C) Copyright 2002
+  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+  *
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/include/configs/mx25_3stack.h b/include/configs/mx25_3stack.h
+index e8383c2..18e3032 100644
+--- a/include/configs/mx25_3stack.h
++++ b/include/configs/mx25_3stack.h
+@@ -1,10 +1,5 @@
+ /*
+- * (C) Copyright 2009-2010 Freescale Semiconductor
+- *
+- * (C) Copyright 2004
+- * Texas Instruments.
+- * Richard Woodruff <r-woodruff2@ti.com>
+- * Kshitij Gupta <kshitij@ti.com>
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the Freescale i.MX31 PDK board.
+  *
+diff --git a/include/configs/mx25_3stack_mfg.h b/include/configs/mx25_3stack_mfg.h
+index a907d06..e2c9de9 100644
+--- a/include/configs/mx25_3stack_mfg.h
++++ b/include/configs/mx25_3stack_mfg.h
+@@ -1,10 +1,5 @@
+ /*
+- * (C) Copyright 2009-2010 Freescale Semiconductor
+- *
+- * (C) Copyright 2004
+- * Texas Instruments.
+- * Richard Woodruff <r-woodruff2@ti.com>
+- * Kshitij Gupta <kshitij@ti.com>
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the Freescale i.MX31 PDK board.
+  *
+diff --git a/include/fastboot.h b/include/fastboot.h
+index 5d2512e..ac6c432 100644
+--- a/include/fastboot.h
++++ b/include/fastboot.h
+@@ -1,10 +1,10 @@
+ /*
+- * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+- *
+  * (C) Copyright 2008 - 2009
+  * Windriver, <www.windriver.com>
+  * Tom Rix <Tom.Rix@windriver.com>
+  *
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
++ *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License as
+  * published by the Free Software Foundation; either version 2 of
+diff --git a/include/lcd.h b/include/lcd.h
+index 062e024..ae3afc3 100644
+--- a/include/lcd.h
++++ b/include/lcd.h
+@@ -1,6 +1,4 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc.
+- *
+  * MPC823 and PXA LCD Controller
+  *
+  * Modeled after video interface by Paolo Scaffardi
+@@ -9,6 +7,8 @@
+  * (C) Copyright 2001
+  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+  *
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc.
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+diff --git a/include/mmc.h b/include/mmc.h
+index 885db6d..44c8959 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -1,9 +1,9 @@
+ /*
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+- *
+  * Copyright 2008-2010, Freescale Semiconductor, Inc
+  * Andy Fleming
+  *
++ * Copyright (C) 2011 Freescale Semiconductor, Inc.
++ *
+  * Based (loosely) on the Linux code
+  *
+  * See file CREDITS for list of people who contributed to this
+diff --git a/include/mx2fb.h b/include/mx2fb.h
+index 2177c33..684e9ea 100644
+--- a/include/mx2fb.h
++++ b/include/mx2fb.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2004-2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2004-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+-- 
+1.5.4.4
+

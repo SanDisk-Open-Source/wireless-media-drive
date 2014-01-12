@@ -1,0 +1,219 @@
+<HEAD>
+<TH>CSV2 5 "junho 2004" MARADNS "referência MaraDNS"</TH>
+<DTWIDTH>3</DTWIDTH>
+ <META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<BODY>
+<h1>NOME</h1>
+csv2 - Descrição do arquivo de zona csv2 usado por MaraDNS 
+
+<h1>DESCRIÇÃO</h1>
+O formato do arquivo de zona csv2 é o novo formato do arquivo de zona
+para MaraDNS 1.2. Este formato de arquivo de zona usa qualquer tipo de
+espaço em branco (espaço, tabulação e retorno), ou o caracter '| ', para 
+delimitar campos.  O parser do arquivo de zona é inteligente o bastante
+para conhecer quantos campos de dados do registro que um determinado
+registro de dado precisa; uma vez que são processados todos os campos para um 
+determinado registro, o parser analisa a próxima entrada que vê como
+o nome para o próximo registro processar.
+<p>
+
+Este formato de zona de arquivo tem registros na seguinte forma: 
+
+<blockquote>
+name [+ttl] [rtype] rdata 
+</blockquote>
+
+O nome é o nome do registro que nós incluiremos, como "www.example.net.". 
+Isto deve ser colocado no começo da linha. O rtype é o tipo de registro 
+para o registro, como "A" (endereço de IP ipv4), "MX" (servidor de email), ou
+"AAAA" (endereço de IP ipv6).  O TTL é quanto tempo outros servidores de DNS 
+deveriam armazenar estes dados na memória deles (em segundos); este campo
+precisa um '+' como seu caracter inicial.  O rdata é o dados atuais para este 
+registro; o formato para o rdata é tipo-específico.
+
+<p>
+Qualquer coisa em colchetes é um campo opcional.  Se o TTL não é especificado, 
+o TTL é fixado para 86400 segundos  (um dia).  Se o rtype não é especificado, 
+é setado para ser um registro "A" (endereço ipv4).
+
+<p>
+A zona de arquivo suporta comentários; comentários são especificados tendo um '#'
+em qualquer lugar entre campos ou registros; quando um '#' é visto, o parser do csv2
+ignora qualquer caracter que vê (com a exceção do caracter '{' que não é permitido 
+atualmente em zonas de arquivos csv2) até um nova linha. Um '#' normalmente pode ser
+colocado dentro de um campo, e indica o fim de um campo quando colocado lá.
+ 
+ <p>
+Os tipos de registro seguintes são suportados; uma descrição do formato de dados dos
+registros acomoda o tipo de registro:
+ 
+<h2>A</h2>
+
+Um registro tipo A armazena um endereço ipv4. Isto é o tipo de registro padrão, caso
+o tipo de registro não seja especificado. Esse tipo de registro tem um campo: o IP para
+o registro.  Exemplos: 
+
+<pre>
+a.example.net.              10.11.12.13
+b.example.net.        A     10.11.12.14
+c.example.net. +64000 A     10.11.12.15
+</pre>
+
+<h2>PTR</h2>
+
+O registro PTR armazena o nome de um dado endereço ipv4 ou ipv6, e é usado para 
+consultas de DNS reverso. Este tipo de registro tem um campo nele: O nome para o 
+registro em questão. Exemplos: 
+
+<pre>
+13.12.11.10.in-addr.arpa.        PTR    a.example.net.
+14.12.11.10.in-addr.arpa.        PTR    b.example.net.
+15.12.11.10.in-addr.arpa. +64000 PTR    c.example.net.
+</pre>
+
+<h2>MX</h2>
+
+Um registro MX armazena um registro de servidor de email, e é usado para entrega de email. 
+Este tipo de registro tem dois campos: A prioridade (ou "preferência" em linguagem de
+DNS tradicional) do registro MX (números mais baixos tem prioridades mais alta), e o nome do
+servidor de email. Exemplo de email para example.net que é remetido a mail.example.net
+que tem o IP "10.11.12.16":
+
+<pre>
+example.net.      MX 10 mail.example.net.
+mail.example.net.      10.11.12.16
+</pre>
+
+<h2>AAAA</h2>
+
+Um registro AAAA  armazena o endereço ipv6 para um determinado nome.  
+O IP está em formato ipv6 padrão "delimitado por dois pontos" :
+oito 16-bits de números hexadecimal estão separados através de dois pontos.
+Os dois pontos indicam múltiplos fluxos de todos números hexas zeros.
+Este registro tem só um campo, o IP v6. Exemplo: 
+
+<pre>
+a.example.net.   AAAA 3ffe:ffff:ffe:501:ffff::b:c:d
+</pre>
+
+<h2>SRV</h2>
+
+Uma registro SRV armazena uma definição de "serviço."  Este registro tem quatro campos:
+Prioridade, peso, porta, e objetivo.  Para mais informação, por favor recorra ao RFC 2782.
+Exemplo: 
+
+<pre>
+_http._tcp.% srv 0 0 80 a.%
+</pre>
+
+<h2>NS</h2>
+
+Um registro NS especifica os nome de servidores para uma determinada zona.  
+Se os nomes dos servidores não são nome de delegação de servidores (em outras 
+palavra, se os servidores de nome são os servidores de nome autoritativos para a zona), 
+eles precisam estar no começo da zona, ou como os primeiros registros na zona, ou logo 
+depois do registro SOA.  Os registros NS são opcionais; se não presentes, MaraDNS 
+fará uma educada suposição daqueles registros de NS que deveriam estar lá, baseado nos 
+IPs que MaraDNS irá processar. Este registro tem um campo: O nome da máquina do servidor. 
+Exemplo: 
+
+<pre>
+example.net.    NS ns1.example.net.
+example.net.    NS ns2.example.net.
+</pre>
+
+<h2>SOA</h2>
+
+Uma registro SOA armazena o começo da autoridade para um determinado 
+arquivo de zona. Este registro é opcional em zonas de arquivo CSV2; o registro não 
+deveria estar no arquivo de zona, MaraDNS sintetizará um registro de SOA apropriado.
+Este registro só pode existir uma vez em um arquivo de zona: Como o primeiro registro
+do arquivo de zona. Este registro tem sete campos: O nome da zona, o endereço de e-mail
+da pessoa responsável pela zona, e cinco campos numéricos (serial, refresh, retry, expire e 
+minimum). Nota que o minimum do SOA <I>não</I> afeta outros TTLs em MaraDNS. Exemplo: 
+
+<pre>
+x.org. SOA x.org. email@x.org. 1 7200 3600 604800 1800
+</pre>
+
+<h2>TXT</h2>
+
+Um registro TXT armazena texto e/ou dados binários arbitrário para um 
+determinado nome de host. Este registro tem um campo: Os dados de texto para o registro. 
+
+<p>
+Um registro de texto básico pode ser armazenado colocando dados de ASCII 
+entre duas aspas únicas, como segue:
+ 
+
+<pre>
+example.com. TXT 'Este é um campo de texto de exemplo'
+</pre>
+
+Qualquer dados binário pode ser especificado; veja o man page <B>csv2_txt(5) </B>
+para mais detalhes.
+ 
+<h2>RAW</h2>
+
+O registro RAW é um meta-registro especial que permite qualquer 
+tipo de registro não suportado para ser armazenado em um 
+arquivo de zona de csv2.  A sintaxe é:
+ 
+
+<pre>
+RAW [numeric rtype] [data] 
+</pre>
+
+O rtype numérico é um número decimal. 
+
+<p>
+O campo de dados pode, entre outras coisas, ter sequências de backslashed hex
+fora das aspas, concatenadas por dados  ASCII dentro das aspas, como 
+o exemplo seguinte,:
+
+<pre>
+example.com. RAW 40 \x10\x01\x02'Kitchen sink'\x40' data'
+</pre>
+
+O exemplo anterior é uma "Pia de cozinha" RR com um "significado" de 16, 
+uma "codificação" de 1, um "subcoding" de 2, e um fio de dados de "pia de 
+cozinha @ dados" (desde feitiço código 40 corresponde um @ em ASCII).
+
+Nota que barras hexas fora das aspas são concatenado com dados ASCII
+citados, e que espaços em brancos estão <I>somente</I> dentro de 
+dados com aspas..
+
+<p>
+O formato para um campo de dados em um registro RAW é quase idêntico ao 
+formato para um campo de dados TXT. São descritos ambos os formatos por 
+completo no man pagen <B>csv2_txt(5)</B>.
+ 
+ 
+<h1>ARQUIVO DE ZONA DE EXEMPLO</h1>
+
+<pre>
+<include "../examples/example_csv2">
+</pre>
+
+<h1>RETRATAÇÃO LEGAL</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE 
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, 
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
+WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
+
+<h1>AUTOR</h1>
+Sam Trenholme <A href=http://www.samiam.org/>http://www.samiam.org/</a>
+
+<h1>TRADUÇÃO</h1>
+A tradução deste documento foi realizada por Daniel Zilli.
+
+</body>
+

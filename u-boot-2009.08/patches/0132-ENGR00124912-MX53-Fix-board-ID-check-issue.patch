@@ -1,0 +1,30 @@
+From e362247d0a17c4702835b0889e1149fa270976f2 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 7 Jul 2010 13:27:01 +0800
+Subject: [PATCH] ENGR00124912 MX53: Fix board ID check issue
+
+Accoring to board identification table, the ADC data
+register value range between "0xB9E79F - 0xC00000"
+indicates 21.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx53_evk/mx53_evk.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/freescale/mx53_evk/mx53_evk.c b/board/freescale/mx53_evk/mx53_evk.c
+index f8b553f..86ab2a1 100644
+--- a/board/freescale/mx53_evk/mx53_evk.c
++++ b/board/freescale/mx53_evk/mx53_evk.c
+@@ -358,7 +358,7 @@ static int __lookup_board_id(int adc_val)
+ 		id = 19;
+ 	else if (adc_val < 0xB9E79F)
+ 		id = 20;
+-	else if (adc_val < 0xC00000)
++	else if (adc_val <= 0xC00000)
+ 		id = 21;
+ 		else
+ 		return -1;
+-- 
+1.5.4.4
+

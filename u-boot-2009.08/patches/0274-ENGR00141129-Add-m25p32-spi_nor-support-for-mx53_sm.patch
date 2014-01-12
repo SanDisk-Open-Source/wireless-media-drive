@@ -1,0 +1,208 @@
+From b2660136cb57c171ce0289098c6e5799cdaad0da Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 24 Mar 2011 19:38:41 +0800
+Subject: [PATCH] ENGR00141129: Add m25p32 spi_nor support for mx53_smd
+
+Add m25p32 spi_nor support for mx53_smd.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx53_smd/mx53_smd.c |   81 +++++++++++++++++++++++++++++++++++
+ include/configs/mx53_smd.h          |   28 +++++++++---
+ include/configs/mx53_smd_mfg.h      |   28 +++++++++---
+ 3 files changed, 125 insertions(+), 12 deletions(-)
+
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index 7c3e1c3..ed9bbe3 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -36,6 +36,10 @@
+ #endif
+ #include <netdev.h>
+ 
++#ifdef CONFIG_IMX_ECSPI
++#include <imx_spi.h>
++#endif
++
+ #if CONFIG_I2C_MXC
+ #include <i2c.h>
+ #endif
+@@ -400,6 +404,83 @@ void setup_pmic_voltages(void)
+ 
+ #endif
+ 
++#ifdef CONFIG_IMX_ECSPI
++s32 spi_get_cfg(struct imx_spi_dev_t *dev)
++{
++	switch (dev->slave.cs) {
++	case 0:
++		/* Zigbee */
++		dev->base = CSPI1_BASE_ADDR;
++		dev->freq = 25000000;
++		dev->ss_pol = IMX_SPI_ACTIVE_HIGH;
++		dev->ss = 0;
++		dev->fifo_sz = 64 * 4;
++		dev->us_delay = 0;
++		break;
++	case 1:
++		/* SPI-NOR */
++		dev->base = CSPI1_BASE_ADDR;
++		dev->freq = 25000000;
++		dev->ss_pol = IMX_SPI_ACTIVE_LOW;
++		dev->ss = 1;
++		dev->fifo_sz = 64 * 4;
++		dev->us_delay = 0;
++		break;
++	default:
++		printf("Invalid Bus ID!\n");
++	}
++
++	return 0;
++}
++
++void spi_io_init(struct imx_spi_dev_t *dev)
++{
++	switch (dev->base) {
++	case CSPI1_BASE_ADDR:
++		/* SCLK */
++		mxc_request_iomux(MX53_PIN_EIM_D16, IOMUX_CONFIG_ALT4);
++		mxc_iomux_set_pad(MX53_PIN_EIM_D16, 0x104);
++		mxc_iomux_set_input(MUX_IN_ECSPI1_IPP_CSPI_CLK_IN_SELECT_INPUT,
++				0x3);
++
++		/* MISO */
++		mxc_request_iomux(MX53_PIN_EIM_D17, IOMUX_CONFIG_ALT4);
++		mxc_iomux_set_pad(MX53_PIN_EIM_D17, 0x104);
++		mxc_iomux_set_input(MUX_IN_ECSPI1_IPP_IND_MISO_SELECT_INPUT,
++				0x3);
++
++		/* MISO */
++		mxc_request_iomux(MX53_PIN_EIM_D18, IOMUX_CONFIG_ALT4);
++		mxc_iomux_set_pad(MX53_PIN_EIM_D18, 0x104);
++		mxc_iomux_set_input(MUX_IN_ECSPI1_IPP_IND_MOSI_SELECT_INPUT,
++				0x3);
++
++		if (dev->ss == 0) {
++			mxc_request_iomux(MX53_PIN_EIM_EB2,
++						IOMUX_CONFIG_ALT4);
++			mxc_iomux_set_pad(MX53_PIN_EIM_EB2, 0x104);
++			mxc_iomux_set_input(
++				MUX_IN_ECSPI1_IPP_IND_SS_B_1_SELECT_INPUT,
++				0x3);
++		} else if (dev->ss == 1) {
++			mxc_request_iomux(MX53_PIN_EIM_D19, IOMUX_CONFIG_ALT4);
++			mxc_iomux_set_pad(MX53_PIN_EIM_D19, 0x104);
++			mxc_iomux_set_input(
++				MUX_IN_ECSPI1_IPP_IND_SS_B_2_SELECT_INPUT,
++				0x2);
++		}
++		break;
++	case CSPI2_BASE_ADDR:
++	case CSPI3_BASE_ADDR:
++		/* ecspi2-3 fall through */
++		break;
++	default:
++		break;
++	}
++}
++#endif
++
++
+ #if defined(CONFIG_DWC_AHSATA)
+ static void setup_sata_device(void)
+ {
+diff --git a/include/configs/mx53_smd.h b/include/configs/mx53_smd.h
+index d9504de..81bdc48 100644
+--- a/include/configs/mx53_smd.h
++++ b/include/configs/mx53_smd.h
+@@ -96,6 +96,9 @@
+ #define CONFIG_BOOTP_DNS
+ 
+ #define CONFIG_CMD_MMC
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_I2C
++#define CONFIG_CMD_SF
+ #define CONFIG_CMD_ENV
+ 
+ #define CONFIG_CMD_IIM
+@@ -182,12 +185,25 @@
+ /*
+  * I2C Configs
+  */
+-#define CONFIG_CMD_I2C          1
+-#define CONFIG_HARD_I2C         1
+-#define CONFIG_I2C_MXC          1
+-#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
+-#define CONFIG_SYS_I2C_SPEED            100000
+-#define CONFIG_SYS_I2C_SLAVE            0xfe
++#ifdef CONFIG_CMD_I2C
++	#define CONFIG_HARD_I2C         1
++	#define CONFIG_I2C_MXC          1
++	#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
++	#define CONFIG_SYS_I2C_SPEED            100000
++	#define CONFIG_SYS_I2C_SLAVE            0xfe
++#endif
++
++/*
++ * SPI Configs
++ */
++#ifdef CONFIG_CMD_SF
++	#define CONFIG_FSL_SF		1
++	#define CONFIG_SPI_FLASH_IMX_M25PXX	1
++	#define CONFIG_SPI_FLASH_CS	1
++	#define CONFIG_IMX_ECSPI
++	#define IMX_CSPI_VER_2_3	1
++	#define MAX_SPI_BYTES		(64 * 4)
++#endif
+ 
+ /*
+  * MMC Configs
+diff --git a/include/configs/mx53_smd_mfg.h b/include/configs/mx53_smd_mfg.h
+index 2a2e4cd..0e5a76e 100644
+--- a/include/configs/mx53_smd_mfg.h
++++ b/include/configs/mx53_smd_mfg.h
+@@ -97,6 +97,9 @@
+ #define CONFIG_BOOTP_DNS
+ 
+ #define CONFIG_CMD_MMC
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_CMD_I2C
+ #define CONFIG_CMD_ENV
+ 
+ #define CONFIG_CMD_IIM
+@@ -170,12 +173,25 @@
+ /*
+  * I2C Configs
+  */
+-#define CONFIG_CMD_I2C          1
+-#define CONFIG_HARD_I2C         1
+-#define CONFIG_I2C_MXC          1
+-#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
+-#define CONFIG_SYS_I2C_SPEED            100000
+-#define CONFIG_SYS_I2C_SLAVE            0xfe
++#ifdef CONFIG_CMD_I2C          1
++	#define CONFIG_HARD_I2C         1
++	#define CONFIG_I2C_MXC          1
++	#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
++	#define CONFIG_SYS_I2C_SPEED            100000
++	#define CONFIG_SYS_I2C_SLAVE            0xfe
++#endif
++
++/*
++ * SPI Configs
++ */
++#ifdef CONFIG_CMD_SF
++	#define CONFIG_FSL_SF		1
++	#define CONFIG_SPI_FLASH_IMX_M25PXX	1
++	#define CONFIG_SPI_FLASH_CS	1
++	#define CONFIG_IMX_ECSPI
++	#define IMX_CSPI_VER_2_3	1
++	#define MAX_SPI_BYTES		(8 * 4)
++#endif
+ 
+ /*
+  * MMC Configs
+-- 
+1.5.4.4
+

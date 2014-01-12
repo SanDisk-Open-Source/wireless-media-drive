@@ -1,0 +1,50 @@
+From c0367e024155938a9ba086ebf650db528f896573 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Tue, 16 Nov 2010 17:20:40 +0800
+Subject: [PATCH] ENGR38305845-2 NAND : add our own bbt descriptor
+
+The default bbt descriptor will compare two bytes from the
+Block mark.
+
+But our ECC engine will use the OOB data which make the following byte
+of the Block mark is not 0xff.
+
+So add our own bbt descriptor to fix the problem which only compare one
+byte--the block mark itself.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c |   10 ++++++++++
+ 1 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index df1303e..7bc5d07 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -40,6 +40,15 @@ module_param(register_main_mtd, int, 0400);
+ static int map_io_buffers = true;
+ module_param(map_io_buffers, int, 0600);
+ 
++/* add our owner bbt descriptor */
++static uint8_t scan_ff_pattern[] = { 0xff };
++static struct nand_bbt_descr gpmi_bbt_descr = {
++	.options	= 0,
++	.offs		= 0,
++	.len		= 1,
++	.pattern	= scan_ff_pattern
++};
++
+ /**
+  * mil_outgoing_buffer_dma_begin() - Begins DMA on an outgoing buffer.
+  *
+@@ -2413,6 +2422,7 @@ int gpmi_nfc_mil_init(struct gpmi_nfc_data *this)
+ 
+ 	nand->block_bad = mil_block_bad;
+ 	nand->scan_bbt  = mil_scan_bbt;
++	nand->badblock_pattern = &gpmi_bbt_descr;
+ 
+ 	/*
+ 	 * Error Recovery Functions
+-- 
+1.5.4.4
+

@@ -1,0 +1,873 @@
+From 1ee27e13d6fdb19d297f8d1d6d3d7d8449d0361e Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 10 Dec 2009 11:26:52 +0800
+Subject: [PATCH] ENGR00119171: ubifs support for android recovery mode.
+
+ubifs support for android recovery mode.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/flash_header.S |    4 +-
+ board/freescale/mx51_3stack/mx51_3stack.c  |  251 ++++++++++++++++------------
+ fs/ubifs/super.c                           |    1 +
+ fs/ubifs/ubifs.c                           |   72 +++++---
+ fs/ubifs/ubifs.h                           |   32 ----
+ include/asm-arm/bitops.h                   |   81 +++++----
+ include/asm-arm/proc-armv/system.h         |   30 ----
+ include/configs/mx35_3stack.h              |    4 +
+ include/configs/mx51_3stack_android.h      |   18 ++-
+ include/linux/bitops.h                     |   83 +++++++++
+ 10 files changed, 337 insertions(+), 239 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/flash_header.S b/board/freescale/mx51_3stack/flash_header.S
+index 172220a..bbfa474 100644
+--- a/board/freescale/mx51_3stack/flash_header.S
++++ b/board/freescale/mx51_3stack/flash_header.S
+@@ -108,6 +108,6 @@ MXC_DCD_ITEM(54, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDMISC, 0x000ad6d0)
+ MXC_DCD_ITEM(55, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCDLYGD, 0x90000000)
+ MXC_DCD_ITEM(56, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00000000)
+ dcd_data_end:
+-image_len:		.word	0x80000
+-//image_len:		.word	_end - _start
++//image_len:		.word	0x80000
++image_len:		.word	__u_boot_cmd_end - TEXT_BASE
+ #endif
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 2dc6b2d..38eed4f 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -535,7 +535,7 @@ int board_init(void)
+ #ifdef BOARD_LATE_INIT
+ 
+ #if defined(CONFIG_FSL_ANDROID) && defined(CONFIG_MXC_KPD)
+-inline int waiting_for_func_key_pressing(void)
++static int waiting_for_func_key_pressing(void)
+ {
+ 	struct kpp_key_info key_info = {0, 0};
+ 	int switch_delay = CONFIG_ANDROID_BOOTMOD_DELAY;
+@@ -607,7 +607,7 @@ inline int waiting_for_func_key_pressing(void)
+ 	return 0;
+ }
+ 
+-inline int switch_to_recovery_mode(void)
++static int switch_to_recovery_mode(void)
+ {
+ 	char *env = NULL;
+ 	char *boot_args = NULL;
+@@ -648,127 +648,164 @@ inline int switch_to_recovery_mode(void)
+ 	return 0;
+ }
+ 
+-inline int check_recovery_cmd_file(void)
++static int check_mmc_recovery_cmd_file(int dev_num, int part_num, char *path)
+ {
++	block_dev_desc_t *dev_desc = NULL;
++	struct mmc *mmc = find_mmc_device(dev_num);
+ 	disk_partition_t info;
+-	ulong part_length;
+-	int filelen;
++	ulong part_length = 0;
++	int filelen = 0;
+ 
+-	switch (get_boot_device()) {
+-	case MMC_BOOT:
+-		{
+-			block_dev_desc_t *dev_desc = NULL;
+-			struct mmc *mmc = find_mmc_device(0);
++	memset(&info, 0, sizeof(disk_partition_t));
+ 
+-			dev_desc = get_dev("mmc", 0);
++	dev_desc = get_dev("mmc", dev_num);
+ 
+-			if (NULL == dev_desc) {
+-				puts("** Block device MMC 0 not supported\n");
+-				return 0;
+-			}
++	if (NULL == dev_desc) {
++		printf("** Block device MMC %d not supported\n",
++				dev_num);
++		return 0;
++	}
+ 
+-			mmc_init(mmc);
++	mmc_init(mmc);
+ 
+-			if (get_partition_info(dev_desc,
+-					CONFIG_ANDROID_CACHE_PARTITION_MMC,
+-					&info)) {
+-				printf("** Bad partition %d **\n",
+-					CONFIG_ANDROID_CACHE_PARTITION_MMC);
+-				return 0;
+-			}
++	if (get_partition_info(dev_desc,
++			part_num,
++			&info)) {
++		printf("** Bad partition %d **\n",
++			part_num);
++		return 0;
++	}
+ 
+-			part_length = ext2fs_set_blk_dev(dev_desc,
+-								CONFIG_ANDROID_CACHE_PARTITION_MMC);
+-			if (part_length == 0) {
+-				printf("** Bad partition - mmc 0:%d **\n",
+-					CONFIG_ANDROID_CACHE_PARTITION_MMC);
+-				ext2fs_close();
+-				return 0;
+-			}
++	part_length = ext2fs_set_blk_dev(dev_desc,
++						part_num);
++	if (part_length == 0) {
++		printf("** Bad partition - mmc 0:%d **\n",
++			part_num);
++		ext2fs_close();
++		return 0;
++	}
+ 
+-			if (!ext2fs_mount(part_length)) {
+-				printf("** Bad ext2 partition or disk - mmc 0:%d **\n",
+-					CONFIG_ANDROID_CACHE_PARTITION_MMC);
+-				ext2fs_close();
+-				return 0;
+-			}
++	if (!ext2fs_mount(part_length)) {
++		printf("** Bad ext2 partition or disk - mmc 0:%d **\n",
++			part_num);
++		ext2fs_close();
++		return 0;
++	}
+ 
+-			filelen = ext2fs_open(CONFIG_ANDROID_RECOVERY_CMD_FILE);
++	filelen = ext2fs_open(path);
+ 
+-			ext2fs_close();
+-		}
+-		break;
+-	case NAND_BOOT:
+-		{
+-			#if 0
+-			struct mtd_device *dev_desc = NULL;
+-			struct part_info *part = NULL;
+-			struct mtd_partition mtd_part;
+-			struct mtd_info *mtd_info;
+-			char mtd_dev[16] = { 0 };
+-			char mtd_buffer[80] = { 0 };
+-			u8 pnum;
+-			int err;
+-			u8 read_test;
+-
+-			/* ========== ubi and mtd operations ========== */
+-			if (mtdparts_init() != 0) {
+-				printf("Error initializing mtdparts!\n");
+-				return 0;
+-			}
++	ext2fs_close();
+ 
+-			if (find_dev_and_part("nand", &dev_desc, &pnum, &part)) {
+-				printf("Partition %s not found!\n", "nand");
+-				return 0;
+-			}
+-			sprintf(mtd_dev, "%s%d",
+-					MTD_DEV_TYPE(dev_desc->id->type),
+-					dev_desc->id->num);
+-			mtd_info = get_mtd_device_nm(mtd_dev);
+-			if (IS_ERR(mtd_info)) {
+-				printf("Partition %s not found on device %s!\n",
+-					"nand", mtd_dev);
+-				return 0;
+-			}
++	return (filelen > 0) ? 1 : 0;
++}
+ 
+-			sprintf(mtd_buffer, "mtd=%d", pnum);
+-			memset(&mtd_part, 0, sizeof(mtd_part));
+-			mtd_part.name = mtd_buffer;
+-			mtd_part.size = part->size;
+-			mtd_part.offset = part->offset;
+-			add_mtd_partitions(&info, &mtd_part, 1);
+-
+-			err = ubi_mtd_param_parse(mtd_buffer, NULL);
+-			if (err) {
+-				del_mtd_partitions(&info);
+-				return 0;
+-			}
++extern int ubifs_init(void);
++extern int ubifs_mount(char *vol_name);
++extern int ubifs_load(char *filename, u32 addr, u32 size);
+ 
+-			err = ubi_init();
+-			if (err) {
+-				del_mtd_partitions(&info);
+-				return 0;
+-			}
++static int check_nand_recovery_cmd_file(char *mtd_part_name,
++				char *ubi_part_name,
++				char *path)
++{
++	struct mtd_device *dev_desc = NULL;
++	struct part_info *part = NULL;
++	struct mtd_partition mtd_part;
++	struct mtd_info *mtd_info = NULL;
++	char mtd_dev[16] = { 0 };
++	char mtd_buffer[80] = { 0 };
++	u8 pnum = 0,
++	   read_test = 0;
++	int err = 0,
++		filelen = 0;
++
++	memset(&mtd_part, 0, sizeof(struct mtd_partition));
++
++	/* ========== ubi and mtd operations ========== */
++	if (mtdparts_init() != 0) {
++		printf("Error initializing mtdparts!\n");
++		return 0;
++	}
+ 
+-			/* ========== ubifs operations ========== */
+-			/* Init ubifs */
+-			ubifs_init();
++	if (find_dev_and_part(mtd_part_name, &dev_desc, &pnum, &part)) {
++		printf("Partition %s not found!\n", mtd_part_name);
++		return 0;
++	}
++	sprintf(mtd_dev, "%s%d",
++			MTD_DEV_TYPE(dev_desc->id->type),
++			dev_desc->id->num);
++	mtd_info = get_mtd_device_nm(mtd_dev);
++	if (IS_ERR(mtd_info)) {
++		printf("Partition %s not found on device %s!\n",
++			"nand", mtd_dev);
++		return 0;
++	}
+ 
+-			if (ubifs_mount(CONFIG_ANDROID_CACHE_PARTITION_NAND)) {
+-				printf("Mount ubifs volume %s fail!\n",
+-						CONFIG_ANDROID_CACHE_PARTITION_NAND);
+-				return 0;
+-			}
++	sprintf(mtd_buffer, "mtd=%d", pnum);
++	memset(&mtd_part, 0, sizeof(mtd_part));
++	mtd_part.name = mtd_buffer;
++	mtd_part.size = part->size;
++	mtd_part.offset = part->offset;
++	add_mtd_partitions(mtd_info, &mtd_part, 1);
+ 
+-			/* Try to read one byte for a read test. */
+-			if (ubifs_load(CONFIG_ANDROID_RECOVERY_CMD_FILE,
+-						&read_test, 1)) {
+-				/* File not found */
+-				filelen = 0;
+-			} else
+-				filelen = 1;
+-		#endif
+-		}
++	err = ubi_mtd_param_parse(mtd_buffer, NULL);
++	if (err) {
++		del_mtd_partitions(mtd_info);
++		return 0;
++	}
++
++	err = ubi_init();
++	if (err) {
++		del_mtd_partitions(mtd_info);
++		return 0;
++	}
++
++	/* ========== ubifs operations ========== */
++	/* Init ubifs */
++	ubifs_init();
++
++	if (ubifs_mount(ubi_part_name)) {
++		printf("Mount ubifs volume %s fail!\n",
++				ubi_part_name);
++		return 0;
++	}
++
++	/* Try to read one byte for a read test. */
++	if (ubifs_load(path, (u32)&read_test, 1)) {
++		/* File not found */
++		filelen = 0;
++	} else
++		filelen = 1;
++
++	return filelen;
++}
++
++static int check_recovery_cmd_file(void)
++{
++	int if_exist;
++	char *env = NULL;
++
++	switch (get_boot_device()) {
++	case MMC_BOOT:
++		if_exist = check_mmc_recovery_cmd_file(0,
++				CONFIG_ANDROID_CACHE_PARTITION_MMC,
++				CONFIG_ANDROID_RECOVERY_CMD_FILE);
++		break;
++	case NAND_BOOT:
++		env = getenv("mtdparts");
++		if (!env)
++			setenv("mtdparts", MTDPARTS_DEFAULT);
++
++		env = getenv("mtdids");
++		if (!env)
++			setenv("mtdids", MTDIDS_DEFAULT);
++
++		env = getenv("partition");
++		if (!env)
++			setenv("partition", MTD_ACTIVE_PART);
++
++		if_exist = check_nand_recovery_cmd_file(CONFIG_ANDROID_UBIFS_PARTITION_NM,
++						CONFIG_ANDROID_CACHE_PARTITION_NAND,
++						CONFIG_ANDROID_RECOVERY_CMD_FILE);
+ 		break;
+ 	case SPI_NOR_BOOT:
+ 		return 0;
+@@ -779,7 +816,7 @@ inline int check_recovery_cmd_file(void)
+ 		break;
+ 	}
+ 
+-	return (filelen > 0) ? 1 : 0;
++	return if_exist;
+ }
+ #endif
+ 
+diff --git a/fs/ubifs/super.c b/fs/ubifs/super.c
+index 391dea4..9efe7cd 100644
+--- a/fs/ubifs/super.c
++++ b/fs/ubifs/super.c
+@@ -1178,6 +1178,7 @@ int ubifs_mount(char *vol_name)
+ 		ubifs_umount(ubifs_sb->s_fs_info);
+ 
+ 	INIT_LIST_HEAD(&ubifs_infos);
++	INIT_LIST_HEAD(&(ubifs_fs_type.fs_supers));
+ 
+ 	/*
+ 	 * Mount in read-only mode
+diff --git a/fs/ubifs/ubifs.c b/fs/ubifs/ubifs.c
+index 8ede188..82f1c54 100644
+--- a/fs/ubifs/ubifs.c
++++ b/fs/ubifs/ubifs.c
+@@ -124,9 +124,13 @@ int ubifs_decompress(const void *in_buf, int in_len, void *out_buf,
+ static int __init compr_init(struct ubifs_compressor *compr)
+ {
+ 	ubifs_compressors[compr->compr_type] = compr;
++
++#ifndef CONFIG_RELOC_FIXUP_WORKS
+ 	ubifs_compressors[compr->compr_type]->name += gd->reloc_off;
+ 	ubifs_compressors[compr->compr_type]->capi_name += gd->reloc_off;
+ 	ubifs_compressors[compr->compr_type]->decompress += gd->reloc_off;
++#endif
++
+ 	return 0;
+ }
+ 
+@@ -379,9 +383,11 @@ static unsigned long ubifs_findfile(struct super_block *sb, char *filename)
+ 	int ret;
+ 	char *next;
+ 	char fpath[128];
++	char symlinkpath[128];
+ 	char *name = fpath;
+ 	unsigned long root_inum = 1;
+ 	unsigned long inum;
++	int symlink_count = 0; /* Don't allow symlink recursion */
+ 
+ 	strcpy(fpath, filename);
+ 
+@@ -397,6 +403,9 @@ static unsigned long ubifs_findfile(struct super_block *sb, char *filename)
+ 		return inum;
+ 
+ 	for (;;) {
++		struct inode *inode;
++		struct ubifs_inode *ui;
++
+ 		/* Extract the actual part from the pathname.  */
+ 		next = strchr(name, '/');
+ 		if (next) {
+@@ -406,18 +415,48 @@ static unsigned long ubifs_findfile(struct super_block *sb, char *filename)
+ 		}
+ 
+ 		ret = ubifs_finddir(sb, name, root_inum, &inum);
++		if (!ret)
++			return 0;
++		inode = ubifs_iget(sb, inum);
++
++		if (!inode)
++			return 0;
++		ui = ubifs_inode(inode);
++
++		if ((inode->i_mode & S_IFMT) == S_IFLNK) {
++			char link_name[64];
++			char buf[128];
++
++			/* We have some sort of symlink recursion, bail out */
++			if (symlink_count++ > 8) {
++				printf("Symlink recursion, aborting\n");
++				return 0;
++			}
++			memcpy(link_name, ui->data, ui->data_len);
++			link_name[ui->data_len] = '\0';
++
++			if (link_name[0] == '/') {
++				/* Absolute path, redo everything without
++				 * the leading slash */
++				next = name = link_name + 1;
++				root_inum = 1;
++				continue;
++			}
++			/* Relative to cur dir */
++			sprintf(buf, "%s/%s",
++					link_name, next == NULL ? "" : next);
++			memcpy(symlinkpath, buf, sizeof(buf));
++			next = name = symlinkpath;
++			continue;
++		}
+ 
+ 		/*
+ 		 * Check if directory with this name exists
+ 		 */
+ 
+ 		/* Found the node!  */
+-		if (!next || *next == '\0') {
+-			if (ret)
+-				return inum;
+-
+-			break;
+-		}
++		if (!next || *next == '\0')
++			return inum;
+ 
+ 		root_inum = inum;
+ 		name = next;
+@@ -614,10 +653,10 @@ int ubifs_load(char *filename, u32 addr, u32 size)
+ 	int err = 0;
+ 	int i;
+ 	int count;
+-	char link_name[64];
+-	struct ubifs_inode *ui;
+ 
+ 	c->ubi = ubi_open_volume(c->vi.ubi_num, c->vi.vol_id, UBI_READONLY);
++	/* ubifs_findfile will resolve symlinks, so we know that we get
++	 * the real file here */
+ 	inum = ubifs_findfile(ubifs_sb, filename);
+ 	if (!inum) {
+ 		err = -1;
+@@ -635,23 +674,6 @@ int ubifs_load(char *filename, u32 addr, u32 size)
+ 	}
+ 
+ 	/*
+-	 * Check for symbolic link
+-	 */
+-	ui = ubifs_inode(inode);
+-	if (((inode->i_mode & S_IFMT) == S_IFLNK) && ui->data_len) {
+-		memcpy(link_name, ui->data, ui->data_len);
+-		link_name[ui->data_len] = '\0';
+-		printf("%s is linked to %s!\n", filename, link_name);
+-		ubifs_iput(inode);
+-
+-		/*
+-		 * Now we have the "real" filename, call ubifs_load()
+-		 * again (recursive call) to load this file instead
+-		 */
+-		return ubifs_load(link_name, addr, size);
+-	}
+-
+-	/*
+ 	 * If no size was specified or if size bigger than filesize
+ 	 * set size to filesize
+ 	 */
+diff --git a/fs/ubifs/ubifs.h b/fs/ubifs/ubifs.h
+index 43865aa..06772af 100644
+--- a/fs/ubifs/ubifs.h
++++ b/fs/ubifs/ubifs.h
+@@ -449,38 +449,6 @@ static inline ino_t parent_ino(struct dentry *dentry)
+ 	return res;
+ }
+ 
+-/* linux/include/linux/bitops.h */
+-
+-#define BIT_MASK(nr)		(1UL << ((nr) % BITS_PER_LONG))
+-#define BIT_WORD(nr)		((nr) / BITS_PER_LONG)
+-
+-/* linux/include/asm-generic/bitops/non-atomic.h */
+-
+-/**
+- * __set_bit - Set a bit in memory
+- * @nr: the bit to set
+- * @addr: the address to start counting from
+- *
+- * Unlike set_bit(), this function is non-atomic and may be reordered.
+- * If it's called on the same region of memory simultaneously, the effect
+- * may be that only one operation succeeds.
+- */
+-static inline void __set_bit(int nr, volatile unsigned long *addr)
+-{
+-	unsigned long mask = BIT_MASK(nr);
+-	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
+-
+-	*p  |= mask;
+-}
+-
+-static inline void __clear_bit(int nr, volatile unsigned long *addr)
+-{
+-	unsigned long mask = BIT_MASK(nr);
+-	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
+-
+-	*p &= ~mask;
+-}
+-
+ /* debug.c */
+ 
+ #define DEFINE_SPINLOCK(...)
+diff --git a/include/asm-arm/bitops.h b/include/asm-arm/bitops.h
+index 4b8bab2..8eeada5 100644
+--- a/include/asm-arm/bitops.h
++++ b/include/asm-arm/bitops.h
+@@ -17,6 +17,8 @@
+ 
+ #ifdef __KERNEL__
+ 
++#include <asm/proc/system.h>
++
+ #define smp_mb__before_clear_bit()	do { } while (0)
+ #define smp_mb__after_clear_bit()	do { } while (0)
+ 
+@@ -25,59 +27,72 @@
+  */
+ extern void set_bit(int nr, volatile void * addr);
+ 
+-static inline void __set_bit(int nr, volatile void *addr)
+-{
+-	((unsigned char *) addr)[nr >> 3] |= (1U << (nr & 7));
+-}
+-
+ extern void clear_bit(int nr, volatile void * addr);
+ 
+-static inline void __clear_bit(int nr, volatile void *addr)
+-{
+-	((unsigned char *) addr)[nr >> 3] &= ~(1U << (nr & 7));
+-}
+-
+ extern void change_bit(int nr, volatile void * addr);
+ 
+ static inline void __change_bit(int nr, volatile void *addr)
+ {
+-	((unsigned char *) addr)[nr >> 3] ^= (1U << (nr & 7));
+-}
++	unsigned long mask = BIT_MASK(nr);
++	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
+ 
+-extern int test_and_set_bit(int nr, volatile void * addr);
++	*p ^= mask;
++}
+ 
+ static inline int __test_and_set_bit(int nr, volatile void *addr)
+ {
+-	unsigned int mask = 1 << (nr & 7);
+-	unsigned int oldval;
++	unsigned long mask = BIT_MASK(nr);
++	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
++	unsigned long old = *p;
+ 
+-	oldval = ((unsigned char *) addr)[nr >> 3];
+-	((unsigned char *) addr)[nr >> 3] = oldval | mask;
+-	return oldval & mask;
++	*p = old | mask;
++	return (old & mask) != 0;
+ }
+ 
+-extern int test_and_clear_bit(int nr, volatile void * addr);
++static inline int test_and_set_bit(int nr, volatile void *addr)
++{
++	unsigned long flags;
++	int out;
++
++	local_irq_save(flags);
++	out = __test_and_set_bit(nr, addr);
++	local_irq_restore(flags);
++
++	return out;
++}
+ 
+ static inline int __test_and_clear_bit(int nr, volatile void *addr)
+ {
+-	unsigned int mask = 1 << (nr & 7);
+-	unsigned int oldval;
++	unsigned long mask = BIT_MASK(nr);
++	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
++	unsigned long old = *p;
+ 
+-	oldval = ((unsigned char *) addr)[nr >> 3];
+-	((unsigned char *) addr)[nr >> 3] = oldval & ~mask;
+-	return oldval & mask;
++	*p = old & ~mask;
++	return (old & mask) != 0;
++}
++
++static inline int test_and_clear_bit(int nr, volatile void *addr)
++{
++	unsigned long flags;
++	int out;
++
++	local_irq_save(flags);
++	out = __test_and_clear_bit(nr, addr);
++	local_irq_restore(flags);
++
++	return out;
+ }
+ 
+ extern int test_and_change_bit(int nr, volatile void * addr);
+ 
+ static inline int __test_and_change_bit(int nr, volatile void *addr)
+ {
+-	unsigned int mask = 1 << (nr & 7);
+-	unsigned int oldval;
++	unsigned long mask = BIT_MASK(nr);
++	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
++	unsigned long old = *p;
+ 
+-	oldval = ((unsigned char *) addr)[nr >> 3];
+-	((unsigned char *) addr)[nr >> 3] = oldval ^ mask;
+-	return oldval & mask;
++	*p = old ^ mask;
++	return (old & mask) != 0;
+ }
+ 
+ extern int find_first_zero_bit(void * addr, unsigned size);
+@@ -110,14 +125,6 @@ static inline unsigned long ffz(unsigned long word)
+ }
+ 
+ /*
+- * ffs: find first bit set. This is defined the same way as
+- * the libc and compiler builtin ffs routines, therefore
+- * differs in spirit from the above ffz (man ffs).
+- */
+-
+-#define ffs(x) generic_ffs(x)
+-
+-/*
+  * hweightN: returns the hamming weight (i.e. the number
+  * of bits set) of a N-bit word
+  */
+diff --git a/include/asm-arm/proc-armv/system.h b/include/asm-arm/proc-armv/system.h
+index e7b0fe6..b4cfa68 100644
+--- a/include/asm-arm/proc-armv/system.h
++++ b/include/asm-arm/proc-armv/system.h
+@@ -12,36 +12,6 @@
+ 
+ #include <linux/config.h>
+ 
+-#define set_cr(x)					\
+-	__asm__ __volatile__(				\
+-	"mcr	p15, 0, %0, c1, c0	@ set CR"	\
+-	: : "r" (x))
+-
+-#define CR_M	(1 << 0)	/* MMU enable				*/
+-#define CR_A	(1 << 1)	/* Alignment abort enable		*/
+-#define CR_C	(1 << 2)	/* Dcache enable			*/
+-#define CR_W	(1 << 3)	/* Write buffer enable			*/
+-#define CR_P	(1 << 4)	/* 32-bit exception handler		*/
+-#define CR_D	(1 << 5)	/* 32-bit data address range		*/
+-#define CR_L	(1 << 6)	/* Implementation defined		*/
+-#define CD_B	(1 << 7)	/* Big endian				*/
+-#define CR_S	(1 << 8)	/* System MMU protection		*/
+-#define CD_R	(1 << 9)	/* ROM MMU protection			*/
+-#define CR_F	(1 << 10)	/* Implementation defined		*/
+-#define CR_Z	(1 << 11)	/* Implementation defined		*/
+-#define CR_I	(1 << 12)	/* Icache enable			*/
+-#define CR_V	(1 << 13)	/* Vectors relocated to 0xffff0000	*/
+-#define CR_RR	(1 << 14)	/* Round Robin cache replacement	*/
+-
+-extern unsigned long cr_no_alignment;	/* defined in entry-armv.S */
+-extern unsigned long cr_alignment;	/* defined in entry-armv.S */
+-
+-#if __LINUX_ARM_ARCH__ >= 4
+-#define vectors_base()	((cr_alignment & CR_V) ? 0xffff0000 : 0)
+-#else
+-#define vectors_base()	(0)
+-#endif
+-
+ /*
+  * Save the current interrupt enable state & disable IRQs
+  */
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index b2fb714..789424e 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -35,6 +35,10 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_FLASH_HEADER     1
++#define CONFIG_FLASH_HEADER_OFFSET 0x400
++#define CONFIG_FLASH_HEADER_BARKER 0xB1
++
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant increase
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index bed1200..ed0611b 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -58,7 +58,7 @@
+ /*
+  * Size of malloc() pool
+  */
+-#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * 1024 * 1024)
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 4 * 1024 * 1024)
+ /* size in bytes reserved for initial data */
+ #define CONFIG_SYS_GBL_DATA_SIZE	128
+ 
+@@ -90,12 +90,17 @@
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_RETRY_COUNT	100
+-/*
++
+ #define CONFIG_CMD_UBI
+ #define CONFIG_CMD_UBIFS
++#define CONFIG_CMD_MTDPARTS
++#define CONFIG_MTD_DEVICE
++#define CONFIG_MTD_PARTITIONS
++#define MTDIDS_DEFAULT "nand0=nand0"
++#define MTDPARTS_DEFAULT "mtdparts=nand0:0x700000@0x0(BOOT),0x100000@0x700000(MISC),0x1400000@0x800000(RECOVERY),-@0x1c00000(ROOT)"
++#define MTD_ACTIVE_PART "nand0,3"
+ #define CONFIG_RBTREE
+ #define CONFIG_LZO
+-*/
+ 
+ /*
+  * Android support Configs
+@@ -125,7 +130,8 @@
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ #define CONFIG_ANDROID_BOOTMOD_DELAY 3
+ #define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
+-#define CONFIG_ANDROID_CACHE_PARTITION_NAND 2
++#define CONFIG_ANDROID_UBIFS_PARTITION_NM  "ROOT"
++#define CONFIG_ANDROID_CACHE_PARTITION_NAND "cache"
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+@@ -172,8 +178,8 @@
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
+ 		"bootcmd_android=run bootargs_base bootargs_android; "	\
+-			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
+-			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
++			"mmc read 0 ${loadaddr} 0x800 0x1280; "	\
++			"mmc read 0 ${rd_loadaddr} 0x2000 0x258; "	\
+ 			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
+ 		"prg_uboot=tftpboot ${loadaddr} ${uboot}; "		\
+ 			"protect off ${uboot_addr} 0xa003ffff; "	\
+diff --git a/include/linux/bitops.h b/include/linux/bitops.h
+index 7d41ae6..e724310 100644
+--- a/include/linux/bitops.h
++++ b/include/linux/bitops.h
+@@ -1,6 +1,7 @@
+ #ifndef _LINUX_BITOPS_H
+ #define _LINUX_BITOPS_H
+ 
++#include <asm/types.h>
+ 
+ /*
+  * ffs: find first bit set. This is defined the same way as
+@@ -37,6 +38,43 @@ static inline int generic_ffs(int x)
+ 	return r;
+ }
+ 
++/**
++ * fls - find last (most-significant) bit set
++ * @x: the word to search
++ *
++ * This is defined the same way as ffs.
++ * Note fls(0) = 0, fls(1) = 1, fls(0x80000000) = 32.
++ */
++static inline int generic_fls(int x)
++{
++	int r = 32;
++
++	if (!x)
++		return 0;
++	if (!(x & 0xffff0000u)) {
++		x <<= 16;
++		r -= 16;
++	}
++	if (!(x & 0xff000000u)) {
++		x <<= 8;
++		r -= 8;
++	}
++	if (!(x & 0xf0000000u)) {
++		x <<= 4;
++		r -= 4;
++	}
++	if (!(x & 0xc0000000u)) {
++		x <<= 2;
++		r -= 2;
++	}
++	if (!(x & 0x80000000u)) {
++		x <<= 1;
++		r -= 1;
++	}
++	return r;
++}
++
++
+ /*
+  * hweightN: returns the hamming weight (i.e. the number
+  * of bits set) of a N-bit word
+@@ -66,7 +104,52 @@ static inline unsigned int generic_hweight8(unsigned int w)
+ 	return (res & 0x0F) + ((res >> 4) & 0x0F);
+ }
+ 
++#define BIT_MASK(nr)		(1UL << ((nr) % BITS_PER_LONG))
++#define BIT_WORD(nr)		((nr) / BITS_PER_LONG)
++
+ #include <asm/bitops.h>
+ 
++/* linux/include/asm-generic/bitops/non-atomic.h */
++
++#ifndef PLATFORM__SET_BIT
++# define __set_bit generic_set_bit
++#endif
++
++#ifndef PLATFORM__CLEAR_BIT
++# define __clear_bit generic_clear_bit
++#endif
++
++#ifndef PLATFORM_FFS
++# define ffs generic_ffs
++#endif
++
++#ifndef PLATFORM_FLS
++# define fls generic_fls
++#endif
++
++/**
++ * __set_bit - Set a bit in memory
++ * @nr: the bit to set
++ * @addr: the address to start counting from
++ *
++ * Unlike set_bit(), this function is non-atomic and may be reordered.
++ * If it's called on the same region of memory simultaneously, the effect
++ * may be that only one operation succeeds.
++ */
++static inline void generic_set_bit(int nr, volatile unsigned long *addr)
++{
++	unsigned long mask = BIT_MASK(nr);
++	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
++
++	*p  |= mask;
++}
++
++static inline void generic_clear_bit(int nr, volatile unsigned long *addr)
++{
++	unsigned long mask = BIT_MASK(nr);
++	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
++
++	*p &= ~mask;
++}
+ 
+ #endif
+-- 
+1.5.4.4
+

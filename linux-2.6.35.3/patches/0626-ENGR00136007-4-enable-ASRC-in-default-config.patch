@@ -1,0 +1,56 @@
+From 63691d00b5c6ac8033a4417609233faeb57840c1 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Wed, 5 Jan 2011 19:48:33 +0800
+Subject: [PATCH] ENGR00136007-4 enable ASRC in default config
+
+Enable ASRC in default config
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    7 ++++---
+ 1 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 7f5de2f..a34d0e1 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Tue Jan  4 14:20:40 2011
++# Wed Jan  5 19:25:13 2011
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -925,8 +925,8 @@ CONFIG_INPUT_KEYBOARD=y
+ # CONFIG_KEYBOARD_STOWAWAY is not set
+ # CONFIG_KEYBOARD_SUNKBD is not set
+ # CONFIG_KEYBOARD_XTKBD is not set
+-CONFIG_KEYBOARD_MPR121=y
+ CONFIG_KEYBOARD_MXC=y
++CONFIG_KEYBOARD_MPR121=y
+ # CONFIG_INPUT_MOUSE is not set
+ # CONFIG_INPUT_JOYSTICK is not set
+ # CONFIG_INPUT_TABLET is not set
+@@ -1232,8 +1232,8 @@ CONFIG_SENSORS_MAX17135=y
+ # CONFIG_SENSORS_LIS3_SPI is not set
+ # CONFIG_SENSORS_LIS3_I2C is not set
+ CONFIG_SENSORS_ISL29003=y
+-CONFIG_MXC_MMA8451=y
+ CONFIG_MXC_MMA8450=y
++CONFIG_MXC_MMA8451=y
+ # CONFIG_THERMAL is not set
+ CONFIG_WATCHDOG=y
+ CONFIG_WATCHDOG_NOWAYOUT=y
+@@ -2096,6 +2096,7 @@ CONFIG_MXC_VPU=y
+ #
+ # MXC Asynchronous Sample Rate Converter support
+ #
++CONFIG_MXC_ASRC=y
+ 
+ #
+ # MXC Bluetooth support
+-- 
+1.5.4.4
+

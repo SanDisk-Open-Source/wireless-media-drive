@@ -1,0 +1,37 @@
+From a0a87ab3b49c4529674a63b096dd65d17a602364 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Thu, 13 Jan 2011 14:34:36 +0800
+Subject: [PATCH] ENGR00137932 SATA AHCI Built in SATA driver
+
+Build the SATA AHCI driver in kernel Image.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index fa4ea79..997e26d 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -764,7 +764,7 @@ CONFIG_SCSI_LOWLEVEL=y
+ # CONFIG_SCSI_DEBUG is not set
+ # CONFIG_SCSI_DH is not set
+ # CONFIG_SCSI_OSD_INITIATOR is not set
+-CONFIG_ATA=m
++CONFIG_ATA=y
+ # CONFIG_ATA_NONSTANDARD is not set
+ CONFIG_ATA_VERBOSE_ERROR=y
+ # CONFIG_SATA_PMP is not set
+@@ -772,7 +772,7 @@ CONFIG_ATA_VERBOSE_ERROR=y
+ #
+ # Controllers with non-SFF native interface
+ #
+-CONFIG_SATA_AHCI_PLATFORM=m
++CONFIG_SATA_AHCI_PLATFORM=y
+ CONFIG_ATA_SFF=y
+ 
+ #
+-- 
+1.5.4.4
+

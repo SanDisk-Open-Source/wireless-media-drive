@@ -1,0 +1,134 @@
+From b238637c05324a1ff5d16add1ae4bcfb587887dc Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 8 Jan 2010 15:40:17 +0800
+Subject: [PATCH] ENGR00119894: Read right value in mxc_i2c
+
+The value read from mxc_i2c is not complete.
+The last byte is lost.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/mx51_3stack.c |    7 +++++--
+ drivers/i2c/mxc_i2c.c                     |    4 ++--
+ include/configs/mx51_3stack.h             |   21 ++++++++++++++++++---
+ include/configs/mx51_3stack_android.h     |    3 ++-
+ 4 files changed, 27 insertions(+), 8 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 0ed1ccb..e70234a 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -961,8 +961,11 @@ int board_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
+ #if defined(CONFIG_SMC911X)
+-	 rc = smc911x_initialize(0, CONFIG_SMC911X_BASE);
++	rc = smc911x_initialize(0, CONFIG_SMC911X_BASE);
+ #endif
++
++	cpu_eth_init(bis);
++
+ 	return rc;
+ }
+ #endif
+diff --git a/drivers/i2c/mxc_i2c.c b/drivers/i2c/mxc_i2c.c
+index eb3460e..6732b41 100644
+--- a/drivers/i2c/mxc_i2c.c
++++ b/drivers/i2c/mxc_i2c.c
+@@ -3,7 +3,7 @@
+  *
+  * (c) 2007 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
+  *
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -257,7 +257,7 @@ int i2c_read(uchar chip, uint addr, int alen, uchar *buf, int len)
+ 	ret = __REG16(I2C_BASE + I2DR);
+ 
+ 	while (len--) {
+-		if (len == 1)
++		if (len == 0)
+ 			__REG16(I2C_BASE + I2CR) = I2CR_IEN | I2CR_MSTA |
+ 			    I2CR_TX_NO_AK;
+ 
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 3cecd58..fd7116c 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX51-3Stack Freescale board.
+  *
+@@ -93,8 +93,6 @@
+ #undef CONFIG_CMD_IMLS
+ #define CONFIG_CMD_MII
+ #define CONFIG_CMD_NET
+-#define CONFIG_NET_RETRY_COUNT	100
+-#define CONFIG_NET_MULTI
+ #define CONFIG_CMD_MMC
+ 
+ /*
+@@ -118,6 +116,23 @@
+ #define CONFIG_SYS_I2C_SPEED            400000
+ #define CONFIG_SYS_I2C_SLAVE            0xfe
+ 
++/*
++ * Eth Configs
++ */
++#define CONFIG_HAS_ETH1
++#define CONFIG_ETHPRIME
++#define CONFIG_NET_RETRY_COUNT	100
++#define CONFIG_NET_MULTI
++#define CONFIG_MXC_FEC
++#define CONFIG_MII
++#define CONFIG_DISCOVER_PHY
++
++#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
++#define CONFIG_FEC0_PINMUX	-1
++#define CONFIG_FEC0_PHY_ADDR	0x1F
++#define CONFIG_FEC0_MIIBASE 	-1
++
++
+ #define CONFIG_BOOTDELAY	3
+ 
+ #define CONFIG_LOADADDR		0x90800000	/* loadaddr env var */
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index 53dd409..6d10c2a 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX51-3Stack Freescale board.
+  *
+@@ -212,6 +212,7 @@
+  */
+ #define CONFIG_HAS_ETH1
+ #define CONFIG_NET_MULTI 1
++#define CONFIG_ETHPRIME
+ #define CONFIG_MXC_FEC
+ #define CONFIG_MII
+ #define CONFIG_DISCOVER_PHY
+-- 
+1.5.4.4
+

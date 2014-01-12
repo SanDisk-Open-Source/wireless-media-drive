@@ -1,0 +1,29 @@
+From cc04b22102d7920d84b0a66c596ef7daa0cd4984 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Tue, 31 Aug 2010 00:34:44 +0800
+Subject: [PATCH] ENGR00126807 Fix Lan9217 network failure issue
+
+Network failure due to CSPI common code change, so needs to change
+cpld_cspi mode, too.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/mach-mx25/mx25_3stack.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx25/mx25_3stack.c b/arch/arm/mach-mx25/mx25_3stack.c
+index aa9169e..12b86c8 100644
+--- a/arch/arm/mach-mx25/mx25_3stack.c
++++ b/arch/arm/mach-mx25/mx25_3stack.c
+@@ -318,7 +318,7 @@ static struct spi_board_info mxc_spi_board_info[] __initdata = {
+ 	 .max_speed_hz = 18000000,
+ 	 .bus_num = 1,
+ 	 .chip_select = 0,
+-	 .mode = SPI_MODE_2,
++	 .mode = SPI_MODE_0,
+ 	 },
+ 	{
+ 	 .modalias = "wm8580_spi",
+-- 
+1.5.4.4
+

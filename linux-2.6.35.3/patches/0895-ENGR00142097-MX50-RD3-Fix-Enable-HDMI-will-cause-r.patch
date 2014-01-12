@@ -1,0 +1,48 @@
+From 6cb3285542eb67c00b9ef5248e34db82257da3d4 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Wed, 20 Apr 2011 13:48:47 +0800
+Subject: [PATCH] ENGR00142097 MX50 RD3: Fix: Enable HDMI will cause reboot failure
+
+On PoR(Power-On-Reset), the issue does not exist; only on WDog Reset
+(for example, issue "reboot" command in Linux) this issue happens,
+and kernel stops at HDMI reset.
+
+Note that PoR will reset IOMUX setting, but WDog Reset will
+not reset IOMUX. However, WDog Reset will reset GPIO setting(as INPUT).
+
+With this fact in mind, we can explain the reason much more easily.
+It seems that SI2312BDS supposes EIM_RW to be always high to work well.
+On WDog reset, the EIM_RW is set as GPIO INPUT which causes 1V2_HDMI to
+output 0.0V. Even HDMI driver sets EIM_RW as GPIO OUTPUT High which causes
+1V2_HDMI to output 1.2V, HDMI reset does not work well.
+
+This reality shows that a LOW-HIGH timing causes SI2312BDS not work well.
+Instead a HIGH-LOW-HIGH timing appears to be needed to get a stable output.
+Actually, on PoR, the EIM_RW (GPIO to control HDMI power) is set as
+default MUX_MODE 0, which causes 1V2_HDMI outputs 1.2V. In this case,
+the timing meets HIGH-LOW-HIGH, HDMI reset works well.
+So similarly, we need pull EIM_RW high to 1V2_HDMI output high firstly
+in driver to achieve HIGH-LOW-HIGH timing.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 6f4255a..56729fb 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1861,7 +1861,8 @@ static void __init mx50_rdp_io_init(void)
+ 	gpio_request(HDMI_RESET, "hdmi-reset");
+ 	gpio_direction_output(HDMI_RESET, 1);
+ 	gpio_request(HDMI_PWR_ENABLE, "hdmi-pwr-enable");
+-	gpio_direction_output(HDMI_PWR_ENABLE, 0);
++	gpio_direction_output(HDMI_PWR_ENABLE, 1);
++	gpio_set_value(HDMI_PWR_ENABLE, 0);
+ 	gpio_request(HDMI_DETECT, "hdmi-detect");
+ 	gpio_direction_input(HDMI_DETECT);
+ 
+-- 
+1.5.4.4
+

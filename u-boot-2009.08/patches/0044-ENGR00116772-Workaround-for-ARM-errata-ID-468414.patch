@@ -1,0 +1,50 @@
+From 34bc4951031059ccac23bf13fe261804f075880a Mon Sep 17 00:00:00 2001
+From: Jason <r64343@freescale.com>
+Date: Mon, 2 Nov 2009 14:26:36 +0800
+Subject: [PATCH] ENGR00116772 Workaround for ARM errata ID #468414
+
+Workaround for ARM errata ID #468414, This erratum is
+referenced in ARM Core Cortex-A8 Errata Notice [1], ID 468414.
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+(cherry picked from commit 549c17b69a5052c61a979ba679bd1dbd33a4153d)
+---
+ board/freescale/mx51_3stack/lowlevel_init.S |    5 +++++
+ board/freescale/mx51_bbg/lowlevel_init.S    |    5 +++++
+ 2 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/lowlevel_init.S b/board/freescale/mx51_3stack/lowlevel_init.S
+index f42cb6e..1710b88 100644
+--- a/board/freescale/mx51_3stack/lowlevel_init.S
++++ b/board/freescale/mx51_3stack/lowlevel_init.S
+@@ -274,6 +274,11 @@ lowlevel_init:
+ #endif
+ 	mcr 15, 0, r0, c7, c10, 4       /* Drain the write buffer */
+ 
++	/* ARM errata ID #468414 */
++	mrc 15, 0, r1, c1, c0, 1
++	orr r1, r1, #(1 << 5)    /* enable L1NEON bit */
++	mcr 15, 0, r1, c1, c0, 1
++
+ 	init_l2cc
+ 
+ 	init_aips
+diff --git a/board/freescale/mx51_bbg/lowlevel_init.S b/board/freescale/mx51_bbg/lowlevel_init.S
+index b937067..cad0f1c 100644
+--- a/board/freescale/mx51_bbg/lowlevel_init.S
++++ b/board/freescale/mx51_bbg/lowlevel_init.S
+@@ -292,6 +292,11 @@ lowlevel_init:
+ 	msr spsr, r1            /* restore old spsr */
+ #endif
+ 
++	/* ARM errata ID #468414 */
++	mrc 15, 0, r1, c1, c0, 1
++	orr r1, r1, #(1 << 5)    /* enable L1NEON bit */
++	mcr 15, 0, r1, c1, c0, 1
++
+ 	init_l2cc
+ 
+ 	init_aips
+-- 
+1.5.4.4
+

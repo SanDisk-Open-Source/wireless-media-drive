@@ -1,0 +1,102 @@
+From 1f968a4a552a22ffa0622da67781efeae4c1cddc Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 16 Nov 2010 09:46:01 +0800
+Subject: [PATCH] ENGR00133702-2 usb host1: Add usb host1 low power and wakeup support for mx28
+
+Driver part
+
+Add usb low power and wakeup support for mx28 usb1, in that means,
+when the usb h1 is not in used, the host1 will close
+usb core and phy's clock. When an usb activity happens,
+the usb can be wakeup from low power mode.
+
+Meanwhile, the usb host1 can also be system
+wakeup source through sys entry like other platforms.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |    2 +-
+ drivers/usb/host/ehci-arc.c     |   14 +++++++++-----
+ include/linux/fsl_devices.h     |    4 ++--
+ 3 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 9b400ba..987110b 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -319,7 +319,7 @@ static void dr_phy_low_power_mode(struct fsl_udc *udc, bool enable)
+ 	u32 portsc;
+ 
+ 	if (pdata && pdata->phy_lowpower_suspend) {
+-		pdata->phy_lowpower_suspend(enable);
++		pdata->phy_lowpower_suspend(pdata, enable);
+ 	} else {
+ 		if (enable) {
+ 			portsc = fsl_readl(&dr_regs->portsc1);
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index 090bcfb..81583a0 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -35,10 +35,10 @@ static void fsl_usb_lowpower_mode(struct fsl_usb2_platform_data *pdata, bool ena
+ {
+ 	if (enable) {
+ 		if (pdata->phy_lowpower_suspend)
+-			pdata->phy_lowpower_suspend(true);
++			pdata->phy_lowpower_suspend(pdata, true);
+ 	} else {
+ 		if (pdata->phy_lowpower_suspend)
+-			pdata->phy_lowpower_suspend(false);
++			pdata->phy_lowpower_suspend(pdata, false);
+ 	}
+ 	pdata->lowpower = enable;
+ }
+@@ -128,6 +128,7 @@ static irqreturn_t ehci_fsl_pre_irq(int irq, void *dev)
+ 		if (pdata->irq_delay)
+ 			return IRQ_NONE;
+ 		if (pdata->wakeup_event) {
++			pr_debug("%s\n", __func__);
+ 			usb_host_set_wakeup(hcd->self.controller, false);
+ 			fsl_usb_lowpower_mode(pdata, false);
+ 			set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+@@ -388,8 +389,6 @@ static int ehci_fsl_bus_suspend(struct usb_hcd *hcd)
+ 		return 0;
+ 	}
+ 
+-	pr_debug("%s, it is the host mode, %s\n", __func__, pdata->name);
+-
+ 	ehci_bus_suspend(hcd);
+ 
+ 	if (pdata->platform_suspend)
+@@ -421,7 +420,12 @@ static int ehci_fsl_bus_resume(struct usb_hcd *hcd)
+ 
+ 	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
+ 		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
+-		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++		if (!pdata->wakeup_event) {
++			/* The usb interrupt is still not occurred,
++			   but the clock opens at wakeup routine
++			 */
++			fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++		}
+ 		usb_host_set_wakeup(hcd->self.controller, false);
+ 		fsl_usb_lowpower_mode(pdata, false);
+ 	}
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index e683083..d1faf3a 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -90,9 +90,9 @@ struct fsl_usb2_platform_data {
+ 	void (*platform_suspend)(struct fsl_usb2_platform_data *);
+ 	void (*platform_resume)(struct fsl_usb2_platform_data *);
+ 	void (*wake_up_enable)(struct fsl_usb2_platform_data *pdata, bool on);
+-	void (*phy_lowpower_suspend)(bool);
++	void (*phy_lowpower_suspend)(struct fsl_usb2_platform_data *pdata, bool on);
+ 	void (*platform_driver_vbus)(bool on); /* platform special function for vbus shutdown/open */
+-	bool (*is_wakeup_event)(void);
++	bool (*is_wakeup_event)(struct fsl_usb2_platform_data *pdata);
+ 	unsigned			big_endian_mmio:1;
+ 	unsigned			big_endian_desc:1;
+ 	unsigned			es:1;	/* need USBMODE:ES */
+-- 
+1.5.4.4
+

@@ -1,0 +1,40 @@
+From 639c9b090d312b0ef4867a8e2d56035d612d6551 Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Fri, 17 Dec 2010 17:23:38 +0800
+Subject: [PATCH] ENGR00137080 USB: fix usb device can't work on MX53 board
+
+Set USB VBUS on when host only controller probed. Only DR OTG host
+doesn't set vbus on when platform driver probed.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ drivers/usb/host/ehci-arc.c |    6 ++----
+ 1 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index 615e765..bc719df 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -240,9 +240,6 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 	if (retval != 0)
+ 		goto err5;
+ 
+-#if (!defined CONFIG_USB_OTG)
+-	fsl_platform_set_vbus_power(pdata, 1);
+-#endif
+ 	if (pdata->operating_mode == FSL_USB2_DR_OTG) {
+ 		struct ehci_hcd *ehci = hcd_to_ehci(hcd);
+ 
+@@ -260,7 +257,8 @@ int usb_hcd_fsl_probe(const struct hc_driver *driver,
+ 		retval = otg_set_host(ehci->transceiver, &ehci_to_hcd(ehci)->self);
+ 		if (retval)
+ 			otg_put_transceiver(ehci->transceiver);
+-	}
++	} else if (pdata->operating_mode == FSL_USB2_MPH_HOST)
++		fsl_platform_set_vbus_power(pdata, 1);
+ 
+ 	if (pdata->suspended) {
+ 		pdata->suspended = 0;
+-- 
+1.5.4.4
+

@@ -1,0 +1,3000 @@
+From aca6f560d03a0780d4713e1f458e132bec28f37b Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 8 Mar 2010 17:12:51 +0800
+Subject: [PATCH] ENGR00121379: MX28 U-BOOT enhancements
+
+MX28 U-BOOT enhancements.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ Makefile                                 |    4 +-
+ board/freescale/mx28/Makefile            |   52 --
+ board/freescale/mx28/config.mk           |    6 -
+ board/freescale/mx28/lowlevel_init.S     |   34 --
+ board/freescale/mx28/mx28.c              |  133 ------
+ board/freescale/mx28/u-boot.lds          |   51 --
+ board/freescale/mx28_evk/Makefile        |   52 ++
+ board/freescale/mx28_evk/config.mk       |    6 +
+ board/freescale/mx28_evk/lowlevel_init.S |   36 ++
+ board/freescale/mx28_evk/mx28_evk.c      |  132 ++++++
+ board/freescale/mx28_evk/u-boot.lds      |   51 ++
+ cpu/arm926ejs/mx28/generic.c             |  132 ++++--
+ cpu/arm926ejs/mx28/mmcops.c              |   50 +--
+ cpu/arm926ejs/mx28/pinctrl.c             |    1 -
+ cpu/arm926ejs/mx28/serial.c              |    3 +-
+ cpu/arm926ejs/mx28/spi.c                 |  255 ----------
+ cpu/arm926ejs/mx28/timer.c               |    1 -
+ drivers/mmc/imx_ssp_mmc.c                |    3 +-
+ drivers/net/Makefile                     |    1 -
+ drivers/net/mxc_enet.c                   |  742 ------------------------------
+ drivers/net/mxc_fec.c                    |   29 ++
+ include/asm-arm/arch-mx28/clkctrl.h      |   64 ---
+ include/asm-arm/arch-mx28/dbguart.h      |   30 --
+ include/asm-arm/arch-mx28/mx28.h         |   11 +
+ include/asm-arm/arch-mx28/ocotp.h        |   69 ---
+ include/asm-arm/arch-mx28/pinmux.h       |   42 --
+ include/asm-arm/arch-mx28/spi.h          |   69 ---
+ include/asm-arm/arch-mx28/ssp.h          |  100 ----
+ include/asm-arm/arch-mx28/timrot.h       |   63 ---
+ include/asm-arm/fec.h                    |    6 +
+ include/configs/mx28.h                   |  190 --------
+ include/configs/mx28_evk.h               |  140 ++++++
+ 32 files changed, 572 insertions(+), 1986 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index b2c0f3f..2437539 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3210,8 +3210,8 @@ apollon_config		: unconfig
+ mx25_3stack_config	:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx25_3stack freescale mx25
+ 
+-mx28_config : unconfig
+-	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx28 freescale mx28
++mx28_evk_config : unconfig
++	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx28_evk freescale mx28
+ 
+ imx31_litekit_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 imx31_litekit NULL mx31
+diff --git a/board/freescale/mx28/Makefile b/board/freescale/mx28/Makefile
+deleted file mode 100644
+index 5460fcb..0000000
+--- a/board/freescale/mx28/Makefile
++++ /dev/null
+@@ -1,52 +0,0 @@
+-#
+-# (C) Copyright 2000-2006
+-# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+-#
+-# See file CREDITS for list of people who contributed to this
+-# project.
+-#
+-# This program is free software; you can redistribute it and/or
+-# modify it under the terms of the GNU General Public License as
+-# published by the Free Software Foundation; either version 2 of
+-# the License, or (at your option) any later version.
+-#
+-# This program is distributed in the hope that it will be useful,
+-# but WITHOUT ANY WARRANTY; without even the implied warranty of
+-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-# GNU General Public License for more details.
+-#
+-# You should have received a copy of the GNU General Public License
+-# along with this program; if not, write to the Free Software
+-# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+-# MA 02111-1307 USA
+-#
+-
+-include $(TOPDIR)/config.mk
+-
+-LIB	= $(obj)lib$(BOARD).a
+-
+-COBJS	:= mx28.o
+-SOBJS	:= lowlevel_init.o
+-
+-SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
+-OBJS	:= $(addprefix $(obj),$(COBJS))
+-SOBJS	:= $(addprefix $(obj),$(SOBJS))
+-
+-$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
+-	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
+-
+-clean:
+-	rm -f $(SOBJS) $(OBJS)
+-
+-distclean:	clean
+-	rm -f $(LIB) core *.bak $(obj).depend
+-
+-#########################################################################
+-
+-# defines $(obj).depend target
+-include $(SRCTREE)/rules.mk
+-
+-sinclude $(obj).depend
+-
+-#########################################################################
+-
+diff --git a/board/freescale/mx28/config.mk b/board/freescale/mx28/config.mk
+deleted file mode 100644
+index 7b57ec3..0000000
+--- a/board/freescale/mx28/config.mk
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#
+-# image should be loaded at 0x41008000
+-#
+-LDSCRIPT := $(SRCTREE)/board/$(VENDOR)/$(BOARD)/u-boot.lds
+-
+-TEXT_BASE = 0x41008000
+diff --git a/board/freescale/mx28/lowlevel_init.S b/board/freescale/mx28/lowlevel_init.S
+deleted file mode 100644
+index e874e4f..0000000
+--- a/board/freescale/mx28/lowlevel_init.S
++++ /dev/null
+@@ -1,34 +0,0 @@
+-/*
+- * Board specific setup info
+- *
+- * (C) Copyright 2003, ARM Ltd.
+- * Philippe Robin, <philippe.robin@arm.com>
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#include <config.h>
+-#include <version.h>
+-
+-/* Set up the platform, once the cpu has been initialized */
+-.globl lowlevel_init
+-lowlevel_init:
+-
+-	/* All SDRAM settings are done by sdram_prep */
+-	mov pc, lr
+diff --git a/board/freescale/mx28/mx28.c b/board/freescale/mx28/mx28.c
+deleted file mode 100644
+index 1d22de0..0000000
+--- a/board/freescale/mx28/mx28.c
++++ /dev/null
+@@ -1,133 +0,0 @@
+-/*
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#include <common.h>
+-#include <asm/arch/mx28.h>
+-#include <asm/arch/regs-pinctrl.h>
+-#include <asm/arch/pinctrl.h>
+-
+-/* This should be removed after it's added into mach-types.h */
+-#ifndef MACH_TYPE_MX28EVK
+-#define MACH_TYPE_MX28EVK	2531
+-#endif
+-
+-DECLARE_GLOBAL_DATA_PTR;
+-
+-/* MMC pins */
+-static struct pin_desc mmc_pins_desc[] = {
+-	{ PINID_SSP0_DATA0, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA1, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA2, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA3, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA4, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA5, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA6, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DATA7, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_CMD, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DETECT, PIN_FUN1, PAD_12MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_SCK, PIN_FUN1, PAD_12MA, PAD_3V3, 1 }
+-};
+-
+-static struct pin_group mmc_pins = {
+-	.pins		= mmc_pins_desc,
+-	.nr_pins	= ARRAY_SIZE(mmc_pins_desc)
+-};
+-
+-/* ENET pins */
+-static struct pin_desc enet_pins_desc[] = {
+-	{ PINID_ENET0_MDC, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_MDIO, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_RX_EN, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_RXD0, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_RXD1, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_TX_EN, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_TXD0, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET0_TXD1, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_ENET_CLK, PIN_FUN1, PAD_8MA, PAD_3V3, 1 }
+-};
+-
+-static struct pin_group enet_pins = {
+-	.pins		= enet_pins_desc,
+-	.nr_pins	= ARRAY_SIZE(enet_pins_desc)
+-};
+-
+-/*
+- * Functions
+- */
+-int board_init(void)
+-{
+-	/* Will change it for MX28 EVK later */
+-	gd->bd->bi_arch_number = MACH_TYPE_MX28EVK;
+-	/* Adress of boot parameters */
+-	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
+-
+-	return 0;
+-}
+-
+-int dram_init(void)
+-{
+-	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+-	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
+-
+-	return 0;
+-}
+-
+-u32 ssp_mmc_is_wp(void)
+-{
+-	return pin_gpio_get(PINID_SSP1_SCK);
+-}
+-
+-void ssp_mmc_board_init(void)
+-{
+-	/* Set up MMC pins */
+-	pin_set_group(&mmc_pins);
+-
+-	/* Power on the card slot */
+-	pin_set_type(PINID_PWM3, PIN_GPIO);
+-	pin_gpio_direction(PINID_PWM3, 1);
+-	pin_gpio_set(PINID_PWM3, 0);
+-
+-	/* Wait 10 ms for card ramping up */
+-	udelay(10000);
+-
+-	/* Set up WP pin */
+-	pin_set_type(PINID_SSP1_SCK, PIN_GPIO);
+-	pin_gpio_direction(PINID_SSP1_SCK, 0);
+-}
+-
+-void enet_board_init(void)
+-{
+-	/* Set up ENET pins */
+-	pin_set_group(&enet_pins);
+-
+-	/* Power on the external phy */
+-	pin_set_type(PINID_SSP1_DATA3, PIN_GPIO);
+-	pin_gpio_direction(PINID_SSP1_DATA3, 1);
+-	pin_gpio_set(PINID_SSP1_DATA3, 0);
+-
+-	/* Reset the external phy */
+-	pin_set_type(PINID_ENET0_RX_CLK, PIN_GPIO);
+-	pin_gpio_direction(PINID_ENET0_RX_CLK, 1);
+-	pin_gpio_set(PINID_ENET0_RX_CLK, 0);
+-	udelay(200);
+-	pin_gpio_set(PINID_ENET0_RX_CLK, 1);
+-}
+diff --git a/board/freescale/mx28/u-boot.lds b/board/freescale/mx28/u-boot.lds
+deleted file mode 100644
+index b7efe6d..0000000
+--- a/board/freescale/mx28/u-boot.lds
++++ /dev/null
+@@ -1,51 +0,0 @@
+-/*
+- * (C) Copyright 2002
+- * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
+-OUTPUT_ARCH(arm)
+-ENTRY(_start)
+-SECTIONS
+-{
+-	. = 0x00000000;
+-	. = ALIGN(4);
+-	.text	:
+-	{
+-	  cpu/arm926ejs/start.o (.text)
+-	  *(.text)
+-	}
+-	.rodata : { *(.rodata) }
+-	. = ALIGN(4);
+-	.data : { *(.data) }
+-	. = ALIGN(4);
+-	.got : { *(.got) }
+-
+-	. = .;
+-	__u_boot_cmd_start = .;
+-	.u_boot_cmd : { *(.u_boot_cmd) }
+-	__u_boot_cmd_end = .;
+-
+-	. = ALIGN(4);
+-	__bss_start = .;
+-	.bss (NOLOAD) : { *(.bss) }
+-	_end = .;
+-}
+diff --git a/board/freescale/mx28_evk/Makefile b/board/freescale/mx28_evk/Makefile
+new file mode 100644
+index 0000000..312bd63
+--- /dev/null
++++ b/board/freescale/mx28_evk/Makefile
+@@ -0,0 +1,52 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= mx28_evk.o
++SOBJS	:= lowlevel_init.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
++
+diff --git a/board/freescale/mx28_evk/config.mk b/board/freescale/mx28_evk/config.mk
+new file mode 100644
+index 0000000..7b57ec3
+--- /dev/null
++++ b/board/freescale/mx28_evk/config.mk
+@@ -0,0 +1,6 @@
++#
++# image should be loaded at 0x41008000
++#
++LDSCRIPT := $(SRCTREE)/board/$(VENDOR)/$(BOARD)/u-boot.lds
++
++TEXT_BASE = 0x41008000
+diff --git a/board/freescale/mx28_evk/lowlevel_init.S b/board/freescale/mx28_evk/lowlevel_init.S
+new file mode 100644
+index 0000000..1c62a31
+--- /dev/null
++++ b/board/freescale/mx28_evk/lowlevel_init.S
+@@ -0,0 +1,36 @@
++/*
++ * Board specific setup info
++ *
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * (C) Copyright 2003, ARM Ltd.
++ * Philippe Robin, <philippe.robin@arm.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <version.h>
++
++/* Set up the platform, once the cpu has been initialized */
++.globl lowlevel_init
++lowlevel_init:
++
++	/* All SDRAM settings are done by sdram_prep */
++	mov pc, lr
+diff --git a/board/freescale/mx28_evk/mx28_evk.c b/board/freescale/mx28_evk/mx28_evk.c
+new file mode 100644
+index 0000000..8466a1e
+--- /dev/null
++++ b/board/freescale/mx28_evk/mx28_evk.c
+@@ -0,0 +1,132 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/regs-pinctrl.h>
++#include <asm/arch/pinctrl.h>
++
++/* This should be removed after it's added into mach-types.h */
++#ifndef MACH_TYPE_MX28EVK
++#define MACH_TYPE_MX28EVK	2531
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++/* MMC pins */
++static struct pin_desc mmc_pins_desc[] = {
++	{ PINID_SSP0_DATA0, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA1, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA2, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA3, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA4, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA5, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA6, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DATA7, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_CMD, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DETECT, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_SCK, PIN_FUN1, PAD_8MA, PAD_3V3, 1 }
++};
++
++static struct pin_group mmc_pins = {
++	.pins		= mmc_pins_desc,
++	.nr_pins	= ARRAY_SIZE(mmc_pins_desc)
++};
++
++/* ENET pins */
++static struct pin_desc enet_pins_desc[] = {
++	{ PINID_ENET0_MDC, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_MDIO, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_RX_EN, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_RXD0, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_RXD1, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_TX_EN, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_TXD0, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET0_TXD1, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_ENET_CLK, PIN_FUN1, PAD_8MA, PAD_3V3, 1 }
++};
++
++static struct pin_group enet_pins = {
++	.pins		= enet_pins_desc,
++	.nr_pins	= ARRAY_SIZE(enet_pins_desc)
++};
++
++/*
++ * Functions
++ */
++int board_init(void)
++{
++	/* Will change it for MX28 EVK later */
++	gd->bd->bi_arch_number = MACH_TYPE_MX28EVK;
++	/* Adress of boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM_1 + 0x100;
++
++	return 0;
++}
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++
++	return 0;
++}
++
++u32 ssp_mmc_is_wp(void)
++{
++	return pin_gpio_get(PINID_SSP1_SCK);
++}
++
++void ssp_mmc_board_init(void)
++{
++	/* Set up MMC pins */
++	pin_set_group(&mmc_pins);
++
++	/* Power on the card slot */
++	pin_set_type(PINID_PWM3, PIN_GPIO);
++	pin_gpio_direction(PINID_PWM3, 1);
++	pin_gpio_set(PINID_PWM3, 0);
++
++	/* Wait 10 ms for card ramping up */
++	udelay(10000);
++
++	/* Set up WP pin */
++	pin_set_type(PINID_SSP1_SCK, PIN_GPIO);
++	pin_gpio_direction(PINID_SSP1_SCK, 0);
++}
++
++void enet_board_init(void)
++{
++	/* Set up ENET pins */
++	pin_set_group(&enet_pins);
++
++	/* Power on the external phy */
++	pin_set_type(PINID_SSP1_DATA3, PIN_GPIO);
++	pin_gpio_direction(PINID_SSP1_DATA3, 1);
++	pin_gpio_set(PINID_SSP1_DATA3, 0);
++
++	/* Reset the external phy */
++	pin_set_type(PINID_ENET0_RX_CLK, PIN_GPIO);
++	pin_gpio_direction(PINID_ENET0_RX_CLK, 1);
++	pin_gpio_set(PINID_ENET0_RX_CLK, 0);
++	udelay(200);
++	pin_gpio_set(PINID_ENET0_RX_CLK, 1);
++}
+diff --git a/board/freescale/mx28_evk/u-boot.lds b/board/freescale/mx28_evk/u-boot.lds
+new file mode 100644
+index 0000000..b7efe6d
+--- /dev/null
++++ b/board/freescale/mx28_evk/u-boot.lds
+@@ -0,0 +1,51 @@
++/*
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++	. = ALIGN(4);
++	.text	:
++	{
++	  cpu/arm926ejs/start.o (.text)
++	  *(.text)
++	}
++	.rodata : { *(.rodata) }
++	. = ALIGN(4);
++	.data : { *(.data) }
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss (NOLOAD) : { *(.bss) }
++	_end = .;
++}
+diff --git a/cpu/arm926ejs/mx28/generic.c b/cpu/arm926ejs/mx28/generic.c
+index 6ac75e0..82929d5 100644
+--- a/cpu/arm926ejs/mx28/generic.c
++++ b/cpu/arm926ejs/mx28/generic.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -22,83 +22,120 @@
+ 
+ #include <common.h>
+ #include <asm/errno.h>
+-#include <asm/arch/mx28.h>
+ #include <asm/arch/regs-clkctrl.h>
++#include <asm/cache-cp15.h>
++#include <asm/fec.h>
+ 
+-#if defined(CONFIG_ARCH_CPU_INIT)
+-int arch_cpu_init(void)
+-{
+-	icache_enable();
+-	dcache_enable();
+-	return 0;
+-}
+-#endif
+-
+-#if defined(CONFIG_DISPLAY_CPUINFO)
+-int print_cpuinfo(void)
++static u32 mx28_get_pclk(void)
+ {
+ 	const u32 xtal = 24, ref = 480;
+-	u32 cpu, bus, emi;
+-	u32 clkfrac, clkdeq, clkctrl;
++	u32 clkfrac, clkseq, clkctrl;
+ 	u32 frac, div;
++	u32 pclk;
+ 
+ 	clkfrac = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_FRAC0);
+-	clkdeq = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_CLKSEQ);
+-
+-	/* CPU */
++	clkseq = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_CLKSEQ);
+ 	clkctrl = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_CPU);
++
+ 	if (clkctrl & (BM_CLKCTRL_CPU_DIV_XTAL_FRAC_EN |
+ 		BM_CLKCTRL_CPU_DIV_CPU_FRAC_EN)) {
+ 		/* No support of fractional divider calculation */
+-		cpu = 0;
++		pclk = 0;
+ 	} else {
+-		if (clkdeq & BM_CLKCTRL_CLKSEQ_BYPASS_CPU) {
++		if (clkseq & BM_CLKCTRL_CLKSEQ_BYPASS_CPU) {
+ 			/* xtal path */
+ 			div = (clkctrl & BM_CLKCTRL_CPU_DIV_XTAL) >>
+ 				BP_CLKCTRL_CPU_DIV_XTAL;
+-			cpu = xtal / div;
++			pclk = xtal / div;
+ 		} else {
+ 			/* ref path */
+ 			frac = (clkfrac & BM_CLKCTRL_FRAC0_CPUFRAC) >>
+ 				BP_CLKCTRL_FRAC0_CPUFRAC;
+ 			div = (clkctrl & BM_CLKCTRL_CPU_DIV_CPU) >>
+ 				BP_CLKCTRL_CPU_DIV_CPU;
+-			cpu =  (ref * 18 / frac) / div;
++			pclk =  (ref * 18 / frac) / div;
+ 		}
+ 	}
+ 
+-	/* BUS */
++	return pclk;
++}
++
++static u32 mx28_get_hclk(void)
++{
++	u32 clkctrl, div, hclk;
++
+ 	clkctrl = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_HBUS);
++
+ 	if (clkctrl & BM_CLKCTRL_HBUS_DIV_FRAC_EN) {
+ 		/* No support of fractional divider calculation */
+-		bus = 0;
++		hclk = 0;
+ 	} else {
+ 		div = (clkctrl & BM_CLKCTRL_HBUS_DIV) >>
+ 			BP_CLKCTRL_HBUS_DIV;
+-		bus = cpu / div;
++		hclk = mx28_get_pclk() / div;
+ 	}
+ 
+-	/* EMI */
++	return hclk;
++}
++
++static u32 mx28_get_emiclk(void)
++{
++	const u32 xtal = 24, ref = 480;
++	u32 clkfrac, clkseq, clkctrl;
++	u32 frac, div;
++	u32 emiclk;
++
++	clkfrac = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_FRAC0);
++	clkseq = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_CLKSEQ);
+ 	clkctrl = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_EMI);
+-	if (clkdeq & BM_CLKCTRL_CLKSEQ_BYPASS_EMI) {
++
++	if (clkseq & BM_CLKCTRL_CLKSEQ_BYPASS_EMI) {
+ 		/* xtal path */
+ 		div = (clkctrl & BM_CLKCTRL_EMI_DIV_XTAL) >>
+ 			BP_CLKCTRL_EMI_DIV_XTAL;
+-		emi = xtal / div;
++		emiclk = xtal / div;
+ 	} else {
+ 		/* ref path */
+ 		frac = (clkfrac & BM_CLKCTRL_FRAC0_EMIFRAC) >>
+ 			BP_CLKCTRL_FRAC0_EMIFRAC;
+ 		div = (clkctrl & BM_CLKCTRL_EMI_DIV_EMI) >>
+ 			BP_CLKCTRL_EMI_DIV_EMI;
+-		emi =  (ref * 18 / frac) / div;
++		emiclk =  (ref * 18 / frac) / div;
+ 	}
+ 
+-	/* Print */
++	return emiclk;
++}
++
++u32 mxc_get_clock(enum mxc_clock clk)
++{
++	switch (clk) {
++	case MXC_ARM_CLK:
++		return mx28_get_pclk() * 1000000;
++	case MXC_AHB_CLK:
++	case MXC_IPG_CLK:
++		return mx28_get_hclk() * 1000000;
++	}
++
++	return 0;
++}
++
++#if defined(CONFIG_ARCH_CPU_INIT)
++int arch_cpu_init(void)
++{
++	icache_enable();
++	dcache_enable();
++
++	return 0;
++}
++#endif
++
++#if defined(CONFIG_DISPLAY_CPUINFO)
++int print_cpuinfo(void)
++{
+ 	printf("Freescale i.MX28 family\n");
+-	printf("CPU:   %d MHz\n", cpu);
+-	printf("BUS:   %d MHz\n", bus);
+-	printf("EMI:   %d MHz\n", emi);
++	printf("CPU:   %d MHz\n", mx28_get_pclk());
++	printf("BUS:   %d MHz\n", mx28_get_hclk());
++	printf("EMI:   %d MHz\n", mx28_get_emiclk());
+ 
+ 	return 0;
+ }
+@@ -107,13 +144,13 @@ int print_cpuinfo(void)
+ /*
+  * Initializes on-chip MMC controllers.
+  */
+-#if defined(CONFIG_MXC_ENET)
++#if defined(CONFIG_IMX_SSP_MMC)
+ int imx_ssp_mmc_initialize(bd_t *bis);
+ #endif
+ int cpu_mmc_init(bd_t *bis)
+ {
+ 	int rc = ENODEV;
+-#ifdef CONFIG_IMX_SSP_MMC
++#if defined(CONFIG_IMX_SSP_MMC)
+ 	rc = imx_ssp_mmc_initialize(bis);
+ #endif
+ 	return rc;
+@@ -122,14 +159,29 @@ int cpu_mmc_init(bd_t *bis)
+ /*
+  * Initializes on-chip ethernet controllers.
+  */
+-#if defined(CONFIG_MXC_ENET)
+-int mxc_enet_initialize(bd_t *bis);
+-#endif
+ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = ENODEV;
+-#if defined(CONFIG_MXC_ENET)
+-	rc = mxc_enet_initialize(bis);
++#if defined(CONFIG_MXC_FEC)
++	rc = mxc_fec_initialize(bis);
++
++	/* Turn on ENET clocks */
++	REG_WR(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET,
++		REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET) &
++		~(BM_CLKCTRL_ENET_SLEEP | BM_CLKCTRL_ENET_DISABLE));
++
++	/* Set up ENET PLL for 50 MHz */
++	REG_SET(REGS_CLKCTRL_BASE, HW_CLKCTRL_PLL2CTRL0,
++		BM_CLKCTRL_PLL2CTRL0_POWER);    /* Power on ENET PLL */
++	udelay(10);                             /* Wait 10 us */
++	REG_CLR(REGS_CLKCTRL_BASE, HW_CLKCTRL_PLL2CTRL0,
++		BM_CLKCTRL_PLL2CTRL0_CLKGATE);  /* Gate on ENET PLL */
++	REG_WR(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET,
++		REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET) |
++		BM_CLKCTRL_ENET_CLK_OUT_EN);    /* Enable pad output */
++
++	/* Board level init */
++	enet_board_init();
+ #endif
+ 	return rc;
+ }
+diff --git a/cpu/arm926ejs/mx28/mmcops.c b/cpu/arm926ejs/mx28/mmcops.c
+index eed2046..e1d211b 100644
+--- a/cpu/arm926ejs/mx28/mmcops.c
++++ b/cpu/arm926ejs/mx28/mmcops.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -24,7 +24,7 @@
+ #include <exports.h>
+ #include <mmc.h>
+ 
+-#if defined(CONFIG_GENERIC_MMC) && defined(CONFIG_CUSTOMIZE_MMCOPS)
++#ifdef CONFIG_GENERIC_MMC
+ #define MMCOPS_DEBUG
+ 
+ #define MBR_SIGNATURE		0xaa55
+@@ -96,7 +96,7 @@ static int mmc_format(int dev)
+ 
+ 	/* Warning */
+ 	printf("WARN: Data on card will get lost with format.\n"
+-		"Continue?(y/n)");
++		"Continue? (y/n)");
+ 	char ch = getc();
+ 	printf("\n");
+ 	if (ch != 'y') {
+@@ -309,7 +309,7 @@ static int install_sbimage(int dev, void *addr, u32 size)
+ 	}
+ 	if (memcmp(addr, addr + sectors * mmc->read_bl_len,
+ 		sectors * mmc->read_bl_len)) {
+-		printf("Verifying sbImage write fails");
++		printf("Verifying sbImage write fails\n");
+ 		rc = -1;
+ 		goto out;
+ 	}
+@@ -493,7 +493,7 @@ out:
+ 	return rc;
+ }
+ 
+-int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++int do_mxs_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+ 	int dev = 0;
+ 	struct mmc *mmc;
+@@ -501,9 +501,8 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	if (argc < 2)
+ 		goto err_out;
+ 
+-	if (strcmp(argv[1], "read") && strcmp(argv[1], "write") &&
+-		strcmp(argv[1], "rescan") && strcmp(argv[1], "format") &&
+-		strcmp(argv[1], "install") && strcmp(argv[1], "list"))
++	if (strcmp(argv[1], "format") &&
++		strcmp(argv[1], "install"))
+ 		goto err_out;
+ 
+ 	if (argc == 2) { /* list */
+@@ -531,26 +530,7 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	if (argc != 6)
+ 		goto err_out;
+ 
+-	if (!strcmp(argv[1], "read") || !strcmp(argv[1], "write")) {
+-		void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
+-		u32 blk = simple_strtoul(argv[4], NULL, 16);
+-		u32 cnt = simple_strtoul(argv[5], NULL, 16);
+-		u32 n;
+-
+-		printf("\nMMC %s: dev # %d, block # %d, count %d ... ",
+-			argv[1], dev, blk, cnt);
+-
+-		if (!strcmp(argv[1], "read")) {
+-			n = mmc->block_dev.block_read(dev, blk, cnt, addr);
+-			/* flush cache after read */
+-			flush_cache((ulong)addr, cnt * 512); /* FIXME */
+-		} else /* write */
+-			n = mmc->block_dev.block_write(dev, blk, cnt, addr);
+-
+-		printf("%d blocks %s: %s\n", n, argv[1],
+-			(n == cnt) ? "OK" : "ERROR");
+-		return (n == cnt) ? 0 : -1;
+-	} else if (!strcmp(argv[1], "install")) {
++	if (!strcmp(argv[1], "install")) {
+ 		void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
+ 		u32 size = simple_strtoul(argv[4], NULL, 16);
+ 
+@@ -568,12 +548,8 @@ err_out:
+ }
+ 
+ U_BOOT_CMD(
+-	mmc, 6, 1, do_mmcops,
+-	"MMC sub system",
+-	"mmc read <device num> addr blk# cnt\n"
+-	"mmc write <device num> addr blk# cnt\n"
+-	"mmc rescan <device num>\n"
+-	"mmc format <device num>\n"
+-	"mmc install <device num> addr size sbImage/uImage/rootfs\n"
+-	"mmc list - lists available devices");
+-#endif /* (CONFIG_GENERIC_MMC && CONFIG_CUSTOMIZE_MMCOPS) */
++	mxs_mmc, 6, 1, do_mxs_mmcops,
++	"MXS specific MMC sub system",
++	"mxs_mmc format <device num>\n"
++	"mxs_mmc install <device num> addr size sbImage/uImage/rootfs\n");
++#endif /* CONFIG_GENERIC_MMC */
+diff --git a/cpu/arm926ejs/mx28/pinctrl.c b/cpu/arm926ejs/mx28/pinctrl.c
+index 88427c8..1bf76b9 100644
+--- a/cpu/arm926ejs/mx28/pinctrl.c
++++ b/cpu/arm926ejs/mx28/pinctrl.c
+@@ -17,7 +17,6 @@
+  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  */
+ #include <common.h>
+-#include <asm/arch/mx28.h>
+ #include <asm/arch/regs-pinctrl.h>
+ #include <asm/arch/pinctrl.h>
+ 
+diff --git a/cpu/arm926ejs/mx28/serial.c b/cpu/arm926ejs/mx28/serial.c
+index 58f7d2a..c39da1b 100644
+--- a/cpu/arm926ejs/mx28/serial.c
++++ b/cpu/arm926ejs/mx28/serial.c
+@@ -19,7 +19,6 @@
+  *
+  */
+ #include <common.h>
+-#include <asm/arch/mx28.h>
+ #include <asm/arch/regs-uartdbg.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+@@ -38,7 +37,7 @@ void serial_setbrg(void)
+ 	REG_WR(REGS_UARTDBG_BASE, HW_UARTDBGCR, 0);
+ 
+ 	/* Calculate and set baudrate */
+-	quot = (CONFIG_DBGUART_CLK * 4)	/ gd->baudrate;
++	quot = (CONFIG_UARTDBG_CLK * 4)	/ gd->baudrate;
+ 	REG_WR(REGS_UARTDBG_BASE, HW_UARTDBGFBRD, quot & 0x3f);
+ 	REG_WR(REGS_UARTDBG_BASE, HW_UARTDBGIBRD, quot >> 6);
+ 
+diff --git a/cpu/arm926ejs/mx28/spi.c b/cpu/arm926ejs/mx28/spi.c
+deleted file mode 100644
+index cad2569..0000000
+--- a/cpu/arm926ejs/mx28/spi.c
++++ /dev/null
+@@ -1,255 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * Freescale MX28 SSP/SPI driver
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-
+-#include <asm/arch/spi.h>
+-
+-#define SPI_NUM_BUSES	2
+-#define SPI_NUM_SLAVES	3
+-
+-/* Initalized in spi_init() depending on SSP port configuration */
+-static unsigned long ssp_bases[SPI_NUM_BUSES];
+-
+-/* Set in spi_set_cfg() depending on which SSP port is being used */
+-static unsigned long ssp_base = SSP1_BASE;
+-
+-/*
+- * Init SSP port: SSP1 (@bus = 0) or SSP2 (@bus == 1)
+- */
+-static void ssp_spi_init(unsigned int bus)
+-{
+-	u32 spi_div;
+-	u32 val = 0;
+-
+-	if (bus >= SPI_NUM_BUSES) {
+-		printf("SPI bus %d doesn't exist\n", bus);
+-		return;
+-	}
+-
+-	ssp_base = ssp_bases[bus];
+-
+-	/* Reset block */
+-
+-	/* Clear SFTRST */
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
+-	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_SFTRST)
+-		;
+-
+-	/* Clear CLKGATE */
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_CLKGATE);
+-
+-	/* Set SFTRST and wait until CLKGATE is set */
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
+-	while (!(REG_RD(ssp_base + SSP_CTRL0) & CTRL0_CLKGATE))
+-		;
+-
+-	/* Clear SFTRST and CLKGATE */
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_CLKGATE);
+-
+-	/*
+-	* Set CLK to desired value
+-	*/
+-
+-	spi_div = ((CONFIG_SSP_CLK>>1) + CONFIG_SPI_CLK - 1) / CONFIG_SPI_CLK;
+-	val = (2 << TIMING_CLOCK_DIVIDE) | ((spi_div - 1) << TIMING_CLOCK_RATE);
+-	REG_WR(ssp_base + SSP_TIMING, val);
+-
+-	/* Set transfer parameters */
+-
+-	/* Set SSP SPI Master mode and word length to 8 bit */
+-	REG_WR(ssp_base + SSP_CTRL1, WORD_LENGTH8 | SSP_MODE_SPI);
+-
+-	/* Set BUS_WIDTH to 1 bit and XFER_COUNT to 1 byte */
+-	REG_WR(ssp_base + SSP_CTRL0,
+-	       BUS_WIDTH_SPI1 | (0x1 << CTRL0_XFER_COUNT));
+-
+-	/*
+-	* Set BLOCK_SIZE and BLOCK_COUNT to 0, so that XFER_COUNT
+-	* reflects number of bytes to send. Disalbe other bits as
+-	* well
+-	*/
+-	REG_WR(ssp_base + SSP_CMD0, 0x0);
+-}
+-
+-/*
+- * Init SSP ports, must be called first and only once
+- */
+-void spi_init(void)
+-{
+-#ifdef CONFIG_SPI_SSP1
+-	ssp_bases[0] = SSP1_BASE;
+-	ssp_spi_init(0);
+-#endif
+-
+-#ifdef CONFIG_SPI_SSP2
+-	ssp_bases[1] = SSP2_BASE;
+-	ssp_spi_init(1);
+-#endif
+-}
+-
+-void spi_set_cfg(unsigned int bus, unsigned int cs, unsigned long mode)
+-{
+-	u32 clr_mask = 0;
+-	u32 set_mask = 0;
+-
+-	if (bus >= SPI_NUM_BUSES || cs >= SPI_NUM_SLAVES) {
+-		printf("SPI device %d:%d doesn't exist", bus, cs);
+-		return;
+-	}
+-
+-	if (ssp_bases[bus] == 0) {
+-		printf("SSP port %d isn't in SPI mode\n", bus + 1);
+-		return;
+-	}
+-
+-	/* Set SSP port to use */
+-	ssp_base = ssp_bases[bus];
+-
+-	/* Set phase and polarity: HW_SSP_CTRL1 */
+-	if (mode & SPI_PHASE)
+-		set_mask |= CTRL1_PHASE;
+-	else
+-		clr_mask |= CTRL1_PHASE;
+-
+-	if (mode & SPI_POLARITY)
+-		set_mask |= CTRL1_POLARITY;
+-	else
+-		clr_mask |= CTRL1_POLARITY;
+-
+-	REG_SET(ssp_base + SSP_CTRL1, set_mask);
+-	REG_CLR(ssp_base + SSP_CTRL1, clr_mask);
+-
+-	/* Set SSn number: HW_SSP_CTRL0 */
+-	REG_CLR(ssp_base + SSP_CTRL0, SPI_CS_CLR_MASK);
+-
+-	switch (cs) {
+-	case 0:
+-		set_mask = SPI_CS0;
+-		break;
+-	case 1:
+-		set_mask = SPI_CS1;
+-		break;
+-	case 2:
+-		set_mask = SPI_CS2;
+-		break;
+-	}
+-
+-	REG_SET(ssp_base + SSP_CTRL0, set_mask);
+-}
+-
+-/* Read single data byte */
+-static unsigned char spi_read(void)
+-{
+-	unsigned char b = 0;
+-
+-	/* Set XFER_LENGTH to 1 */
+-	REG_CLR(ssp_base + SSP_CTRL0, 0xffff);
+-	REG_SET(ssp_base + SSP_CTRL0, 1);
+-
+-	/* Enable READ mode */
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_READ);
+-
+-	/* Set RUN bit */
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_RUN);
+-
+-
+-	/* Set transfer */
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_DATA_XFER);
+-
+-	while (REG_RD(ssp_base + SSP_STATUS) & STATUS_FIFO_EMPTY)
+-		;
+-
+-	/* Read data byte */
+-	b = REG_RD(ssp_base + SSP_DATA) & 0xff;
+-
+-	/* Wait until RUN bit is cleared */
+-	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_RUN)
+-			;
+-
+-	return b;
+-}
+-
+-/* Write single data byte */
+-static void spi_write(unsigned char b)
+-{
+-	/* Set XFER_LENGTH to 1 */
+-	REG_CLR(ssp_base + SSP_CTRL0, 0xffff);
+-	REG_SET(ssp_base + SSP_CTRL0, 1);
+-
+-	/* Enable WRITE mode */
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_READ);
+-
+-	/* Set RUN bit */
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_RUN);
+-
+-	/* Write data byte */
+-	REG_WR(ssp_base + SSP_DATA, b);
+-
+-	/* Set transfer */
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_DATA_XFER);
+-
+-	/* Wait until RUN bit is cleared */
+-	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_RUN)
+-		;
+-}
+-
+-static void spi_lock_cs(void)
+-{
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_IGNORE_CRC);
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_LOCK_CS);
+-}
+-
+-static void spi_unlock_cs(void)
+-{
+-	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_LOCK_CS);
+-	REG_SET(ssp_base + SSP_CTRL0, CTRL0_IGNORE_CRC);
+-}
+-
+-void spi_txrx(const char *dout, unsigned int tx_len, char *din,
+-	       unsigned int rx_len, unsigned long flags)
+-{
+-	int i;
+-
+-	if (tx_len == 0 && rx_len == 0)
+-		return;
+-
+-	if (flags & SPI_START)
+-		spi_lock_cs();
+-
+-	for (i = 0; i < tx_len; i++) {
+-
+-		/* Check if it is last data byte to transfer */
+-		if (flags & SPI_STOP && rx_len == 0 && i == tx_len - 1)
+-			spi_unlock_cs();
+-
+-		spi_write(dout[i]);
+-	}
+-
+-	for (i = 0; i < rx_len; i++) {
+-
+-		/* Check if it is last data byte to transfer */
+-		if (flags & SPI_STOP && i == rx_len - 1)
+-			spi_unlock_cs();
+-
+-		din[i] = spi_read();
+-	}
+-}
+diff --git a/cpu/arm926ejs/mx28/timer.c b/cpu/arm926ejs/mx28/timer.c
+index 873b30c..fef5e7a 100644
+--- a/cpu/arm926ejs/mx28/timer.c
++++ b/cpu/arm926ejs/mx28/timer.c
+@@ -38,7 +38,6 @@
+  */
+ 
+ #include <common.h>
+-#include <asm/arch/mx28.h>
+ #include <asm/arch/regs-timrot.h>
+ 
+ /*
+diff --git a/drivers/mmc/imx_ssp_mmc.c b/drivers/mmc/imx_ssp_mmc.c
+index 61a1d85..51a931c 100644
+--- a/drivers/mmc/imx_ssp_mmc.c
++++ b/drivers/mmc/imx_ssp_mmc.c
+@@ -30,7 +30,6 @@
+ #include <common.h>
+ #include <malloc.h>
+ #include <mmc.h>
+-#include <asm/arch/mx28.h>
+ #include <asm/arch/regs-ssp.h>
+ #include <asm/arch/regs-clkctrl.h>
+ 
+@@ -281,7 +280,7 @@ static int ssp_mmc_init(struct mmc *mmc)
+ 	/*
+ 	 * Set up SSPCLK
+ 	 */
+-	/* Set REF_IO0 at 480 MHz */
++	/* Set REF_IO0 at 297.731 MHz */
+ 	regval = REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_FRAC0);
+ 	regval &= ~BM_CLKCTRL_FRAC0_IO0FRAC;
+ 	REG_WR(REGS_CLKCTRL_BASE, HW_CLKCTRL_FRAC0,
+diff --git a/drivers/net/Makefile b/drivers/net/Makefile
+index 9318015..6ba00be 100644
+--- a/drivers/net/Makefile
++++ b/drivers/net/Makefile
+@@ -50,7 +50,6 @@ COBJS-$(CONFIG_MCFFEC) += mcffec.o mcfmii.o
+ COBJS-$(CONFIG_MPC5xxx_FEC) += mpc5xxx_fec.o
+ COBJS-$(CONFIG_MPC512x_FEC) += mpc512x_fec.o
+ COBJS-$(CONFIG_MXC_FEC) += mxc_fec.o
+-COBJS-$(CONFIG_MXC_ENET) += mxc_enet.o
+ COBJS-$(CONFIG_NATSEMI) += natsemi.o
+ COBJS-$(CONFIG_DRIVER_NE2000) += ne2000.o ne2000_base.o
+ COBJS-$(CONFIG_DRIVER_AX88796L) += ax88796.o ne2000_base.o
+diff --git a/drivers/net/mxc_enet.c b/drivers/net/mxc_enet.c
+deleted file mode 100644
+index edfbc1a..0000000
+--- a/drivers/net/mxc_enet.c
++++ /dev/null
+@@ -1,742 +0,0 @@
+-/*
+- * (C) Copyright 2000-2004
+- * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+- *
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+- *
+- * See file CREDITS for list of people who contributed to this
+- * project.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#include <common.h>
+-#include <malloc.h>
+-#include <net.h>
+-#include <miiphy.h>
+-#include <asm/arch/mx28.h>
+-#include <asm/arch/regs-enet.h>
+-#include <asm/arch/regs-clkctrl.h>
+-
+-/*
+- * Debug message switch
+- */
+-#undef	MXC_ENET_DEBUG
+-
+-/*
+- * Buffer descriptor control/status used by Ethernet receive.
+- */
+-#define BD_ENET_RX_EMPTY	((ushort)0x8000)
+-#define BD_ENET_RX_RO1		((ushort)0x4000)
+-#define BD_ENET_RX_WRAP		((ushort)0x2000)
+-#define BD_ENET_RX_INTR		((ushort)0x1000)
+-#define BD_ENET_RX_RO2		BD_ENET_RX_INTR
+-#define BD_ENET_RX_LAST		((ushort)0x0800)
+-#define BD_ENET_RX_FIRST	((ushort)0x0400)
+-#define BD_ENET_RX_MISS		((ushort)0x0100)
+-#define BD_ENET_RX_BC		((ushort)0x0080)
+-#define BD_ENET_RX_MC		((ushort)0x0040)
+-#define BD_ENET_RX_LG		((ushort)0x0020)
+-#define BD_ENET_RX_NO		((ushort)0x0010)
+-#define BD_ENET_RX_SH		((ushort)0x0008)
+-#define BD_ENET_RX_CR		((ushort)0x0004)
+-#define BD_ENET_RX_OV		((ushort)0x0002)
+-#define BD_ENET_RX_CL		((ushort)0x0001)
+-#define BD_ENET_RX_TR		BD_ENET_RX_CL
+-#define BD_ENET_RX_STATS	((ushort)0x013f)	/* All status bits */
+-
+-/*
+- * Buffer descriptor control/status used by Ethernet transmit.
+- */
+-#define BD_ENET_TX_READY	((ushort)0x8000)
+-#define BD_ENET_TX_PAD		((ushort)0x4000)
+-#define BD_ENET_TX_TO1		BD_ENET_TX_PAD
+-#define BD_ENET_TX_WRAP		((ushort)0x2000)
+-#define BD_ENET_TX_INTR		((ushort)0x1000)
+-#define BD_ENET_TX_TO2		BD_ENET_TX_INTR_
+-#define BD_ENET_TX_LAST		((ushort)0x0800)
+-#define BD_ENET_TX_TC		((ushort)0x0400)
+-#define BD_ENET_TX_DEF		((ushort)0x0200)
+-#define BD_ENET_TX_ABC		BD_ENET_TX_DEF
+-#define BD_ENET_TX_HB		((ushort)0x0100)
+-#define BD_ENET_TX_LC		((ushort)0x0080)
+-#define BD_ENET_TX_RL		((ushort)0x0040)
+-#define BD_ENET_TX_RCMASK	((ushort)0x003c)
+-#define BD_ENET_TX_UN		((ushort)0x0002)
+-#define BD_ENET_TX_CSL		((ushort)0x0001)
+-#define BD_ENET_TX_STATS	((ushort)0x03ff)	/* All status bits */
+-
+-/*
+- * Buffer descriptors
+- */
+-typedef struct cpm_buf_desc {
+-	ushort cbd_datlen;	/* Data length in buffer */
+-	ushort cbd_sc;		/* Status and Control */
+-	uint cbd_bufaddr;	/* Buffer address in host memory */
+-} cbd_t;
+-
+-/* ENET private information */
+-struct enet_info_s {
+-	int index;
+-	u32 iobase;
+-	int phy_addr;
+-	int dup_spd;
+-	char *phy_name;
+-	int phyname_init;
+-	cbd_t *rxbd;		/* Rx BD */
+-	cbd_t *txbd;		/* Tx BD */
+-	uint rxIdx;
+-	uint txIdx;
+-	char *rxbuf;
+-	char *txbuf;
+-	int initialized;
+-	struct enet_info_s *next;
+-};
+-
+-/* Register read/write struct */
+-typedef struct enet {
+-	u32 resv0;		/* 0x0000 */
+-	u32 eir;		/* 0x0004 */
+-	u32 eimr;		/* 0x0008 */
+-	u32 resv1;		/* 0x000c */
+-	u32 rdar;		/* 0x0010 */
+-	u32 tdar;		/* 0x0014 */
+-	u32 resv2[3];		/* 0x0018 */
+-	u32 ecr;		/* 0x0024 */
+-	u32 resv3[6];		/* 0x0028 */
+-	u32 mmfr;		/* 0x0040 */
+-	u32 mscr;		/* 0x0044 */
+-	u32 resv4[7];		/* 0x0048 */
+-	u32 mibc;		/* 0x0064 */
+-	u32 resv5[7];		/* 0x0068 */
+-	u32 rcr;		/* 0x0084 */
+-	u32 resv6[15];		/* 0x0088 */
+-	u32 tcr;		/* 0x00c4 */
+-	u32 resv7[7];		/* 0x00c8 */
+-	u32 palr;		/* 0x00e4 */
+-	u32 paur;		/* 0x00e8 */
+-	u32 opd;		/* 0x00ec */
+-	u32 resv8[10];		/* 0x00f0 */
+-	u32 iaur;		/* 0x0118 */
+-	u32 ialr;		/* 0x011c */
+-	u32 gaur;		/* 0x0120 */
+-	u32 galr;		/* 0x0124 */
+-	u32 resv9[7];		/* 0x0128 */
+-	u32 tfwr;		/* 0x0144 */
+-	u32 resv10;		/* 0x0148 */
+-	u32 frbr;		/* 0x014c */
+-	u32 frsr;		/* 0x0150 */
+-	u32 resv11[11];		/* 0x0154 */
+-	u32 erdsr;		/* 0x0180 */
+-	u32 etdsr;		/* 0x0184 */
+-	u32 emrbr;		/* 0x0188 */
+-	/* Unused registers  ... */
+-} enet_t;
+-
+-/*
+- * Ethernet Transmit and Receive Buffers
+- */
+-#define DBUF_LENGTH			1520
+-#define RX_BUF_CNT			(PKTBUFSRX)
+-#define TX_BUF_CNT			(RX_BUF_CNT)
+-#define PKT_MINBUF_SIZE			64
+-#define PKT_MAXBLR_SIZE			1520
+-#define LAST_RX_BUF			(RX_BUF_CNT - 1)
+-#define BD_ENET_RX_W_E			(BD_ENET_RX_WRAP | BD_ENET_RX_EMPTY)
+-#define BD_ENET_TX_RDY_LST		(BD_ENET_TX_READY | BD_ENET_TX_LAST)
+-
+-/*
+- * MII definitions
+- */
+-#define ENET_MII_ST			0x40000000
+-#define ENET_MII_OP_OFF			28
+-#define ENET_MII_OP_MASK		0x03
+-#define ENET_MII_OP_RD			0x02
+-#define ENET_MII_OP_WR			0x01
+-#define ENET_MII_PA_OFF			23
+-#define ENET_MII_PA_MASK		0xFF
+-#define ENET_MII_RA_OFF			18
+-#define ENET_MII_RA_MASK		0xFF
+-#define ENET_MII_TA			0x00020000
+-#define ENET_MII_DATA_OFF		0
+-#define ENET_MII_DATA_MASK		0x0000FFFF
+-
+-#define ENET_MII_FRAME	\
+-			(ENET_MII_ST | ENET_MII_TA)
+-
+-#define ENET_MII_OP(x)	\
+-			(((x) & ENET_MII_OP_MASK) << ENET_MII_OP_OFF)
+-
+-#define ENET_MII_PA(pa)	\
+-			(((pa) & ENET_MII_PA_MASK) << ENET_MII_PA_OFF)
+-
+-#define ENET_MII_RA(ra)	\
+-			(((ra) & ENET_MII_RA_MASK) << ENET_MII_RA_OFF)
+-
+-#define ENET_MII_SET_DATA(v)	\
+-			(((v) & ENET_MII_DATA_MASK) << ENET_MII_DATA_OFF)
+-
+-#define ENET_MII_GET_DATA(v) \
+-			(((v) >> ENET_MII_DATA_OFF) & ENET_MII_DATA_MASK)
+-
+-#define ENET_MII_READ(pa, ra)	\
+-		((ENET_MII_FRAME | ENET_MII_OP(ENET_MII_OP_RD)) | \
+-		ENET_MII_PA(pa) | ENET_MII_RA(ra))
+-
+-#define ENET_MII_WRITE(pa, ra, v) \
+-		(ENET_MII_FRAME | ENET_MII_OP(ENET_MII_OP_WR) | \
+-		ENET_MII_PA(pa) | ENET_MII_RA(ra) | ENET_MII_SET_DATA(v))
+-
+-#define ENET_MII_TIMEOUT		50000
+-#define ENET_MII_TICK			2
+-#define ENET_MII_PHYADDR		0x0
+-
+-/*
+- * Misc definitions
+- */
+-#ifndef CONFIG_SYS_CACHELINE_SIZE
+-#define CONFIG_SYS_CACHELINE_SIZE	32
+-#endif
+-
+-#define	ENET_RESET_DELAY		100
+-#define ENET_MAX_TIMEOUT		50000
+-#define ENET_TIMEOUT_TICKET		2
+-
+-#define __swap_32(x)	((((unsigned long)x) << 24) | \
+-			((0x0000FF00UL & ((unsigned long)x)) << 8) | \
+-			((0x00FF0000UL & ((unsigned long)x)) >> 8) | \
+-			(((unsigned long)x) >> 24))
+-
+-/*
+- * Functions
+- */
+-extern void enet_board_init(void);
+-
+-#if defined(CONFIG_CMD_NET) && defined(CONFIG_NET_MULTI)
+-static struct enet_info_s enet_info[] = {
+-	{
+-		0,			/* index */
+-		REGS_ENET_BASE,		/* io base */
+-#ifdef CONFIG_DISCOVER_PHY
+-		-1,			/* discover phy_addr  */
+-#else
+-		ENET_MII_PHYADDR,	/* phy_addr for MAC0 */
+-#endif
+-		0,			/* duplex and speed */
+-		0,			/* phy name */
+-		0,			/* phyname init */
+-		0,			/* RX BD */
+-		0,			/* TX BD */
+-		0,			/* rx Index */
+-		0,			/* tx Index */
+-		0,			/* tx buffer */
+-		0			/* initialized flag */
+-	}
+-};
+-
+-static inline int __enet_mii_read(volatile enet_t *enetp, unsigned char addr,
+-				 unsigned char reg, unsigned short *value)
+-{
+-	int waiting = ENET_MII_TIMEOUT;
+-	if (enetp->eir & BM_ENET_MAC0_EIR_MII)
+-		enetp->eir |= BM_ENET_MAC0_EIR_MII;
+-
+-	enetp->mmfr = ENET_MII_READ(addr, reg);
+-	while (1) {
+-		if (enetp->eir & BM_ENET_MAC0_EIR_MII) {
+-			enetp->eir |= BM_ENET_MAC0_EIR_MII;
+-			break;
+-		}
+-		if ((waiting--) <= 0)
+-			return -1;
+-		udelay(ENET_MII_TICK);
+-	}
+-	*value = ENET_MII_GET_DATA(enetp->mmfr);
+-	return 0;
+-}
+-
+-static inline int __enet_mii_write(volatile enet_t *enetp, unsigned char addr,
+-				  unsigned char reg, unsigned short value)
+-{
+-	int waiting = ENET_MII_TIMEOUT;
+-	if (enetp->eir & BM_ENET_MAC0_EIR_MII)
+-		enetp->eir |= BM_ENET_MAC0_EIR_MII;
+-
+-	enetp->mmfr = ENET_MII_WRITE(addr, reg, value);
+-	while (1) {
+-		if (enetp->eir & BM_ENET_MAC0_EIR_MII) {
+-			enetp->eir |= BM_ENET_MAC0_EIR_MII;
+-			break;
+-		}
+-		if ((waiting--) <= 0)
+-			return -1;
+-		udelay(ENET_MII_TICK);
+-	}
+-	return 0;
+-}
+-
+-static int mxc_enet_mii_read(char *devname, unsigned char addr,
+-			    unsigned char reg, unsigned short *value)
+-{
+-	struct eth_device *dev = eth_get_dev_by_name(devname);
+-	struct enet_info_s *info;
+-	volatile enet_t *enetp;
+-
+-	if (!dev)
+-		return -1;
+-	info = dev->priv;
+-	enetp = (enet_t *) (info->iobase);
+-	return __enet_mii_read(enetp, addr, reg, value);
+-}
+-
+-static int mxc_enet_mii_write(char *devname, unsigned char addr,
+-			     unsigned char reg, unsigned short value)
+-{
+-	struct eth_device *dev = eth_get_dev_by_name(devname);
+-	struct enet_info_s *info;
+-	volatile enet_t *enetp;
+-	if (!dev)
+-		return -1;
+-	info = dev->priv;
+-	enetp = (enet_t *) (info->iobase);
+-	return __enet_mii_write(enetp, addr, reg, value);
+-}
+-
+-static void mxc_enet_mii_init(volatile enet_t *enetp)
+-{
+-	/* Set RMII mode */
+-	enetp->rcr |= BM_ENET_MAC0_RCR_RMII_MODE;
+-
+-	/* The phy requires MDC clock below 2.5 MHz */
+-	enetp->mscr |= (enetp->mscr & ~BM_ENET_MAC0_MSCR_MII_SPEED) |
+-			(40 << BP_ENET_MAC0_MSCR_MII_SPEED);
+-}
+-
+-#ifdef CONFIG_DISCOVER_PHY
+-static inline int __enet_mii_info(volatile enet_t *enetp, unsigned char addr)
+-{
+-	unsigned int id = 0;
+-	unsigned short val;
+-
+-	if (__enet_mii_read(enetp, addr, PHY_PHYIDR2, &val) != 0)
+-		return -1;
+-	id = val;
+-	if (id == 0xffff)
+-		return -1;
+-
+-	if (__enet_mii_read(enetp, addr, PHY_PHYIDR1, &val) != 0)
+-		return -1;
+-
+-	if (val == 0xffff)
+-		return -1;
+-
+-	id |= val << 16;
+-
+-#ifdef MXC_ENMXC_ENET_DEBUG
+-	printf("PHY indentify @ 0x%x = 0x%08x\n", addr, id);
+-#endif
+-	return 0;
+-}
+-
+-static int mxc_enet_mii_discover_phy(struct eth_device *dev)
+-{
+-	unsigned short addr, val;
+-	struct enet_info_s *info = dev->priv;
+-	volatile enet_t *enetp = (enet_t *) (info->iobase);
+-
+-	/* Dummy read with delay to get phy start working */
+-	do {
+-		__enet_mii_read(enetp, ENET_MII_PHYADDR, PHY_PHYIDR1, &val);
+-		udelay(10000);
+-#ifdef MXC_ENET_DEBUG
+-		printf("Dummy read on phy\n");
+-#endif
+-	} while (val == 0 || val == 0xffff);
+-
+-	/* Read phy ID */
+-	for (addr = 0; addr < 0x20; addr++) {
+-		if (!__enet_mii_info(enetp, addr))
+-			return addr;
+-	}
+-
+-	return -1;
+-}
+-#endif
+-
+-static void set_duplex_speed(volatile enet_t *enetp,  unsigned char addr,
+-			      int dup_spd)
+-{
+-	unsigned short val;
+-	int ret;
+-
+-	ret = __enet_mii_read(enetp, addr, PHY_BMCR, &val);
+-	switch (dup_spd >> 16) {
+-	case HALF:
+-		val &= (~PHY_BMCR_DPLX);
+-		break;
+-	case FULL:
+-		val |= PHY_BMCR_DPLX;
+-		break;
+-	default:
+-		val |= PHY_BMCR_AUTON | PHY_BMCR_RST_NEG;
+-	}
+-	ret |= __enet_mii_write(enetp, addr, PHY_BMCR, val);
+-
+-	if (!ret && (val & PHY_BMCR_AUTON)) {
+-		ret = 0;
+-		while (ret++ < ENET_MII_TIMEOUT) {
+-			if (__enet_mii_read(enetp, addr, PHY_BMSR, &val))
+-				break;
+-			if (!(val & PHY_BMSR_AUTN_ABLE))
+-				break;
+-			if (val & PHY_BMSR_AUTN_COMP)
+-				break;
+-		}
+-	}
+-
+-	if (__enet_mii_read(enetp, addr, PHY_BMSR, &val)) {
+-		dup_spd = _100BASET | (FULL << 16);
+-	} else {
+-		if (val & (PHY_BMSR_100TXF | PHY_BMSR_100TXH | PHY_BMSR_100T4))
+-			dup_spd = _100BASET;
+-		else
+-			dup_spd = _10BASET;
+-		if (val & (PHY_BMSR_100TXF | PHY_BMSR_10TF))
+-			dup_spd |= (FULL << 16);
+-		else
+-			dup_spd |= (HALF << 16);
+-	}
+-
+-	if ((dup_spd >> 16) == FULL) {
+-		enetp->tcr |= BM_ENET_MAC0_TCR_FEDN;
+-#ifdef MXC_ENET_DEBUG
+-		printf("full duplex, ");
+-#endif
+-	} else {
+-		enetp->rcr |= BM_ENET_MAC0_RCR_DRT;
+-		enetp->tcr &= ~BM_ENET_MAC0_TCR_FEDN;
+-#ifdef MXC_ENET_DEBUG
+-		printf("half duplex, ");
+-#endif
+-	}
+-#ifdef MXC_ENET_DEBUG
+-	if ((dup_spd & 0xffff) == _100BASET)
+-		printf("100 Mbps\n");
+-	else
+-		printf("10 Mbps\n");
+-#endif
+-}
+-
+-static void copy_packet(char *pdst, char *psrc, int length)
+-{
+-	long *pldst = (long *)pdst;
+-	long *plsrc = (long *)psrc;
+-
+-	length /= sizeof(long);
+-	while (length--) {
+-		*pldst = __swap_32(*plsrc);
+-		pldst++;
+-		plsrc++;
+-	}
+-}
+-
+-static int enet_send(struct eth_device *dev, volatile void *packet, int length)
+-{
+-	struct enet_info_s *info = dev->priv;
+-	volatile enet_t *enetp = (enet_t *) (info->iobase);
+-	int i;
+-	u16 phyStatus;
+-
+-	__enet_mii_read(enetp, info->phy_addr, PHY_BMSR, &phyStatus);
+-
+-	if (!(phyStatus & PHY_BMSR_LS)) {
+-		printf("ENET: Link is down %x\n", phyStatus);
+-		return -1;
+-	}
+-
+-	/* Wait for ready */
+-	i = 0;
+-	while ((info->txbd[info->txIdx].cbd_sc & BD_ENET_TX_READY) &&
+-	       (i < ENET_MAX_TIMEOUT)) {
+-		udelay(ENET_TIMEOUT_TICKET);
+-		i++;
+-	}
+-	if (i >= ENET_MAX_TIMEOUT)
+-		printf("TX buffer is NOT ready\n");
+-
+-	/* Manipulate the packet buffer */
+-	copy_packet((char *)info->txbd[info->txIdx].cbd_bufaddr,
+-		(char *)packet, length + (4 - length % 4));
+-
+-	/* Set up transmit Buffer Descriptor */
+-	info->txbd[info->txIdx].cbd_datlen = length;
+-	info->txbd[info->txIdx].cbd_sc =
+-	    (info->txbd[info->txIdx].cbd_sc & BD_ENET_TX_WRAP) |
+-	    BD_ENET_TX_TC | BD_ENET_TX_RDY_LST;
+-
+-	/* Activate transmit Buffer Descriptor polling */
+-	enetp->tdar = 0x01000000;
+-
+-	/* Move Buffer Descriptor to the next */
+-	info->txIdx = (info->txIdx + 1) % TX_BUF_CNT;
+-
+-	return length;
+-}
+-
+-static int enet_recv(struct eth_device *dev)
+-{
+-	struct enet_info_s *info = dev->priv;
+-	volatile enet_t *enetp = (enet_t *) (info->iobase);
+-	int length;
+-
+-	for (;;) {
+-		if (info->rxbd[info->rxIdx].cbd_sc & BD_ENET_RX_EMPTY) {
+-			length = -1;
+-			break;	/* nothing received - leave for() loop */
+-		}
+-
+-		length = info->rxbd[info->rxIdx].cbd_datlen;
+-
+-		if (info->rxbd[info->rxIdx].cbd_sc & 0x003f) {
+-#ifdef MXC_ENET_DEBUG
+-			printf("%s[%d] err: %x\n",
+-			       __func__, __LINE__,
+-			       info->rxbd[info->rxIdx].cbd_sc);
+-#endif
+-		} else {
+-			length -= 4;
+-
+-			/* Manipulate the packet buffer */
+-			copy_packet((char *)NetRxPackets[info->rxIdx],
+-				(char *)info->rxbd[info->rxIdx].cbd_bufaddr,
+-				length + (4 - length % 4));
+-
+-			/* Pass the packet up to the protocol layers. */
+-			NetReceive(NetRxPackets[info->rxIdx], length);
+-		}
+-
+-		/* Give the buffer back to the ENET */
+-		info->rxbd[info->rxIdx].cbd_datlen = 0;
+-
+-		/* Wrap around buffer index when necessary */
+-		if (info->rxIdx == LAST_RX_BUF) {
+-			info->rxbd[RX_BUF_CNT - 1].cbd_sc = BD_ENET_RX_W_E;
+-			info->rxIdx = 0;
+-		} else {
+-			info->rxbd[info->rxIdx].cbd_sc = BD_ENET_RX_EMPTY;
+-			info->rxIdx++;
+-		}
+-
+-		/* Try to fill Buffer Descriptors */
+-		enetp->rdar = 0x01000000;
+-	}
+-
+-	return length;
+-}
+-
+-static void enet_reset(struct eth_device *dev)
+-{
+-	int i;
+-	struct enet_info_s *info = dev->priv;
+-	volatile enet_t *enetp = (enet_t *) (info->iobase);
+-
+-	enetp->ecr |= BM_ENET_MAC0_ECR_RESET;
+-	for (i = 0; (enetp->ecr & BM_ENET_MAC0_ECR_RESET) && (i < ENET_RESET_DELAY); ++i)
+-		udelay(1);
+-
+-	if (i == ENET_RESET_DELAY)
+-		printf("ENET reset timeout\n");
+-}
+-
+-static void enet_halt(struct eth_device *dev)
+-{
+-	struct enet_info_s *info = dev->priv;
+-
+-	/* Reset ENET controller to stop transmit and receive */
+-	enet_reset(dev);
+-
+-	/* Clear buffers */
+-	info->rxIdx = info->txIdx = 0;
+-	memset(info->rxbd, 0, RX_BUF_CNT * sizeof(cbd_t));
+-	memset(info->txbd, 0, TX_BUF_CNT * sizeof(cbd_t));
+-	memset(info->rxbuf, 0, RX_BUF_CNT *  DBUF_LENGTH);
+-	memset(info->txbuf, 0, TX_BUF_CNT *  DBUF_LENGTH);
+-}
+-
+-static int enet_init(struct eth_device *dev, bd_t *bd)
+-{
+-	struct enet_info_s *info = dev->priv;
+-	volatile enet_t *enetp = (enet_t *) (info->iobase);
+-	int i;
+-	u8 *ea = NULL;
+-
+-	/* Turn on ENET clocks */
+-	REG_WR(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET,
+-		REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET) &
+-		~(BM_CLKCTRL_ENET_SLEEP | BM_CLKCTRL_ENET_DISABLE));
+-
+-	/* Set up ENET PLL for 50 MHz */
+-	REG_SET(REGS_CLKCTRL_BASE, HW_CLKCTRL_PLL2CTRL0,
+-		BM_CLKCTRL_PLL2CTRL0_POWER);	/* Power on ENET PLL */
+-	udelay(10);				/* Wait 10 us */
+-	REG_CLR(REGS_CLKCTRL_BASE, HW_CLKCTRL_PLL2CTRL0,
+-		BM_CLKCTRL_PLL2CTRL0_CLKGATE);	/* Gate on ENET PLL */
+-	REG_WR(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET,
+-		REG_RD(REGS_CLKCTRL_BASE, HW_CLKCTRL_ENET) |
+-		BM_CLKCTRL_ENET_CLK_OUT_EN);	/* Enable pad output */
+-
+-	/* Board level init */
+-	enet_board_init();
+-
+-	/* Reset ENET controller */
+-	enet_reset(dev);
+-
+-#if defined(CONFIG_CMD_MII) || defined(CONFIG_MII) || \
+-	defined(CONFIG_DISCOVER_PHY)
+-	mxc_enet_mii_init(enetp);
+-#ifdef CONFIG_DISCOVER_PHY
+-	if (info->phy_addr < 0 || info->phy_addr > 0x1f)
+-		info->phy_addr = mxc_enet_mii_discover_phy(dev);
+-#endif
+-	set_duplex_speed(enetp, (unsigned char)info->phy_addr, info->dup_spd);
+-#else
+-#ifndef CONFIG_DISCOVER_PHY
+-	set_duplex_speed(enetp, (unsigned char)info->phy_addr,
+-				(ENETDUPLEX << 16) | ENETSPEED);
+-#endif
+-#endif
+-	/* We use strictly polling mode only */
+-	enetp->eimr = 0;
+-
+-	/* Clear any pending interrupt */
+-	enetp->eir = 0xffffffff;
+-
+-	/* Disable loopback mode */
+-	enetp->rcr &= ~BM_ENET_MAC0_RCR_LOOP;
+-
+-	/* Enable RX flow control */
+-	enetp->rcr |= BM_ENET_MAC0_RCR_FCE;
+-
+-	/* Set station address and enable it for TX  */
+-	ea = dev->enetaddr;
+-	enetp->palr = (ea[0] << 24) | (ea[1] << 16) | (ea[2] << 8) | (ea[3]);
+-	enetp->paur = (ea[4] << 24) | (ea[5] << 16);
+-	enetp->tcr |= BM_ENET_MAC0_TCR_TX_ADDR_INS;
+-
+-	/* Clear unicast address hash table */
+-	enetp->iaur = 0;
+-	enetp->ialr = 0;
+-
+-	/* Clear multicast address hash table */
+-	enetp->gaur = 0;
+-	enetp->galr = 0;
+-
+-	/* Set maximum receive buffer size. */
+-	enetp->emrbr = PKT_MAXBLR_SIZE;
+-
+-	/* Setup Buffers and Buffer Desriptors */
+-	info->rxIdx = 0;
+-	info->txIdx = 0;
+-
+-	/*
+-	 * Setup Receiver Buffer Descriptors
+-	 * Settings:
+-	 *     Empty, Wrap
+-	 */
+-	for (i = 0; i < RX_BUF_CNT; i++) {
+-		info->rxbd[i].cbd_sc = BD_ENET_RX_EMPTY;
+-		info->rxbd[i].cbd_datlen = 0;	/* Reset */
+-		info->rxbd[i].cbd_bufaddr =
+-			(uint) (&info->rxbuf[0] + i * DBUF_LENGTH);
+-	}
+-	info->rxbd[RX_BUF_CNT - 1].cbd_sc |= BD_ENET_RX_WRAP;
+-
+-	/*
+-	 * Setup Transmitter Buffer Descriptors
+-	 * Settings:
+-	 *    Last, Tx CRC
+-	 */
+-	for (i = 0; i < TX_BUF_CNT; i++) {
+-		info->txbd[i].cbd_sc = BD_ENET_TX_LAST | BD_ENET_TX_TC;
+-		info->txbd[i].cbd_datlen = 0;	/* Reset */
+-		info->txbd[i].cbd_bufaddr =
+-			(uint) (&info->txbuf[0] + i * DBUF_LENGTH);
+-	}
+-	info->txbd[TX_BUF_CNT - 1].cbd_sc |= BD_ENET_TX_WRAP;
+-
+-	/* Set receive and transmit descriptor base */
+-	enetp->erdsr = (unsigned int)(&info->rxbd[0]);
+-	enetp->etdsr = (unsigned int)(&info->txbd[0]);
+-
+-	/* Now enable the transmit and receive processing */
+-	enetp->ecr |= BM_ENET_MAC0_ECR_ETHER_EN;
+-
+-	/* And last, try to fill Rx Buffer Descriptors */
+-	enetp->rdar = 0x01000000;
+-
+-	return 0;
+-}
+-
+-int mxc_enet_initialize(bd_t *bis)
+-{
+-	struct eth_device *dev;
+-	int i;
+-
+-	for (i = 0; i < sizeof(enet_info) / sizeof(enet_info[0]); i++) {
+-		dev = (struct eth_device *) memalign(CONFIG_SYS_CACHELINE_SIZE,
+-			 sizeof(*dev));
+-		if (dev == NULL)
+-			hang();
+-
+-		memset(dev, 0, sizeof(*dev));
+-
+-		/* Regiester device */
+-		sprintf(dev->name, "ENET%d", enet_info[i].index);
+-		dev->priv = &enet_info[i];
+-		dev->init = enet_init;
+-		dev->halt = enet_halt;
+-		dev->send = enet_send;
+-		dev->recv = enet_recv;
+-		eth_register(dev);
+-#if defined(CONFIG_MII) || defined(CONFIG_CMD_MII)
+-		miiphy_register(dev->name, mxc_enet_mii_read, mxc_enet_mii_write);
+-#endif
+-		/* Setup Receive and Transmit buffer descriptor */
+-		enet_info[i].rxbd =
+-			(cbd_t *) memalign(CONFIG_SYS_CACHELINE_SIZE,
+-				RX_BUF_CNT * sizeof(cbd_t));
+-		enet_info[i].rxbuf =
+-			(char *) memalign(CONFIG_SYS_CACHELINE_SIZE,
+-				RX_BUF_CNT * DBUF_LENGTH);
+-		enet_info[i].txbd =
+-			(cbd_t *) memalign(CONFIG_SYS_CACHELINE_SIZE,
+-				TX_BUF_CNT * sizeof(cbd_t));
+-		enet_info[i].txbuf =
+-			(char *) memalign(CONFIG_SYS_CACHELINE_SIZE,
+-				TX_BUF_CNT * DBUF_LENGTH);
+-		enet_info[i].phy_name =
+-			(char *)memalign(CONFIG_SYS_CACHELINE_SIZE, 32);
+-#ifdef MXC_ENET_DEBUG
+-		printf("%s: rxbd %x txbd %x ->%x\n", dev->name,
+-		       (int)enet_info[i].rxbd, (int)enet_info[i].txbd,
+-		       (int)enet_info[i].txbuf);
+-#endif
+-	}
+-
+-	return 1;
+-}
+-
+-#endif	/* defined(CONFIG_CMD_NET) && defined(CONFIG_NET_MULTI) */
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index ba60d03..1a9f53f 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -285,6 +285,17 @@ static void setFecDuplexSpeed(volatile fec_t *fecp, unsigned char addr,
+ 	unsigned short val = 0;
+ 	int ret;
+ 
++#ifdef CONFIG_MX28
++	/* Dummy read with delay to get phy start working */
++	do {
++		__fec_mii_read(fecp, CONFIG_FEC0_PHY_ADDR, PHY_PHYIDR1, &val);
++		udelay(10000);
++#ifdef MII_DEBUG
++		printf("Dummy read on phy\n");
++#endif
++	} while (val == 0 || val == 0xffff);
++#endif
++
+ 	ret = __fec_mii_read(fecp, addr, PHY_BMCR, &val);
+ 	switch (dup_spd >> 16) {
+ 	case HALF:
+@@ -343,6 +354,17 @@ static void setFecDuplexSpeed(volatile fec_t *fecp, unsigned char addr,
+ #endif
+ }
+ 
++#ifdef CONFIG_MX28
++static void swap_packet(void *packet, int length)
++{
++	int i;
++	unsigned int *buf = packet;
++
++	for (i = 0; i < (length + 3) / 4; i++, buf++)
++		*buf = __swab32(*buf);
++}
++#endif
++
+ int fec_send(struct eth_device *dev, volatile void *packet, int length)
+ {
+ 	struct fec_info_s *info = dev->priv;
+@@ -369,6 +391,10 @@ int fec_send(struct eth_device *dev, volatile void *packet, int length)
+ 	if (j >= FEC_MAX_TIMEOUT)
+ 		printf("TX not ready\n");
+ 
++#ifdef CONFIG_MX28
++	swap_packet((void *)packet, length);
++#endif
++
+ #ifdef CONFIG_ARCH_MMU
+ 	memcpy(ioremap_nocache(info->txbd[info->txIdx].cbd_bufaddr, length),
+ 			packet, length);
+@@ -440,6 +466,9 @@ int fec_recv(struct eth_device *dev)
+ #endif
+ 		} else {
+ 			length -= 4;
++#ifdef CONFIG_MX28
++			swap_packet((void *)NetRxPackets[info->rxIdx], length);
++#endif
+ 			/* Pass the packet up to the protocol layers. */
+ #ifdef CONFIG_ARCH_MMU
+ 			memcpy(NetRxPackets[info->rxIdx],
+diff --git a/include/asm-arm/arch-mx28/clkctrl.h b/include/asm-arm/arch-mx28/clkctrl.h
+deleted file mode 100644
+index 76db80c..0000000
+--- a/include/asm-arm/arch-mx28/clkctrl.h
++++ /dev/null
+@@ -1,64 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * Clock control register descriptions
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-#ifndef CLKCTRL_H
+-#define CLKCTRL_H
+-
+-#include <asm/arch/mx28.h>
+-
+-#define CLKCTRL_BASE	(MX28_REGS_BASE + 0x40000)
+-
+-#define	CLKCTRL_PLLCTRL0	0x000
+-#define	CLKCTRL_PLLCTRL1	0x010
+-#define	CLKCTRL_CPU		0x020
+-#define CLKCTRL_HBUS		0x030
+-#define	CLKCTRL_XBUS		0x040
+-#define	CLKCTRL_XTAL		0x050
+-#define CLKCTRL_PIX		0x060
+-#define	CLKCTRL_SSP		0x070
+-#define	CLKCTRL_GPMI		0x080
+-#define CLKCTRL_SPDIF		0x090
+-#define	CLKCTRL_EMI		0x0a0
+-#define	CLKCTRL_IR		0x0b0
+-#define CLKCTRL_SAIF		0x0c0
+-#define	CLKCTRL_TV		0x0d0
+-#define	CLKCTRL_ETM		0x0e0
+-#define	CLKCTRL_FRAC		0x0f0
+-#define	CLKCTRL_FRAC1		0x100
+-#define CLKCTRL_CLKSEQ		0x110
+-#define	CLKCTRL_RESET		0x120
+-#define	CLKCTRL_STATUS		0x130
+-#define CLKCTRL_VERSION		0x140
+-
+-/* CLKCTRL_SSP register bits, bit fields and values */
+-#define	SSP_CLKGATE	(1 << 31)
+-#define	SSP_BUSY	(1 << 29)
+-#define	SSP_DIV_FRAC_EN	(1 << 9)
+-#define SSP_DIV		0
+-
+-/* CLKCTRL_FRAC register bits, bit fields and values */
+-#define	FRAC_CLKGATEIO	(1 << 31)
+-#define FRAC_IOFRAC	24
+-
+-/* CLKCTRL_FRAC register bits, bit fields and values */
+-#define CLKSEQ_BYPASS_SSP	(1 << 5)
+-
+-#endif /* CLKCTRL_H */
+diff --git a/include/asm-arm/arch-mx28/dbguart.h b/include/asm-arm/arch-mx28/dbguart.h
+deleted file mode 100644
+index b9a4bae..0000000
+--- a/include/asm-arm/arch-mx28/dbguart.h
++++ /dev/null
+@@ -1,30 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * Debug UART register definitions
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-
+-#ifndef DBGUART_H
+-#define DBGUART_H
+-
+-#include <asm/arch/mx28.h>
+-
+-#define DBGUART_BASE	(MX28_REGS_BASE + 0x00070000)
+-
+-#endif /* DBGUART_H */
+diff --git a/include/asm-arm/arch-mx28/mx28.h b/include/asm-arm/arch-mx28/mx28.h
+index c050fdf..fc671ae 100644
+--- a/include/asm-arm/arch-mx28/mx28.h
++++ b/include/asm-arm/arch-mx28/mx28.h
+@@ -20,6 +20,17 @@
+ #ifndef __MX28_H
+ #define __MX28_H
+ 
++#ifndef __ASSEMBLER__
++enum mxc_clock {
++	MXC_ARM_CLK = 0,
++	MXC_AHB_CLK,
++	MXC_IPG_CLK,
++};
++
++unsigned int mxc_get_clock(enum mxc_clock clk);
++void enet_board_init(void);
++#endif
++
+ /*
+  * Most of i.MX28 SoC registers are associated with four addresses
+  * used for different operations - read/write, set, clear and toggle bits.
+diff --git a/include/asm-arm/arch-mx28/ocotp.h b/include/asm-arm/arch-mx28/ocotp.h
+deleted file mode 100644
+index 9396820..0000000
+--- a/include/asm-arm/arch-mx28/ocotp.h
++++ /dev/null
+@@ -1,69 +0,0 @@
+-/* Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * On-Chip OTP register descriptions
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-#ifndef OCOTP_H
+-#define OCOTP_H
+-
+-#include <asm/arch/mx28.h>
+-
+-#define OCOTP_BASE	(MX28_REGS_BASE + 0x2c000)
+-
+-#define	OCOTP_CTRL		0x000
+-#define	OCOTP_CTRL_SET		0x004
+-#define	OCOTP_CTRL_CLR		0x008
+-#define	OCOTP_CTRL_TOG		0x00c
+-#define	OCOTP_DATA		0x010
+-#define	OCOTP_CUST0		0x020
+-#define	OCOTP_CUST1		0x030
+-#define	OCOTP_CUST2		0x040
+-#define	OCOTP_CUST3		0x050
+-#define	OCOTP_CRYPTO1		0x070
+-#define	OCOTP_CRYPTO2		0x080
+-#define	OCOTP_CRYPTO3		0x090
+-#define	OCOTP_HWCAP0		0x0a0
+-#define	OCOTP_HWCAP1		0x0b0
+-#define	OCOTP_HWCAP2		0x0c0
+-#define	OCOTP_HWCAP3		0x0d0
+-#define	OCOTP_HWCAP4		0x0e0
+-#define	OCOTP_HWCAP5		0x0f0
+-#define	OCOTP_SWCAP		0x100
+-#define	OCOTP_CUSTCAP		0x110
+-#define	OCOTP_LOCK		0x120
+-#define	OCOTP_OPS0		0x130
+-#define	OCOTP_OPS1		0x140
+-#define	OCOTP_OPS2		0x150
+-#define	OCOTP_OPS3		0x160
+-#define	OCOTP_UN0		0x170
+-#define	OCOTP_UN1		0x180
+-#define	OCOTP_UN2		0x190
+-#define	OCOTP_ROM0		0x1a0
+-#define	OCOTP_ROM1		0x1b0
+-#define	OCOTP_ROM2		0x1c0
+-#define	OCOTP_ROM3		0x1d0
+-#define	OCOTP_ROM4		0x1e0
+-#define	OCOTP_ROM5		0x1f0
+-#define	OCOTP_ROM6		0x200
+-#define	OCOTP_ROM7		0x210
+-#define	OCOTP_VERSION		0x220
+-
+-
+-/* OCOTP_CTRL register bits, bit fields and values */
+-#define CTRL_RD_BANK_OPEN	(1 << 12)
+-#define CTRL_BUSY		(8 << 12)
+-
+-#endif /* OCOTP_H */
+diff --git a/include/asm-arm/arch-mx28/pinmux.h b/include/asm-arm/arch-mx28/pinmux.h
+deleted file mode 100644
+index db581bc..0000000
+--- a/include/asm-arm/arch-mx28/pinmux.h
++++ /dev/null
+@@ -1,42 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * Clock control register descriptions
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-#ifndef PINMUX_H
+-#define PINMUX_H
+-
+-#include <asm/arch/mx28.h>
+-
+-#define	PINCTRL_BASE	(MX28_REGS_BASE + 0x18000)
+-
+-#define PINCTRL_CTRL		0x000
+-#define	PINCTRL_MUXSEL(n)	(0x100 + 0x10*(n))
+-#define PINCTRL_DRIVE(n)	(0x200 + 0x10*(n))
+-#define PINCTRL_PULL(n)		(0x400 + 0x10*(n))
+-#define PINCTRL_DOUT(n)		(0x500 + 0x10*(n))
+-#define PINCTRL_DIN(n)		(0x600 + 0x10*(n))
+-#define PINCTRL_DOE(n)		(0x700 + 0x10*(n))
+-#define PINCTRL_PIN2IRQ(n)	(0x800 + 0x10*(n))
+-#define PINCTRL_IRQEN(n)	(0x900 + 0x10*(n))
+-#define PINCTRL_IRQLEVEL(n)	(0xa00 + 0x10*(n))
+-#define PINCTRL_IRQPOL(n)	(0xb00 + 0x10*(n))
+-#define PINCTRL_IRQSTAT(n)	(0xc00 + 0x10*(n))
+-
+-#endif /* PINMUX_H */
+diff --git a/include/asm-arm/arch-mx28/spi.h b/include/asm-arm/arch-mx28/spi.h
+deleted file mode 100644
+index afd3245..0000000
+--- a/include/asm-arm/arch-mx28/spi.h
++++ /dev/null
+@@ -1,69 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * SSP/SPI driver
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-#ifndef SPI_H
+-#define SPI_H
+-
+-#include <config.h>
+-#include <common.h>
+-#include <asm/arch/ssp.h>
+-
+-/*
+- * Flags to set SPI mode
+- */
+-#define SPI_PHASE	0x1 /* Set phase to 1 */
+-#define SPI_POLARITY	0x2 /* Set polarity to 1 */
+-
+-/* Various flags to control SPI transfers */
+-#define SPI_START	0x1	/* Lock CS signal */
+-#define SPI_STOP	0x2	/* Unlock CS signal */
+-
+-/*
+- * Init SSPx interface, must be called first
+- */
+-void spi_init(void);
+-
+-/*
+- * Set phase, polarity and CS number (SS0, SS1, SS2)
+- */
+-void spi_set_cfg(unsigned int bus, unsigned int cs, unsigned long mode);
+-
+-
+-/*
+- * Send @rx_len bytes from @dout, then receive @rx_len bytes
+- * saving them to @din
+- */
+-void spi_txrx(const char *dout, unsigned int tx_len, char *din,
+-	       unsigned int rx_len, unsigned long flags);
+-
+-
+-/* Lock/unlock SPI bus */
+-static inline void spi_lock(void)
+-{
+-	disable_interrupts();
+-}
+-
+-static inline void spi_unlock(void)
+-{
+-	enable_interrupts();
+-}
+-
+-#endif /* SPI_H */
+diff --git a/include/asm-arm/arch-mx28/ssp.h b/include/asm-arm/arch-mx28/ssp.h
+deleted file mode 100644
+index f6e8e28..0000000
+--- a/include/asm-arm/arch-mx28/ssp.h
++++ /dev/null
+@@ -1,100 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * SSP register definitions
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-#ifndef SSP_H
+-#define SSP_H
+-
+-#include <asm/arch/mx28.h>
+-
+-#define SSP1_BASE	(MX28_REGS_BASE + 0x10000)
+-#define SSP2_BASE	(MX28_REGS_BASE + 0x34000)
+-
+-#define SSP_CTRL0	0x000
+-#define SSP_CMD0	0x010
+-#define SSP_CMD1	0x020
+-#define SSP_COMPREF	0x030
+-#define SSP_COMPMASK	0x040
+-#define SSP_TIMING	0x050
+-#define SSP_CTRL1	0x060
+-#define SSP_DATA	0x070
+-#define SSP_SDRESP0	0x080
+-#define SSP_SDRESP1	0x090
+-#define SSP_SDRESP2	0x0a0
+-#define SSP_SDRESP3	0x0b0
+-#define SSP_STATUS	0x0c0
+-#define SSP_DEBUG	0x100
+-#define SSP_VERSION	0x110
+-
+-/* CTRL0 bits, bit fields and values */
+-#define CTRL0_SFTRST		(0x1 << 31)
+-#define CTRL0_CLKGATE		(0x1 << 30)
+-#define	CTRL0_RUN		(0x1 << 29)
+-#define CTRL0_LOCK_CS		(0x1 << 27)
+-#define CTRL0_IGNORE_CRC	(0x1 << 26)
+-#define CTRL0_DATA_XFER		(0x1 << 24)
+-#define CTRL0_READ		(0x1 << 25)
+-#define CTRL0_BUS_WIDTH		22
+-#define CTRL0_WAIT_FOR_IRQ	(0x1 << 21)
+-#define CTRL0_WAIT_FOR_CMD	(0x1 << 20)
+-#define CTRL0_XFER_COUNT	0
+-
+-#define BUS_WIDTH_SPI1	(0x0 << CTRL0_BUS_WIDTH)
+-#define BUS_WIDTH_SPI4	(0x1 << CTRL0_BUS_WIDTH)
+-#define BUS_WIDTH_SPI8	(0x2 << CTRL0_BUS_WIDTH)
+-
+-#define SPI_CS0		0x0
+-#define SPI_CS1		CTRL0_WAIT_FOR_CMD
+-#define SPI_CS2		CTRL0_WAIT_FOR_IRQ
+-#define SPI_CS_CLR_MASK	(CTRL0_WAIT_FOR_CMD | CTRL0_WAIT_FOR_IRQ)
+-
+-/* CMD0 bits, bit fields and values */
+-#define CMD0_BLOCK_SIZE		16
+-#define CMD0_BLOCK_COUNT	12
+-#define CMD0_CMD		0
+-
+-/* TIMING bits, bit fields and values */
+-#define TIMING_TIMEOUT		16
+-#define TIMING_CLOCK_DIVIDE	8
+-#define TIMING_CLOCK_RATE	0
+-
+-/* CTRL1 bits, bit fields and values */
+-#define CTRL1_DMA_ENABLE	(0x1 << 13)
+-#define CTRL1_PHASE		(0x1 << 10)
+-#define CTRL1_POLARITY		(0x1 << 9)
+-#define CTRL1_SLAVE_MODE	(0x1 << 8)
+-#define CTRL1_WORD_LENGTH	4
+-#define CTRL1_SSP_MODE		0
+-
+-#define WORD_LENGTH4	(0x3 << CTRL1_WORD_LENGTH)
+-#define WORD_LENGTH8	(0x7 << CTRL1_WORD_LENGTH)
+-#define WORD_LENGTH16	(0xF << CTRL1_WORD_LENGTH)
+-
+-#define SSP_MODE_SPI	(0x0 << CTRL1_SSP_MODE)
+-#define SSP_MODE_SSI	(0x1 << CTRL1_SSP_MODE)
+-#define SSP_MODE_SD_MMC	(0x3 << CTRL1_SSP_MODE)
+-#define SSP_MODE_MS	(0x4 << CTRL1_SSP_MODE)
+-#define SSP_MODE_ATA	(0x7 << CTRL1_SSP_MODE)
+-
+-/* CTRL1 bits, bit fields and values */
+-#define STATUS_FIFO_EMPTY	(1 << 5)
+-#define STATUS_FIFO_FULL	(1 << 8)
+-
+-#endif /* SSP_H */
+diff --git a/include/asm-arm/arch-mx28/timrot.h b/include/asm-arm/arch-mx28/timrot.h
+deleted file mode 100644
+index ec9e716..0000000
+--- a/include/asm-arm/arch-mx28/timrot.h
++++ /dev/null
+@@ -1,63 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions Inc.
+- *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
+- *
+- * Timers and rotary encoder register definitions
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-#ifndef TIMROT_H
+-#define TIMROT_H
+-
+-#include <asm/arch/mx28.h>
+-
+-#define TIMROT_BASE	(MX28_REGS_BASE + 0x00068000)
+-
+-/* Timer and rotary encoder register offsets */
+-#define ROTCTRL		0x0
+-#define ROTCOUNT	0x10
+-#define TIMCTRL0	0x20
+-#define TIMCOUNT0	0x30
+-#define TIMCTRL1	0x40
+-#define TIMCOUNT1	0x50
+-#define TIMCTRL2	0x60
+-#define TIMCOUNT2	0x70
+-#define TIMCTRL3	0x80
+-#define TIMCTRL3	0x90
+-
+-/* TIMCTRL bits, bit fields and values */
+-#define TIMCTRL_SELECT		0
+-#define TIMCTRL_PRESCALE	4
+-#define TIMCTRL_RELOAD		(1 << 6)
+-#define TIMCTRL_UPDATE		(1 << 7)
+-#define TIMCTRL_POLARITY	(1 << 8)
+-#define TIMCTRL_IRQEN		(1 << 14)
+-#define TIMCTRL_IRQ		(1 << 15)
+-
+-#define TIMCTRL_SELECT_PWM0	(0x1 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_PWM1	(0x2 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_PWM2	(0x3 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_PWM3	(0x4 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_PWM4	(0x5 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_ROTARYA	(0x6 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_ROTARYB	(0x7 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_32KHZ	(0x8 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_8KHZ	(0x9 << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_4KHZ	(0xa << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_1KHZ	(0xb << TIMCTRL_SELECT)
+-#define TIMCTRL_SELECT_ALWAYS	(0xc << TIMCTRL_SELECT)
+-
+-#endif /* TIMROT_H */
+diff --git a/include/asm-arm/fec.h b/include/asm-arm/fec.h
+index 4e81fa0..226bb26 100644
+--- a/include/asm-arm/fec.h
++++ b/include/asm-arm/fec.h
+@@ -261,4 +261,10 @@ typedef struct fec {
+ 
+ #define FEC_MAX_TIMEOUT			50000
+ #define FEC_TIMEOUT_TICKET		2
++
++/*
++ * Functions
++ */
++int mxc_fec_initialize(bd_t *bis);
++
+ #endif				/* fec_h */
+diff --git a/include/configs/mx28.h b/include/configs/mx28.h
+deleted file mode 100644
+index b119f76..0000000
+--- a/include/configs/mx28.h
++++ /dev/null
+@@ -1,190 +0,0 @@
+-/*
+- * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+- *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License as
+- * published by the Free Software Foundation; either version 2 of
+- * the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+- * MA 02111-1307 USA
+- */
+-
+-#ifndef __CONFIG_H
+-#define __CONFIG_H
+-#include <asm/sizes.h>
+-
+-/*
+- * Define this to make U-Boot skip low level initialization when loaded
+- * by initial bootloader. Not required by NAND U-Boot version but IS
+- * required for a NOR version used to burn the real NOR U-Boot into
+- * NOR Flash. NAND and NOR support for DaVinci chips is mutually exclusive
+- * so it is NOT possible to build a U-Boot with both NAND and NOR routines.
+- * NOR U-Boot is loaded directly from Flash so it must perform all the
+- * low level initialization itself. NAND version is loaded by an initial
+- * bootloader (UBL in TI-ese) that performs such an initialization so it's
+- * skipped in NAND version. The third DaVinci boot mode loads a bootloader
+- * via UART0 and that bootloader in turn loads and runs U-Boot (or whatever)
+- * performing low level init prior to loading. All that means we can NOT use
+- * NAND version to put U-Boot into NOR because it doesn't have NOR support and
+- * we can NOT use NOR version because it performs low level initialization
+- * effectively destroying itself in DDR memory. That's why a separate NOR
+- * version with this define is needed. It is loaded via UART, then one uses
+- * it to somehow download a proper NOR version built WITHOUT this define to
+- * RAM (tftp?) and burn it to NOR Flash. I would be probably able to squeeze
+- * NOR support into the initial bootloader so it won't be needed but DaVinci
+- * static RAM might be too small for this (I have something like 2Kbytes left
+- * as of now, without NOR support) so this might've not happened...
+- *
+- */
+-
+-/*===================*/
+-/* SoC Configuration */
+-/*===================*/
+-#define CONFIG_ARM926EJS			/* arm926ejs CPU core */
+-#define CONFIG_MX28				/* STMP378x SoC */
+-#define CONFIG_SYS_CLK_FREQ	120000000	/* Arm Clock frequency */
+-#define CONFIG_USE_TIMER0			/* use timer 0 */
+-#define CONFIG_SYS_HZ		1000		/* Ticks per second */
+-/*=============*/
+-/* Memory Info */
+-/*=============*/
+-#define CONFIG_SYS_MALLOC_LEN	(0x10000 + 128*1024)	/* malloc() len */
+-#define CONFIG_SYS_GBL_DATA_SIZE 128		/* reserved for initial data */
+-#define CONFIG_SYS_MEMTEST_START 0x40000000	/* memtest start address */
+-#define CONFIG_SYS_MEMTEST_END	 0x40400000	/* 16MB RAM test */
+-#define CONFIG_NR_DRAM_BANKS	1		/* we have 1 bank of DRAM */
+-#define CONFIG_STACKSIZE	(256*1024)	/* regular stack */
+-#define PHYS_SDRAM_1		0x40000000	/* mDDR Start */
+-#define PHYS_SDRAM_1_SIZE	0x08000000	/* mDDR size 32MB */
+-
+-/*====================*/
+-/* Serial Driver info */
+-/*====================*/
+-#define CONFIG_DBGUART_CLK	24000000
+-#define CONFIG_BAUDRATE		115200		/* Default baud rate */
+-#define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
+-
+-/*====================*/
+-/* SPI Driver info */
+-/*====================*/
+-#define CONFIG_SSP_CLK		48000000
+-#define CONFIG_SPI_CLK		3000000
+-#define CONFIG_SPI_SSP1
+-#undef CONFIG_SPI_SSP2
+-
+-/*=====================*/
+-/* Flash & Environment */
+-/*=====================*/
+-#define CONFIG_SYS_NO_FLASH			/* Flash is not supported */
+-#define CONFIG_ENV_IS_NOWHERE		/* Store ENV in memory only */
+-
+-
+-/* ROM loads UBOOT into DRAM */
+-#define CONFIG_SKIP_RELOCATE_UBOOT
+-
+-
+-/*==============================*/
+-/* U-Boot general configuration */
+-/*==============================*/
+-#define CONFIG_BOOTDELAY	2
+-#define CONFIG_BOOTFILE		"uImage"	/* Boot file name */
+-#define CONFIG_SYS_PROMPT	"MX28 U-Boot > "
+-#define CONFIG_SYS_CBSIZE	1024		/* Console I/O buffer size */
+-#define CONFIG_SYS_PBSIZE \
+-	(CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+-						/* Print buffer size */
+-#define CONFIG_SYS_MAXARGS	16		/* Max number of command args */
+-#define CONFIG_SYS_BARGSIZE	CONFIG_SYS_CBSIZE
+-						/* Boot argument buffer size */
+-#define CONFIG_VERSION_VARIABLE			/* U-BOOT version */
+-#define CONFIG_AUTO_COMPLETE			/* Command auto complete */
+-#define CONFIG_CMDLINE_EDITING			/* Command history etc */
+-#define CONFIG_VERSION_VARIABLE
+-#define CONFIG_AUTO_COMPLETE	/* Won't work with hush so far, may be later */
+-#define CFG_HUSH_PARSER
+-#define CFG_PROMPT_HUSH_PS2	"> "
+-#define CONFIG_CMDLINE_EDITING
+-#define CFG_LONGHELP
+-#define CONFIG_CRC32_VERIFY
+-#define CONFIG_MX_CYCLIC
+-
+-/*
+- * Boot Linux
+- */
+-#define LINUX_BOOT_PARAM_ADDR	0x40000100
+-#define CONFIG_CMDLINE_TAG
+-#define CONFIG_SETUP_MEMORY_TAGS
+-#define CONFIG_BOOTARGS		"console=ttyAM0,115200n8 "
+-#define CONFIG_BOOTCOMMAND	"run bootcmd_net"
+-#define CONFIG_LOADADDR		0x42000000
+-#define CONFIG_SYS_LOAD_ADDR	CONFIG_LOADADDR
+-
+-/*
+- * Extra Environments
+- */
+-#define	CONFIG_EXTRA_ENV_SETTINGS \
+-	"nfsroot=/data/rootfs_home/rootfs\0" \
+-	"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
+-		"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0" \
+-	"bootcmd_net=run bootargs_nfs; dhcp; bootm\0" \
+-	"bootargs_mmc=setenv bootargs ${bootargs} root=/dev/mmcblk0p2 " \
+-		"ip=dhcp rootfstype=ext2\0" \
+-	"bootcmd_mmc=run bootargs_mmc; " \
+-		"mmc read 0 ${loadaddr} 100 3000; bootm\0" \
+-
+-/*=================*/
+-/* U-Boot commands */
+-/*=================*/
+-#include <config_cmd_default.h>
+-#undef  CONFIG_CMD_MMC /* MX28 use special mmc command*/
+-#define CONFIG_ARCH_CPU_INIT
+-#define CONFIG_DISPLAY_CPUINFO
+-
+-/*
+- * ENET Driver
+- */
+-#define CONFIG_MXC_ENET
+-#define CONFIG_NET_MULTI
+-#define CONFIG_ETH_PRIME
+-#define CONFIG_CMD_MII
+-#define CONFIG_DISCOVER_PHY
+-#define CONFIG_CMD_DHCP
+-#define CONFIG_BOOTP_SUBNETMASK
+-#define CONFIG_BOOTP_GATEWAY
+-#define CONFIG_BOOTP_DNS
+-#define CONFIG_CMD_PING
+-#define CONFIG_IPADDR			192.168.1.101
+-#define CONFIG_SERVERIP			192.168.1.100
+-#define CONFIG_NETMASK			255.255.255.0
+-
+-/*
+- * MMC Driver
+- */
+-#define CONFIG_IMX_SSP_MMC		/* MMC driver based on SSP */
+-#define CONFIG_GENERIC_MMC
+-#define CONFIG_CUSTOMIZE_MMCOPS		/* To customize do_mmcops() */
+-#define CONFIG_DOS_PARTITION
+-#define CONFIG_CMD_FAT
+-#define CONFIG_MMC
+-
+-/*
+- * Environments on MMC
+- */
+-#define CONFIG_CMD_ENV
+-#define CONFIG_ENV_OVERWRITE
+-#define CONFIG_ENV_IS_IN_MMC
+-/* Assoiated with the MMC layout defined in mmcops.c */
+-#define CONFIG_ENV_OFFSET		(0x400) /* 1 KB */
+-#define CONFIG_ENV_SIZE			(0x20000 - 0x400) /* 127 KB */
+-
+-#endif /* __CONFIG_H */
+diff --git a/include/configs/mx28_evk.h b/include/configs/mx28_evk.h
+new file mode 100644
+index 0000000..fa6069e
+--- /dev/null
++++ b/include/configs/mx28_evk.h
+@@ -0,0 +1,140 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++#ifndef __MX28_EVK_H
++#define __MX28_EVK_H
++
++#include <asm/arch/mx28.h>
++
++/*
++ * SoC configurations
++ */
++#define CONFIG_MX28				/* i.MX28 SoC */
++#define CONFIG_SYS_HZ		1000		/* Ticks per second */
++/* ROM loads UBOOT into DRAM */
++#define CONFIG_SKIP_RELOCATE_UBOOT
++
++/*
++ * Memory configurations
++ */
++#define CONFIG_NR_DRAM_BANKS	1		/* 1 bank of DRAM */
++#define PHYS_SDRAM_1		0x40000000	/* Base address */
++#define PHYS_SDRAM_1_SIZE	0x08000000	/* 128 MB */
++#define CONFIG_STACKSIZE	0x00020000	/* 128 KB stack */
++#define CONFIG_SYS_MALLOC_LEN	0x00400000	/* 4 MB for malloc */
++#define CONFIG_SYS_GBL_DATA_SIZE 128		/* Reserved for initial data */
++#define CONFIG_SYS_MEMTEST_START 0x40000000	/* Memtest start address */
++#define CONFIG_SYS_MEMTEST_END	 0x40400000	/* 4 MB RAM test */
++
++/*
++ * U-Boot general configurations
++ */
++#define CONFIG_SYS_PROMPT	"MX28 U-Boot > "
++#define CONFIG_SYS_CBSIZE	1024		/* Console I/O buffer size */
++#define CONFIG_SYS_PBSIZE \
++	(CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++						/* Print buffer size */
++#define CONFIG_SYS_MAXARGS	16		/* Max number of command args */
++#define CONFIG_SYS_BARGSIZE	CONFIG_SYS_CBSIZE
++						/* Boot argument buffer size */
++#define CONFIG_VERSION_VARIABLE			/* U-BOOT version */
++#define CONFIG_AUTO_COMPLETE			/* Command auto complete */
++#define CONFIG_CMDLINE_EDITING			/* Command history etc */
++
++/*
++ * Boot Linux
++ */
++#define CONFIG_CMDLINE_TAG
++#define CONFIG_SETUP_MEMORY_TAGS
++#define CONFIG_BOOTDELAY	3
++#define CONFIG_BOOTFILE		"uImage"
++#define CONFIG_BOOTARGS		"console=ttyAM0,115200n8 "
++#define CONFIG_BOOTCOMMAND	"run bootcmd_net"
++#define CONFIG_LOADADDR		0x42000000
++#define CONFIG_SYS_LOAD_ADDR	CONFIG_LOADADDR
++
++/*
++ * Extra Environments
++ */
++#define	CONFIG_EXTRA_ENV_SETTINGS \
++	"nfsroot=/home/notroot/nfs/rootfs\0" \
++	"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
++		"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp " \
++		"fec_mac=${ethaddr}\0" \
++	"bootcmd_net=run bootargs_nfs; dhcp; bootm\0" \
++	"bootargs_mmc=setenv bootargs ${bootargs} root=/dev/mmcblk0p3 " \
++		"rw rootwait ip=dhcp fec_mac=${ethaddr}\0" \
++	"bootcmd_mmc=run bootargs_mmc; " \
++		"mmc read 0 ${loadaddr} 100 3000; bootm\0" \
++
++/*
++ * U-Boot Commands
++ */
++#define CONFIG_SYS_NO_FLASH
++#include <config_cmd_default.h>
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_DISPLAY_CPUINFO
++
++/*
++ * Serial Driver
++ */
++#define CONFIG_UARTDBG_CLK		24000000
++#define CONFIG_BAUDRATE			115200		/* Default baud rate */
++#define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++/*
++ * FEC Driver
++ */
++#define CONFIG_MXC_FEC
++#define CONFIG_FEC0_IOBASE		REGS_ENET_BASE
++#define CONFIG_FEC0_PHY_ADDR		0
++#define CONFIG_NET_MULTI
++#define CONFIG_ETH_PRIME
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_PING
++#define CONFIG_IPADDR			192.168.1.103
++#define CONFIG_SERVERIP			192.168.1.101
++#define CONFIG_NETMASK			255.255.255.0
++/* Add for working with "strict" DHCP server */
++#define CONFIG_BOOTP_SUBNETMASK
++#define CONFIG_BOOTP_GATEWAY
++#define CONFIG_BOOTP_DNS
++
++
++/*
++ * MMC Driver
++ */
++#define CONFIG_CMD_MMC
++#define CONFIG_MMC
++#define CONFIG_IMX_SSP_MMC		/* MMC driver based on SSP */
++#define CONFIG_GENERIC_MMC
++#define CONFIG_DOS_PARTITION
++#define CONFIG_CMD_FAT
++
++/*
++ * Environments on MMC
++ */
++#define CONFIG_CMD_ENV
++#define CONFIG_ENV_OVERWRITE
++#define CONFIG_ENV_IS_IN_MMC
++/* Assoiated with the MMC layout defined in mmcops.c */
++#define CONFIG_ENV_OFFSET		(0x400) /* 1 KB */
++#define CONFIG_ENV_SIZE			(0x20000 - 0x400) /* 127 KB */
++
++#endif /* __MX28_EVK_H */
+-- 
+1.5.4.4
+

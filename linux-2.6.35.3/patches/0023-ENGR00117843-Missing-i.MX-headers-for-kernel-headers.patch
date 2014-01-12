@@ -1,0 +1,49 @@
+From d76cc9e5bfa26e6f1da057610e6b864466f0840b Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sun, 1 Nov 2009 11:14:53 +0800
+Subject: [PATCH] ENGR00117843 Missing i.MX headers for kernel headers_install
+
+Add i.MX specific files into include/linux/Kbuild
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ include/linux/Kbuild |   23 +++++++++++++++++++++++
+ 1 files changed, 23 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/Kbuild b/include/linux/Kbuild
+index efc5ada..ee0062a 100644
+--- a/include/linux/Kbuild
++++ b/include/linux/Kbuild
+@@ -388,6 +388,29 @@ unifdef-y += wireless.h
+ unifdef-y += xattr.h
+ unifdef-y += xfrm.h
+ 
++## i.MX specific files
++unifdef-y += fsl_devices.h
++unifdef-y += imx_adc.h
++unifdef-y += ipu.h
++unifdef-y += mxc_asrc.h
++unifdef-y += mxc_mlb.h
++unifdef-y += mxc_pf.h
++unifdef-y += mxc_scc2_driver.h
++unifdef-y += mxc_scc_driver.h
++unifdef-y += mxc_srtc.h
++unifdef-y += mxc_si4702.h
++unifdef-y += mxc_sim_interface.h
++unifdef-y += mxc_v4l2.h
++unifdef-y += mxcfb.h
++unifdef-y += pmic_adc.h
++unifdef-y += pmic_battery.h
++unifdef-y += pmic_external.h
++unifdef-y += pmic_light.h
++unifdef-y += pmic_rtc.h
++unifdef-y += pmic_status.h
++unifdef-y += soundcard.h
++unifdef-y += pxp_dma.h
++
+ objhdr-y += version.h
+ header-y += wimax.h
+ header-y += wimax/
+-- 
+1.5.4.4
+

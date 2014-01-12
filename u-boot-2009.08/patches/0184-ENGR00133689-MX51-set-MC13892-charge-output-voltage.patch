@@ -1,0 +1,62 @@
+From 5c13c889739565b7a0409048ef4ac3eaedf3ff09 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 16 Nov 2010 14:58:20 +0800
+Subject: [PATCH] ENGR00133689 MX51: set MC13892 charge output voltage as 4.2V
+
+This patch is to set MC13892 charge regulator output voltage
+as 4.2V. It fixes a typo error for chip check and makes TO3
+VCC and VDDA voltages keep sync with the spec.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx51_bbg/mx51_bbg.c |   23 ++++++++++++++++++++---
+ 1 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index e0fe6bd..8cc5ee7 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -153,6 +153,11 @@ inline int is_soc_rev(int rev)
+ 	return (system_rev & 0xFF) - rev;
+ }
+ 
++static int is_board_rev(int rev)
++{
++	return (((system_rev & 0x0F00) >> 8) == rev) ? 1 : 0;
++}
++
+ #ifdef CONFIG_ARCH_MMU
+ void board_mmu_init(void)
+ {
+@@ -588,13 +593,25 @@ static void setup_core_voltage_spi(void)
+ 	val &= ~0x10000;
+ 	pmic_reg(slave, 34, val, 1);
+ 
+-	/* Write needed to update Charger 0 */
+-	pmic_reg(slave, 48, 0x0023807f, 1);
++	/* For BBG2.5 and BBG3.0, set SPI register 48 = 0x21807B
++	 * and  disable the PLIM.
++	 * MC13892 has an inside charge timer which expires in 120 minutes.
++	 * If ICHRG and CHGAUTOB are not set properly, this timer expiration
++	 * will get system power recycled.
++	 * Since BBG has no Li-Ion battery on board, sets
++	 * ICHRG in externally powered mode and sets CHGAUTOB bit to avoid
++	 * automatic charging, so that system will not get reset by this
++	 * timer expiration.
++	 * Set the charge regulator output voltage as 4.2V by default
++	 * according to MC13892 spec
++	 */
++	if (is_board_rev(BOARD_REV_2_0))
++		pmic_reg(slave, 48, 0x0023807B, 1);
+ 
+ 	/* power up the system first */
+ 	pmic_reg(slave, 34, 0x00200000, 1);
+ 
+-	if (is_soc_rev(CHIP_REV_2_0) >= 0) {
++	if (is_soc_rev(CHIP_REV_2_0) <= 0) {
+ 		/* Set core voltage to 1.1V */
+ 		val = pmic_reg(slave, 24, 0, 0);
+ 		val = (val & (~0x1f)) | 0x14;
+-- 
+1.5.4.4
+

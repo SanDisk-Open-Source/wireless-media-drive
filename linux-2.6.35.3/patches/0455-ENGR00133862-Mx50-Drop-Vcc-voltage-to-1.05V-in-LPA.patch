@@ -1,0 +1,90 @@
+From 5a87ea3bd3ff1a2c0e77fc2549901fb55291ba91 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Mon, 15 Nov 2010 09:25:19 -0600
+Subject: [PATCH] ENGR00133862: Mx50: Drop Vcc voltage to 1.05V in LPAPM mode
+
+Change Vcc to 1.05V when the system is in LPAPM mode (LP domain and
+DDR are at 24MHz)
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c |   42 ++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 42 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 54bfa6f..12d2e80 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -130,6 +130,21 @@ struct dvfs_wp dvfs_core_setpoint[] = {
+ 
+ static DEFINE_SPINLOCK(voltage_lock);
+ 
++static void voltage_work_handler(struct work_struct *work)
++{
++	if (lp_regulator != NULL) {
++		u32 ret = 0;
++		ret = regulator_set_voltage(lp_regulator,
++					lp_voltage, lp_voltage);
++		udelay(400);
++		if (ret < 0) {
++			printk(KERN_ERR "COULD NOT SET LP VOLTAGE!!!!!!\n");
++			return;
++		}
++	}
++	complete_all(&voltage_change_cmpl);
++}
++
+ int set_low_bus_freq(void)
+ {
+ 	u32 reg;
+@@ -284,6 +299,12 @@ void enter_lpapm_mode_mx50()
+ 
+ 	spin_unlock_irqrestore(&ddr_freq_lock, flags);
+ 
++	spin_lock_irqsave(&voltage_lock, flags);
++	lp_voltage = LP_LOW_VOLTAGE;
++	INIT_COMPLETION(voltage_change_cmpl);
++	queue_work(voltage_wq, &voltage_change_handler);
++	spin_unlock_irqrestore(&voltage_lock, flags);
++
+ 	udelay(100);
+ }
+ 
+@@ -441,6 +462,22 @@ void exit_lpapm_mode_mx50()
+ 	u32 reg;
+ 	unsigned long flags;
+ 
++	if (!completion_done(&voltage_change_cmpl))
++		wait_for_completion_interruptible(&voltage_change_cmpl);
++	spin_lock_irqsave(&voltage_lock, flags);
++	if (lp_voltage != LP_NORMAL_VOLTAGE) {
++		INIT_COMPLETION(voltage_change_cmpl);
++		lp_voltage = LP_NORMAL_VOLTAGE;
++		if (!queue_work(voltage_wq, &voltage_change_handler))
++			printk(KERN_ERR "WORK_NOT_ADDED\n");
++		spin_unlock_irqrestore(&voltage_lock, flags);
++		wait_for_completion_interruptible(&voltage_change_cmpl);
++	} else {
++		spin_unlock_irqrestore(&voltage_lock, flags);
++		if (!completion_done(&voltage_change_cmpl))
++			wait_for_completion_interruptible(&voltage_change_cmpl);
++	}
++
+ 	spin_lock_irqsave(&ddr_freq_lock, flags);
+ 	if (!low_bus_freq_mode) {
+ 		spin_unlock_irqrestore(&ddr_freq_lock, flags);
+@@ -830,6 +867,11 @@ static int __devinit busfreq_probe(struct platform_device *pdev)
+ 		reg = __raw_readl(qosc_base);
+ 		reg &= ~0xC0000000;
+ 		__raw_writel(reg, qosc_base);
++
++		voltage_wq = create_rt_workqueue("voltage_change");
++		INIT_WORK(&voltage_change_handler, voltage_work_handler);
++
++		init_completion(&voltage_change_cmpl);
+ 	}
+ 	cpu_wp_tbl = get_cpu_wp(&cpu_wp_nr);
+ 	low_bus_freq_mode = 0;
+-- 
+1.5.4.4
+

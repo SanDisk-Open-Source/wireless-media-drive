@@ -1,0 +1,34 @@
+From af961db748465916f98d17ca3ec1bcdc149f8a9b Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Tue, 3 Aug 2010 10:11:50 +0800
+Subject: [PATCH] ENGR00125823-3 mx35 esdhc: set clock always on according to requirements
+
+Due the ROM code bug, we need to let clock of mx35 esdhc always on
+or the HW reset may not work.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx3/mach-mx35_3ds.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx3/mach-mx35_3ds.c b/arch/arm/mach-mx3/mach-mx35_3ds.c
+index 5495f73..7bd140f 100755
+--- a/arch/arm/mach-mx3/mach-mx35_3ds.c
++++ b/arch/arm/mach-mx3/mach-mx35_3ds.c
+@@ -132,6 +132,13 @@ static struct mxc_mmc_platform_data mmc1_data = {
+ #endif
+ 	.min_clk = 150000,
+ 	.max_clk = 52000000,
++	/* Do not disable the eSDHC clk on MX35 3DS board,
++	* since SYSTEM can't boot up after the reset key
++	* is pressed when the SD/MMC boot mode is used.
++	* The root cause is that the ROM code don't ensure
++	* the SD/MMC clk is running when boot system.
++	* */
++	.clk_always_on = 1,
+ 	.card_inserted_state = 0,
+ 	.status = sdhc_get_card_det_status,
+ 	.wp_status = sdhc_write_protect,
+-- 
+1.5.4.4
+

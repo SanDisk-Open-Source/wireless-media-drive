@@ -1,0 +1,724 @@
+From cc874d41db181db3739adcc3a6faa625c672bf9d Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Tue, 28 Dec 2010 15:58:53 +0800
+Subject: [PATCH] ENGR00137424 GPMI : remove the event reporting code
+
+The code is compiled error, and it is useless to debug.
+Remove the code, make the code tidy.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/Makefile                 |    1 -
+ .../mtd/nand/gpmi-nfc/gpmi-nfc-event-reporting.c   |  307 --------------------
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c    |    8 -
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c           |   73 +-----
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h               |   18 --
+ 5 files changed, 3 insertions(+), 404 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/Makefile b/drivers/mtd/nand/gpmi-nfc/Makefile
+index 9df1b64..5ce3d86 100644
+--- a/drivers/mtd/nand/gpmi-nfc/Makefile
++++ b/drivers/mtd/nand/gpmi-nfc/Makefile
+@@ -1,6 +1,5 @@
+ obj-$(CONFIG_MTD_NAND_GPMI_NFC) += gpmi-nfc.o
+ gpmi-nfc-objs += gpmi-nfc-main.o
+-gpmi-nfc-objs += gpmi-nfc-event-reporting.o
+ gpmi-nfc-objs += gpmi-nfc-hal-common.o
+ gpmi-nfc-objs += gpmi-nfc-hal-v0.o
+ gpmi-nfc-objs += gpmi-nfc-hal-v1.o
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-event-reporting.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-event-reporting.c
+deleted file mode 100644
+index 4557439..0000000
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-event-reporting.c
++++ /dev/null
+@@ -1,307 +0,0 @@
+-/*
+- * Freescale GPMI NFC NAND Flash Driver
+- *
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
+- * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+- */
+-
+-#include "gpmi-nfc.h"
+-
+-#if defined(EVENT_REPORTING)
+-
+-/*
+- * This variable and module parameter controls whether the driver reports event
+- * information by printing to the console.
+- */
+-
+-static int report_events;
+-module_param(report_events, int, 0600);
+-
+-/**
+- * struct event - A single record in the event trace.
+- *
+- * @time:         The time at which the event occurred.
+- * @nesting:      Indicates function call nesting.
+- * @description:  A description of the event.
+- */
+-
+-struct event {
+-	ktime_t       time;
+-	unsigned int  nesting;
+-	char          *description;
+-};
+-
+-/**
+- * The event trace.
+- *
+- * @overhead:  The delay to take a time stamp and nothing else.
+- * @nesting:   The current nesting level.
+- * @overflow:  Indicates the trace overflowed.
+- * @next:      Index of the next event to write.
+- * @events:    The array of events.
+- */
+-
+-#define MAX_EVENT_COUNT  (200)
+-
+-static struct {
+-	ktime_t       overhead;
+-	int           nesting;
+-	int           overflow;
+-	unsigned int  next;
+-	struct event  events[MAX_EVENT_COUNT];
+-} event_trace;
+-
+-/**
+- * gpmi_nfc_reset_event_trace() - Resets the event trace.
+- */
+-void gpmi_nfc_reset_event_trace(void)
+-{
+-	event_trace.nesting  = 0;
+-	event_trace.overflow = false;
+-	event_trace.next     = 0;
+-}
+-
+-/**
+- * gpmi_nfc_add_event() - Adds an event to the event trace.
+- *
+- * @description:  A description of the event.
+- * @delta:        A delta to the nesting level for this event [-1, 0, 1].
+- */
+-void gpmi_nfc_add_event(char *description, int delta)
+-{
+-	struct event  *event;
+-
+-	if (!report_events)
+-		return;
+-
+-	if (event_trace.overflow)
+-		return;
+-
+-	if (event_trace.next >= MAX_EVENT_COUNT) {
+-		event_trace.overflow = true;
+-		return;
+-	}
+-
+-	event = event_trace.events + event_trace.next;
+-
+-	event->time = ktime_get();
+-
+-	event->description = description;
+-
+-	if (!delta)
+-		event->nesting = event_trace.nesting;
+-	else if (delta < 0) {
+-		event->nesting = event_trace.nesting - 1;
+-		event_trace.nesting -= 2;
+-	} else {
+-		event->nesting = event_trace.nesting + 1;
+-		event_trace.nesting += 2;
+-	}
+-
+-	if (event_trace.nesting < 0)
+-		event_trace.nesting = 0;
+-
+-	event_trace.next++;
+-
+-}
+-
+-/**
+- * gpmi_nfc_start_event_trace() - Starts an event trace.
+- *
+- * @description:  A description of the first event.
+- */
+-void gpmi_nfc_start_event_trace(char *description)
+-{
+-
+-	ktime_t  t0;
+-	ktime_t  t1;
+-
+-	if (!report_events)
+-		return;
+-
+-	gpmi_nfc_reset_event_trace();
+-
+-	t0 = ktime_get();
+-	t1 = ktime_get();
+-
+-	event_trace.overhead = ktime_sub(t1, t0);
+-
+-	gpmi_nfc_add_event(description, 1);
+-
+-}
+-
+-/**
+- * gpmi_nfc_dump_event_trace() - Dumps the event trace.
+- */
+-void gpmi_nfc_dump_event_trace(void)
+-{
+-	unsigned int  i;
+-	time_t        seconds;
+-	long          nanoseconds;
+-	char          line[100];
+-	int           o;
+-	struct event  *first_event;
+-	struct event  *last_event;
+-	struct event  *matching_event;
+-	struct event  *event;
+-	ktime_t       delta;
+-
+-	/* Check if event reporting is turned off. */
+-
+-	if (!report_events)
+-		return;
+-
+-	/* Print important facts about this event trace. */
+-
+-	pr_info("\n+----------------\n");
+-
+-	pr_info("|  Overhead    : [%d:%d]\n", event_trace.overhead.tv.sec,
+-						event_trace.overhead.tv.nsec);
+-
+-	if (!event_trace.next) {
+-		pr_info("|  No Events\n");
+-		return;
+-	}
+-
+-	first_event = event_trace.events;
+-	last_event  = event_trace.events + (event_trace.next - 1);
+-
+-	delta = ktime_sub(last_event->time, first_event->time);
+-	pr_info("|  Elapsed Time: [%d:%d]\n", delta.tv.sec, delta.tv.nsec);
+-
+-	if (event_trace.overflow)
+-		pr_info("|  Overflow!\n");
+-
+-	/* Print the events in this history. */
+-
+-	for (i = 0, event = event_trace.events;
+-					i < event_trace.next; i++, event++) {
+-
+-		/* Get the delta between this event and the previous event. */
+-
+-		if (!i) {
+-			seconds     = 0;
+-			nanoseconds = 0;
+-		} else {
+-			delta = ktime_sub(event[0].time, event[-1].time);
+-			seconds     = delta.tv.sec;
+-			nanoseconds = delta.tv.nsec;
+-		}
+-
+-		/* Print the current event. */
+-
+-		o = 0;
+-
+-		o = snprintf(line, sizeof(line) - o, "|  [%ld:% 10ld]%*s %s",
+-							seconds, nanoseconds,
+-							event->nesting, "",
+-							event->description);
+-		/* Check if this is the last event in a nested series. */
+-
+-		if (i && (event[0].nesting < event[-1].nesting)) {
+-
+-			for (matching_event = event - 1;; matching_event--) {
+-
+-				if (matching_event < event_trace.events) {
+-					matching_event = 0;
+-					break;
+-				}
+-
+-				if (matching_event->nesting == event->nesting)
+-					break;
+-
+-			}
+-
+-			if (matching_event) {
+-				delta = ktime_sub(event->time,
+-							matching_event->time);
+-				o += snprintf(line + o, sizeof(line) - o,
+-						" <%d:%d]", delta.tv.sec,
+-								delta.tv.nsec);
+-			}
+-
+-		}
+-
+-		/* Check if this is the first event in a nested series. */
+-
+-		if ((i < event_trace.next - 1) &&
+-				(event[0].nesting < event[1].nesting)) {
+-
+-			for (matching_event = event + 1;; matching_event++) {
+-
+-				if (matching_event >=
+-					(event_trace.events+event_trace.next)) {
+-					matching_event = 0;
+-					break;
+-				}
+-
+-				if (matching_event->nesting == event->nesting)
+-					break;
+-
+-			}
+-
+-			if (matching_event) {
+-				delta = ktime_sub(matching_event->time,
+-								event->time);
+-				o += snprintf(line + o, sizeof(line) - o,
+-						" [%d:%d>", delta.tv.sec,
+-								delta.tv.nsec);
+-			}
+-
+-		}
+-
+-		pr_info("%s\n", line);
+-
+-	}
+-
+-	pr_info("+----------------\n");
+-
+-}
+-
+-/**
+- * gpmi_nfc_stop_event_trace() - Stops an event trace.
+- *
+- * @description:  A description of the last event.
+- */
+-void gpmi_nfc_stop_event_trace(char *description)
+-{
+-	struct event  *event;
+-
+-	if (!report_events)
+-		return;
+-
+-	/*
+-	 * We want the end of the trace, no matter what happens. If the trace
+-	 * has already overflowed, or is about to, just jam this event into the
+-	 * last spot. Otherwise, add this event like any other.
+-	 */
+-
+-	if (event_trace.overflow || (event_trace.next >= MAX_EVENT_COUNT)) {
+-		event = event_trace.events + (MAX_EVENT_COUNT - 1);
+-		event->time = ktime_get();
+-		event->description = description;
+-		event->nesting     = 0;
+-	} else {
+-		gpmi_nfc_add_event(description, -1);
+-	}
+-
+-	gpmi_nfc_dump_event_trace();
+-	gpmi_nfc_reset_event_trace();
+-
+-}
+-
+-#endif /* EVENT_REPORTING */
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+index 36956b3..1d8c4a5 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+@@ -33,7 +33,6 @@ irqreturn_t gpmi_nfc_bch_isr(int irq, void *cookie)
+ 	struct gpmi_nfc_data  *this      = cookie;
+ 	struct nfc_hal        *nfc       =  this->nfc;
+ 
+-	gpmi_nfc_add_event("> gpmi_nfc_bch_isr", 1);
+ 
+ 	/* Clear the interrupt. */
+ 
+@@ -45,7 +44,6 @@ irqreturn_t gpmi_nfc_bch_isr(int irq, void *cookie)
+ 
+ 	/* Return success. */
+ 
+-	gpmi_nfc_add_event("< gpmi_nfc_bch_isr", -1);
+ 
+ 	return IRQ_HANDLED;
+ 
+@@ -63,7 +61,6 @@ irqreturn_t gpmi_nfc_dma_isr(int irq, void *cookie)
+ 	struct gpmi_nfc_data  *this = cookie;
+ 	struct nfc_hal        *nfc  =  this->nfc;
+ 
+-	gpmi_nfc_add_event("> gpmi_nfc_dma_isr", 1);
+ 
+ 	/* Acknowledge the DMA channel's interrupt. */
+ 
+@@ -75,7 +72,6 @@ irqreturn_t gpmi_nfc_dma_isr(int irq, void *cookie)
+ 
+ 	/* Return success. */
+ 
+-	gpmi_nfc_add_event("< gpmi_nfc_dma_isr", -1);
+ 
+ 	return IRQ_HANDLED;
+ 
+@@ -383,7 +379,6 @@ int gpmi_nfc_dma_go(struct gpmi_nfc_data *this, int  dma_channel)
+ 	int               error;
+ 	LIST_HEAD(tmp_desc_list);
+ 
+-	gpmi_nfc_add_event("> gpmi_nfc_dma_go", 1);
+ 
+ 	/* Get ready... */
+ 
+@@ -406,9 +401,7 @@ int gpmi_nfc_dma_go(struct gpmi_nfc_data *this, int  dma_channel)
+ 		dev_err(dev, "[%s] Chip: %u, DMA Channel: %d, Error %d\n",
+ 			__func__, dma_channel - resources->dma_low_channel,
+ 			dma_channel, error);
+-		gpmi_nfc_add_event("...DMA timed out", 0);
+ 	} else
+-		gpmi_nfc_add_event("...Finished DMA successfully", 0);
+ 
+ 	/* Clear out the descriptors we just ran. */
+ 
+@@ -422,7 +415,6 @@ int gpmi_nfc_dma_go(struct gpmi_nfc_data *this, int  dma_channel)
+ 
+ 	/* Return. */
+ 
+-	gpmi_nfc_add_event("< gpmi_nfc_dma_go", -1);
+ 
+ 	return error;
+ 
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index 5774e27..950cfa3 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -316,7 +316,6 @@ static void mil_cmd_ctrl(struct mtd_info *mtd, int data, unsigned int ctrl)
+ 
+ 	/* Hand the command over to the NFC. */
+ 
+-	gpmi_nfc_add_event("mil_cmd_ctrl sending command...", 1);
+ 
+ #if defined(CONFIG_MTD_DEBUG)
+ 	display[0] = 0;
+@@ -337,7 +336,6 @@ static void mil_cmd_ctrl(struct mtd_info *mtd, int data, unsigned int ctrl)
+ 					mil->cmd_virt, mil->command_length, 0);
+ 	}
+ 
+-	gpmi_nfc_add_event("...Finished", -1);
+ 
+ 	/* Reset. */
+ 
+@@ -359,13 +357,10 @@ static int mil_dev_ready(struct mtd_info *mtd)
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc dev_ready]\n");
+ 
+-	gpmi_nfc_add_event("> mil_dev_ready", 1);
+ 
+ 	if (nfc->is_ready(this, mil->current_chip)) {
+-		gpmi_nfc_add_event("< mil_dev_ready - Returning ready", -1);
+ 		return !0;
+ 	} else {
+-		gpmi_nfc_add_event("< mil_dev_ready - Returning busy", -1);
+ 		return 0;
+ 	}
+ 
+@@ -387,23 +382,14 @@ static void mil_select_chip(struct mtd_info *mtd, int chip)
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc select_chip] chip: %d\n", chip);
+ 
+ 	/* Figure out what kind of transition this is. */
+-
+ 	if ((mil->current_chip < 0) && (chip >= 0)) {
+-		gpmi_nfc_start_event_trace("> mil_select_chip");
+ 		nfc->begin(this);
+-		gpmi_nfc_add_event("< mil_select_chip", -1);
+ 	} else if ((mil->current_chip >= 0) && (chip < 0)) {
+-		gpmi_nfc_add_event("> mil_select_chip", 1);
+-		gpmi_nfc_add_event("> not disable clk", 1);
+ 		nfc->end(this);
+-		gpmi_nfc_stop_event_trace("< mil_select_chip");
+ 	} else {
+-		gpmi_nfc_add_event("> mil_select_chip", 1);
+-		gpmi_nfc_add_event("< mil_select_chip", -1);
+ 	}
+ 
+ 	mil->current_chip = chip;
+-
+ }
+ 
+ /**
+@@ -427,36 +413,24 @@ static void mil_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc readbuf] len: %d\n", len);
+ 
+-	gpmi_nfc_add_event("> mil_read_buf", 1);
+-
+ 	/* Set up DMA. */
+ 	error = mil_incoming_buffer_dma_begin(this, buf, len,
+ 					mil->payload_virt, mil->payload_phys,
+ 					nfc_geo->payload_size_in_bytes,
+ 					&use_virt, &use_phys);
+-
+ 	if (error) {
+ 		dev_err(dev, "[%s] Inadequate DMA buffer\n", __func__);
+-		goto exit;
++		return;
+ 	}
+ 
+ 	/* Ask the NFC. */
+-
+ 	nfc->read_data(this, mil->current_chip, use_phys, len);
+ 
+ 	/* Finish with DMA. */
+-
+ 	mil_incoming_buffer_dma_end(this, buf, len,
+ 					mil->payload_virt, mil->payload_phys,
+ 					nfc_geo->payload_size_in_bytes,
+ 					use_virt, use_phys);
+-
+-	/* Return. */
+-
+-exit:
+-
+-	gpmi_nfc_add_event("< mil_read_buf", -1);
+-
+ }
+ 
+ /**
+@@ -479,38 +453,24 @@ static void mil_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
+ 	int                   error;
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc writebuf] len: %d\n", len);
+-
+-	gpmi_nfc_add_event("> mil_write_buf", 1);
+-
+ 	/* Set up DMA. */
+-
+ 	error = mil_outgoing_buffer_dma_begin(this, buf, len,
+ 					mil->payload_virt, mil->payload_phys,
+ 					nfc_geo->payload_size_in_bytes,
+ 					&use_virt, &use_phys);
+-
+ 	if (error) {
+ 		dev_err(dev, "[%s] Inadequate DMA buffer\n", __func__);
+-		goto exit;
++		return;
+ 	}
+ 
+ 	/* Ask the NFC. */
+-
+ 	nfc->send_data(this, mil->current_chip, use_phys, len);
+ 
+ 	/* Finish with DMA. */
+-
+ 	mil_outgoing_buffer_dma_end(this, buf, len,
+ 					mil->payload_virt, mil->payload_phys,
+ 					nfc_geo->payload_size_in_bytes,
+ 					use_virt, use_phys);
+-
+-	/* Return. */
+-
+-exit:
+-
+-	gpmi_nfc_add_event("< mil_write_buf", -1);
+-
+ }
+ 
+ /**
+@@ -524,11 +484,9 @@ static uint8_t mil_read_byte(struct mtd_info *mtd)
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc read_byte]\n");
+ 
+-	gpmi_nfc_add_event("> mil_read_byte", 1);
+ 
+ 	mil_read_buf(mtd, (uint8_t *) &byte, 1);
+ 
+-	gpmi_nfc_add_event("< mil_read_byte", -1);
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc read_byte]: 0x%02x\n", byte);
+ 
+@@ -625,7 +583,6 @@ static int mil_ecc_read_page(struct mtd_info *mtd, struct nand_chip *nand,
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc ecc_read_page]\n");
+ 
+-	gpmi_nfc_add_event("> mil_ecc_read_page", 1);
+ 
+ 	/*
+ 	 * Set up DMA.
+@@ -718,7 +675,6 @@ exit_nfc:
+ 					payload_virt, payload_phys);
+ exit_payload:
+ 
+-	gpmi_nfc_add_event("< mil_ecc_read_page", -1);
+ 
+ 	return error;
+ 
+@@ -748,18 +704,13 @@ static void mil_ecc_write_page(struct mtd_info *mtd,
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc ecc_write_page]\n");
+ 
+-	gpmi_nfc_add_event("> mil_ecc_write_page", 1);
+-
+ 	/* Set up DMA. */
+-
+ 	if (rom->swap_block_mark) {
+-
+ 		/*
+ 		 * If control arrives here, we're doing block mark swapping.
+ 		 * Since we can't modify the caller's buffers, we must copy them
+ 		 * into our own.
+ 		 */
+-
+ 		memcpy(mil->payload_virt, buf, mtd->writesize);
+ 		payload_virt = mil->payload_virt;
+ 		payload_phys = mil->payload_phys;
+@@ -770,27 +721,22 @@ static void mil_ecc_write_page(struct mtd_info *mtd,
+ 		auxiliary_phys = mil->auxiliary_phys;
+ 
+ 		/* Handle block mark swapping. */
+-
+ 		mil_handle_block_mark_swapping(this,
+ 				(void *) payload_virt, (void *) auxiliary_virt);
+-
+ 	} else {
+-
+ 		/*
+ 		 * If control arrives here, we're not doing block mark swapping,
+ 		 * so we can to try and use the caller's buffers.
+ 		 */
+-
+ 		error = mil_outgoing_buffer_dma_begin(this,
+ 				buf, mtd->writesize,
+ 				mil->payload_virt, mil->payload_phys,
+ 				nfc_geo->payload_size_in_bytes,
+ 				&payload_virt, &payload_phys);
+-
+ 		if (error) {
+ 			dev_err(dev, "[%s] Inadequate payload DMA buffer\n",
+ 								__func__);
+-			goto exit_payload;
++			return;
+ 		}
+ 
+ 		error = mil_outgoing_buffer_dma_begin(this,
+@@ -798,26 +744,21 @@ static void mil_ecc_write_page(struct mtd_info *mtd,
+ 				mil->auxiliary_virt, mil->auxiliary_phys,
+ 				nfc_geo->auxiliary_size_in_bytes,
+ 				&auxiliary_virt, &auxiliary_phys);
+-
+ 		if (error) {
+ 			dev_err(dev, "[%s] Inadequate auxiliary DMA buffer\n",
+ 								__func__);
+ 			goto exit_auxiliary;
+ 		}
+-
+ 	}
+ 
+ 	/* Ask the NFC. */
+-
+ 	error = nfc->send_page(this, mil->current_chip,
+ 						payload_phys, auxiliary_phys);
+-
+ 	if (error)
+ 		dev_err(dev, "[%s] Error in ECC-based write: %d\n",
+ 							__func__, error);
+ 
+ 	/* Return. */
+-
+ 	if (!rom->swap_block_mark)
+ 		mil_outgoing_buffer_dma_end(this, nand->oob_poi, mtd->oobsize,
+ 				mil->auxiliary_virt, mil->auxiliary_phys,
+@@ -829,10 +770,6 @@ exit_auxiliary:
+ 				mil->payload_virt, mil->payload_phys,
+ 				nfc_geo->payload_size_in_bytes,
+ 				payload_virt, payload_phys);
+-exit_payload:
+-
+-	gpmi_nfc_add_event("< mil_ecc_write_page", -1);
+-
+ }
+ 
+ /**
+@@ -943,7 +880,6 @@ static int mil_ecc_read_oob(struct mtd_info *mtd, struct nand_chip *nand,
+ 	DEBUG(MTD_DEBUG_LEVEL2, "[gpmi_nfc ecc_read_oob] "
+ 		"page: 0x%06x, sndcmd: %s\n", page, sndcmd ? "Yes" : "No");
+ 
+-	gpmi_nfc_add_event("> mil_ecc_read_oob", 1);
+ 
+ 	/* clear the OOB buffer */
+ 	memset(nand->oob_poi, ~0, mtd->oobsize);
+@@ -969,7 +905,6 @@ static int mil_ecc_read_oob(struct mtd_info *mtd, struct nand_chip *nand,
+ 	 * a command.
+ 	 */
+ 
+-	gpmi_nfc_add_event("< mil_ecc_read_oob", -1);
+ 
+ 	return true;
+ 
+@@ -998,7 +933,6 @@ static int mil_ecc_write_oob(struct mtd_info *mtd,
+ 	DEBUG(MTD_DEBUG_LEVEL2,
+ 			"[gpmi_nfc ecc_write_oob] page: 0x%06x\n", page);
+ 
+-	gpmi_nfc_add_event("> mil_ecc_write_oob", -1);
+ 
+ 	/*
+ 	 * There are fundamental incompatibilities between the i.MX GPMI NFC and
+@@ -1047,7 +981,6 @@ static int mil_ecc_write_oob(struct mtd_info *mtd,
+ 
+ exit:
+ 
+-	gpmi_nfc_add_event("< mil_ecc_write_oob", -1);
+ 
+ 	return error;
+ 
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+index 5af7f63..d132935 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc.h
+@@ -60,10 +60,6 @@
+ 
+ #define DETAILED_INFO
+ 
+-/* Define this macro to enable event reporting. */
+-
+-/*#define EVENT_REPORTING*/
+-
+ /*
+  *------------------------------------------------------------------------------
+  * Fundamental Data Structures
+@@ -585,20 +581,6 @@ struct boot_rom_helper {
+  *------------------------------------------------------------------------------
+  */
+ 
+-/* Event Reporting */
+-
+-#if defined(EVENT_REPORTING)
+-	extern void gpmi_nfc_start_event_trace(char *description);
+-	extern void gpmi_nfc_add_event(char *description, int delta);
+-	extern void gpmi_nfc_stop_event_trace(char *description);
+-	extern void gpmi_nfc_dump_event_trace(void);
+-#else
+-	#define gpmi_nfc_start_event_trace(description)  do {} while (0)
+-	#define gpmi_nfc_add_event(description, delta)   do {} while (0)
+-	#define gpmi_nfc_stop_event_trace(description)   do {} while (0)
+-	#define gpmi_nfc_dump_event_trace()              do {} while (0)
+-#endif
+-
+ /* NFC HAL Common Services */
+ 
+ extern irqreturn_t gpmi_nfc_bch_isr(int irq, void *cookie);
+-- 
+1.5.4.4
+

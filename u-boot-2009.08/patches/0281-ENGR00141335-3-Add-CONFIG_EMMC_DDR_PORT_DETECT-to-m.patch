@@ -1,0 +1,328 @@
+From 9576d798ae1f6e3d67992553875159703b2eea93 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 29 Mar 2011 21:15:39 +0800
+Subject: [PATCH] ENGR00141335-3: Add CONFIG_EMMC_DDR_PORT_DETECT to mx53 and mx50config files
+
+Add CONFIG_EMMC_DDR_PORT_DETECT to mx53 and mx50 config files.
+
+For fastboot, please note that the bit width of card should match the
+dip settings.
+For example, if mmcinfo shows eMMC 4.4 card is 8Bit DDR, then dip
+settings should be 8bit DDR. Then fastboot can work. Otherwise, fastboot
+will fail.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx50_rdp/mx50_rdp.c      |    6 ++++++
+ include/configs/mx50_arm2.h              |    3 ++-
+ include/configs/mx50_arm2_ddr2.h         |    5 +++--
+ include/configs/mx50_arm2_lpddr2.h       |    3 ++-
+ include/configs/mx50_rd3.h               |    1 +
+ include/configs/mx50_rdp.h               |    3 ++-
+ include/configs/mx50_rdp_android.h       |    3 ++-
+ include/configs/mx53_arm2_ddr3.h         |    5 ++++-
+ include/configs/mx53_arm2_ddr3_android.h |    5 +++++
+ include/configs/mx53_evk.h               |    4 ++++
+ include/configs/mx53_evk_android.h       |    5 +++++
+ include/configs/mx53_evk_mfg.h           |    6 ++++++
+ include/configs/mx53_loco.h              |    2 +-
+ include/configs/mx53_loco_mfg.h          |    2 +-
+ include/configs/mx53_smd.h               |    2 +-
+ include/configs/mx53_smd_android.h       |    2 +-
+ include/configs/mx53_smd_mfg.h           |    2 +-
+ 17 files changed, 47 insertions(+), 12 deletions(-)
+
+diff --git a/board/freescale/mx50_rdp/mx50_rdp.c b/board/freescale/mx50_rdp/mx50_rdp.c
+index 340157f..a00f6c9 100644
+--- a/board/freescale/mx50_rdp/mx50_rdp.c
++++ b/board/freescale/mx50_rdp/mx50_rdp.c
+@@ -783,6 +783,12 @@ int get_mmc_env_devno(void)
+ }
+ #endif
+ 
++#ifdef CONFIG_EMMC_DDR_PORT_DETECT
++int detect_mmc_emmc_ddr_port(struct fsl_esdhc_cfg *cfg)
++{
++	return (MMC_SDHC3_BASE_ADDR == cfg->esdhc_base) ? 1 : 0;
++}
++#endif
+ 
+ int esdhc_gpio_init(bd_t *bis)
+ {
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+index 930a345..d6a56e0 100644
+--- a/include/configs/mx50_arm2.h
++++ b/include/configs/mx50_arm2.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX50-ARM2 Freescale board.
+  *
+@@ -247,6 +247,7 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 
+ 	/* Indicate to esdhc driver which ports support 8-bit data */
+diff --git a/include/configs/mx50_arm2_ddr2.h b/include/configs/mx50_arm2_ddr2.h
+index 493673d..e2eac01 100644
+--- a/include/configs/mx50_arm2_ddr2.h
++++ b/include/configs/mx50_arm2_ddr2.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX50-ARM_EVK Freescale board.
+  *
+@@ -238,10 +238,11 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 
+ 	/* Indicate to esdhc driver which ports support 8-bit data */
+-	#define CONFIG_MMC_8BIT_PORTS		0x6   /* ports 1 and 2 */
++	#define CONFIG_MMC_8BIT_PORTS		0x6   /* ports 1 & 2 */
+ 
+ #endif
+ 
+diff --git a/include/configs/mx50_arm2_lpddr2.h b/include/configs/mx50_arm2_lpddr2.h
+index 0b52cba..d7e3aea 100644
+--- a/include/configs/mx50_arm2_lpddr2.h
++++ b/include/configs/mx50_arm2_lpddr2.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX50-ARM2 Freescale board.
+  *
+@@ -239,6 +239,7 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 
+ 	/* Indicate to esdhc driver which ports support 8-bit data */
+diff --git a/include/configs/mx50_rd3.h b/include/configs/mx50_rd3.h
+index 62c0b97..98d299d 100644
+--- a/include/configs/mx50_rd3.h
++++ b/include/configs/mx50_rd3.h
+@@ -216,6 +216,7 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 
+ 	/* Indicate to esdhc driver which ports support 8-bit data */
+diff --git a/include/configs/mx50_rdp.h b/include/configs/mx50_rdp.h
+index 67b2b0a..8fb1189 100644
+--- a/include/configs/mx50_rdp.h
++++ b/include/configs/mx50_rdp.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX50-RDP Freescale board.
+  *
+@@ -216,6 +216,7 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 
+ 	/* Indicate to esdhc driver which ports support 8-bit data */
+diff --git a/include/configs/mx50_rdp_android.h b/include/configs/mx50_rdp_android.h
+index 0b8997c..0b6eb8d 100644
+--- a/include/configs/mx50_rdp_android.h
++++ b/include/configs/mx50_rdp_android.h
+@@ -216,10 +216,11 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 
+ 	/* Indicate to esdhc driver which ports support 8-bit data */
+-	#define CONFIG_MMC_8BIT_PORTS		0x6   /* ports 1 and 2 */
++	#define CONFIG_MMC_8BIT_PORTS		0x2   /* ports 1 and 2 */
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_arm2_ddr3.h b/include/configs/mx53_arm2_ddr3.h
+index 91e0060..05d314a 100644
+--- a/include/configs/mx53_arm2_ddr3.h
++++ b/include/configs/mx53_arm2_ddr3.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX53-ARM2-DDR3 Freescale board.
+  *
+@@ -216,6 +216,9 @@
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
+ 	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
++	#define CONFIG_EMMC_DDR_MODE
++	/* port 1 (ESDHC3) is 8 bit */
++	#define CONFIG_MMC_8BIT_PORTS   0x2
+ #endif
+ /*-----------------------------------------------------------------------
+  * Stack sizes
+diff --git a/include/configs/mx53_arm2_ddr3_android.h b/include/configs/mx53_arm2_ddr3_android.h
+index da14413..265e032 100644
+--- a/include/configs/mx53_arm2_ddr3_android.h
++++ b/include/configs/mx53_arm2_ddr3_android.h
+@@ -241,6 +241,11 @@
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
++	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
++	#define CONFIG_EMMC_DDR_MODE
++	/* port 1 (ESDHC3) is 8 bit */
++	#define CONFIG_MMC_8BIT_PORTS   0x2
+ #endif
+ /*-----------------------------------------------------------------------
+  * Stack sizes
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index 4ddc10d..ef0331a 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -227,6 +227,10 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
++	#define CONFIG_EMMC_DDR_MODE
++	/* port 1 (ESDHC3) is 8 bit */
++	#define CONFIG_MMC_8BIT_PORTS   0x2
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index ed9562d..b27bffb 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -274,7 +274,12 @@
+ 	/* detect whether ESDHC1 or ESDHC3 is boot device */
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
++
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
++	#define CONFIG_EMMC_DDR_MODE
++	/* port 1 (ESDHC3) is 8 bit */
++	#define CONFIG_MMC_8BIT_PORTS   0x2
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_evk_mfg.h b/include/configs/mx53_evk_mfg.h
+index cb7ec8f..e45a452 100755
+--- a/include/configs/mx53_evk_mfg.h
++++ b/include/configs/mx53_evk_mfg.h
+@@ -187,6 +187,12 @@
+ 	#define CONFIG_DOS_PARTITION	1
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
++
++	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
++	#define CONFIG_EMMC_DDR_MODE
++	/* port 1 (ESDHC3) is 8 bit */
++	#define CONFIG_MMC_8BIT_PORTS   0x2
+ #endif
+ /*-----------------------------------------------------------------------
+  * Stack sizes
+diff --git a/include/configs/mx53_loco.h b/include/configs/mx53_loco.h
+index 8550434..57d4062 100644
+--- a/include/configs/mx53_loco.h
++++ b/include/configs/mx53_loco.h
+@@ -207,10 +207,10 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 	/* port 1 (ESDHC3) is 8 bit */
+ 	#define CONFIG_MMC_8BIT_PORTS	0x2
+-
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_loco_mfg.h b/include/configs/mx53_loco_mfg.h
+index b4ca852..9476a5f 100644
+--- a/include/configs/mx53_loco_mfg.h
++++ b/include/configs/mx53_loco_mfg.h
+@@ -194,10 +194,10 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 	/* port 1 (ESDHC3) is 8 bit */
+ 	#define CONFIG_MMC_8BIT_PORTS	0x2
+-
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_smd.h b/include/configs/mx53_smd.h
+index 81bdc48..240b822 100644
+--- a/include/configs/mx53_smd.h
++++ b/include/configs/mx53_smd.h
+@@ -223,10 +223,10 @@
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_EMMC_DDR_MODE
+ 	/* port 1 (ESDHC3) is 8 bit */
+ 	#define CONFIG_MMC_8BIT_PORTS	0x2
+-
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index 2d7005b..a9d06f4 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -277,9 +277,9 @@
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
+ 	#define CONFIG_EMMC_DDR_MODE
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	/* port 1 (ESDHC3) is 8 bit */
+ 	#define CONFIG_MMC_8BIT_PORTS	0x2
+-
+ #endif
+ 
+ /*
+diff --git a/include/configs/mx53_smd_mfg.h b/include/configs/mx53_smd_mfg.h
+index 0e5a76e..24137d9 100644
+--- a/include/configs/mx53_smd_mfg.h
++++ b/include/configs/mx53_smd_mfg.h
+@@ -212,9 +212,9 @@
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
+ 	#define CONFIG_EMMC_DDR_MODE
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	/* port 1 (ESDHC3) is 8 bit */
+ 	#define CONFIG_MMC_8BIT_PORTS	0x2
+-
+ #endif
+ 
+ /*
+-- 
+1.5.4.4
+

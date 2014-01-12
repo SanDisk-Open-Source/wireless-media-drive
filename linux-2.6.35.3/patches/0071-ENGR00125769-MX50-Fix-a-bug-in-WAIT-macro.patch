@@ -1,0 +1,31 @@
+From 6ba91fdb42a31a8d4b74ca2594b93ace2abd45ba Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Fri, 30 Jul 2010 15:47:45 +0800
+Subject: [PATCH] ENGR00125769 MX50: Fix a bug in WAIT macro
+
+Add missing "break;" for exiting while timeout happens.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 3f54221..d576e73 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -83,8 +83,10 @@ static int max_axi_b_clk;
+ 	getnstimeofday(&nstimeofday); \
+ 	while (!(exp)) { \
+ 		getnstimeofday(&curtime); \
+-		if ((curtime.tv_nsec - nstimeofday.tv_nsec) > (timeout)) \
++		if ((curtime.tv_nsec - nstimeofday.tv_nsec) > (timeout)) { \
+ 			result = 0; \
++			break; \
++		} \
+ 	} \
+ 	result; \
+ })
+-- 
+1.5.4.4
+

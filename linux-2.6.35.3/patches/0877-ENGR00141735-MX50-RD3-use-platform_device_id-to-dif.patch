@@ -1,0 +1,76 @@
+From ee0a0b7f700e4f65c3debdc95e1c37b71c31bceb Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 7 Apr 2011 18:04:37 +0800
+Subject: [PATCH] ENGR00141735 MX50 RD3: use platform_device_id to differentiate two pmics
+
+we re-use rtc-mc13892.c, so use platform_device_id to make it clear.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/mxc/pmic/core/pmic_core_spi.c |    1 +
+ drivers/rtc/rtc-mc13892.c             |   17 ++++++++++++++---
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mxc/pmic/core/pmic_core_spi.c b/drivers/mxc/pmic/core/pmic_core_spi.c
+index 156c50f..70212ae 100644
+--- a/drivers/mxc/pmic/core/pmic_core_spi.c
++++ b/drivers/mxc/pmic/core/pmic_core_spi.c
+@@ -231,6 +231,7 @@ static int __devinit pmic_probe(struct spi_device *spi)
+ 	adc_ldm.name = get_client_device_name(name, "%s_adc");
+ 	battery_ldm.name = get_client_device_name(name, "%s_battery");
+ 	light_ldm.name = get_client_device_name(name, "%s_light");
++	rtc_ldm.name = get_client_device_name(name, "%s_rtc");
+ 
+ 	/* Initialize the PMIC event handling */
+ 	pmic_event_list_init();
+diff --git a/drivers/rtc/rtc-mc13892.c b/drivers/rtc/rtc-mc13892.c
+index 8abe1ba..830fc02 100644
+--- a/drivers/rtc/rtc-mc13892.c
++++ b/drivers/rtc/rtc-mc13892.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -197,7 +197,7 @@ static int mxc_rtc_probe(struct platform_device *pdev)
+ {
+ 	struct rtc_drv_data *pdata = NULL;
+ 
+-	printk(KERN_INFO "mc13892 rtc probe start\n");
++	printk(KERN_INFO "pmic rtc probe start\n");
+ 
+ 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
+ 
+@@ -216,7 +216,7 @@ static int mxc_rtc_probe(struct platform_device *pdev)
+ 	if (IS_ERR(pdata->rtc))
+ 		return -1;
+ 
+-	printk(KERN_INFO "mc13892 rtc probe succeed\n");
++	printk(KERN_INFO "pmic rtc probe succeed\n");
+ 	return 0;
+ }
+ 
+@@ -230,7 +230,18 @@ static int __exit mxc_rtc_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++static const struct platform_device_id rtc_device_id[] = {
++	{
++		.name = "mc13892_rtc",
++	}, {
++		.name = "mc34708_rtc",
++	}, {
++		/* sentinel */
++	}
++};
++
+ static struct platform_driver mxc_rtc_driver = {
++	.id_table = rtc_device_id,
+ 	.driver = {
+ 		   .name = "pmic_rtc",
+ 		   },
+-- 
+1.5.4.4
+

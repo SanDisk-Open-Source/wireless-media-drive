@@ -1,0 +1,82 @@
+<HEAD>
+<TH>ZONESERVER 8 "zoneserver" o "outubro 2001" "zoneserver"</TH>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<BODY>
+<h1>NOME</h1>
+zoneserver - realiza transferência de zonas e outras funções TCP para o MaraDNS 
+
+<h1>DESCRIÇÃO</h1>
+
+<B>zoneserver </B>escuta na porta 53/tcp e controla zona de 
+transferencias DNS e qualquer consulta DNS feita em TCP em vez de UDP.
+<B>zoneserver </B>usa o arquivo de configuração <B>/etc/mararc </B>
+por padrão, para determinar seus parâmetros.
+ 
+<h1>USO</h1>
+<B>zoneserver - f</B>pointer_to_mararc_file <B>f</B> 
+ 
+<h1>OPÇÕES</h1>
+<dl>
+<dt>- f 
+<dd>Especifica o local do arquivo de configuração. MaraDNS usa o mesmo arquivo 
+de configuração para o servidor de dns principal e o zoneserver.
+ 
+</dl>
+<h1>FORMATO DO ARQUIVO DE CONFIGURAÇÃO</h1>
+O formato do arquivo mararc pode ser encontrado  no man
+page <B>mararc(5)</B>. Em particular, o zoneserver usa o
+zone_transfer_acl, tcp_convert_acl, tcp_convert_server, 
+bind_address, e recursive_acl parâmetros do mararc. 
+
+ 
+<h1>TAMBÉM VEJA</h1>
+O man page <B>maradns(8) </B>e <B>mararc(5)</B>
+ <P>
+
+<A href=http://www.maradns.org>http://www.maradns.org</a>
+ <h1>BUGS</h1>
+
+<B>zoneserver </B>assume que os registros de NS autoritativos
+são imediatamente depois do registro SOA, e que há ao menos um não-NS 
+entre isso e a última autoridade que NS para a zona e a primeira delegação
+registro de NS.
+
+<p>
+Pedidos de IXFR são transferências de zona com incremento, enquanto 
+significando que o servidor de DNS deveria exibir só registros 
+mudados desde que o último pedido de IXFR. Porém, <B>zoneserver</B> 
+trata um IXFR como se fosse um pedido de AXFR, enquanto produzindo 
+tudo dos registros para a zona em questão.
+
+ <p>
+
+<B>zoneserver</B> fecha a conexão TCP depois de transferir a zona pedida.
+ 
+<p>
+Se algum cliente sem autorização tentar conectar-se ao zoneserver, <B>
+zoneserver </B>o desconectará imediatamente.
+
+ 
+
+<h1>RETRATAÇÃO LEGAL</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+<h1>AUTOR</h1>
+MaraDNS é escrito por Sam Trenholme. Jaakko Niemi usou 5 atas para reunir a 
+versão original este manpage. Sam revisou esta página manual subseqüentemente. 
+
+<h1>TRADUÇÃO</h1>
+A tradução deste man page foi realizada por Daniel Zilli .
+
+</body>

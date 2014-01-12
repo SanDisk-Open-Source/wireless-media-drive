@@ -1,0 +1,1490 @@
+From 5001b99606655a6f91984afb54625e4af1ed1058 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 27 May 2009 21:43:40 +0800
+Subject: [PATCH] ENGR00112845 spi nor boot and pmic support for BBG2.
+
+spi nor boot support for BBG2.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/imx51/imx51.c            |   44 +++-
+ cpu/arm_cortexa8/mx51/generic.c          |   57 +++-
+ drivers/mtd/spi/Makefile                 |    1 +
+ drivers/mtd/spi/imx_spi_nor.c            |  558 ++++++++++++++++++++++++++++++
+ drivers/mtd/spi/spi_flash_internal.h     |    1 +
+ drivers/spi/Makefile                     |    2 +
+ drivers/spi/imx_spi.c                    |  329 ++++++++++++++++++
+ drivers/spi/imx_spi_pmic.c               |  127 +++++++
+ include/asm-arm/arch-mx51/imx_spi.h      |   66 ++++
+ include/asm-arm/arch-mx51/imx_spi_nor.h  |   54 +++
+ include/asm-arm/arch-mx51/imx_spi_pmic.h |   33 ++
+ include/asm-arm/arch-mx51/mx51.h         |    1 +
+ include/configs/imx51.h                  |   27 ++-
+ 13 files changed, 1295 insertions(+), 5 deletions(-)
+
+diff --git a/board/freescale/imx51/imx51.c b/board/freescale/imx51/imx51.c
+index c8fe23b..793afa2 100644
+--- a/board/freescale/imx51/imx51.c
++++ b/board/freescale/imx51/imx51.c
+@@ -30,6 +30,7 @@
+ #include <asm/arch/iomux.h>
+ #include <i2c.h>
+ #include "board-imx51.h"
++#include <asm/arch/imx_spi.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+@@ -159,7 +160,6 @@ static void setup_expio(void)
+ 
+ int board_init(void)
+ {
+-	int pad;
+ 	setup_soc_rev();
+ 
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX51_3DS;	/* board id for linux */
+@@ -200,6 +200,48 @@ int checkboard(void)
+ 	return 0;
+ }
+ 
++void spi_io_init(struct imx_spi_dev_t *dev)
++{
++	switch (dev->base) {
++	case CSPI1_BASE_ADDR:
++		/* 000: Select mux mode: ALT0 mux port: MOSI of instance: ecspi1 */
++		mxc_request_iomux(MX51_PIN_CSPI1_MOSI, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX51_PIN_CSPI1_MOSI, 0x105);
++
++		/* 000: Select mux mode: ALT0 mux port: MISO of instance: ecspi1. */
++		mxc_request_iomux(MX51_PIN_CSPI1_MISO, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX51_PIN_CSPI1_MISO, 0x105);
++
++		if (dev->ss == 0) {
++			/* de-select SS1 of instance: ecspi1. */
++			mxc_request_iomux(MX51_PIN_CSPI1_SS1, IOMUX_CONFIG_ALT3);
++			mxc_iomux_set_pad(MX51_PIN_CSPI1_SS1, 0x85);
++			/* 000: Select mux mode: ALT0 mux port: SS0 of instance: ecspi1. */
++			mxc_request_iomux(MX51_PIN_CSPI1_SS0, IOMUX_CONFIG_ALT0);
++			mxc_iomux_set_pad(MX51_PIN_CSPI1_SS0, 0x185);
++		} else if (dev->ss == 1) {
++			/* de-select SS0 of instance: ecspi1. */
++			mxc_request_iomux(MX51_PIN_CSPI1_SS0, IOMUX_CONFIG_ALT3);
++			mxc_iomux_set_pad(MX51_PIN_CSPI1_SS0, 0x85);
++			/* 000: Select mux mode: ALT0 mux port: SS1 of instance: ecspi1. */
++			mxc_request_iomux(MX51_PIN_CSPI1_SS1, IOMUX_CONFIG_ALT0);
++			mxc_iomux_set_pad(MX51_PIN_CSPI1_SS1, 0x105);
++		}
++
++		/* 000: Select mux mode: ALT0 mux port: RDY of instance: ecspi1. */
++		mxc_request_iomux(MX51_PIN_CSPI1_RDY, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX51_PIN_CSPI1_RDY, 0x180);
++
++		/* 000: Select mux mode: ALT0 mux port: SCLK of instance: ecspi1. */
++		mxc_request_iomux(MX51_PIN_CSPI1_SCLK, IOMUX_CONFIG_ALT0);
++		mxc_iomux_set_pad(MX51_PIN_CSPI1_SCLK, 0x105);
++		break;
++	case CSPI2_BASE_ADDR:
++	default:
++		break;
++	}
++}
++
+ #ifdef CONFIG_NET_MULTI
+ int board_eth_init(bd_t *bis)
+ {
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index 8982a80..ef8ef98 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -49,6 +49,7 @@ static u32 __decode_pll(enum pll_clocks pll, u32 infreq)
+ 	pd = (mfi  & 0xF) + 1;
+ 	mfi = (mfi >> 4) & 0xF;
+ 	mfi = (mfi >= 5) ? mfi : 5;
++
+ 	return ((4 * (infreq / 1000) * (mfi * mfd + mfn)) / (mfd * pd)) * 1000;
+ }
+ 
+@@ -136,9 +137,57 @@ static u32 __get_uart_clk(void)
+ 	podf = (reg & MXC_CCM_CSCDR1_UART_CLK_PODF_MASK) >>
+ 		MXC_CCM_CSCDR1_UART_CLK_PODF_OFFSET;
+ 	freq /= (pred + 1) * (podf + 1);
++
+ 	return freq;
+ }
+ 
++/*!
+++ * This function returns the low power audio clock.
+++ */
++u32 get_lp_apm(void)
++{
++	u32 ret_val = 0;
++	u32 ccsr = __REG(MXC_CCM_CCSR);
++
++	if (((ccsr >> 9) & 1) == 0)
++		ret_val = CONFIG_MX51_HCLK_FREQ;
++	else
++		ret_val = ((32768 * 1024));
++
++	return ret_val;
++}
++
++static u32 __get_cspi_clk(void)
++{
++	u32 ret_val = 0, pdf, pre_pdf, clk_sel;
++	u32 cscmr1 = __REG(MXC_CCM_CSCMR1);
++	u32 cscdr2 = __REG(MXC_CCM_CSCDR2);
++
++	pre_pdf = (cscdr2 & MXC_CCM_CSCDR2_CSPI_CLK_PRED_MASK) \
++			>> MXC_CCM_CSCDR2_CSPI_CLK_PRED_OFFSET;
++	pdf = (cscdr2 & MXC_CCM_CSCDR2_CSPI_CLK_PODF_MASK) \
++			>> MXC_CCM_CSCDR2_CSPI_CLK_PODF_OFFSET;
++	clk_sel = (cscmr1 & MXC_CCM_CSCMR1_CSPI_CLK_SEL_MASK) \
++			>> MXC_CCM_CSCMR1_CSPI_CLK_SEL_OFFSET;
++
++	switch (clk_sel) {
++	case 0:
++		ret_val = __decode_pll(PLL1_CLK, CONFIG_MX51_HCLK_FREQ) / ((pre_pdf + 1) * (pdf + 1));
++		break;
++	case 1:
++		ret_val = __decode_pll(PLL2_CLK, CONFIG_MX51_HCLK_FREQ) / ((pre_pdf + 1) * (pdf + 1));
++		break;
++	case 2:
++		ret_val = __decode_pll(PLL3_CLK, CONFIG_MX51_HCLK_FREQ) / ((pre_pdf + 1) * (pdf + 1));
++		break;
++	default:
++		ret_val = get_lp_apm() / ((pre_pdf + 1) * (pdf + 1));
++		break;
++	}
++
++	return ret_val;
++}
++
+ unsigned int mxc_get_clock(enum mxc_clock clk)
+ {
+ 	switch (clk) {
+@@ -152,6 +201,8 @@ unsigned int mxc_get_clock(enum mxc_clock clk)
+ 		return __get_ipg_per_clk();
+ 	case MXC_UART_CLK:
+ 		return __get_uart_clk();
++	case MXC_CSPI_CLK:
++		return __get_cspi_clk();
+ 	}
+ 	return -1;
+ }
+@@ -165,8 +216,10 @@ void mxc_dump_clocks(void)
+ 	printf("mx51 pll2: %dMHz\n", freq / 1000000);
+ 	freq = __decode_pll(PLL3_CLK, CONFIG_MX51_HCLK_FREQ);
+ 	printf("mx51 pll3: %dMHz\n", freq / 1000000);
+-	printf("ipg clock     : %dHz\n", __get_ipg_clk());
+-	printf("uart clock     : %dHz\n", mxc_get_clock(MXC_UART_CLK));
++	printf("ipg clock     : %dHz\n", mxc_get_clock(MXC_IPG_CLK));
++	printf("ipg per clock : %dHz\n", mxc_get_clock(MXC_IPG_PERCLK));
++	printf("uart clock    : %dHz\n", mxc_get_clock(MXC_UART_CLK));
++	printf("cspi clock    : %dHz\n", mxc_get_clock(MXC_CSPI_CLK));
+ }
+ 
+ #if defined(CONFIG_DISPLAY_CPUINFO)
+diff --git a/drivers/mtd/spi/Makefile b/drivers/mtd/spi/Makefile
+index e3e0292..ed23a76 100644
+--- a/drivers/mtd/spi/Makefile
++++ b/drivers/mtd/spi/Makefile
+@@ -32,6 +32,7 @@ COBJS-$(CONFIG_SPI_FLASH_SPANSION)	+= spansion.o
+ COBJS-$(CONFIG_SPI_FLASH_SST)	+= sst.o
+ COBJS-$(CONFIG_SPI_FLASH_STMICRO)	+= stmicro.o
+ COBJS-$(CONFIG_SPI_M95XXX) += eeprom_m95xxx.o
++COBJS-$(CONFIG_SPI_FLASH_IMX)	+= imx_spi_nor.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/mtd/spi/imx_spi_nor.c b/drivers/mtd/spi/imx_spi_nor.c
+new file mode 100644
+index 0000000..24af8b2
+--- /dev/null
++++ b/drivers/mtd/spi/imx_spi_nor.c
+@@ -0,0 +1,558 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#include <spi.h>
++#include <spi_flash.h>
++#include <asm/errno.h>
++#include <linux/types.h>
++#include <malloc.h>
++
++#include <asm/arch/imx_spi.h>
++#include <asm/arch/imx_spi_nor.h>
++
++static u8 g_tx_buf[256];
++static u8 g_rx_buf[256];
++
++#define WRITE_ENABLE(a)			 spi_nor_cmd_1byte(a, WREN)
++#define WRITE_DISABLE(a)		 spi_nor_cmd_1byte(a, WRDI)
++#define ENABLE_WRITE_STATUS(a)	 spi_nor_cmd_1byte(a, EWSR)
++
++struct imx_spi_flash_params {
++	u8		idcode1;
++	u32		block_size;
++	u32		block_count;
++	u32		device_size;
++	const char	*name;
++};
++
++struct imx_spi_flash {
++	const struct imx_spi_flash_params *params;
++	struct spi_flash flash;
++};
++
++static inline struct imx_spi_flash *
++to_imx_spi_flash(struct spi_flash *flash)
++{
++	return container_of(flash, struct imx_spi_flash, flash);
++}
++
++static const struct imx_spi_flash_params imx_spi_flash_table[] = {
++	{
++		.idcode1		= 0x25,
++		.block_size		= SZ_64K,
++		.block_count		= 32,
++		.device_size		= SZ_64K * 32,
++		.name			= "SST25VF016B - 2MB",
++	},
++};
++
++static s32 spi_nor_flash_query(struct spi_flash *flash, void* data)
++{
++	u8 au8Tmp[4] = { 0 };
++	u8 *pData = (u8 *)data;
++
++	g_tx_buf[3] = JEDEC_ID;
++
++	if (spi_xfer(flash->spi, (4 << 3), g_tx_buf, au8Tmp,
++				SPI_XFER_BEGIN | SPI_XFER_END)) {
++		return -1;
++	}
++
++	printf("JEDEC ID: 0x%02x:0x%02x:0x%02x\n",
++			au8Tmp[2], au8Tmp[1], au8Tmp[0]);
++
++	pData[0] = au8Tmp[2];
++	pData[1] = au8Tmp[1];
++	pData[2] = au8Tmp[0];
++
++	return 0;
++}
++
++static s32 spi_nor_cmd_1byte(struct spi_flash *flash, u8 cmd)
++{
++	g_tx_buf[0] = cmd;
++
++	if (spi_xfer(flash->spi, (1 << 3), g_tx_buf, g_rx_buf,
++			SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++		printf("Error: %s(): %d\n", __func__, __LINE__);
++		return -1;
++	}
++	return 0;
++}
++
++static s32 spi_nor_status(struct spi_flash *flash)
++{
++	g_tx_buf[1] = RDSR;
++
++	if (spi_xfer(flash->spi, 2 << 3, g_tx_buf, g_rx_buf,
++			SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++		printf("Error: %s(): %d\n", __func__, __LINE__);
++		return 0;
++	}
++	return g_rx_buf[0];
++}
++
++static int spi_nor_program_1byte(struct spi_flash *flash,
++		u8 data, void *addr)
++{
++	u32 addr_val = (u32)addr;
++
++	/* need to do write-enable command */
++	if (WRITE_ENABLE(flash) != 0) {
++		printf("Error : %d\n", __LINE__);
++		return -1;
++	}
++	g_tx_buf[0] = BYTE_PROG; /* need to skip bytes 1, 2, 3 */
++	g_tx_buf[4] = data;
++	g_tx_buf[5] = addr_val & 0xFF;
++	g_tx_buf[6] = (addr_val >> 8) & 0xFF;
++	g_tx_buf[7] = (addr_val >> 16) & 0xFF;
++
++	debug("0x%x: 0x%x\n", *(u32 *)g_tx_buf, *(u32 *)(g_tx_buf + 4));
++	debug("addr=0x%x\n", addr_val);
++
++	if (spi_xfer(flash->spi, 5 << 3, g_tx_buf, g_rx_buf,
++			SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++		printf("Error: %s(%d): failed\n", __FILE__, __LINE__);
++		return -1;
++	}
++
++	while (spi_nor_status(flash) & RDSR_BUSY)
++		;
++
++	return 0;
++}
++
++/*!
++ * Write 'val' to flash WRSR (write status register)
++ */
++static int spi_nor_write_status(struct spi_flash *flash, u8 val)
++{
++	g_tx_buf[0] = val;
++	g_tx_buf[1] = WRSR;
++
++	if (spi_xfer(flash->spi, 2 << 3, g_tx_buf, g_rx_buf,
++			SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++		printf("Error: %s(): %d\n", __func__, __LINE__);
++		return -1;
++	}
++	return 0;
++}
++
++/*!
++ * Erase a block_size data from block_addr offset in the flash
++ */
++static int spi_nor_erase_block(struct spi_flash *flash,
++				void *block_addr, u32 block_size)
++{
++	u32 *cmd = (u32 *)g_tx_buf;
++	u32 addr = (u32) block_addr;
++
++	if (block_size != SZ_64K &&
++		block_size != SZ_32K &&
++		block_size != SZ_4K) {
++		printf("Error - block_size is not "
++				"4kB, 32kB or 64kB: 0x%x\n",
++				block_size);
++		return -1;
++	}
++
++	if ((addr & (block_size - 1)) != 0) {
++		printf("Error - block_addr is not "
++				"4kB, 32kB or 64kB aligned: %p\n",
++				block_addr);
++		return -1;
++	}
++
++	if (ENABLE_WRITE_STATUS(flash) != 0 ||
++			spi_nor_write_status(flash, 0) != 0) {
++		printf("Error: %s: %d\n", __func__, __LINE__);
++		return -1;
++	}
++
++	/* need to do write-enable command */
++	if (WRITE_ENABLE(flash) != 0) {
++		printf("Error : %d\n", __LINE__);
++		return -1;
++	}
++
++	if (block_size == SZ_64K)
++		*cmd = (ERASE_64K << 24) | (addr & 0x00FFFFFF);
++	else if (block_size == SZ_32K)
++		*cmd = (ERASE_32K << 24) | (addr & 0x00FFFFFF);
++	else if (block_size == SZ_4K)
++		*cmd = (ERASE_4K << 24) | (addr & 0x00FFFFFF);
++
++	/* now do the block erase */
++	if (spi_xfer(flash->spi, 4 << 3, g_tx_buf, g_rx_buf,
++			SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++		return -1;
++	}
++
++	while (spi_nor_status(flash) & RDSR_BUSY)
++		;
++
++	return 0;
++}
++
++static int spi_nor_flash_read(struct spi_flash *flash, u32 offset,
++		size_t len, void *buf)
++{
++	struct imx_spi_flash *imx_sf = to_imx_spi_flash(flash);
++	u32 *cmd = (u32 *)g_tx_buf;
++	u32 max_rx_sz = (MAX_SPI_BYTES) - 4;
++	u8 *d_buf = (u8 *)buf;
++	u8 *s_buf;
++	s32 s32remain_size = len;
++	int i;
++
++	if (!(flash->spi))
++		return -1;
++
++	debug("%s(from flash=0x%08x to ram=%p len=0x%x)\n",
++		__func__,
++		offset, buf, len);
++
++	if (len == 0)
++		return 0;
++
++	*cmd = (READ << 24) | ((u32)offset & 0x00FFFFFF);
++
++	for (; s32remain_size > 0; s32remain_size -= max_rx_sz, *cmd += max_rx_sz) {
++		debug("Addr:0x%p=>Offset:0x%08x, %d bytes transferred\n",
++				d_buf,
++				(*cmd & 0x00FFFFFF),
++				(len - s32remain_size));
++		debug("%d%% completed\n", ((len - s32remain_size) * 100 / len));
++
++		if (s32remain_size < max_rx_sz) {
++			debug("100%% completed\n");
++
++			if (spi_xfer(flash->spi, (s32remain_size + 4) << 3,
++				g_tx_buf, g_rx_buf,
++				SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++				printf("Error: %s(%d): failed\n", __FILE__, __LINE__);
++				return -1;
++			}
++			/* throw away 4 bytes (5th received bytes is real) */
++			s_buf = g_rx_buf + 4;
++
++			/* now adjust the endianness */
++			for (i = s32remain_size; i >= 0; i -= 4, s_buf += 4) {
++				if (i < 4) {
++					if (i == 1) {
++						*d_buf = s_buf[0];
++					} else if (i == 2) {
++						*d_buf++ = s_buf[1];
++						*d_buf++ = s_buf[0];
++					} else if (i == 3) {
++						*d_buf++ = s_buf[2];
++						*d_buf++ = s_buf[1];
++						*d_buf++ = s_buf[0];
++					}
++					printf("\n");
++					return 0;
++				}
++				/* copy 4 bytes */
++				*d_buf++ = s_buf[3];
++				*d_buf++ = s_buf[2];
++				*d_buf++ = s_buf[1];
++				*d_buf++ = s_buf[0];
++			}
++		}
++
++		/* now grab max_rx_sz data (+4 is
++		*needed due to 4-throw away bytes */
++		if (spi_xfer(flash->spi, (max_rx_sz + 4) << 3,
++			g_tx_buf, g_rx_buf, SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++			printf("Error: %s(%d): failed\n", __FILE__, __LINE__);
++			return -1;
++		}
++		/* throw away 4 bytes (5th received bytes is real) */
++		s_buf = g_rx_buf + 4;
++		/* now adjust the endianness */
++		for (i = 0; i < max_rx_sz; i += 4, s_buf += 4) {
++			*d_buf++ = s_buf[3];
++			*d_buf++ = s_buf[2];
++			*d_buf++ = s_buf[1];
++			*d_buf++ = s_buf[0];
++		}
++
++		if ((s32remain_size % imx_sf->params->block_size) == 0)
++			printf(".");
++	}
++	printf("\n");
++
++	return -1;
++}
++
++static int spi_nor_flash_write(struct spi_flash *flash, u32 offset,
++		size_t len, const void *buf)
++{
++	struct imx_spi_flash *imx_sf = to_imx_spi_flash(flash);
++	u32 d_addr = offset;
++	u8 *s_buf = (u8 *)buf;
++	s32 s32remain_size = len;
++
++	if (!(flash->spi))
++		return -1;
++
++	if (len == 0)
++		return 0;
++
++	write("%s(flash addr=0x%08x, ram=%p, len=0x%x)\n",
++			__func__, offset, buf, len);
++
++	if (ENABLE_WRITE_STATUS(flash) != 0 ||
++			spi_nor_write_status(flash, 0) != 0) {
++		printf("Error: %s: %d\n", __func__, __LINE__);
++		return -1;
++	}
++
++	if ((d_addr & 1) != 0) {
++		/* program 1st byte */
++		if (spi_nor_program_1byte(flash, s_buf[0],
++					(void *)d_addr) != 0) {
++			printf("Error: %s(%d)\n", __func__, __LINE__);
++			return -1;
++		}
++		if (--s32remain_size == 0)
++			return 0;
++		d_addr++;
++		s_buf++;
++	}
++
++	/* need to do write-enable command */
++	if (WRITE_ENABLE(flash) != 0) {
++		printf("Error : %d\n", __LINE__);
++		return -1;
++	}
++
++	/*
++	These two bytes write will be copied to txfifo first with
++	g_tx_buf[1] being shifted out and followed by g_tx_buf[0].
++	The reason for this is we will specify burst len=6. So SPI will
++	do this kind of data movement.
++	*/
++	g_tx_buf[0] = d_addr >> 16;
++	g_tx_buf[1] = AAI_PROG;    /* need to skip bytes 1, 2 */
++	/* byte shifted order is: 7, 6, 5, 4 */
++	g_tx_buf[4] = s_buf[1];
++	g_tx_buf[5] = s_buf[0];
++	g_tx_buf[6] = d_addr;
++	g_tx_buf[7] = d_addr >> 8;
++	if (spi_xfer(flash->spi, 6 << 3, g_tx_buf, g_rx_buf,
++			SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++		printf("Error: %s(%d): failed\n",
++				__FILE__, __LINE__);
++		return -1;
++	}
++
++	while (spi_nor_status(flash) & RDSR_BUSY)
++		;
++
++	for (d_addr += 2, s_buf += 2, s32remain_size -= 2;
++		s32remain_size > 1;
++		d_addr += 2, s_buf += 2, s32remain_size -= 2) {
++		debug("%d%% transferred\n",
++			((len - s32remain_size) * 100 / len));
++		/* byte shifted order is: 2,1,0 */
++		g_tx_buf[2] = AAI_PROG;
++		g_tx_buf[1] = s_buf[0];
++		g_tx_buf[0] = s_buf[1];
++
++		if (spi_xfer(flash->spi, 3 << 3, g_tx_buf, g_rx_buf,
++				SPI_XFER_BEGIN | SPI_XFER_END) != 0) {
++			printf("Error: %s(%d): failed\n",
++					__FILE__, __LINE__);
++			return -1;
++		}
++
++		while (spi_nor_status(flash) & RDSR_BUSY)
++			;
++
++		if ((s32remain_size % imx_sf->params->block_size) == 0)
++			printf(".");
++	}
++	printf("\n");
++	debug("100%% transferred\n");
++
++	WRITE_DISABLE(flash);
++	while (spi_nor_status(flash) & RDSR_BUSY)
++		;
++
++	if (WRITE_ENABLE(flash) != 0) {
++		printf("Error : %d\n", __LINE__);
++		return -1;
++	}
++
++	if (len == 1) {
++		/* need to do write-enable command */
++		/* only 1 byte left */
++		if (spi_nor_program_1byte(flash, s_buf[0],
++					(void *)d_addr) != 0) {
++			printf("Error: %s(%d)\n",
++					__func__, __LINE__);
++			return -1;
++		}
++	}
++	return 0;
++}
++
++static int spi_nor_flash_erase(struct spi_flash *flash, u32 offset,
++		size_t len)
++{
++	struct imx_spi_flash *imx_sf = to_imx_spi_flash(flash);
++	s32 s32remain_size = len;
++
++	if (!(flash->spi))
++		return -1;
++
++	if ((len % SZ_4K) != 0 || len == 0) {
++		printf("Error: size (0x%x) is not integer multiples of 4kB(0x1000)\n",
++			len);
++		return -1;
++	}
++	if ((offset & (SZ_4K - 1)) != 0) {
++		printf("Error - addr is not 4kB(0x1000) aligned: 0x%08x\n",
++			offset);
++		return -1;
++	}
++	for (; s32remain_size > 0; s32remain_size -= SZ_4K, offset += SZ_4K) {
++		debug("Erasing 0x%08x, %d%% erased\n",
++				offset,
++				((len - s32remain_size) * 100 / len));
++		if (spi_nor_erase_block(flash,
++				(void *)offset, SZ_4K) != 0) {
++			printf("Error: spi_nor_flash_erase(): %d\n", __LINE__);
++			return -1;
++		}
++		printf(".");
++	}
++	printf("\n");
++	debug("100%% erased\n");
++	return 0;
++}
++
++struct spi_flash *spi_flash_probe(unsigned int bus, unsigned int cs, unsigned int max_hz, unsigned int spi_mode)
++{
++	struct spi_slave *spi = NULL;
++	const struct imx_spi_flash_params *params = NULL;
++	struct imx_spi_flash *imx_sf = NULL;
++	u8  idcode[4] = { 0 };
++	u32 i = 0;
++	s32 ret = 0;
++
++	if (CONFIG_SPI_FLASH_CS != cs) {
++		printf("Invalid cs for SPI NOR.\n");
++		return NULL;
++	}
++
++	spi = spi_setup_slave(bus, cs, max_hz, spi_mode);
++
++	if (!spi) {
++		debug("SF: Failed to set up slave\n");
++		return NULL;
++	}
++
++	ret = spi_claim_bus(spi);
++	if (ret) {
++		debug("SF: Failed to claim SPI bus: %d\n", ret);
++		goto err_claim_bus;
++	}
++
++	imx_sf = (struct imx_spi_flash *)malloc(sizeof(struct imx_spi_flash));
++
++	if (!imx_sf) {
++		debug("SF: Failed to allocate memory\n");
++		spi_free_slave(spi);
++		return NULL;
++	}
++
++	imx_sf->flash.spi = spi;
++
++	/* Read the ID codes */
++	ret = spi_nor_flash_query(&(imx_sf->flash), idcode);
++	if (ret)
++		goto err_read_id;
++
++	for (i = 0; i < ARRAY_SIZE(imx_spi_flash_table); ++i) {
++		params = &imx_spi_flash_table[i];
++		if (params->idcode1 == idcode[1])
++			break;
++	}
++
++	if (i == ARRAY_SIZE(imx_spi_flash_table)) {
++		debug("SF: Unsupported DataFlash ID %02x\n",
++				idcode[1]);
++
++		goto err_invalid_dev;
++	}
++
++	imx_sf->params = params;
++
++	imx_sf->flash.name = params->name;
++	imx_sf->flash.size = params->device_size;
++
++	imx_sf->flash.read  = spi_nor_flash_read;
++	imx_sf->flash.write = spi_nor_flash_write;
++	imx_sf->flash.erase = spi_nor_flash_erase;
++
++	debug("SF: Detected %s with block size %lu, "
++			"block count %lu, total %u bytes\n",
++			params->name,
++			params->block_size,
++			params->block_count,
++			params->device_size);
++
++	return &(imx_sf->flash);
++
++err_read_id:
++	spi_release_bus(spi);
++err_invalid_dev:
++	if (imx_sf)
++		free(imx_sf);
++err_claim_bus:
++	if (spi)
++		spi_free_slave(spi);
++	return NULL;
++}
++
++void spi_flash_free(struct spi_flash *flash)
++{
++	struct imx_spi_flash *imx_sf = NULL;
++
++	if (!flash)
++		return;
++
++	imx_sf = to_imx_spi_flash(flash);
++
++	if (flash->spi) {
++		spi_free_slave(flash->spi);
++		flash->spi = NULL;
++	}
++
++	free(imx_sf);
++}
++
+diff --git a/drivers/mtd/spi/spi_flash_internal.h b/drivers/mtd/spi/spi_flash_internal.h
+index 0612383..c4b561c 100644
+--- a/drivers/mtd/spi/spi_flash_internal.h
++++ b/drivers/mtd/spi/spi_flash_internal.h
+@@ -49,3 +49,4 @@ struct spi_flash *spi_flash_probe_atmel(struct spi_slave *spi, u8 *idcode);
+ struct spi_flash *spi_flash_probe_macronix(struct spi_slave *spi, u8 *idcode);
+ struct spi_flash *spi_flash_probe_sst(struct spi_slave *spi, u8 *idcode);
+ struct spi_flash *spi_flash_probe_stmicro(struct spi_slave *spi, u8 *idcode);
++struct spi_flash *spi_flash_probe_imx(struct spi_slave *spi, u8 *idcode);
+diff --git a/drivers/spi/Makefile b/drivers/spi/Makefile
+index 824d8e7..0e8bf26 100644
+--- a/drivers/spi/Makefile
++++ b/drivers/spi/Makefile
+@@ -34,6 +34,8 @@ COBJS-$(CONFIG_MPC52XX_SPI) += mpc52xx_spi.o
+ COBJS-$(CONFIG_MPC8XXX_SPI) += mpc8xxx_spi.o
+ COBJS-$(CONFIG_MXC_SPI) += mxc_spi.o
+ COBJS-$(CONFIG_SOFT_SPI) += soft_spi.o
++COBJS-$(CONFIG_IMX_SPI) += imx_spi.o
++COBJS-$(CONFIG_IMX_SPI_PMIC) += imx_spi_pmic.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/spi/imx_spi.c b/drivers/spi/imx_spi.c
+new file mode 100644
+index 0000000..6146da9
+--- /dev/null
++++ b/drivers/spi/imx_spi.c
+@@ -0,0 +1,329 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#include <spi.h>
++#include <asm/errno.h>
++#include <linux/types.h>
++#include <asm/io.h>
++#include <malloc.h>
++
++#include <asm/arch/imx_spi.h>
++
++#ifdef	DEBUG
++
++/* -----------------------------------------------
++ * Helper functions to peek into tx and rx buffers
++ * ----------------------------------------------- */
++static const char * const hex_digit = "0123456789ABCDEF";
++
++static char quickhex(int i)
++{
++	return hex_digit[i];
++}
++
++static void memdump(const void *pv, int num)
++{
++
++}
++
++#else /* !DEBUG */
++
++#define	memdump(p, n)
++
++#endif /* DEBUG */
++
++static inline struct imx_spi_dev_t *to_imx_spi_slave(struct spi_slave *slave)
++{
++	return container_of(slave, struct imx_spi_dev_t, slave);
++}
++
++static s32 spi_get_cfg(struct imx_spi_dev_t *dev)
++{
++	switch (dev->slave.cs) {
++	case 0:
++		/* pmic */
++		dev->base = CSPI1_BASE_ADDR;
++		dev->freq = 2500000;
++		dev->ss_pol = IMX_SPI_ACTIVE_HIGH;
++		dev->ss = 0;
++		dev->fifo_sz = 64 * 4;
++		dev->us_delay = 0;
++		break;
++	case 1:
++		/* spi_nor */
++		dev->base = CSPI1_BASE_ADDR;
++		dev->freq = 2500000;
++		dev->ss_pol = IMX_SPI_ACTIVE_LOW;
++		dev->ss = 1;
++		dev->fifo_sz = 64 * 4;
++		dev->us_delay = 0;
++		break;
++	default:
++		printf("Invalid Bus ID! \n");
++		break;
++	}
++
++	return 0;
++}
++
++static s32 spi_reset(struct spi_slave *slave)
++{
++	u32 clk_src = mxc_get_clock(MXC_CSPI_CLK);
++	s32 pre_div = 0, post_div = 0, i, reg_ctrl, reg_config;
++	struct imx_spi_dev_t *dev = to_imx_spi_slave(slave);
++	struct spi_reg_t *reg = &(dev->reg);
++
++	if (dev->freq == 0) {
++		printf("Error: desired clock is 0\n");
++		return 1;
++	}
++
++	reg_ctrl = readl(dev->base + SPI_CON_REG);
++	/* Reset spi */
++	writel(0, dev->base + SPI_CON_REG);
++	writel((reg_ctrl | 0x1), dev->base + SPI_CON_REG);
++
++	/* Control register setup */
++	if (clk_src > dev->freq) {
++		pre_div = clk_src / dev->freq;
++		if (pre_div > 16) {
++			post_div = pre_div / 16;
++			pre_div = 15;
++		}
++		if (post_div != 0) {
++			for (i = 0; i < 16; i++) {
++				if ((1 << i) >= post_div)
++					break;
++			}
++			if (i == 16) {
++				printf("Error: no divider can meet the freq: %d\n",
++					dev->freq);
++				return -1;
++			}
++			post_div = i;
++		}
++	}
++
++	debug("pre_div = %d, post_div=%d\n", pre_div, post_div);
++	reg_ctrl = (reg_ctrl & ~(3 << 18)) | dev->ss << 18;
++	reg_ctrl = (reg_ctrl & ~(0xF << 12)) | pre_div << 12;
++	reg_ctrl = (reg_ctrl & ~(0xF << 8)) | post_div << 8;
++	reg_ctrl |= 1 << (dev->ss + 4);	/* always set to master mode !!!! */
++	reg_ctrl &= ~0x1;		/* disable spi */
++
++	reg_config = readl(dev->base + SPI_CFG_REG);
++	/* configuration register setup */
++	reg_config = (reg_config & ~(1 << ((dev->ss + 12)))) |
++		(dev->ss_pol << (dev->ss + 12));
++	reg_config = (reg_config & ~(1 << ((dev->ss + 20)))) |
++		(dev->in_sctl << (dev->ss + 20));
++	reg_config = (reg_config & ~(1 << ((dev->ss + 16)))) |
++		(dev->in_dctl << (dev->ss + 16));
++	reg_config = (reg_config & ~(1 << ((dev->ss + 8)))) |
++		(dev->ssctl << (dev->ss + 8));
++	reg_config = (reg_config & ~(1 << ((dev->ss + 4)))) |
++		(dev->sclkpol << (dev->ss + 4));
++	reg_config = (reg_config & ~(1 << ((dev->ss + 0)))) |
++		(dev->sclkpha << (dev->ss + 0));
++
++	debug("reg_ctrl = 0x%x\n", reg_ctrl);
++	writel(reg_ctrl, dev->base + SPI_CON_REG);
++	debug("reg_config = 0x%x\n", reg_config);
++	writel(reg_config, dev->base + SPI_CFG_REG);
++
++	/* save config register and control register */
++	reg->cfg_reg  = reg_config;
++	reg->ctrl_reg = reg_ctrl;
++
++	/* clear interrupt reg */
++	writel(0, dev->base + SPI_INT_REG);
++	writel(3 << 6, dev->base + SPI_STAT_REG);
++
++	return 0;
++}
++
++void spi_init(void)
++{
++}
++
++struct spi_slave *spi_setup_slave(unsigned int bus, unsigned int cs,
++		unsigned int max_hz, unsigned int mode)
++{
++	struct imx_spi_dev_t *imx_spi_slave = NULL;
++
++	if (!spi_cs_is_valid(bus, cs))
++		return NULL;
++
++	imx_spi_slave = (struct imx_spi_dev_t *)malloc(sizeof(struct imx_spi_dev_t));
++	if (!imx_spi_slave)
++		return NULL;
++
++	imx_spi_slave->slave.bus = bus;
++	imx_spi_slave->slave.cs = cs;
++
++	spi_get_cfg(imx_spi_slave);
++
++	spi_io_init(imx_spi_slave);
++
++	spi_reset(&(imx_spi_slave->slave));
++
++	return &(imx_spi_slave->slave);
++}
++
++void spi_free_slave(struct spi_slave *slave)
++{
++	struct imx_spi_dev_t *imx_spi_slave;
++
++	if (slave) {
++		imx_spi_slave = to_imx_spi_slave(slave);
++		free(imx_spi_slave);
++	}
++}
++
++int spi_claim_bus(struct spi_slave *slave)
++{
++	return 0;
++}
++
++void spi_release_bus(struct spi_slave *slave)
++{
++
++}
++
++/*
++ * SPI transfer:
++ *
++ * See include/spi.h and http://www.altera.com/literature/ds/ds_nios_spi.pdf
++ * for more informations.
++ */
++int spi_xfer(struct spi_slave *slave, unsigned int bitlen, const void *dout,
++		void *din, unsigned long flags)
++{
++	s32 val = SPI_RETRY_TIMES;
++	u32 *p_buf;
++	u32 reg;
++	s32 len = 0,
++		ret_val = 0;
++	s32 burst_bytes = bitlen >> 3;
++	s32 tmp = 0;
++	struct imx_spi_dev_t *dev = to_imx_spi_slave(slave);
++	struct spi_reg_t *spi_reg = &(dev->reg);
++
++	if (!slave)
++		return -1;
++
++	if (burst_bytes > (MAX_SPI_BYTES)) {
++		printf("Error: maximum burst size is 0x%x bytes, asking 0x%x\n",
++				MAX_SPI_BYTES, burst_bytes);
++		return -1;
++	}
++
++	if (flags & SPI_XFER_BEGIN) {
++		spi_cs_activate(slave);
++
++		if (spi_reg->ctrl_reg == 0) {
++			printf("Error: spi(base=0x%x) has not been initialized yet\n",
++					dev->base);
++			return -1;
++		}
++		spi_reg->ctrl_reg = (spi_reg->ctrl_reg & ~0xFFF00000) | \
++					((burst_bytes * 8 - 1) << 20);
++
++		writel(spi_reg->ctrl_reg | 0x1, dev->base + SPI_CON_REG);
++		writel(spi_reg->cfg_reg, dev->base + SPI_CFG_REG);
++		debug("ctrl_reg=0x%x, cfg_reg=0x%x\n",
++					 readl(dev->base + SPI_CON_REG),
++					 readl(dev->base + SPI_CFG_REG));
++
++		/* move data to the tx fifo */
++		if (dout) {
++			for (p_buf = (u32 *)dout, len = burst_bytes; len > 0;
++				p_buf++, len -= 4)
++				writel(*p_buf, dev->base + SPI_TX_DATA);
++		} else {
++			for (len = burst_bytes; len > 0; len -= 4)
++				writel(tmp, dev->base + SPI_TX_DATA);
++		}
++
++		reg = readl(dev->base + SPI_CON_REG);
++		reg |= (1 << 2); /* set xch bit */
++		debug("control reg = 0x%08x\n", reg);
++		writel(reg, dev->base + SPI_CON_REG);
++
++		/* poll on the TC bit (transfer complete) */
++		while ((val-- > 0) &&
++			(readl(dev->base + SPI_STAT_REG) & (1 << 7)) == 0) {
++			udelay(100);
++		}
++
++		/* clear the TC bit */
++		writel(3 << 6, dev->base + SPI_STAT_REG);
++		if (val <= 0) {
++			printf("Error: re-tried %d times without response. Give up\n",
++					SPI_RETRY_TIMES);
++			ret_val = -1;
++			goto error;
++		}
++	}
++
++	/* move data in the rx buf */
++	if (flags & SPI_XFER_END) {
++		if (din) {
++			for (p_buf = (u32 *)din, len = burst_bytes; len > 0;
++				++p_buf, len -= 4)
++				*p_buf = readl(dev->base + SPI_RX_DATA);
++		} else {
++			for (len = burst_bytes; len > 0; len -= 4)
++				tmp = readl(dev->base + SPI_RX_DATA);
++		}
++
++		spi_cs_deactivate(slave);
++	}
++
++	return ret_val;
++
++error:
++	spi_cs_deactivate(slave);
++	return ret_val;
++}
++
++int spi_cs_is_valid(unsigned int bus, unsigned int cs)
++{
++	return 1;
++}
++
++void spi_cs_activate(struct spi_slave *slave)
++{
++	struct imx_spi_dev_t *dev = to_imx_spi_slave(slave);
++
++	spi_io_init(dev);
++}
++
++void spi_cs_deactivate(struct spi_slave *slave)
++{
++	struct imx_spi_dev_t *dev = to_imx_spi_slave(slave);
++
++	writel(0, dev->base + SPI_CON_REG);
++}
++
+diff --git a/drivers/spi/imx_spi_pmic.c b/drivers/spi/imx_spi_pmic.c
+new file mode 100644
+index 0000000..bce42c2
+--- /dev/null
++++ b/drivers/spi/imx_spi_pmic.c
+@@ -0,0 +1,127 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#include <spi.h>
++#include <asm/errno.h>
++#include <linux/types.h>
++
++#include <asm/arch/imx_spi.h>
++
++static u32 pmic_tx, pmic_rx;
++
++/*!
++ * To read/write to a PMIC register. For write, it does another read for the
++ * actual register value.
++ *
++ * @param	reg			register number inside the PMIC
++ * @param	val			data to be written to the register; don't care for read
++ * @param	write		0 for read; 1 for write
++ *
++ * @return				the actual data in the PMIC register
++ */
++u32 pmic_reg(struct spi_slave *slave, u32 reg, u32 val, u32 write)
++{
++	if (!slave)
++		return 0;
++
++	if (reg > 63 || write > 1) {
++		printf("<reg num> = %d is invalide. Should be less then 63\n",
++			reg);
++		return 0;
++	}
++	pmic_tx = (write << 31) | (reg << 25) | (val & 0x00FFFFFF);
++	printf("reg=0x%x, val=0x%08x\n", reg, pmic_tx);
++
++	spi_xfer(slave, 4 << 3, (u8 *)&pmic_tx,
++				  (u8 *)&pmic_rx, 0);
++
++	if (write) {
++		pmic_tx &= ~(1 << 31);
++		spi_xfer(slave, 4 << 3,
++			(u8 *)&pmic_tx, (u8 *)&pmic_rx, 0);
++	}
++
++	return pmic_rx;
++}
++
++void show_pmic_info(struct spi_slave *slave)
++{
++	volatile u32 rev_id;
++
++	if (!slave)
++		return;
++
++	rev_id = pmic_reg(slave, 7, 0, 0);
++	printf("PMIC ID: 0x%08x [Rev: ", rev_id);
++	switch (rev_id & 0x1F) {
++	case 0x1:
++		printf("1.0");
++		break;
++	case 0x9:
++		printf("1.1");
++		break;
++	case 0xA:
++		printf("1.2");
++		break;
++	case 0x10:
++		printf("2.0");
++		break;
++	case 0x11:
++		printf("2.1");
++		break;
++	case 0x18:
++		printf("3.0");
++		break;
++	case 0x19:
++		printf("3.1");
++		break;
++	case 0x1A:
++		printf("3.2");
++		break;
++	case 0x2:
++		printf("3.2A");
++		break;
++	case 0x1B:
++		printf("3.3");
++		break;
++	case 0x1D:
++		printf("3.5");
++		break;
++	default:
++		printf("unknown");
++		break;
++	}
++	printf("]\n");
++}
++
++struct spi_slave *spi_pmic_probe()
++{
++	return spi_setup_slave(0, CONFIG_IMX_SPI_PMIC_CS, 2500000, 0);
++}
++
++void spi_pmic_free(struct spi_slave *slave)
++{
++	if (slave)
++		spi_free_slave(slave);
++}
+diff --git a/include/asm-arm/arch-mx51/imx_spi.h b/include/asm-arm/arch-mx51/imx_spi.h
+new file mode 100644
+index 0000000..c9d51e9
+--- /dev/null
++++ b/include/asm-arm/arch-mx51/imx_spi.h
+@@ -0,0 +1,66 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __IMX_SPI_H__
++#define __IMX_SPI_H__
++
++#include <spi.h>
++
++#undef IMX_SPI_DEBUG
++
++#define IMX_SPI_ACTIVE_HIGH     1
++#define IMX_SPI_ACTIVE_LOW      0
++#define SPI_RETRY_TIMES         100
++
++#define	SPI_RX_DATA				0x0
++#define SPI_TX_DATA				0x4
++#define SPI_CON_REG				0x8
++#define SPI_CFG_REG				0xc
++#define SPI_INT_REG				0x10
++#define SPI_DMA_REG				0x14
++#define SPI_STAT_REG				0x18
++#define SPI_PERIOD_REG				0x1C
++
++struct spi_reg_t {
++	u32 ctrl_reg;
++	u32 cfg_reg;
++};
++
++struct imx_spi_dev_t {
++	struct spi_slave slave;
++	u32 base;      /* base address of SPI module the device is connected to */
++	u32 freq;      /* desired clock freq in Hz for this device */
++	u32 ss_pol;    /* ss polarity: 1=active high; 0=active low */
++	u32 ss;        /* slave select */
++	u32 in_sctl;   /* inactive sclk ctl: 1=stay low; 0=stay high */
++	u32 in_dctl;   /* inactive data ctl: 1=stay low; 0=stay high */
++	u32 ssctl;     /* single burst mode vs multiple: 0=single; 1=multi */
++	u32 sclkpol;   /* sclk polarity: active high=0; active low=1 */
++	u32 sclkpha;   /* sclk phase: 0=phase 0; 1=phase1 */
++	u32 fifo_sz;   /* fifo size in bytes for either tx or rx. Don't add them up! */
++	u32 us_delay;  /* us delay in each xfer */
++	struct spi_reg_t reg; /* pointer to a set of SPI registers */
++};
++
++extern void spi_io_init(struct imx_spi_dev_t *dev);
++
++#endif /* __IMX_SPI_H__ */
+diff --git a/include/asm-arm/arch-mx51/imx_spi_nor.h b/include/asm-arm/arch-mx51/imx_spi_nor.h
+new file mode 100644
+index 0000000..a12247b
+--- /dev/null
++++ b/include/asm-arm/arch-mx51/imx_spi_nor.h
+@@ -0,0 +1,54 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef _IMX_SPI_NOR_H_
++#define _IMX_SPI_NOR_H_
++
++#define READ        0x03    /* tx: 1 byte cmd + 3 byte addr; rx: variable bytes */
++#define READ_HS     0x0B    /* tx: 1 byte cmd + 3 byte addr + 1 byte dummy; rx: variable bytes */
++#define RDSR        0x05    /* read status register 1 byte tx cmd + 1 byte rx status */
++#define RDSR_BUSY       (1 << 0)    /* 1=write-in-progress (default 0) */
++#define RDSR_WEL        (1 << 1)    /* 1=write enable (default 0) */
++#define RDSR_BP0        (1 << 2)    /* block write prot level (default 1) */
++#define RDSR_BP1        (1 << 3)    /* block write prot level (default 1) */
++#define RDSR_BP2        (1 << 4)    /* block write prot level (default 1) */
++#define RDSR_BP3        (1 << 5)    /* block write prot level (default 1) */
++#define RDSR_AAI        (1 << 6)    /* 1=AAI prog mode; 0=byte prog (default 0) */
++#define RDSR_BPL        (1 << 7)    /* 1=BP3,BP2,BP1,BP0 RO; 0=R/W (default 0)  */
++#define WREN        0x06    /* write enable. 1 byte tx cmd */
++#define WRDI        0x04    /* write disable. 1 byte tx cmd */
++#define EWSR        0x50    /* Enable write status. 1 byte tx cmd */
++#define WRSR        0x01    /* Write status register. 1 byte tx cmd + 1 byte tx value */
++#define ERASE_4K    0x20    /* sector erase. 1 byte cmd + 3 byte addr */
++#define ERASE_32K   0x52    /* 32K block erase. 1 byte cmd + 3 byte addr */
++#define ERASE_64K   0xD8    /* 64K block erase. 1 byte cmd + 3 byte addr */
++#define ERASE_CHIP  0x60    /* whole chip erase */
++#define BYTE_PROG   0x02    /* all tx: 1 cmd + 3 addr + 1 data */
++#define AAI_PROG    0xAD    /* all tx: [1 cmd + 3 addr + 2 data] + RDSR */
++				/* + [1cmd + 2 data] + .. + [WRDI] + [RDSR] */
++#define JEDEC_ID    0x9F    /* read JEDEC ID. tx: 1 byte cmd; rx: 3 byte ID */
++
++#define SZ_64K      0x10000
++#define SZ_32K      0x8000
++#define SZ_4K       0x1000
++
++#endif /* _IMX_SPI_NOR_H_ */
+diff --git a/include/asm-arm/arch-mx51/imx_spi_pmic.h b/include/asm-arm/arch-mx51/imx_spi_pmic.h
+new file mode 100644
+index 0000000..1c32a9e
+--- /dev/null
++++ b/include/asm-arm/arch-mx51/imx_spi_pmic.h
+@@ -0,0 +1,33 @@
++/*
++ * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef _IMX_SPI_PMIC_H_
++#define _IMX_SPI_PMIC_H_
++
++#include <linux/types.h>
++
++struct spi_slave *spi_pmic_probe();
++void spi_pmic_free(struct spi_slave *slave);
++u32 pmic_reg(struct spi_slave *slave,
++				u32 reg, u32 val, u32 write);
++
++#endif /* _IMX_SPI_PMIC_H_ */
+diff --git a/include/asm-arm/arch-mx51/mx51.h b/include/asm-arm/arch-mx51/mx51.h
+index 566251b..29120ab 100644
+--- a/include/asm-arm/arch-mx51/mx51.h
++++ b/include/asm-arm/arch-mx51/mx51.h
+@@ -404,6 +404,7 @@ MXC_AHB_CLK,
+ MXC_IPG_CLK,
+ MXC_IPG_PERCLK,
+ MXC_UART_CLK,
++MXC_CSPI_CLK,
+ };
+ 
+ extern unsigned int mxc_get_clock(enum mxc_clock clk);
+diff --git a/include/configs/imx51.h b/include/configs/imx51.h
+index 4ab1acb..1808b67 100644
+--- a/include/configs/imx51.h
++++ b/include/configs/imx51.h
+@@ -68,8 +68,25 @@
+ #define CONFIG_MX51_UART	1
+ #define CONFIG_MX51_UART1	1
+ 
++/*
++ * SPI Configs
++ * */
++/*
++#define CONFIG_FSL_SF		1
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH_IMX
++#define CONFIG_SPI_FLASH_CS	1
++#define CONFIG_IMX_SPI
++#define CONFIG_IMX_SPI_PMIC
++#define CONFIG_IMX_SPI_PMIC_CS 0
++
++#define MAX_SPI_BYTES		(64 * 4)
++*/
+ 
+-/* #define CONFIG_CMD_SPI */
++/*
++ * MMC Configs
++ * */
+ 
+ /*
+ #define CONFIG_FSL_MMC		1
+@@ -190,7 +207,9 @@
+ #define CONFIG_SYS_NAND_BASE          0x40000000
+ 
+ /* Monitor at beginning of flash */
+-#if defined(CONFIG_FSL_MMC)
++#if defined(CONFIG_FSL_SF)
++	#define CONFIG_FSL_ENV_IN_SF
++#elif defined(CONFIG_FSL_MMC)
+ 	#define CONFIG_MMC              1
+ 	#define CONFIG_CMD_MMC
+ /*
+@@ -209,6 +228,10 @@
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	#define CONFIG_ENV_OFFSET	(1024 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SF)
++	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
++	#define CONFIG_ENV_SPI_CS		1
++	#define CONFIG_ENV_OFFSET       (1024 * 1024)
+ #else
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+-- 
+1.5.4.4
+

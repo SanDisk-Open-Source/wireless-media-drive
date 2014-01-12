@@ -1,0 +1,35 @@
+From 04f21ba0024330821322713eebe1fce996e12af5 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 20 Jan 2011 16:22:37 +0800
+Subject: [PATCH] ENGR00138270-1 header file: change ipu_check_buffer_busy func name.
+
+Change ipu_check_buffer_busy to ipu_check_buffer_ready.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ include/linux/ipu.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/ipu.h b/include/linux/ipu.h
+index 3ecd6a3..1034de8 100644
+--- a/include/linux/ipu.h
++++ b/include/linux/ipu.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2005-2010 Freescale Semiconductor, Inc.
++ * Copyright 2005-2011 Freescale Semiconductor, Inc.
+  */
+ 
+ /*
+@@ -907,7 +907,7 @@ int32_t ipu_link_channels(ipu_channel_t src_ch, ipu_channel_t dest_ch);
+ int32_t ipu_unlink_channels(ipu_channel_t src_ch, ipu_channel_t dest_ch);
+ 
+ int32_t ipu_is_channel_busy(ipu_channel_t channel);
+-int32_t ipu_check_buffer_busy(ipu_channel_t channel, ipu_buffer_t type,
++int32_t ipu_check_buffer_ready(ipu_channel_t channel, ipu_buffer_t type,
+ 		uint32_t bufNum);
+ void ipu_clear_buffer_ready(ipu_channel_t channel, ipu_buffer_t type,
+ 		uint32_t bufNum);
+-- 
+1.5.4.4
+

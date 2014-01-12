@@ -1,0 +1,37 @@
+From 94bad557298a1acbb3effbd26fb66742ff4e1465 Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Fri, 24 Dec 2010 17:05:25 +0800
+Subject: [PATCH] ENGR00137362-1 L2Switch: Add ENET-MAC interrupt resource
+
+In Switch mode, The ENET-MAC interrupts are enabled and can
+be used to monitor the line activity.
+
+Signed-off-by: Xie Xiaobo <X.Xie@freescale.com>
+---
+ arch/arm/mach-mx28/device.c |   10 ++++++++++
+ 1 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/device.c b/arch/arm/mach-mx28/device.c
+index d6b44d3..f008346 100644
+--- a/arch/arm/mach-mx28/device.c
++++ b/arch/arm/mach-mx28/device.c
+@@ -869,6 +869,16 @@ static struct resource l2switch_resources[] = {
+ 		.end    = IRQ_ENET_SWI,
+ 		.flags  = IORESOURCE_IRQ
+ 	},
++	{
++		.start  = IRQ_ENET_MAC0,
++		.end    = IRQ_ENET_MAC0,
++		.flags  = IORESOURCE_IRQ
++	},
++	{
++		.start  = IRQ_ENET_MAC1,
++		.end    = IRQ_ENET_MAC1,
++		.flags  = IORESOURCE_IRQ
++	},
+ };
+ 
+ /* Define the fixed address of the L2 Switch hardware. */
+-- 
+1.5.4.4
+

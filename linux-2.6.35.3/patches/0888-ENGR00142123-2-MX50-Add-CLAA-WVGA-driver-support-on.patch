@@ -1,0 +1,157 @@
+From d5136c265fc35f4d5d130cdd5bce21aaa4315b41 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 14 Apr 2011 15:11:20 +0800
+Subject: [PATCH] ENGR00142123-2 MX50: Add CLAA WVGA driver support on RD3
+
+- Modified command line setup() to add "lcd=2" to choose CLAA WVGA
+- Added function to enable/disable pins, (Same PIN Setting as HDMI)
+
+Here's a matrix to show co-working capability for EPDC, HDMI, SEIKO/CLAA WVGA
+ - EPDC, CLAA WVGA on J12 on RD3
+ - SEIKO WVGA on J13 on RD3
+
+------------------------------------------------------------------
+           |   EPDC   |   HDMI   |   SEIKO WVGA   |   CLAA WVGA
+------------------------------------------------------------------
+EPDC       |    -     |          |                |
+------------------------------------------------------------------
+HDMI       |   N (*)  |    -     |                |
+------------------------------------------------------------------
+SEIKO WVGA |   Y      |  N (**)  |      -         |
+------------------------------------------------------------------
+CLAA WVGA  |   N (*)  |  N (**)  |     Y (***)    |      -
+------------------------------------------------------------------
+
+LEGEND:
+(*)   Shares the same pins.
+(**)  Shares LCDIF, but not same timing.
+(***) Shares LCDIF, and could share same timing for them fortunately.
+     (NOTE: only tested with these two panels, need "lcd=2" in kernel cmdline).
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/early_setup.c |   17 +++++++++++--
+ arch/arm/mach-mx5/mx50_rdp.c    |   50 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 64 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/early_setup.c b/arch/arm/mach-mx5/early_setup.c
+index b472c76..1aabea6 100644
+--- a/arch/arm/mach-mx5/early_setup.c
++++ b/arch/arm/mach-mx5/early_setup.c
+@@ -18,6 +18,7 @@
+ 
+ #include <linux/init.h>
+ #include <linux/string.h>
++#include <linux/kernel.h>
+ 
+ int __initdata primary_di = { -1 };
+ static int __init di1_setup(char *__unused)
+@@ -35,10 +36,20 @@ static int __init di0_setup(char *__unused)
+ __setup("di0_primary", di0_setup);
+ 
+ int __initdata lcdif_sel_lcd = { 0 };
+-static int __init lcd_setup(char *__unused)
++static int __init lcd_setup(char *str)
+ {
+-	lcdif_sel_lcd = 1;
+-	return 1;
++	int s, ret;
++
++	s = *str;
++	if (s == '=') {
++
++		str++;
++		ret = strict_strtoul(str, 0, &lcdif_sel_lcd);
++		if (ret < 0)
++			return 0;
++		return 1;
++	} else
++		return 0;
+ }
+ __setup("lcd", lcd_setup);
+ 
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index a965386..6e0cd88 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1493,6 +1493,42 @@ static struct platform_device lcd_wvga_device = {
+ 		},
+ };
+ 
++/* Use same pinmux on HDMI */
++static int claa_wvga_get_pins(void)
++{
++	sii902x_hdmi_get_pins();
++}
++
++static void claa_wvga_put_pins(void)
++{
++	sii902x_hdmi_put_pins();
++}
++
++static void claa_wvga_enable_pins(void)
++{
++	sii902x_hdmi_enable_pins();
++}
++
++static void claa_wvga_disable_pins(void)
++{
++	sii902x_hdmi_disable_pins();
++}
++
++static struct mxc_lcd_platform_data lcd_wvga_data2 = {
++	.get_pins = claa_wvga_get_pins,
++	.put_pins = claa_wvga_put_pins,
++	.enable_pins = claa_wvga_enable_pins,
++	.disable_pins = claa_wvga_disable_pins,
++};
++
++
++static struct platform_device lcd_wvga_device2 = {
++	.name = "lcd_claa",
++	.dev = {
++		.platform_data = &lcd_wvga_data2,
++		},
++};
++
+ static struct fb_videomode video_modes[] = {
+ 	{
+ 	 /* 800x480 @ 57 Hz , pixel clk @ 32MHz */
+@@ -1501,6 +1537,12 @@ static struct fb_videomode video_modes[] = {
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
++	 /* 800x480 @ 57 Hz , pixel clk @ 27MHz */
++	 "CLAA-WVGA", 57, 800, 480, 37037, 40, 60, 10, 10, 20, 10,
++	 FB_SYNC_CLK_LAT_FALL,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
++	{
+ 	/* 1600x1200 @ 60 Hz 162M pixel clk*/
+ 	"UXGA", 60, 1600, 1200, 6172,
+ 	304, 64,
+@@ -1524,6 +1566,12 @@ static struct mxc_fb_platform_data fb_data[] = {
+ 	 .mode = video_modes,
+ 	 .num_modes = ARRAY_SIZE(video_modes),
+ 	 },
++	{
++	 .interface_pix_fmt = V4L2_PIX_FMT_RGB565,
++	 .mode_str = "CLAA-WVGA",
++	 .mode = video_modes,
++	 .num_modes = ARRAY_SIZE(video_modes),
++	 },
+ };
+ 
+ static struct platform_pwm_backlight_data mxc_pwm_backlight_data = {
+@@ -1903,6 +1951,8 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&lcd_wvga_device, &lcd_wvga_data);
+ 	if (!board_is_mx50_rd3())
+ 		lcdif_sel_lcd = 1;
++	if (lcdif_sel_lcd == 2)
++		mxc_register_device(&lcd_wvga_device2, &lcd_wvga_data2);
+ 	mxc_register_device(&elcdif_device, &fb_data[lcdif_sel_lcd]);
+ 	mxc_register_device(&mxc_pwm1_device, NULL);
+ 	mxc_register_device(&mxc_pwm1_backlight_device,
+-- 
+1.5.4.4
+

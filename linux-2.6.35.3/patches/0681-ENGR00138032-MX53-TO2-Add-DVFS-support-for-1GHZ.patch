@@ -1,0 +1,141 @@
+From 1e2023e81e4a7fe60a51b320cf2cf42f0d90b02a Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sun, 16 Jan 2011 13:40:33 +0800
+Subject: [PATCH] ENGR00138032 MX53 TO2: Add DVFS support for 1GHZ
+
+- Since Hardware DVFS core is used, CCM.CDCR.[software_dvfs_en]
+needs to be set as 0. This patch is the supplementary patch of
+commit f59dc9fcc5. It handles the case for PLL switch of 1GHZ
+- In HFS mode, all the shadow registers are used. So add the codes
+to support HFS mode when changing PLL.
+- For DVFS core, when switching PLL, ARM_PODF also needs to be
+considered.
+- DVFS core parameters need to be tuned further.
+- DVFS core and CPU frequency have conflict and can not be used
+together now.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c     |   30 +++++++++++++++++++++---------
+ arch/arm/plat-mxc/dvfs_core.c |   20 ++++++++++++++++++--
+ 2 files changed, 39 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 8e132c2..5ea895c 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -72,7 +72,7 @@ static int max_axi_a_clk;
+ static int max_axi_b_clk;
+ static int max_ahb_clk;
+ static int max_emi_slow_clk;
+-
++extern int dvfs_core_is_active;
+ 
+ #define SPIN_DELAY	1000000 /* in nanoseconds */
+ #define MAX_AXI_A_CLK_MX51 	166250000
+@@ -5029,7 +5029,7 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ static int cpu_clk_set_wp(int wp)
+ {
+ 	struct cpu_wp *p;
+-	u32 reg;
++	u32 reg, pll_hfsm;
+ 	u32 stat;
+ 
+ 	if (wp == cpu_curr_wp)
+@@ -5067,15 +5067,27 @@ static int cpu_clk_set_wp(int wp)
+ 		reg &= ~MXC_PLL_DP_CTL_UPEN;
+ 		__raw_writel(reg, pll1_base + MXC_PLL_DP_CTL);
+ 
++		/* if DVFS core is enabled, need to check ARM PODF */
++		if (dvfs_core_is_active) {
++			reg = __raw_readl(MXC_CCM_CACRR);
++			reg = (reg & ~MXC_CCM_CACRR_ARM_PODF_MASK)
++				| p->cpu_podf;
++			__raw_writel(reg, MXC_CCM_CACRR);
++		}
++
++		reg = __raw_readl(pll1_base + MXC_PLL_DP_CTL);
++		pll_hfsm = reg & MXC_PLL_DP_CTL_HFSM;
+ 		/* PDF and MFI */
+ 		reg = p->pdf | p->mfi << MXC_PLL_DP_OP_MFI_OFFSET;
+-		__raw_writel(reg, pll1_base + MXC_PLL_DP_OP);
+-
+-		/* MFD */
+-		__raw_writel(p->mfd, pll1_base + MXC_PLL_DP_MFD);
+-
+-		/* MFI */
+-		__raw_writel(p->mfn, pll1_base + MXC_PLL_DP_MFN);
++		if (pll_hfsm == 0) {
++			__raw_writel(reg, pll1_base + MXC_PLL_DP_OP);
++			__raw_writel(p->mfd, pll1_base + MXC_PLL_DP_MFD);
++			__raw_writel(p->mfn, pll1_base + MXC_PLL_DP_MFN);
++		} else {
++			__raw_writel(reg, pll1_base + MXC_PLL_DP_HFS_OP);
++			__raw_writel(p->mfd, pll1_base + MXC_PLL_DP_HFS_MFD);
++			__raw_writel(p->mfn, pll1_base + MXC_PLL_DP_HFS_MFN);
++		}
+ 
+ 		reg = __raw_readl(pll1_base + MXC_PLL_DP_CTL);
+ 		reg |= MXC_PLL_DP_CTL_UPEN;
+diff --git a/arch/arm/plat-mxc/dvfs_core.c b/arch/arm/plat-mxc/dvfs_core.c
+index a1024e7..060db87 100644
+--- a/arch/arm/plat-mxc/dvfs_core.c
++++ b/arch/arm/plat-mxc/dvfs_core.c
+@@ -120,7 +120,7 @@ enum {
+  */
+ #define DVFS_LTBRSR		(2 << MXC_DVFSCNTR_LTBRSR_OFFSET)
+ 
+-extern struct dvfs_wp dvfs_core_setpoint[2];
++extern struct dvfs_wp dvfs_core_setpoint[4];
+ extern int low_bus_freq_mode;
+ extern int high_bus_freq_mode;
+ extern int set_low_bus_freq(void);
+@@ -193,6 +193,12 @@ static int set_cpu_freq(int wp)
+ 		spin_lock_irqsave(&mxc_dvfs_core_lock, flags);
+ 		/* PLL_RELOCK, set ARM_FREQ_SHIFT_DIVIDER */
+ 		reg = __raw_readl(ccm_base + dvfs_data->ccm_cdcr_offset);
++		/* Check if software_dvfs_en bit set */
++		if ((reg & CCM_CDCR_SW_DVFS_EN) != 0)
++			en_sw_dvfs = CCM_CDCR_SW_DVFS_EN;
++		else
++			en_sw_dvfs = 0x0;
++		reg &= ~(CCM_CDCR_SW_DVFS_EN);
+ 		reg &= 0xFFFFFFFB;
+ 		__raw_writel(reg, ccm_base + dvfs_data->ccm_cdcr_offset);
+ 
+@@ -233,6 +239,10 @@ static int set_cpu_freq(int wp)
+ 			}
+ 			udelay(dvfs_data->delay_time);
+ 		}
++		/* set software_dvfs_en bit back to original setting*/
++		reg = __raw_readl(ccm_base + dvfs_data->ccm_cdcr_offset);
++		reg &= ~(CCM_CDCR_SW_DVFS_EN);
++		reg |= en_sw_dvfs;
+ 		clk_set_rate(cpu_clk, rate);
+ 	} else {
+ 		podf = cpu_wp_tbl[wp].cpu_podf;
+@@ -346,7 +356,7 @@ static int set_cpu_freq(int wp)
+ 
+ static int start_dvfs(void)
+ {
+-	u32 reg;
++	u32 reg, cpu_rate;
+ 	unsigned long flags;
+ 
+ 	if (dvfs_core_is_active)
+@@ -358,6 +368,12 @@ static int start_dvfs(void)
+ 
+ 	dvfs_load_config(0);
+ 
++	/* get current working point */
++	cpu_rate = clk_get_rate(cpu_clk);
++	for (curr_wp = 0; curr_wp < cpu_wp_nr; curr_wp++)
++		if (cpu_rate == cpu_wp_tbl[curr_wp].cpu_rate)
++			break;
++	old_wp = curr_wp;
+ 	/* config reg GPC_CNTR */
+ 	reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,267 @@
+<HEAD>
+<TH>MARADNS 8 "Janeiro 2002" MARADNS "MaraDNS referência"</TH>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<BODY>
+<pre>
+Erre con erre cigarro
+Erre con erre barril
+RÃ¡pido ruedan los carros
+En el ferrocarril
+</pre>
+<h1>NAME</h1>
+maradns - Servidor DNS
+<h1>SINOPSE</h1>
+<b>maradns [ -v | -f mararc_file_location ]</b>
+<h1>ÍNDICE</h1>
+Esta man page tem as seguintes seções:
+
+<blockquote>
+<pre>
+Nome   
+Sinopse  
+Índice  
+Descrição  
+Uso  
+Configuração do firewall
+Questões freqüentemente Perguntadas  (FAQ) 
+Bugs
+Características não implementadas
+Retratação legal  
+Autores
+</pre>
+</blockquote>
+<H1>DESCRIÇÃO</H1>
+<b>maradns</b>
+é um servidor de DNS escrito com segurança, simplicidade, e desempenho
+em mente.
+
+<p>
+
+<b>maradns</b>
+tem duas formas de argumentos ambas são opcionais.
+
+<p>
+
+A primeira é a localização do arquivo <b>mararc</b>
+do qual o MaraDNS obtem todas as informações de configuração.
+A localização padrão do arquivo é
+<b>/etc/mararc</b>.
+Isto é especificado na forma
+<b>maradns -f mararc_file_location</b>;
+<i>mararc_file_location</i>
+é a localização do arquivo mararc.
+
+<p>
+Também é possível que o MaraDNS exiba o número de sua versão
+e saía.  Isto é especificado invocando maradns na forma
+<b>maradns -v</b>
+ou
+<b>maradns --version</b>
+
+<H1>USO</H1>
+Se o MaraDNS estiver funcionando somente como um servidor de nome 
+de recursivo, apenas um arquivo precisa ser configurado: O arquivo mararc.
+
+<p>
+Para que o MaraDNS funcione como um servidor de nome autoritativo, dois, 
+ou mais arquivos precisam ser configurados: o arquivo mararc e um ou mais 
+arquivos de zona de "csv2".  
+
+<p>
+O formato de configuração de um arquivo de zona de csv2 pode ser obtida no 
+man page <b>csv2(5)</b>.  O formato de configuração do arquivo mararc pode
+ser obtido no man page <b>mararc(5)</b>.
+
+<p>
+Para ter MaraDNS rodando como um daemon, o programa de duende é usado.  
+Veja o man page do <b>duende(8)</b> para detalhes.  
+
+<h1>CONFIGURAÇÃO DO FIREWALL</h1>
+
+Se MaraDNS estiver sendo usado como um servidor autoritativo, permita
+conexões UDP de todos os hosts da internet para porta UDP 53 para o IP
+que os servidor usa.
+<p>
+Se MaraDNS estiver sendo usado como um servidor recursivo, o firewall
+precisa permitir os pacotes seguintes para ir e do IP do servidor recursivo:
+<ul>
+<li>
+Permita conexões UDP do servidor MaraDNS-corrente para qualquer 
+máquina na internet onde a porta destino UDP é 53
+<li>
+Permita conexões UDP de qualquer máquina da internet para o IP do servidor
+recursivo, onde a porta de fonte do servidor remoto é 53, e a porta de destino
+está entre 15000 e 19095 (inclusive)
+<li>
+Permita conexões UDP de IPs que usam MaraDNS como servidor  recursivo 
+para porta 53 do servidor MaraDNS
+</ul>
+MaraDNS usa um forte seguro RNG para ambos a consulta (16 bits de entropia)
+e a porta fonte da consulta (12 bits de entropia). Isto faz respostas de spoofing 
+em servidores MaraDNS muito mais difícil, já que o atacante tem somente 
+um entre 250 milhões de chance que uma determinada resposta spoofed 
+seja considerada válida.
+<p>
+<include "../source/faq.embed">
+<p>
+<h1>BUGS</h1>
+Em um caso isolado de ter um arquivo de zona de csv2 com novas linhas em 
+estilo Macintosh (ao invés de DOS ou UNIX), enquanto o arquivo que será
+analizado, será informado qualquer erro no arquivo como sendo line 1.
+<p>
+O numero máximo permitidos de threads é 125; este é um limite duro porque
+pode haver problemas com algumas implementações de pthreads que fazem 
+o MaraDNS pendurar se este número for mais alto.
+<p>
+O script de inicialização do sistema incluído com MaraDNS assume que 
+o somente o processo de execução do MaraDNS é inicializado pelo
+script; ele para <I>todos</I> os processos executados pelo MaraDNS
+no servidor quando pedido parar MaraDNS.
+<p>
+Quando um resolver pergunta por um registro A, e o registro A é um 
+CNAME que aponta a uma lista de IPs, o resovelr recursivo do MaraDNS
+somente devolve o primeiro IP listado junto ao CNAME. Isto é trabalhado
+um pouco tendo um registro CNAME para ficar somente no cache recursivo
+durante 15 minutos.
+<p>
+Quando um resolver pergunta por um registro A, e o registro A é um 
+CNAME que aponta para outro CNAME (e possivelmente uma cadeia
+CNAME mais longa), enquanto MaraDNS devolve o IP correto (contanto
+que o nível de glueless não seja excedido), MaraDNS declarará 
+incorretamente que o primeiro CNAME na cadeia aponta diretamente ao IP.
+<p>
+Se um registro NS aponta para uma lista de IPs, e o registo NS  em questão
+é um registro "glueless" (MaraDNS teve que voltar para os servidores de raiz
+ para descobrir o IP da máquina em questão), o resolver recursivo do MaraDNS
+só usa o primeiro IP listado como um servidor de nome.
+<p>
+Quando o resover recursivo do MaraDNS recebe a resposta "host not there", 
+em vez de usar o SOA mínimo da resposta "host not there" como o TTL 
+(Olhar RFC1034 <hibit alt="section ">Â§</hibit>4.3.4), MaraDNS usa o 
+TTL da resposta de SOA.
+<p>
+MaraDNS mantém indicação do registro NS no cache durante um dia em vez
+do TTL especificada pelo servidor remoto.
+<p>
+MaraDNS precisa usar o programa <B>zoneserver</B> para servir registros DNS
+em cima de TCP.  Veja <B>zoneserver(8)</B>para informação de uso. 
+<p>
+MaraDNS não usa o formato de arquivo de zona ("arquivo de mestre") especificado
+no capítulo 5 do RFC1035.
+<p>
+Se um registro curinga MX existe na forma "*. example.com", e há um registro A
+para "www.example.com", mas nenhum registro MX para "www.example.com", o 
+comportamento correto (baseado na RFC1034 <hibit alt="section ">Â§</hibit>4.3.3)
+é devolver "no host" (nada na seção de resposta, SOA na seção de autoridade, código
+de retorno 0)  para um pedido de MX para "www.example.com." Ao invés, MaraDNS 
+devolve o registro de MX anexado a "*. example.com." 
+<p>
+Registros estrela (o que RFC1034 chama "curingas") não pode ser
+anexado a registros NS.
+<p>
+O resolvedor recursivo MaraDNS trata qualquer TTL mais curto que min_ttl 
+segundos (min_ttl_cname segundos quando o registro for um registro CNAME) 
+como se o TTL em questão era min_ttl (ou min_ttl_cname) segundos muito tempo
+ao determinar quando expirar um registro no cache do MaraDNS.
+<p>
+TTLs que são mais curta que 20 segundos é determinado um TTL de 20 segundos; 
+TTLs que são acimas de 63072000 (2 anos) é determinado um TTL de 2 anos.
+<p>
+O método do resolver recursivo do MaraDNS de não apagar registros 
+recentemente acessados do cache quando o cache começa a encher pode 
+apagar registros do cache antes que eles expirassem. Algumas pessoas 
+consideram isto um comportamento indesejável; eu sinto é um comportamento 
+necessário se a pessoa deseja colocar um limite nos recursos de memória que 
+um servidor de DNS pode usar.
+<p>
+O resolver recursivo do MaraDNS deixa de solucionar quando achar uma resposta
+na seção de AR. Este é um problema no caso onde um determinado nome do host
+e o IP é registrado com os servidores de nome raiz, e o IP registrado é obsoleto.
+Quando isto acontece, um servidor mais "próxio" do servidor de raiz dará um IP 
+antiquado, embora os servidores de DNS autoritativos para o host em questão 
+tenha o IP correto. Nota que solucionando isto resultará em um aumento no tráfico 
+do DNS.
+<p>
+MaraDNS, como toda outra implementação de DNS conhecida, só suporta 
+um QDCOUNT de 0 ou 1.
+<p>
+MaraDNS não envia mais de um pacote DNS a um determinado servidor de DNS
+ao processar uma consulta DNS; este não é um problema sério porque a maioria
+das implementações de cliente enviam multiplos pacotes DNS a servidor recursivo
+quando estão processando  uma consulta DNS.
+<p>
+MaraDNS gera um nova thread  para cada consulta recursiva de DNS quando
+os dados em questão não estão no cache do MaraDNS; isto faz para MaraDNS
+um excelente testador de stress para implementações de pthread. Muitas 
+implementações de pthread não podem controlar este tipo de carga; sintomas
+incluem uso alto de memória e terminação do processo MaraDNS.
+<p>
+MaraDNS não controla o caso de um glueless de referencia in-bailiwick de NS
+graciosamente, isto normalmente causa a zona apontada para registro NS 
+ofendendo para ser inalcançável por MaraDNS, até mesmo se outros servidores
+de DNS para o domínio têm referências corretas do NS.
+
+<h1>CARACTERÍSTICAS NÃO IMPLEMENTADAS</h1>
+<i>
+Estas são características que não serão implementadas na liberação 1.2
+do MaraDNS:</i>
+<p>
+MaraDNS não tem um registro de "nome do host completamente qualificado"  
+que vai automaticamente criar um registro PTR de um registro A.
+<p>
+MaraDNS não tem um esquema de armazenamento disk-based 
+para zonas autoritativas.
+<p>
+O servidor UDP do MaraDNS só carrega arquivos de zona enquanto MaraDNS
+é inicializado primeiramente. Informações de zonas UDP só podem ser atualizadas
+parando MaraDNS, e reiniciando MaraDNS novamente. Nota zona arquivos TCP  
+são carregadas do filesystem na ocasião do cliente pedir uma zona.
+<p>
+MaraDNS não tem suporte para permitir determinados nomes do host 
+solucionar uma gama limitada de IPs que examinam o servidor de DNS,
+ou para nomes do host solucionar diferentemente, dependendo do IP
+que examina o nome do host.
+<p>
+MaraDNS tem apenas suporte autoritativo limitado para IPv6. 
+<p>
+MaraDNS geralmente não suporta qualquer caracteristica DNS que não está presente
+em RFC1034 e RFC1035. As exceções são a habilidade para descomprimir alguns RRs
+que não estão em RFC1035, e suporte a zonas de arquivos de registros AAAA 
+(RFC 1886) e registros SRV (RFC 2052).
+<p>
+MaraDNS só permite curingas no princípio ou fim de um nome do host.
+Por exemplo nomes com curingas como "foo.*.example.com."
+"www.*" trabalhará, porém, se um arquivo zona for configurado.
+<p>
+MaraDNS não tem suporte para MRTG ou qualquer outro mecanismo de
+logging SNMP-baseado.
+
+
+<h1>RETRATAÇÂO LEGAL</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS 
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE 
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+<h1>AUTORES</h1>
+Sam Trenholme (<A href=http://www.samiam.org/>http://www.samiam.org</a>) é
+o responsável por este man page.
+<p>
+MaraDNS é escrito por min, Sam Trenholme, com uma pequena ajuda de meus 
+amigos. Naturalmente, que todos os erros no MaraDNS são minha responsabilidade 
+(mas leia a retratação acima).
+<p>
+<include "../source/credits.embed">
+
+<h1>TRADUÇÃO</h1>
+A tradução deste documento foi realizada por Daniel Zilli.
+
+</body>

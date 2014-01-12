@@ -1,0 +1,32 @@
+From 64f5ea95eeab52728885fb4f30164f1a1edaae15 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Fri, 30 Jul 2010 17:10:42 +0800
+Subject: [PATCH] ENGR00125760-1 FEC: add mac field at platform data
+
+Add mac field at platform data
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ include/linux/fec.h |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fec.h b/include/linux/fec.h
+index 5ebd1f4..e2d1608 100644
+--- a/include/linux/fec.h
++++ b/include/linux/fec.h
+@@ -13,10 +13,12 @@
+ #ifndef __LINUX_FEC_H__
+ #define __LINUX_FEC_H__
+ 
++#include <linux/etherdevice.h>
+ #include <linux/phy.h>
+ 
+ struct fec_platform_data {
+ 	phy_interface_t phy;
++	unsigned char mac[ETH_ALEN];
+ 	int (*init)(void);
+ 	int (*uninit)(void);
+ 	struct regulator *vddio_reg;
+-- 
+1.5.4.4
+

@@ -1,0 +1,55 @@
+From 1368fd2fb092fbc03b5adbdebd5a4581f632696d Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Thu, 21 Oct 2010 03:32:31 +0800
+Subject: [PATCH] ENGR00132832-2 SSI: fix ssi errors caused by dual fifo sdma script
+
+MX5 dual fifo breaks mx50 ssi, because new sdma script only support
+mx51 and mx53.
+
+Fix it setting ssi fifo according to cpu model.
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ sound/soc/imx/Kconfig   |    7 ++++---
+ sound/soc/imx/imx-ssi.c |    8 +++++---
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/sound/soc/imx/Kconfig b/sound/soc/imx/Kconfig
+index 291c196..45033c2 100644
+--- a/sound/soc/imx/Kconfig
++++ b/sound/soc/imx/Kconfig
+@@ -98,9 +98,10 @@ config SND_SOC_IMX_3STACK_CS42888
+ 	  with the CS42888
+ 
+ config MXC_SSI_DUAL_FIFO
+-	bool "MXC SSI enable dual fifoes"
+-	def_bool y
++	bool "MXC SSI enable dual fifo"
++	def_bool n
+ 	depends on SND_MXC_SOC_SSI && (ARCH_MX51 || ARCH_MX53)
+ 	help
+-	  Say Y if you want to use 2 ssi fifo for audio transfer
++	  Say Y if you want to use 2 ssi fifo for audio transfer,
++	  NOTE: ONLY support MX51 and MX53.
+ endif
+diff --git a/sound/soc/imx/imx-ssi.c b/sound/soc/imx/imx-ssi.c
+index 3d4dde4..372854a 100644
+--- a/sound/soc/imx/imx-ssi.c
++++ b/sound/soc/imx/imx-ssi.c
+@@ -326,9 +326,11 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
+ 	if (priv->network_mode)
+ 		scr |= SSI_SCR_NET;
+ #ifdef CONFIG_MXC_SSI_DUAL_FIFO
+-	stcr |= SSI_STCR_TFEN1;
+-	srcr |= SSI_SRCR_RFEN1;
+-	scr |= SSI_SCR_TCH_EN;
++	if (cpu_is_mx51() || cpu_is_mx53()) {
++		stcr |= SSI_STCR_TFEN1;
++		srcr |= SSI_SRCR_RFEN1;
++		scr |= SSI_SCR_TCH_EN;
++	}
+ #endif
+ 	__raw_writel(stcr, ioaddr + SSI_STCR);
+ 	__raw_writel(srcr, ioaddr + SSI_SRCR);
+-- 
+1.5.4.4
+

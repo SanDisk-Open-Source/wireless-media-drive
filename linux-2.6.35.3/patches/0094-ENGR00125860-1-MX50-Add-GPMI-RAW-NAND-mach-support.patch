@@ -1,0 +1,537 @@
+From 414fae9358a40bac378572b5763132f3931b1dc8 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 4 Aug 2010 10:26:55 +0800
+Subject: [PATCH] ENGR00125860-1 MX50:Add GPMI-RAW-NAND mach support
+
+Add GPMI-RAW-NAND mach support
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c              |   85 +++++++++++++++++++++++++
+ arch/arm/mach-mx5/crm_regs.h                |   13 ++++
+ arch/arm/mach-mx5/devices.c                 |   83 ++++++++++++++++++++++++
+ arch/arm/mach-mx5/devices.h                 |    1 +
+ arch/arm/mach-mx5/mx50_arm2.c               |   63 +++++++++++++++++++
+ arch/arm/mach-mx5/system.c                  |   90 +++++++++++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/iomux-mx50.h |   43 ++++++++++++-
+ arch/arm/plat-mxc/include/mach/system.h     |    3 +-
+ 8 files changed, 378 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 39b7e59..e2bd02e 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2333,6 +2333,84 @@ static struct clk fec_clk[] = {
+ 	},
+ };
+ 
++
++static int gpmi_clk_enable(struct clk *clk)
++{
++	u32 reg;
++
++	reg = __raw_readl(MXC_CCM_GPMI);
++	reg |= MXC_CCM_GPMI_CLKGATE_MASK;
++	__raw_writel(reg, MXC_CCM_GPMI);
++	_clk_enable(clk);
++	return 0;
++}
++
++static void gpmi_clk_disable(struct clk *clk)
++{
++	u32 reg;
++
++	reg = __raw_readl(MXC_CCM_GPMI);
++	reg &= ~MXC_CCM_GPMI_CLKGATE_MASK;
++	__raw_writel(reg, MXC_CCM_GPMI);
++	_clk_disable(clk);
++}
++
++
++static int bch_clk_enable(struct clk *clk)
++{
++	u32 reg;
++
++	reg = __raw_readl(MXC_CCM_BCH);
++	reg |= MXC_CCM_BCH_CLKGATE_MASK;
++	__raw_writel(reg, MXC_CCM_BCH);
++	_clk_enable(clk);
++	return 0;
++}
++
++static void bch_clk_disable(struct clk *clk)
++{
++	u32 reg;
++
++	reg = __raw_readl(MXC_CCM_BCH);
++	reg &= ~MXC_CCM_BCH_CLKGATE_MASK;
++	__raw_writel(reg, MXC_CCM_BCH);
++	_clk_disable(clk);
++}
++
++static struct clk gpmi_nfc_clk[] = {
++	{
++	.parent = &osc_clk,
++	.secondary = &gpmi_nfc_clk[1],
++	.enable = gpmi_clk_enable,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG9_OFFSET,
++	.disable = gpmi_clk_disable,
++	},
++	{
++	.parent = &ahb_clk,
++	.secondary = &gpmi_nfc_clk[2],
++	.enable = _clk_enable,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG8_OFFSET,
++	.disable = _clk_disable,
++	},
++	{
++	.parent = &osc_clk,
++	.secondary = &gpmi_nfc_clk[3],
++	.enable = bch_clk_enable,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG0_OFFSET,
++	.disable = bch_clk_disable,
++	},
++	{
++	.parent = &ahb_clk,
++	.enable = _clk_enable,
++	.enable_reg = MXC_CCM_CCGR7,
++	.enable_shift = MXC_CCM_CCGRx_CG12_OFFSET,
++	.disable = _clk_disable,
++	},
++};
++
+ static int _clk_gpu2d_set_parent(struct clk *clk, struct clk *parent)
+ {
+ 	u32 reg, mux;
+@@ -2904,6 +2982,10 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "gpt", gpt_clk[0]),
+ 	_REGISTER_CLOCK("fec.0", NULL, fec_clk[0]),
+ 	_REGISTER_CLOCK("mxc_w1.0", NULL, owire_clk),
++	_REGISTER_CLOCK(NULL, "gpmi-nfc", gpmi_nfc_clk[0]),
++	_REGISTER_CLOCK(NULL, "gpmi-apb", gpmi_nfc_clk[1]),
++	_REGISTER_CLOCK(NULL, "bch", gpmi_nfc_clk[2]),
++	_REGISTER_CLOCK(NULL, "bch-apb", gpmi_nfc_clk[3]),
+ };
+ 
+ static void clk_tree_init(void)
+@@ -3103,6 +3185,9 @@ int __init mx50_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	clk_set_parent(&usb_phy_clk[0], &osc_clk);
+ 	clk_set_parent(&usb_phy_clk[1], &osc_clk);
+ 
++	/* move gpmi-nfc to 24MHz */
++	clk_set_parent(&gpmi_nfc_clk[0], &osc_clk);
++
+ 	/* set SDHC root clock as 200MHZ*/
+ 	clk_set_rate(&esdhc1_clk[0], 200000000);
+ 	clk_set_rate(&esdhc3_clk[0], 200000000);
+diff --git a/arch/arm/mach-mx5/crm_regs.h b/arch/arm/mach-mx5/crm_regs.h
+index bae16db..415feda 100644
+--- a/arch/arm/mach-mx5/crm_regs.h
++++ b/arch/arm/mach-mx5/crm_regs.h
+@@ -712,6 +712,19 @@
+ #define MXC_CCM_ELCDIFPIX_CLK_PODF_OFFSET	(0)
+ #define MXC_CCM_ELCDIFPIX_CLK_PODF_MASK		(0xFFF)
+ 
++
++/* Define the bits in register GPMI */
++#define MXC_CCM_GPMI_CLKGATE_OFFSET		(30)
++#define MXC_CCM_GPMI_CLKGATE_MASK		(0x3 << 30)
++#define MXC_CCM_GPMI_CLK_DIV_OFFSET		(0)
++#define MXC_CCM_GPMI_CLK_DIV_MASK		(0x3F)
++
++/* Define the bits in register BCH */
++#define MXC_CCM_BCH_CLKGATE_OFFSET		(30)
++#define MXC_CCM_BCH_CLKGATE_MASK		(0x3 << 30)
++#define MXC_CCM_BCH_CLK_DIV_OFFSET		(0)
++#define MXC_CCM_BCH_CLK_DIV_MASK		(0x3F)
++
+ #define MXC_GPC_BASE		(IO_ADDRESS(GPC_BASE_ADDR))
+ #define MXC_DPTC_LP_BASE	(MXC_GPC_BASE + 0x80)
+ #define MXC_DPTC_GP_BASE	(MXC_GPC_BASE + 0x100)
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 756ca8b..601dafb 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -142,6 +142,89 @@ struct platform_device mxc_nandv2_mtd_device = {
+ 	.num_resources = ARRAY_SIZE(mxc_nand_resources),
+ };
+ 
++static struct resource gpmi_nfc_resources[] = {
++	{
++	 .name  = GPMI_NFC_GPMI_REGS_ADDR_RES_NAME,
++	 .flags = IORESOURCE_MEM,
++	 .start = GPMI_BASE_ADDR,
++	 .end   = GPMI_BASE_ADDR + SZ_8K - 1,
++	 },
++	{
++	 .name  = GPMI_NFC_GPMI_INTERRUPT_RES_NAME,
++	 .flags = IORESOURCE_IRQ,
++	 .start = MXC_INT_RAWNAND_GPMI,
++	 .end   = MXC_INT_RAWNAND_GPMI,
++	},
++	{
++	 .name  = GPMI_NFC_BCH_REGS_ADDR_RES_NAME,
++	 .flags = IORESOURCE_MEM,
++	 .start = BCH_BASE_ADDR,
++	 .end   = BCH_BASE_ADDR + SZ_8K - 1,
++	 },
++	{
++	 .name  = GPMI_NFC_BCH_INTERRUPT_RES_NAME,
++	 .flags = IORESOURCE_IRQ,
++	 .start = MXC_INT_RAWNAND_BCH,
++	 .end   = MXC_INT_RAWNAND_BCH,
++	 },
++	{
++	 .name  = GPMI_NFC_DMA_CHANNELS_RES_NAME,
++	 .flags = IORESOURCE_DMA,
++	 .start	= MXS_DMA_CHANNEL_AHB_APBH_GPMI0,
++	 .end	= MXS_DMA_CHANNEL_AHB_APBH_GPMI7,
++	 },
++	{
++	 .name  = GPMI_NFC_DMA_INTERRUPT_RES_NAME,
++	 .flags = IORESOURCE_IRQ,
++	 .start = MXC_INT_APBHDMA_CHAN0,
++	 .end   = MXC_INT_APBHDMA_CHAN7,
++	},
++};
++
++struct platform_device gpmi_nfc_device = {
++	.name = GPMI_NFC_DRIVER_NAME,
++	.id = 0,
++	.dev = {
++		.coherent_dma_mask = DMA_BIT_MASK(32),
++		},
++	.resource = gpmi_nfc_resources,
++	.num_resources = ARRAY_SIZE(gpmi_nfc_resources),
++};
++
++static struct resource imx_nfc_resources[] = {
++	{
++		.flags = IORESOURCE_MEM,
++		.start = MX51_NFC_BASE_ADDR_AXI,
++		.end   = MX51_NFC_BASE_ADDR_AXI + 0x1200 - 1,
++		.name  = IMX_NFC_BUFFERS_ADDR_RES_NAME,
++	},
++	{
++		.flags = IORESOURCE_MEM,
++		.start = MX51_NFC_BASE_ADDR_AXI + 0x1E00,
++		.end   = MX51_NFC_BASE_ADDR_AXI + 0x1E44 - 1,
++		.name  = IMX_NFC_PRIMARY_REGS_ADDR_RES_NAME,
++	},
++	{
++		.flags = IORESOURCE_MEM,
++		.start = NFC_BASE_ADDR + 0x00,
++		.end   = NFC_BASE_ADDR + 0x34 - 1,
++		.name  = IMX_NFC_SECONDARY_REGS_ADDR_RES_NAME,
++	},
++	{
++		.flags = IORESOURCE_IRQ,
++		.start = MXC_INT_NFC,
++		.end   = MXC_INT_NFC,
++		.name  = IMX_NFC_INTERRUPT_RES_NAME,
++	},
++};
++
++struct platform_device imx_nfc_device = {
++	.name = IMX_NFC_DRIVER_NAME,
++	.id = 0,
++	.resource      = imx_nfc_resources,
++	.num_resources = ARRAY_SIZE(imx_nfc_resources),
++};
++
+ static struct resource wdt_resources[] = {
+ 	{
+ 		.start = WDOG1_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 946e625..e73a34b 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -80,3 +80,4 @@ extern struct platform_device mxc_v4l2_device;
+ extern struct platform_device mxc_v4l2out_device;
+ extern struct platform_device mxs_viim;
+ extern struct platform_device mxs_dma_apbh_device;
++extern struct platform_device gpmi_nfc_device;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 7e3b3c1..440cbd8 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -44,6 +44,7 @@
+ #include <linux/videodev2.h>
+ #include <linux/mxcfb.h>
+ #include <linux/fec.h>
++#include <linux/gpmi-nfc.h>
+ #include <asm/irq.h>
+ #include <asm/setup.h>
+ #include <asm/mach-types.h>
+@@ -226,6 +227,28 @@ static struct pad_desc  mx50_armadillo2[] = {
+ 	MX50_PAD_CSPI_MISO__CSPI_MISO,
+ };
+ 
++static struct pad_desc  mx50_gpmi_nand[] = {
++	MX50_PIN_EIM_DA8__NANDF_CLE,
++	MX50_PIN_EIM_DA9__NANDF_ALE,
++	MX50_PIN_EIM_DA10__NANDF_CE0,
++	MX50_PIN_EIM_DA11__NANDF_CE1,
++	MX50_PIN_EIM_DA12__NANDF_CE2,
++	MX50_PIN_EIM_DA13__NANDF_CE3,
++	MX50_PIN_EIM_DA14__NANDF_READY,
++	MX50_PIN_EIM_DA15__NANDF_DQS,
++	MX50_PIN_SD3_D4__NANDF_D0,
++	MX50_PIN_SD3_D5__NANDF_D1,
++	MX50_PIN_SD3_D6__NANDF_D2,
++	MX50_PIN_SD3_D7__NANDF_D3,
++	MX50_PIN_SD3_D0__NANDF_D4,
++	MX50_PIN_SD3_D1__NANDF_D5,
++	MX50_PIN_SD3_D2__NANDF_D6,
++	MX50_PIN_SD3_D3__NANDF_D7,
++	MX50_PIN_SD3_CLK__NANDF_RDN,
++	MX50_PIN_SD3_CMD__NANDF_WRN,
++	MX50_PIN_SD3_WP__NANDF_RESETN,
++};
++
+ /* working point(wp): 0 - 800MHz; 1 - 166.25MHz; */
+ static struct cpu_wp cpu_wp_auto[] = {
+ 	{
+@@ -643,11 +666,46 @@ static int __init w1_setup(char *__unused)
+ 
+ __setup("w1", w1_setup);
+ 
++int enable_gpmi_nand = { 0 };
++static int __init gpmi_nand_setup(char *__unused)
++{
++	enable_gpmi_nand = 1;
++	return 1;
++}
++
++__setup("gpmi:nand", gpmi_nand_setup);
++
+ static struct mxs_dma_plat_data dma_apbh_data = {
+ 	.chan_base = MXS_DMA_CHANNEL_AHB_APBH,
+ 	.chan_num = MXS_MAX_DMA_CHANNELS,
+ };
+ 
++static int gpmi_nfc_platform_init(unsigned int max_chip_count)
++{
++	return !enable_gpmi_nand;
++}
++
++static void gpmi_nfc_platform_exit(unsigned int max_chip_count)
++{
++}
++
++static const char *gpmi_nfc_partition_source_types[] = { "cmdlinepart", 0 };
++
++static struct gpmi_nfc_platform_data  gpmi_nfc_platform_data = {
++	.nfc_version             = 2,
++	.boot_rom_version        = 1,
++	.clock_name              = "gpmi-nfc",
++	.platform_init           = gpmi_nfc_platform_init,
++	.platform_exit           = gpmi_nfc_platform_exit,
++	.min_prop_delay_in_ns    = 5,
++	.max_prop_delay_in_ns    = 9,
++	.max_chip_count          = 2,
++	.boot_area_size_in_bytes = 20 * SZ_1M,
++	.partition_source_types  = gpmi_nfc_partition_source_types,
++	.partitions              = 0,
++	.partition_count         = 0,
++};
++
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -717,6 +775,10 @@ static void __init mx50_arm2_io_init(void)
+ 		struct pad_desc one_wire = MX50_PAD_OWIRE__OWIRE;
+ 		mxc_iomux_v3_setup_pad(&one_wire);
+ 	}
++
++	if (enable_gpmi_nand)
++		mxc_iomux_v3_setup_multiple_pads(mx50_gpmi_nand, \
++					ARRAY_SIZE(mx50_gpmi_nand));
+ }
+ 
+ /*!
+@@ -781,6 +843,7 @@ static void __init mxc_board_init(void)
+ 	pm_power_off = mxc_power_off;
+ 	*/
+ 	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
++	mxc_register_device(&gpmi_nfc_device, &gpmi_nfc_platform_data);
+ 	mx5_usb_dr_init();
+ 	mx5_usbh1_init();
+ }
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index a7b950b..785dfa6 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -159,3 +159,93 @@ void mx51_idle(void)
+ 		clk_disable(gpc_dvfs_clk);
+ 	}
+ }
++
++static int __mxs_reset_block(void __iomem *hwreg, int just_enable)
++{
++	u32 c;
++	int timeout;
++
++	/* the process of software reset of IP block is done
++	   in several steps:
++
++	   - clear SFTRST and wait for block is enabled;
++	   - clear clock gating (CLKGATE bit);
++	   - set the SFTRST again and wait for block is in reset;
++	   - clear SFTRST and wait for reset completion.
++	 */
++	c = __raw_readl(hwreg);
++	c &= ~(1 << 31);	/* clear SFTRST */
++	__raw_writel(c, hwreg);
++	for (timeout = 1000000; timeout > 0; timeout--)
++		/* still in SFTRST state ? */
++		if ((__raw_readl(hwreg) & (1 << 31)) == 0)
++			break;
++	if (timeout <= 0) {
++		printk(KERN_ERR "%s(%p): timeout when enabling\n",
++		       __func__, hwreg);
++		return -ETIME;
++	}
++
++	c = __raw_readl(hwreg);
++	c &= ~(1 << 30);	/* clear CLKGATE */
++	__raw_writel(c, hwreg);
++
++	if (!just_enable) {
++		c = __raw_readl(hwreg);
++		c |= (1 << 31);	/* now again set SFTRST */
++		__raw_writel(c, hwreg);
++		for (timeout = 1000000; timeout > 0; timeout--)
++			/* poll until CLKGATE set */
++			if (__raw_readl(hwreg) & (1 << 30))
++				break;
++		if (timeout <= 0) {
++			printk(KERN_ERR "%s(%p): timeout when resetting\n",
++			       __func__, hwreg);
++			return -ETIME;
++		}
++
++		c = __raw_readl(hwreg);
++		c &= ~(1 << 31);	/* clear SFTRST */
++		__raw_writel(c, hwreg);
++		for (timeout = 1000000; timeout > 0; timeout--)
++			/* still in SFTRST state ? */
++			if ((__raw_readl(hwreg) & (1 << 31)) == 0)
++				break;
++		if (timeout <= 0) {
++			printk(KERN_ERR "%s(%p): timeout when enabling "
++			       "after reset\n", __func__, hwreg);
++			return -ETIME;
++		}
++
++		c = __raw_readl(hwreg);
++		c &= ~(1 << 30);	/* clear CLKGATE */
++		__raw_writel(c, hwreg);
++	}
++	for (timeout = 1000000; timeout > 0; timeout--)
++		/* still in SFTRST state ? */
++		if ((__raw_readl(hwreg) & (1 << 30)) == 0)
++			break;
++
++	if (timeout <= 0) {
++		printk(KERN_ERR "%s(%p): timeout when unclockgating\n",
++		       __func__, hwreg);
++		return -ETIME;
++	}
++
++	return 0;
++}
++
++int mxs_reset_block(void __iomem *hwreg, int just_enable)
++{
++	int try = 10;
++	int r;
++
++	while (try--) {
++		r = __mxs_reset_block(hwreg, just_enable);
++		if (!r)
++			break;
++		pr_debug("%s: try %d failed\n", __func__, 10 - try);
++	}
++	return r;
++}
++
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx50.h b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+index c963703..edbf0a5 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx50.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+@@ -507,7 +507,46 @@ typedef enum iomux_config {
+ 						NO_PAD_CTRL)
+ #define MX50_PAD_CSPI_MISO__CSPI_MISO	IOMUX_PAD(0x368, 0xBC, 0, 0x0, 0, \
+ 						NO_PAD_CTRL)
+-
+-
++/* NAND */
++#define MX50_PIN_EIM_DA8__NANDF_CLE	IOMUX_PAD(0x618, 0x27C, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_EIM_DA9__NANDF_ALE	IOMUX_PAD(0x61C, 0x280, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_EIM_DA10__NANDF_CE0	IOMUX_PAD(0x620, 0x284, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_EIM_DA11__NANDF_CE1	IOMUX_PAD(0x624, 0x288, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_EIM_DA12__NANDF_CE2	IOMUX_PAD(0x628, 0x28C, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_EIM_DA13__NANDF_CE3	IOMUX_PAD(0x62C, 0x290, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_EIM_DA14__NANDF_READY	IOMUX_PAD(0x630, 0x294, 2, 0x7B4, 2, \
++						PAD_CTL_PKE | \
++						PAD_CTL_PUE | \
++						PAD_CTL_PUS_100K_UP)
++#define MX50_PIN_EIM_DA15__NANDF_DQS	IOMUX_PAD(0x634, 0x298, 2, 0x7B0, 2, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D4__NANDF_D0	IOMUX_PAD(0x45C, 0x17C, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D5__NANDF_D1	IOMUX_PAD(0x460, 0x180, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D6__NANDF_D2	IOMUX_PAD(0x464, 0x184, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D7__NANDF_D3	IOMUX_PAD(0x468, 0x188, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D0__NANDF_D4	IOMUX_PAD(0x44C, 0x16C, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D1__NANDF_D5	IOMUX_PAD(0x450, 0x170, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D2__NANDF_D6	IOMUX_PAD(0x454, 0x174, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_D3__NANDF_D7	IOMUX_PAD(0x458, 0x178, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_CLK__NANDF_RDN	IOMUX_PAD(0x448, 0x168, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_CMD__NANDF_WRN	IOMUX_PAD(0x444, 0x164, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
++#define MX50_PIN_SD3_WP__NANDF_RESETN	IOMUX_PAD(0x46C, 0x18C, 2, 0x0, 0, \
++						PAD_CTL_DSE_HIGH)
+ #endif /* __MACH_IOMUX_MX53_H__ */
+ 
+diff --git a/arch/arm/plat-mxc/include/mach/system.h b/arch/arm/plat-mxc/include/mach/system.h
+index ef00199..61ddf43 100644
+--- a/arch/arm/plat-mxc/include/mach/system.h
++++ b/arch/arm/plat-mxc/include/mach/system.h
+@@ -1,7 +1,7 @@
+ /*
+  *  Copyright (C) 1999 ARM Limited
+  *  Copyright (C) 2000 Deep Blue Solutions Ltd
+- *  Copyright 2004-2007 Freescale Semiconductor, Inc. All Rights Reserved.
++ *  Copyright 2004-2010 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -37,5 +37,6 @@ static inline void arch_idle(void)
+ }
+ 
+ void arch_reset(char mode, const char *cmd);
++int mxs_reset_block(void __iomem *hwreg, int just_enable);
+ 
+ #endif /* __ASM_ARCH_MXC_SYSTEM_H__ */
+-- 
+1.5.4.4
+

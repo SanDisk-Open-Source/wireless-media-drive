@@ -1,0 +1,70 @@
+From c6dfc07699359084b9a8f5e705f502cc59be9b77 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Tue, 31 Aug 2010 19:30:19 +0800
+Subject: [PATCH] ENGR00126313-1 MX50: Add platform data for V4L2 device
+
+Add MSL codes for PxP v4l2 device
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/devices.c   |   11 +++++++++++
+ arch/arm/mach-mx5/devices.h   |    1 +
+ arch/arm/mach-mx5/mx50_arm2.c |    1 +
+ 3 files changed, 13 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 7b3d7de..db04e40 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -24,6 +24,7 @@
+ #include <linux/mxc_scc2_driver.h>
+ #include <linux/iram_alloc.h>
+ #include <linux/gpmi-nfc.h>
++#include <linux/fsl_devices.h>
+ #include <mach/common.h>
+ #include <mach/hardware.h>
+ #include <mach/gpio.h>
+@@ -1352,6 +1353,16 @@ struct platform_device mxc_pxp_client_device = {
+ 	.id = -1,
+ };
+ 
++static u64 pxp_dma_mask = DMA_BIT_MASK(32);
++struct platform_device mxc_pxp_v4l2 = {
++	.name = "pxp-v4l2",
++	.id = -1,
++	.dev		= {
++		.dma_mask		= &pxp_dma_mask,
++		.coherent_dma_mask	= DMA_BIT_MASK(32),
++	},
++};
++
+ struct platform_device mxc_v4l2_device = {
+ 	.name = "mxc_v4l2_capture",
+ 	.id = 0,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 1337c8a..b8f9713 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -75,6 +75,7 @@ extern struct platform_device mxc_mlb_device;
+ extern struct platform_device mxc_nandv2_mtd_device;
+ extern struct platform_device mxc_pxp_device;
+ extern struct platform_device mxc_pxp_client_device;
++extern struct platform_device mxc_pxp_v4l2;
+ extern struct platform_device epdc_device;
+ extern struct platform_device elcdif_device;
+ extern struct platform_device mxc_v4l2_device;
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index fb7f89d..42f1d62 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1147,6 +1147,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&gpu_device, &z160_version);
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
++	mxc_register_device(&mxc_pxp_v4l2, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 	/*
+ 	mxc_register_device(&mx53_lpmode_device, NULL);
+-- 
+1.5.4.4
+

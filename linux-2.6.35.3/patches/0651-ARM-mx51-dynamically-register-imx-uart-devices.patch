@@ -1,0 +1,146 @@
+From a297d523e18f84b4f592536aa5c4a08d3b88361d Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Uwe=20Kleine-K=C3=B6nig?= <u.kleine-koenig@pengutronix.de>
+Date: Wed, 11 Aug 2010 22:23:06 +0200
+Subject: [PATCH] ARM: mx51: dynamically register imx-uart devices
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Uwe Kleine-König <u.kleine-koenig@pengutronix.de>
+Signed-off-by: Sascha Hauer <s.hauer@pengutronix.de>
+---
+ arch/arm/mach-mx5/board-mx51_babbage.c        |   10 ++++----
+ arch/arm/mach-mx5/devices-imx51.h             |   26 +++++++++++++++++++++++++
+ arch/arm/mach-mx5/devices.h                   |    4 ---
+ arch/arm/plat-mxc/devices/platform-imx-uart.c |   10 +++++++++
+ arch/arm/plat-mxc/include/mach/mx51.h         |    6 ++--
+ 5 files changed, 44 insertions(+), 12 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/board-mx51_babbage.c b/arch/arm/mach-mx5/board-mx51_babbage.c
+index ed885f9..9968164 100644
+--- a/arch/arm/mach-mx5/board-mx51_babbage.c
++++ b/arch/arm/mach-mx5/board-mx51_babbage.c
+@@ -19,7 +19,6 @@
+ 
+ #include <mach/common.h>
+ #include <mach/hardware.h>
+-#include <mach/imx-uart.h>
+ #include <mach/iomux-mx51.h>
+ #include <mach/mxc_ehci.h>
+ 
+@@ -29,6 +28,7 @@
+ #include <asm/mach/arch.h>
+ #include <asm/mach/time.h>
+ 
++#include "devices-imx51.h"
+ #include "devices.h"
+ 
+ #define BABBAGE_USB_HUB_RESET	(0*32 + 7)	/* GPIO_1_7 */
+@@ -83,15 +83,15 @@ static struct pad_desc mx51babbage_pads[] = {
+ 
+ /* Serial ports */
+ #if defined(CONFIG_SERIAL_IMX) || defined(CONFIG_SERIAL_IMX_MODULE)
+-static struct imxuart_platform_data uart_pdata = {
++static const struct imxuart_platform_data uart_pdata __initconst = {
+ 	.flags = IMXUART_HAVE_RTSCTS,
+ };
+ 
+ static inline void mxc_init_imx_uart(void)
+ {
+-	mxc_register_device(&mxc_uart_device0, &uart_pdata);
+-	mxc_register_device(&mxc_uart_device1, &uart_pdata);
+-	mxc_register_device(&mxc_uart_device2, &uart_pdata);
++	imx51_add_imx_uart(0, &uart_pdata);
++	imx51_add_imx_uart(1, &uart_pdata);
++	imx51_add_imx_uart(2, &uart_pdata);
+ }
+ #else /* !SERIAL_IMX */
+ static inline void mxc_init_imx_uart(void)
+diff --git a/arch/arm/mach-mx5/devices-imx51.h b/arch/arm/mach-mx5/devices-imx51.h
+new file mode 100644
+index 0000000..8235b8c
+--- /dev/null
++++ b/arch/arm/mach-mx5/devices-imx51.h
+@@ -0,0 +1,26 @@
++/*
++ * Copyright (C) 2010 Pengutronix
++ * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++#include <mach/mx51.h>
++#include <mach/devices-common.h>
++
++extern const struct imx_imx_i2c_data imx51_imx_i2c_data[] __initconst;
++#define imx51_add_imx_i2c(id, pdata)	\
++	imx_add_imx_i2c(&imx51_imx_i2c_data[id], pdata)
++
++extern const struct imx_imx_uart_1irq_data imx51_imx_uart_data[] __initconst;
++#define imx51_add_imx_uart(id, pdata)	\
++	imx_add_imx_uart_1irq(&imx51_imx_uart_data[id], pdata)
++
++extern const struct imx_spi_imx_data imx51_cspi_data __initconst;
++#define imx51_add_cspi(pdata)	\
++	imx_add_spi_imx(&imx51_cspi_data, pdata)
++
++extern const struct imx_spi_imx_data imx51_ecspi_data[] __initconst;
++#define imx51_add_ecspi(id, pdata)	\
++	imx_add_spi_imx(&imx51_ecspi_data[id], pdata)
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 55d9028..36ac77e 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -16,10 +16,6 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+  * MA 02110-1301, USA.
+  */
+-
+-extern struct platform_device mxc_uart_device0;
+-extern struct platform_device mxc_uart_device1;
+-extern struct platform_device mxc_uart_device2;
+ extern struct platform_device mxc_fec_device;
+ extern struct platform_device mxc_ptp_device;
+ extern struct platform_device mxc_dma_device;
+diff --git a/arch/arm/plat-mxc/devices/platform-imx-uart.c b/arch/arm/plat-mxc/devices/platform-imx-uart.c
+index a4b76ec..452da74 100644
+--- a/arch/arm/plat-mxc/devices/platform-imx-uart.c
++++ b/arch/arm/plat-mxc/devices/platform-imx-uart.c
+@@ -95,6 +95,16 @@ const struct imx_imx_uart_1irq_data imx35_imx_uart_data[] __initconst = {
+ };
+ #endif /* ifdef CONFIG_ARCH_MX35 */
+ 
++#ifdef CONFIG_ARCH_MX51
++const struct imx_imx_uart_1irq_data imx51_imx_uart_data[] __initconst = {
++#define imx51_imx_uart_data_entry(_id, _hwid)				\
++	imx_imx_uart_1irq_data_entry(MX51, _id, _hwid, SZ_4K)
++	imx51_imx_uart_data_entry(0, 1),
++	imx51_imx_uart_data_entry(1, 2),
++	imx51_imx_uart_data_entry(2, 3),
++};
++#endif /* ifdef CONFIG_ARCH_MX51 */
++
+ struct platform_device *__init imx_add_imx_uart_3irq(
+ 		const struct imx_imx_uart_3irq_data *data,
+ 		const struct imxuart_platform_data *pdata)
+diff --git a/arch/arm/plat-mxc/include/mach/mx51.h b/arch/arm/plat-mxc/include/mach/mx51.h
+index 5aad344..45ff0c7 100644
+--- a/arch/arm/plat-mxc/include/mach/mx51.h
++++ b/arch/arm/plat-mxc/include/mach/mx51.h
+@@ -349,9 +349,9 @@
+ #define MX51_MXC_INT_SLIM_B	28
+ #define MX51_MXC_INT_SSI1	29
+ #define MX51_MXC_INT_SSI2	30
+-#define MX51_MXC_INT_UART1	31
+-#define MX51_MXC_INT_UART2	32
+-#define MX51_MXC_INT_UART3	33
++#define MX51_INT_UART1	31
++#define MX51_INT_UART2	32
++#define MX51_INT_UART3	33
+ #define MX51_MXC_INT_RESV34	34
+ #define MX51_MXC_INT_RESV35	35
+ #define MX51_MXC_INT_CSPI1	36
+-- 
+1.5.4.4
+

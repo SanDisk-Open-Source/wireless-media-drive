@@ -1,0 +1,140 @@
+From 48457509cdc009fddcdad859f3d5fc9a75eb9024 Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Thu, 4 Nov 2010 14:07:21 -0500
+Subject: [PATCH] ENGR00133437 MX50 Uboot support for TO 1.1.1 precode
+
+Precoding: Update DDR configuration plugin to check SI Rev
+ and change ROM addresses as needed.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ board/freescale/mx50_arm2/flash_header.S |   10 ++++++++--
+ board/freescale/mx50_arm2/mx50_arm2.c    |   13 ++++++++++++-
+ board/freescale/mx50_rdp/flash_header.S  |   13 ++++++++++---
+ board/freescale/mx50_rdp/mx50_rdp.c      |   13 ++++++++++++-
+ include/asm-arm/arch-mx50/mx50.h         |    3 +++
+ 5 files changed, 45 insertions(+), 7 deletions(-)
+
+diff --git a/board/freescale/mx50_arm2/flash_header.S b/board/freescale/mx50_arm2/flash_header.S
+index 94549bb..055d947 100644
+--- a/board/freescale/mx50_arm2/flash_header.S
++++ b/board/freescale/mx50_arm2/flash_header.S
+@@ -1139,14 +1139,20 @@ wait_pll1_lock:
+  * Final image size on exit.
+  * boot_data - Initial @ref ivt Boot Data load address.
+  */
++	ldr r0, =ROM_SI_REV
++	ldr r1, [r0]
++	cmp r1, #0x11
++
+ 	adr r0, DDR_DEST_ADDR
+ 	adr r1, COPY_SIZE
+ 	adr r2, BOOT_DATA
+ 
+ before_calling_rom___pu_irom_hwcnfg_setup:
+ 	mov r4, #0x2a00
+-	add r4, r4, #0x19
+-	blx r4 // This address might change in future ROM versions
++	/* Different ROM address for TO 1.0 & TO 1.1.1 */
++	addeq r4, r4, #0xad
++	addne r4, r4, #0x19
++	blx r4
+ after_calling_rom___pu_irom_hwcnfg_setup:
+ 
+ 
+diff --git a/board/freescale/mx50_arm2/mx50_arm2.c b/board/freescale/mx50_arm2/mx50_arm2.c
+index 5b3a8e1..08e8051 100644
+--- a/board/freescale/mx50_arm2/mx50_arm2.c
++++ b/board/freescale/mx50_arm2/mx50_arm2.c
+@@ -116,7 +116,18 @@ u32 get_board_rev(void)
+ 
+ static inline void setup_soc_rev(void)
+ {
+-	system_rev = 0x50000 | CHIP_REV_1_0;
++	int reg = __REG(ROM_SI_REV);
++
++	switch (reg) {
++	case 0x10:
++		system_rev = 0x50000 | CHIP_REV_1_0;
++		break;
++	case 0x11:
++		system_rev = 0x50000 | CHIP_REV_1_1_1;
++		break;
++	default:
++		system_rev = 0x50000 | CHIP_REV_1_1_1;
++	}
+ }
+ 
+ static inline void setup_board_rev(int rev)
+diff --git a/board/freescale/mx50_rdp/flash_header.S b/board/freescale/mx50_rdp/flash_header.S
+index 38ad560..530a079 100644
+--- a/board/freescale/mx50_rdp/flash_header.S
++++ b/board/freescale/mx50_rdp/flash_header.S
+@@ -576,15 +576,22 @@ delay1:
+  * Final image size on exit.
+  * boot_data - Initial @ref ivt Boot Data load address.
+  */
++
++	ldr r0, =ROM_SI_REV
++	ldr r1, [r0]
++	cmp r1, #0x11
++
+ 	adr r0, DDR_DEST_ADDR
+ 	adr r1, COPY_SIZE
+ 	adr r2, BOOT_DATA
+ 
+ before_calling_rom___pu_irom_hwcnfg_setup:
+ 	mov r3, #0x2a00
+-	add r3, r3, #0x19
+-	cmp r4, #0xF8000000
+-	blxhi r3 // This address might change in future ROM versions
++	/* Different ROM address for TO 1.0 & TO 1.1.1 */
++	addeq r3, r3, #0xad
++	addne r3, r3, #0x19
++	cmp r4, #0xf8000000
++	blxhi r3
+ after_calling_rom___pu_irom_hwcnfg_setup:
+ 
+ 	pop {r0-r4, lr}
+diff --git a/board/freescale/mx50_rdp/mx50_rdp.c b/board/freescale/mx50_rdp/mx50_rdp.c
+index 0235441..924c7e6 100644
+--- a/board/freescale/mx50_rdp/mx50_rdp.c
++++ b/board/freescale/mx50_rdp/mx50_rdp.c
+@@ -112,7 +112,18 @@ u32 get_board_rev(void)
+ 
+ static inline void setup_soc_rev(void)
+ {
+-	system_rev = 0x50000 | CHIP_REV_1_0;
++	int reg = __REG(ROM_SI_REV);
++
++	switch (reg) {
++	case 0x10:
++		system_rev = 0x50000 | CHIP_REV_1_0;
++		break;
++	case 0x11:
++		system_rev = 0x50000 | CHIP_REV_1_1_1;
++		break;
++	default:
++		system_rev = 0x50000 | CHIP_REV_1_1_1;
++	}
+ }
+ 
+ static inline void setup_board_rev(int rev)
+diff --git a/include/asm-arm/arch-mx50/mx50.h b/include/asm-arm/arch-mx50/mx50.h
+index 69e639c..b2bb992 100644
+--- a/include/asm-arm/arch-mx50/mx50.h
++++ b/include/asm-arm/arch-mx50/mx50.h
+@@ -229,7 +229,10 @@
+ #define CLKCTL_CLK_DDR         0x98
+ 
+ #define CHIP_REV_1_0            0x10
++#define CHIP_REV_1_1_1         0x11
+ #define PLATFORM_ICGC           0x14
++/* ROM ID as the indicator of SOC rev */
++#define ROM_SI_REV	0x48
+ 
+ /* Assuming 24MHz input clock with doubler ON */
+ /*                            MFI         PDF */
+-- 
+1.5.4.4
+

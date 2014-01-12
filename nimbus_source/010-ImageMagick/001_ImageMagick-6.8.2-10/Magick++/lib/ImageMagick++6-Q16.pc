@@ -1,0 +1,12 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include/ImageMagick
+
+
+Name: ImageMagick++
+Version: 6.8.2
+Description: Magick++ - C++ API for ImageMagick (ABI @MAGICK_ABISUFFIX@)
+Requires: ImageMagick
+Libs: -L${libdir} -lMagick++6-Q16
+Cflags: -I${includedir}

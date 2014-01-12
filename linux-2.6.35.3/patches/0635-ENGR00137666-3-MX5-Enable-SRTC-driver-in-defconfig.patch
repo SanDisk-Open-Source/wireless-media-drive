@@ -1,0 +1,37 @@
+From 3359e6b3c6eb851532c7b58c1bdcd45371a776d3 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Thu, 6 Jan 2011 18:25:34 +0800
+Subject: [PATCH] ENGR00137666-3 MX5: Enable SRTC driver in defconfig
+
+Enable SRTC driver in MX5 defconfig.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index a34d0e1..eb51327 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Wed Jan  5 19:25:13 2011
++# Thu Jan  6 18:20:36 2011
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -2001,7 +2001,7 @@ CONFIG_RTC_INTF_DEV_UIE_EMUL=y
+ #
+ # on-CPU RTC drivers
+ #
+-# CONFIG_RTC_DRV_MXC_V2 is not set
++CONFIG_RTC_DRV_MXC_V2=y
+ # CONFIG_RTC_DRV_IMXDI is not set
+ CONFIG_RTC_MC13892=y
+ CONFIG_DMADEVICES=y
+-- 
+1.5.4.4
+

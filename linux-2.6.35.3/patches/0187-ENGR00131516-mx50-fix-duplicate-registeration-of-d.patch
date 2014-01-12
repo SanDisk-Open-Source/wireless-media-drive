@@ -1,0 +1,28 @@
+From 649a88c3cc18f7fd3ec95cc7f264e78720fcb551 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Tue, 14 Sep 2010 23:37:39 -0500
+Subject: [PATCH] ENGR00131516  mx50: fix duplicate registeration of dcp_device
+
+dcp_device was registered twice. should only be registered
+once.
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index be96063..ce0c2a2 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -1190,7 +1190,6 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_rngb_device, NULL);
+ 	mxc_register_device(&dcp_device, NULL);
+ 	mxc_register_device(&fsl_otp_device, &otp_data);
+-	mxc_register_device(&dcp_device, NULL);
+ }
+ 
+ static void __init mx50_arm2_timer_init(void)
+-- 
+1.5.4.4
+

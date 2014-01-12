@@ -1,0 +1,44 @@
+From ecbbc581c9f54a3512cd3f6ef42562b1cf047d35 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 3 Aug 2009 15:14:43 +0000
+Subject: [PATCH] ENGR00114746: Disable flash header for mx35 nand boot
+
+Disable flash header for mx35 nand boot.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx35_3stack.h |   11 +++++++----
+ 1 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index a49939a..796fb03 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -36,10 +36,6 @@
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+-#define CONFIG_FLASH_HEADER     1
+-#define CONFIG_FLASH_HEADER_OFFSET 0x400
+-#define CONFIG_FLASH_HEADER_BARKER 0xB1
+-
+ #define BOARD_LATE_INIT
+ /*
+  * Disabled for now due to build problems under Debian and a significant increase
+@@ -190,6 +186,13 @@
+ 
+ #define CONFIG_MMC              1
+ #define CONFIG_CMD_MMC
++
++#if defined(CONFIG_FSL_MMC)
++	#define CONFIG_FLASH_HEADER     1
++	#define CONFIG_FLASH_HEADER_OFFSET 0x400
++	#define CONFIG_FLASH_HEADER_BARKER 0xB1
++#endif
++
+ #define CONFIG_DOS_PARTITION    1
+ #define CONFIG_CMD_FAT          1
+ #define CONFIG_MMC_BASE         0x0
+-- 
+1.5.4.4
+

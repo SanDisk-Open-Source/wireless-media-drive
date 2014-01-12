@@ -1,0 +1,80 @@
+From 8d81485259554faba92355ab3956019f675d6acc Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 16 Nov 2010 14:05:21 +0800
+Subject: [PATCH] ENGR00133702-3 usb host1: Add usb host1 low power and wakeup support for mx28
+
+mx28 defconfig
+
+Add usb low power and wakeup support for mx28 usb1, in that means,
+when the usb h1 is not in used, the host1 will close
+usb core and phy's clock. When an usb activity happens,
+the usb can be wakeup from low power mode.
+
+Meanwhile, the usb host1 can also be system
+wakeup source through sys entry like other platforms.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/configs/imx28evk_defconfig |   11 ++++++-----
+ 1 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm/configs/imx28evk_defconfig b/arch/arm/configs/imx28evk_defconfig
+index b081bd7..5495ce3 100644
+--- a/arch/arm/configs/imx28evk_defconfig
++++ b/arch/arm/configs/imx28evk_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Fri Nov  5 09:50:20 2010
++# Tue Nov  9 16:39:07 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+@@ -408,7 +408,7 @@ CONFIG_SUSPEND_NVS=y
+ CONFIG_SUSPEND=y
+ CONFIG_SUSPEND_FREEZER=y
+ # CONFIG_APM_EMULATION is not set
+-# CONFIG_PM_RUNTIME is not set
++CONFIG_PM_RUNTIME=y
+ CONFIG_PM_OPS=y
+ CONFIG_ARCH_SUSPEND_POSSIBLE=y
+ CONFIG_NET=y
+@@ -828,7 +828,7 @@ CONFIG_INPUT_FF_MEMLESS=y
+ # Userland interfaces
+ #
+ CONFIG_INPUT_MOUSEDEV=y
+-# CONFIG_INPUT_MOUSEDEV_PSAUX is not set
++CONFIG_INPUT_MOUSEDEV_PSAUX=y
+ CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
+ CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
+ CONFIG_INPUT_JOYDEV=m
+@@ -996,7 +996,7 @@ CONFIG_MAX_RAW_DEVS=8192
+ CONFIG_I2C=y
+ CONFIG_I2C_BOARDINFO=y
+ CONFIG_I2C_COMPAT=y
+-CONFIG_I2C_CHARDEV=y
++# CONFIG_I2C_CHARDEV is not set
+ CONFIG_I2C_HELPER_AUTO=y
+ 
+ #
+@@ -1403,7 +1403,7 @@ CONFIG_HID=y
+ #
+ CONFIG_USB_HID=y
+ # CONFIG_HID_PID is not set
+-# CONFIG_USB_HIDDEV is not set
++CONFIG_USB_HIDDEV=y
+ 
+ #
+ # Special HID drivers
+@@ -1469,6 +1469,7 @@ CONFIG_USB=y
+ # CONFIG_USB_DEVICEFS is not set
+ # CONFIG_USB_DEVICE_CLASS is not set
+ # CONFIG_USB_DYNAMIC_MINORS is not set
++CONFIG_USB_SUSPEND=y
+ CONFIG_USB_OTG=y
+ # CONFIG_USB_OTG_WHITELIST is not set
+ # CONFIG_USB_OTG_BLACKLIST_HUB is not set
+-- 
+1.5.4.4
+

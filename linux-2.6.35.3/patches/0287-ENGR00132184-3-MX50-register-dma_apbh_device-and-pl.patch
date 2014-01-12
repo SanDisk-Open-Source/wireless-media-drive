@@ -1,0 +1,48 @@
+From cf9d8f703e690c3f9ceb84e11d08e5b41c8c9907 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 30 Sep 2010 18:57:08 +0800
+Subject: [PATCH] ENGR00132184-3 MX50: register dma_apbh_device and platform data
+
+Add dma_apbh_device and platform data for it, which is needed
+by GPMI NAND.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 5d8b1d1..2c32c62 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -65,6 +65,7 @@
+ #include "devices.h"
+ #include "usb.h"
+ #include "crm_regs.h"
++#include "dma-apbh.h"
+ 
+ #define SD1_WP	(3*32 + 19)	/*GPIO_4_19 */
+ #define SD1_CD	(0*32 + 27)	/*GPIO_1_27 */
+@@ -982,6 +983,11 @@ static int __init w1_setup(char *__unused)
+ 
+ __setup("w1", w1_setup);
+ 
++static struct mxs_dma_plat_data dma_apbh_data = {
++	.chan_base = MXS_DMA_CHANNEL_AHB_APBH,
++	.chan_num = MXS_MAX_DMA_CHANNELS,
++};
++
+ static int gpmi_nfc_platform_init(unsigned int max_chip_count)
+ {
+ 	mxc_iomux_v3_setup_multiple_pads(mx50_gpmi_nand,
+@@ -1110,6 +1116,7 @@ static void __init mxc_board_init(void)
+ 	mx50_rdp_io_init();
+ 
+ 	mxc_register_device(&mxc_dma_device, NULL);
++	mxc_register_device(&mxs_dma_apbh_device, &dma_apbh_data);
+ 	mxc_register_device(&mxc_wdt_device, NULL);
+ 	mxc_register_device(&mxcspi1_device, &mxcspi1_data);
+ 	mxc_register_device(&mxcspi3_device, &mxcspi3_data);
+-- 
+1.5.4.4
+

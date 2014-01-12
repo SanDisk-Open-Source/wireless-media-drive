@@ -1,0 +1,108 @@
+From 3c9ae8408b62e6eda1041031af411c2007ca7f43 Mon Sep 17 00:00:00 2001
+From: Alan Tull <alan.tull@freescale.com>
+Date: Fri, 22 Oct 2010 11:20:19 -0500
+Subject: [PATCH] ENGR00132877 add fixed regulator dcdc_3v15
+
+The i.Mx50EVK (rdp) board has a fixed dc-dc converter.  Show it as
+a fixed regulator so the audio driver will be able to get its voltage.
+
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 +-
+ arch/arm/mach-mx5/devices.c     |    5 +++++
+ arch/arm/mach-mx5/devices.h     |    1 +
+ arch/arm/mach-mx5/mx50_rdp.c    |   26 ++++++++++++++++++++++++++
+ 4 files changed, 33 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 0de460c..d4d06de 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1270,7 +1270,7 @@ CONFIG_MFD_MAX17135=y
+ CONFIG_REGULATOR=y
+ # CONFIG_REGULATOR_DEBUG is not set
+ # CONFIG_REGULATOR_DUMMY is not set
+-# CONFIG_REGULATOR_FIXED_VOLTAGE is not set
++CONFIG_REGULATOR_FIXED_VOLTAGE=y
+ # CONFIG_REGULATOR_VIRTUAL_CONSUMER is not set
+ # CONFIG_REGULATOR_USERSPACE_CONSUMER is not set
+ # CONFIG_REGULATOR_BQ24022 is not set
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index c0f8890..741694e 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -463,6 +463,11 @@ struct platform_device mxcvpu_device = {
+ 	.resource = vpu_resources,
+ };
+ 
++struct platform_device fixed_volt_reg_device = {
++	.name          = "reg-fixed-voltage",
++	.id            = -1,
++};
++
+ static struct resource scc_resources[] = {
+ 	{
+ 		.start = SCC_BASE_ADDR,
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index eaf99c9..1a596ef 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -90,3 +90,4 @@ extern struct platform_device gpmi_nfc_device;
+ extern struct platform_device mxc_rngb_device;
+ extern struct platform_device dcp_device;
+ extern struct platform_device pm_device;
++extern struct platform_device fixed_volt_reg_device;
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index e698a8a..5d87d04 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -38,6 +38,7 @@
+ #include <linux/mtd/partitions.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/regulator/machine.h>
++#include <linux/regulator/fixed.h>
+ #include <linux/mfd/max17135.h>
+ #include <linux/pmic_external.h>
+ #include <linux/pmic_status.h>
+@@ -584,6 +585,30 @@ static struct regulator_init_data max17135_init_data[] __initdata = {
+ 	},
+ };
+ 
++/* Fixed voltage regulator DCDC_3V15 */
++static struct regulator_consumer_supply fixed_volt_reg_consumers[] = {
++	{
++		/* sgtl5000 */
++		.supply = "VDDIO",
++		.dev_name = "1-000a",
++	},
++};
++
++static struct regulator_init_data fixed_volt_reg_init_data = {
++	.constraints = {
++		.always_on = 1,
++	},
++	.num_consumer_supplies = ARRAY_SIZE(fixed_volt_reg_consumers),
++	.consumer_supplies = fixed_volt_reg_consumers,
++};
++
++static struct fixed_voltage_config fixed_volt_reg_pdata = {
++	.supply_name = "DCDC_3V15",
++	.microvolts = 3150000,
++	.init_data = &fixed_volt_reg_init_data,
++	.gpio = -EINVAL,
++};
++
+ static void epdc_get_pins(void)
+ {
+ 	/* Claim GPIOs for EPDC pins - used during power up/down */
+@@ -1328,6 +1353,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_rngb_device, NULL);
+ 	mxc_register_device(&dcp_device, NULL);
+ 	mxc_register_device(&mxc_powerkey_device, &pwrkey_data);
++	mxc_register_device(&fixed_volt_reg_device, &fixed_volt_reg_pdata);
+ 	mx50_rdp_init_mc13892();
+ /*
+ 	pm_power_off = mxc_power_off;
+-- 
+1.5.4.4
+

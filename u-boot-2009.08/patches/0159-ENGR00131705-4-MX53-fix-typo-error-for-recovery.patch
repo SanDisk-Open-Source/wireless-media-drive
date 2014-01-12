@@ -1,0 +1,28 @@
+From e3a0a936b05b6ab62ae8dc181e360d7ba52c4292 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 21 Sep 2010 11:03:23 +0800
+Subject: [PATCH] ENGR00131705-4 MX53: fix typo error for recovery
+
+Fix typo error for MX53 recovery mode.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx53_rd/mx53_rd.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/freescale/mx53_rd/mx53_rd.c b/board/freescale/mx53_rd/mx53_rd.c
+index c2d549f..a4760b0 100644
+--- a/board/freescale/mx53_rd/mx53_rd.c
++++ b/board/freescale/mx53_rd/mx53_rd.c
+@@ -1090,7 +1090,7 @@ struct reco_envs supported_reco_envs[BOOT_DEV_NUM] = {
+ 	 },
+ 	{
+ 	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
+-	 .args = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
++	 .args = CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC,
+ 	 },
+ 	{
+ 	 .cmd = CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC,
+-- 
+1.5.4.4
+

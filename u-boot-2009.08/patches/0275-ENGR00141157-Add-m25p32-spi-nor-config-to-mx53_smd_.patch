@@ -1,0 +1,62 @@
+From 068bed0069dfe66bf01cc72fc4e41a32b2cb94d4 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 25 Mar 2011 11:47:52 +0800
+Subject: [PATCH] ENGR00141157: Add m25p32 spi nor config to mx53_smd_android
+
+Add m25p32 spi nor config to mx53_smd_android.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ include/configs/mx53_smd_android.h |   24 ++++++++++++++++++------
+ 1 files changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index dcc2798..2d7005b 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -134,6 +134,9 @@
+ #define CONFIG_BOOTP_DNS
+ 
+ #define CONFIG_CMD_MMC
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_I2C
++#define CONFIG_CMD_SF
+ #define CONFIG_CMD_ENV
+ 
+ #define CONFIG_CMD_IIM
+@@ -234,17 +237,26 @@
+ /*
+  * I2C Configs
+  */
+-#define CONFIG_CMD_I2C          1
+-#define CONFIG_HARD_I2C         1
+-#define CONFIG_I2C_MXC          1
+-#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
+-#define CONFIG_SYS_I2C_SPEED            100000
+-#define CONFIG_SYS_I2C_SLAVE            0xfe
++#ifdef CONFIG_CMD_I2C
++	#define CONFIG_HARD_I2C         1
++	#define CONFIG_I2C_MXC          1
++	#define CONFIG_SYS_I2C_PORT             I2C1_BASE_ADDR
++	#define CONFIG_SYS_I2C_SPEED            100000
++	#define CONFIG_SYS_I2C_SLAVE            0xfe
++#endif
+ 
+ 
+ /*
+  * SPI Configs
+  */
++#ifdef CONFIG_CMD_SF
++	#define CONFIG_FSL_SF		1
++	#define CONFIG_SPI_FLASH_IMX_M25PXX	1
++	#define CONFIG_SPI_FLASH_CS	1
++	#define CONFIG_IMX_ECSPI
++	#define IMX_CSPI_VER_2_3	1
++	#define MAX_SPI_BYTES		(64 * 4)
++#endif
+ 
+ /*
+  * MMC Configs
+-- 
+1.5.4.4
+

@@ -1,0 +1,312 @@
+From b1f33520371767798e5c2394dc31d598c2d2ea9d Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Wed, 24 Nov 2010 10:59:37 +0800
+Subject: [PATCH] ENGR00133954-2 ipuv3: remove FB_SYNC_EXT flag
+
+FB_SYNC_EXT was used to represent ext clk, but actually, it represent ext sync.
+Some applications do not recognize it, during fb_set_var ioctl may miss it,
+which will cause fb display fail, for example X window startup.
+Remove FB_SYNC_EXT flag, and choose ext clk support by ipu driver.
+If you want to use ipu internal clk only, you can add int_clk to your video
+option like below:
+video=mxcdi0fb:RGB565,800x480M@55,int_clk
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_disp.c      |   48 ++++++++++++++++++++-----------------
+ drivers/video/mxc/ldb.c          |    7 ++---
+ drivers/video/mxc/mxc_ipuv3_fb.c |   10 ++++----
+ drivers/video/mxc/tve.c          |   48 +++++++++++++++----------------------
+ include/linux/ipu.h              |    2 +-
+ 5 files changed, 55 insertions(+), 60 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_disp.c b/drivers/mxc/ipu3/ipu_disp.c
+index f87ad9b..3a8ae49 100644
+--- a/drivers/mxc/ipu3/ipu_disp.c
++++ b/drivers/mxc/ipu3/ipu_disp.c
+@@ -1081,31 +1081,35 @@ int32_t ipu_init_sync_panel(int disp, uint32_t pixel_clk,
+ 	/*clear DI*/
+ 	__raw_writel((1 << 21), DI_GENERAL(disp));
+ 
+-	if (sig.ext_clk) {
++	di_parent = clk_get_parent(g_di_clk[disp]);
++	if (clk_get(NULL, "tve_clk") == di_parent ||
++		clk_get(NULL, "ldb_di0_clk") == di_parent ||
++		clk_get(NULL, "ldb_di1_clk") == di_parent) {
++		/* if di clk parent is tve/ldb, then keep it;*/
++		dev_dbg(g_ipu_dev, "use special clk parent\n");
++		clk_set_parent(g_pixel_clk[disp], g_di_clk[disp]);
++	} else {
++		/* try ipu clk first*/
++		dev_dbg(g_ipu_dev, "try ipu internal clk\n");
++		clk_set_parent(g_pixel_clk[disp], g_ipu_clk);
++		rounded_pixel_clk = clk_round_rate(g_pixel_clk[disp], pixel_clk);
+ 		/*
+-		 * Set the  PLL to be an even multiple of the pixel clock.
+-		 * Not round div for tvout and ldb.
+-		 * Did not consider both DI come from the same ext clk, if
+-		 * meet such case, ext clk rate should be set specially.
++		 * we will only use 1/2 fraction for ipu clk,
++		 * so if the clk rate is not fit, try ext clk.
+ 		 */
+-		if (clk_get_usecount(g_pixel_clk[disp]) == 0) {
+-			di_parent = clk_get_parent(g_di_clk[disp]);
+-			if (clk_get(NULL, "tve_clk") != di_parent &&
+-			    clk_get(NULL, "ldb_di0_clk") != di_parent &&
+-			    clk_get(NULL, "ldb_di1_clk") != di_parent)  {
+-				rounded_pixel_clk = pixel_clk * 2;
+-				while (rounded_pixel_clk < 150000000)
+-					rounded_pixel_clk += pixel_clk * 2;
+-				clk_set_rate(di_parent, rounded_pixel_clk);
+-				rounded_pixel_clk =
+-					clk_round_rate(g_di_clk[disp], pixel_clk);
+-				clk_set_rate(g_di_clk[disp], rounded_pixel_clk);
+-			}
++		if (!sig.int_clk &&
++			((rounded_pixel_clk >= pixel_clk + pixel_clk/16) ||
++			(rounded_pixel_clk <= pixel_clk - pixel_clk/16))) {
++			dev_dbg(g_ipu_dev, "try ipu ext di clk\n");
++			rounded_pixel_clk = pixel_clk * 2;
++			while (rounded_pixel_clk < 150000000)
++				rounded_pixel_clk += pixel_clk * 2;
++			clk_set_rate(di_parent, rounded_pixel_clk);
++			rounded_pixel_clk =
++				clk_round_rate(g_di_clk[disp], pixel_clk);
++			clk_set_rate(g_di_clk[disp], rounded_pixel_clk);
++			clk_set_parent(g_pixel_clk[disp], g_di_clk[disp]);
+ 		}
+-		clk_set_parent(g_pixel_clk[disp], g_di_clk[disp]);
+-	} else {
+-		if (clk_get_usecount(g_pixel_clk[disp]) != 0)
+-			clk_set_parent(g_pixel_clk[disp], g_ipu_clk);
+ 	}
+ 	rounded_pixel_clk = clk_round_rate(g_pixel_clk[disp], pixel_clk);
+ 	clk_set_rate(g_pixel_clk[disp], rounded_pixel_clk);
+diff --git a/drivers/video/mxc/ldb.c b/drivers/video/mxc/ldb.c
+index 9e590e8..d2707b8 100644
+--- a/drivers/video/mxc/ldb.c
++++ b/drivers/video/mxc/ldb.c
+@@ -116,7 +116,7 @@ struct fb_videomode mxcfb_ldb_modedb[] = {
+ 	 100, 40,
+ 	 30, 3,
+ 	 10, 2,
+-	 FB_SYNC_EXT,
++	 0,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+@@ -124,7 +124,7 @@ struct fb_videomode mxcfb_ldb_modedb[] = {
+ 	 220, 40,
+ 	 21, 7,
+ 	 60, 10,
+-	 FB_SYNC_EXT,
++	 0,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ };
+@@ -813,8 +813,7 @@ static int ldb_probe(struct platform_device *pdev)
+ 		fb_add_videomode(&mxcfb_ldb_modedb[i], &ldb.modelist);
+ 
+ 	for (i = 0; i < num_registered_fb; i++) {
+-		if ((registered_fb[i]->var.sync & FB_SYNC_EXT) &&
+-		    (registered_fb[i]->var.vmode == FB_VMODE_NONINTERLACED)) {
++		if (registered_fb[i]->var.vmode == FB_VMODE_NONINTERLACED) {
+ 			ldb.fbi[i] = registered_fb[i];
+ 
+ 			mode = fb_match_mode(&ldb.fbi[i]->var, &ldb.modelist);
+diff --git a/drivers/video/mxc/mxc_ipuv3_fb.c b/drivers/video/mxc/mxc_ipuv3_fb.c
+index f288039..e26f870 100644
+--- a/drivers/video/mxc/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc/mxc_ipuv3_fb.c
+@@ -63,7 +63,7 @@ struct mxcfb_info {
+ 	ipu_channel_t ipu_ch;
+ 	int ipu_di;
+ 	u32 ipu_di_pix_fmt;
+-	bool ipu_ext_clk;
++	bool ipu_int_clk;
+ 	bool overlay;
+ 	bool alpha_chan_en;
+ 	dma_addr_t alpha_phy_addr0;
+@@ -365,8 +365,8 @@ static int mxcfb_set_par(struct fb_info *fbi)
+ 		}
+ 		if (fbi->var.vmode & FB_VMODE_ODD_FLD_FIRST) /* PAL */
+ 			sig_cfg.odd_field_first = true;
+-		if ((fbi->var.sync & FB_SYNC_EXT) || mxc_fbi->ipu_ext_clk)
+-			sig_cfg.ext_clk = true;
++		if (mxc_fbi->ipu_int_clk)
++			sig_cfg.int_clk = true;
+ 		if (fbi->var.sync & FB_SYNC_HOR_HIGH_ACT)
+ 			sig_cfg.Hsync_pol = true;
+ 		if (fbi->var.sync & FB_SYNC_VERT_HIGH_ACT)
+@@ -1850,8 +1850,8 @@ static int mxcfb_option_setup(struct fb_info *info, char *options)
+ 			mxcfbi->ipu_di_pix_fmt = IPU_PIX_FMT_VYUY;
+ 			continue;
+ 		}
+-		if (!strncmp(opt, "ext_clk", 7)) {
+-			mxcfbi->ipu_ext_clk = true;
++		if (!strncmp(opt, "int_clk", 7)) {
++			mxcfbi->ipu_int_clk = true;
+ 			continue;
+ 		}
+ 		if (!strncmp(opt, "bpp=", 4))
+diff --git a/drivers/video/mxc/tve.c b/drivers/video/mxc/tve.c
+index 3bfa310..41da2e8 100644
+--- a/drivers/video/mxc/tve.c
++++ b/drivers/video/mxc/tve.c
+@@ -171,7 +171,7 @@ static struct fb_videomode video_modes[] = {
+ 	 122, 15,
+ 	 18, 26,
+ 	 1, 1,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT | FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_INTERLACED,
+ 	 0,},
+ 	{
+@@ -180,7 +180,7 @@ static struct fb_videomode video_modes[] = {
+ 	 132, 11,
+ 	 22, 26,
+ 	 1, 1,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT | FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_INTERLACED | FB_VMODE_ODD_FLD_FIRST,
+ 	 0,},
+ 	{
+@@ -189,8 +189,7 @@ static struct fb_videomode video_modes[] = {
+ 	 260, 109,
+ 	 25, 4,
+ 	 1, 1,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-			FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+@@ -199,8 +198,7 @@ static struct fb_videomode video_modes[] = {
+ 	 256, 1760,
+ 	 20, 5,
+ 	 4, 5,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-	 FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+@@ -209,8 +207,7 @@ static struct fb_videomode video_modes[] = {
+ 	 148, 88,
+ 	 36, 4,
+ 	 44, 5,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-			FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_INTERLACED,
+ 	 0,},
+ 	{
+@@ -219,8 +216,7 @@ static struct fb_videomode video_modes[] = {
+ 	 148, 528,
+ 	 36, 4,
+ 	 44, 5,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-			FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_INTERLACED,
+ 	 0,},
+ 	{
+@@ -229,8 +225,7 @@ static struct fb_videomode video_modes[] = {
+ 	 148, 88,
+ 	 36, 4,
+ 	 44, 5,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-	 FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+@@ -239,8 +234,7 @@ static struct fb_videomode video_modes[] = {
+ 	 148, 528,
+ 	 36, 4,
+ 	 44, 5,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-	 FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+@@ -249,26 +243,24 @@ static struct fb_videomode video_modes[] = {
+ 	 148, 638,
+ 	 36, 4,
+ 	 44, 5,
+-	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT |
+-	 FB_SYNC_EXT,
++	 FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+ 	 FB_VMODE_NONINTERLACED,
+ 	 0,},
+ 	{
+-	/* VGA 1024x768 65M pixel clk output */
+-	"VGA-XGA", 60, 1024, 768, 15384,
+-	24, 160,
+-	3, 29,
+-	136, 6,
+-	FB_SYNC_EXT,
+-	FB_VMODE_NONINTERLACED,
+-	0,},
++	 "XGA", 60, 1024, 768, 15385,
++	 220, 40,
++	 21, 7,
++	 60, 10,
++	 0,
++	 FB_VMODE_NONINTERLACED,
++	 0,},
+ 	{
+ 	/* VGA 1280x1024 108M pixel clk output */
+ 	"SXGA", 60, 1280, 1024, 9259,
+ 	48, 248,
+ 	1, 38,
+ 	112, 3,
+-	FB_SYNC_EXT,
++	0,
+ 	FB_VMODE_NONINTERLACED,
+ 	0,},
+ };
+@@ -875,7 +867,7 @@ int tve_fb_event(struct notifier_block *nb, unsigned long val, void *v)
+ 			break;
+ 
+ 		fbi->mode = (struct fb_videomode *)fb_match_mode(&tve_fbi->var,
+-				&tve_fbi->modelist);
++				&tve_modelist.list);
+ 
+ 		if (!fbi->mode) {
+ 			pr_warning("TVE: can not find mode for xres=%d, yres=%d\n",
+@@ -948,7 +940,7 @@ int tve_fb_event(struct notifier_block *nb, unsigned long val, void *v)
+ 			tve_setup(TVOUT_FMT_VGA_XGA);
+ 			if (tve.blank == FB_BLANK_UNBLANK) {
+ 				tve_enable();
+-				ipu_set_vga_delay(fbi, 1224, 780);
++				ipu_set_vga_delay(fbi, 1421, 803);
+ 			}
+ 		} else if (fb_mode_is_equal(fbi->mode, &video_modes[10])) {
+ 			tve_set_di_fmt(fbi, IPU_PIX_FMT_GBR24);
+@@ -1039,7 +1031,7 @@ int tve_fb_event(struct notifier_block *nb, unsigned long val, void *v)
+ 						tve_setup(TVOUT_FMT_VGA_XGA);
+ 					}
+ 					tve_enable();
+-					ipu_set_vga_delay(fbi, 1224, 780);
++					ipu_set_vga_delay(fbi, 1421, 803);
+ 				} else if (fb_mode_is_equal(fbi->mode,
+ 							&video_modes[10])) {
+ 					if (tve.cur_mode != TVOUT_FMT_VGA_SXGA) {
+diff --git a/include/linux/ipu.h b/include/linux/ipu.h
+index ab58677..3ecd6a3 100644
+--- a/include/linux/ipu.h
++++ b/include/linux/ipu.h
+@@ -668,7 +668,7 @@ enum ipu_irq_line {
+  */
+ typedef struct {
+ 	unsigned datamask_en:1;
+-	unsigned ext_clk:1;
++	unsigned int_clk:1;
+ 	unsigned interlaced:1;
+ 	unsigned odd_field_first:1;
+ 	unsigned clksel_en:1;
+-- 
+1.5.4.4
+

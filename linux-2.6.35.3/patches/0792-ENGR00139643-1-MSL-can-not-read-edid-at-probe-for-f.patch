@@ -1,0 +1,27 @@
+From 9c8b7928faef69c6c7c0b84c48164fdf6dce5698 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Wed, 23 Feb 2011 18:12:54 +0800
+Subject: [PATCH] ENGR00139643-1 MSL: can not read edid at probe for first power on
+
+Need enable analog regulator.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_evk.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 830fad7..e82dcca 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -880,6 +880,7 @@ static struct mxc_ddc_platform_data mxc_ddc_dvi_data = {
+ 	.di = 0,
+ 	.init = ddc_dvi_init,
+ 	.update = ddc_dvi_update,
++	.analog_regulator = "VSD",
+ };
+ 
+ /* TO DO add platform data */
+-- 
+1.5.4.4
+

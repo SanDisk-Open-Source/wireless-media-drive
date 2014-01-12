@@ -1,0 +1,93 @@
+From 9da46f79de8a800614f9f3c3595066774b9e4af5 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Thu, 14 Apr 2011 15:10:30 +0800
+Subject: [PATCH] ENGR00142123-1 MX50: Add PINMUX callback for CLAA WVGA driver on RD3
+
+Added get_pins/put_pins/enable_pins/disable_pins callbacks in driver,
+which is passed as platform data.
+
+NOTE: The CLAA WVGA panel works only on same port as EPDC on RD3.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/video/mxc/mxcfb_claa_wvga.c |   21 ++++++++++++++++++++-
+ 1 files changed, 20 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/mxc/mxcfb_claa_wvga.c b/drivers/video/mxc/mxcfb_claa_wvga.c
+index c69ee34..a5200e4 100644
+--- a/drivers/video/mxc/mxcfb_claa_wvga.c
++++ b/drivers/video/mxc/mxcfb_claa_wvga.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -123,6 +123,9 @@ static int __devinit lcd_probe(struct platform_device *pdev)
+ 		if (plat->reset)
+ 			plat->reset();
+ 
++		if (plat->get_pins)
++			plat->get_pins();
++
+ 		io_reg = regulator_get(&pdev->dev, plat->io_reg);
+ 		if (IS_ERR(io_reg))
+ 			io_reg = NULL;
+@@ -147,6 +150,7 @@ static int __devinit lcd_probe(struct platform_device *pdev)
+ 
+ 	fb_register_client(&nb);
+ 
++	platform_set_drvdata(pdev, plat);
+ 	plcd_dev = pdev;
+ 
+ 	return 0;
+@@ -154,6 +158,8 @@ static int __devinit lcd_probe(struct platform_device *pdev)
+ 
+ static int __devexit lcd_remove(struct platform_device *pdev)
+ {
++	struct mxc_lcd_platform_data *plat = pdev->dev.platform_data;
++
+ 	fb_unregister_client(&nb);
+ 	lcd_poweroff();
+ 	if (io_reg)
+@@ -161,6 +167,9 @@ static int __devexit lcd_remove(struct platform_device *pdev)
+ 	if (core_reg)
+ 		regulator_put(core_reg);
+ 
++	if (plat->put_pins)
++		plat->put_pins();
++
+ 	return 0;
+ }
+ 
+@@ -197,9 +206,14 @@ static struct platform_driver lcd_driver = {
+  */
+ static void lcd_poweron(void)
+ {
++	struct mxc_lcd_platform_data *plat = platform_get_drvdata(plcd_dev);
++
+ 	if (lcd_on)
+ 		return;
+ 
++	if (plat->enable_pins)
++		plat->enable_pins();
++
+ 	dev_dbg(&plcd_dev->dev, "turning on LCD\n");
+ 	if (core_reg)
+ 		regulator_enable(core_reg);
+@@ -214,6 +228,11 @@ static void lcd_poweron(void)
+  */
+ static void lcd_poweroff(void)
+ {
++	struct mxc_lcd_platform_data *plat = platform_get_drvdata(plcd_dev);
++
++	if (plat->disable_pins)
++		plat->disable_pins();
++
+ 	lcd_on = 0;
+ 	dev_dbg(&plcd_dev->dev, "turning off LCD\n");
+ 	if (io_reg)
+-- 
+1.5.4.4
+

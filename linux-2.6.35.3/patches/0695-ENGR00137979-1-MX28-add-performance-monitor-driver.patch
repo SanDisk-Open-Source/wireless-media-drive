@@ -1,0 +1,143 @@
+From 1225e0bca7b0fd3ab6f9e3b1b3eba687c09a4ed1 Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Tue, 11 Jan 2011 18:01:03 +0800
+Subject: [PATCH] ENGR00137979-1 [MX28]add performance monitor driver
+
+	enable performance monitor driver for system loading analysis
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ arch/arm/configs/imx28evk_defconfig |    1 +
+ arch/arm/mach-mx28/device.c         |   48 ++++++++++++++++++++++++++++++++++-
+ arch/arm/plat-mxs/device.c          |   20 ++++++++++++++-
+ 3 files changed, 67 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx28evk_defconfig b/arch/arm/configs/imx28evk_defconfig
+index 0d01c03..8454a85 100644
+--- a/arch/arm/configs/imx28evk_defconfig
++++ b/arch/arm/configs/imx28evk_defconfig
+@@ -672,6 +672,7 @@ CONFIG_MXS_PERSISTENT=y
+ # CONFIG_ANDROID_PMEM is not set
+ # CONFIG_UID_STAT is not set
+ # CONFIG_C2PORT is not set
++CONFIG_MXS_PERFMON=y
+ 
+ #
+ # EEPROM support
+diff --git a/arch/arm/mach-mx28/device.c b/arch/arm/mach-mx28/device.c
+index f008346..410928f 100644
+--- a/arch/arm/mach-mx28/device.c
++++ b/arch/arm/mach-mx28/device.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -1518,6 +1518,51 @@ static void mx28_init_persistent()
+ }
+ #endif
+ 
++#if defined(CONFIG_MXS_PERFMON)
++
++static struct mxs_perfmon_bit_config
++mx28_perfmon_bit_config[] = {
++	{.field = (1 << 0),	.name = "MID0-PXP" },
++	{.field = (1 << 1),	.name = "MID1-LCDIF" },
++	{.field = (1 << 2),	.name = "MID2-BCH" },
++	{.field = (1 << 3),	.name = "MID3-DCP" }
++};
++
++static struct mxs_platform_perfmon_data mx28_perfmon_data = {
++	.bit_config_tab = mx28_perfmon_bit_config,
++	.bit_config_cnt = ARRAY_SIZE(mx28_perfmon_bit_config),
++};
++
++static struct resource mx28_perfmon_res[] = {
++	{
++	 .flags = IORESOURCE_MEM,
++	 .start = PERFMON_PHYS_ADDR,
++	 .end   = PERFMON_PHYS_ADDR + 0x1000 - 1,
++    },
++};
++
++static void mx28_init_perfmon(void)
++{
++	struct platform_device *pdev;
++
++	pdev = mxs_get_device("mxs-perfmon", 0);
++	if (pdev == NULL || IS_ERR(pdev))
++		return;
++	pdev->dev.platform_data = &mx28_perfmon_data;
++	pdev->resource = mx28_perfmon_res,
++	pdev->num_resources = ARRAY_SIZE(mx28_perfmon_res),
++	mxs_add_device(pdev, 3);
++}
++
++#else
++
++static void mx28_init_perfmon()
++{
++}
++
++#endif
++
++
+ #if defined(CONFIG_FSL_OTP)
+ /* Building up eight registers's names of a bank */
+ #define BANK(a, b, c, d, e, f, g, h)	\
+@@ -1587,6 +1632,7 @@ int __init mx28_device_init(void)
+ 	mx28_init_dcp();
+ 	mx28_init_battery();
+ 	mx28_init_persistent();
++	mx28_init_perfmon();
+ 	mx28_init_otp();
+ 	return 0;
+ }
+diff --git a/arch/arm/plat-mxs/device.c b/arch/arm/plat-mxs/device.c
+index e3783d3..87a38fa 100644
+--- a/arch/arm/plat-mxs/device.c
++++ b/arch/arm/plat-mxs/device.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2009-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -485,6 +485,16 @@ static struct platform_device mxs_persistent = {
+ };
+ #endif
+ 
++#ifdef CONFIG_MXS_PERFMON
++static struct platform_device mxs_perfmon = {
++	.name			= "mxs-perfmon",
++	.id			= 0,
++	.dev = {
++		.release = mxs_nop_release,
++		},
++};
++#endif
++
+ #ifdef CONFIG_FSL_OTP
+ static struct platform_device otp_device = {
+ 	.name			= "ocotp",
+@@ -576,6 +586,14 @@ static struct mxs_dev_lookup dev_lookup[] = {
+ 	},
+ #endif
+ 
++#if defined(CONFIG_MXS_PERFMON)
++	{
++	.name = "mxs-perfmon",
++	.size = 1,
++	.pdev = &mxs_perfmon,
++	},
++#endif
++
+ #if defined(CONFIG_FSL_OTP)
+ 	{
+ 	.name = "ocotp",
+-- 
+1.5.4.4
+

@@ -1,0 +1,55 @@
+From 4ffef8d6752c19750d427f6bc3e08458b1d5ed8e Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 30 Aug 2010 09:57:17 +0800
+Subject: [PATCH] ENGR00126721-4 OCOTP: add the Kconfig and Makefile
+
+  add the ocotp module for Kconfig and Makefile.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/char/Kconfig  |   16 ++++++++++++++++
+ drivers/char/Makefile |    1 +
+ 2 files changed, 17 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/char/Kconfig b/drivers/char/Kconfig
+index 552f45c..1ec263f 100644
+--- a/drivers/char/Kconfig
++++ b/drivers/char/Kconfig
+@@ -559,6 +559,22 @@ config BFIN_OTP_WRITE_ENABLE
+ 
+ 	  If unsure, say N.
+ 
++config FSL_OTP
++	tristate "Freescale On-Chip OTP Memory Support"
++	depends on (ARCH_MX23 || ARCH_MX28 || ARCH_MX50)
++	default n
++	help
++	  If you say Y here, you will get support for a character device
++	  interface into the One Time Programmable memory pages that are
++	  stored on the iMX23/28/50 processor.  This will not get you access
++	  to the secure memory pages however.  You will need to write your
++	  own secure code and reader for that.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called fsl_otp.
++
++	  If unsure, it is safe to say Y.
++
+ config PRINTER
+ 	tristate "Parallel printer support"
+ 	depends on PARPORT
+diff --git a/drivers/char/Makefile b/drivers/char/Makefile
+index 4d2551b..310e11b 100644
+--- a/drivers/char/Makefile
++++ b/drivers/char/Makefile
+@@ -70,6 +70,7 @@ obj-$(CONFIG_IBM_BSR)		+= bsr.o
+ obj-$(CONFIG_SGI_MBCS)		+= mbcs.o
+ obj-$(CONFIG_BRIQ_PANEL)	+= briq_panel.o
+ obj-$(CONFIG_BFIN_OTP)		+= bfin-otp.o
++obj-$(CONFIG_FSL_OTP)		+= fsl_otp.o
+ 
+ obj-$(CONFIG_PRINTER)		+= lp.o
+ 
+-- 
+1.5.4.4
+

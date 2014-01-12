@@ -1,0 +1,44 @@
+From f618ab58066ee2cd5b944108068044fb64f8ef32 Mon Sep 17 00:00:00 2001
+From: Zhang Yan <b34916@freescale.com>
+Date: Thu, 27 Jan 2011 17:27:03 +0800
+Subject: [PATCH] ENGR00138560 USB: Disable usb interrupt before host resume
+
+Disable usb interrupt in host wakeup to avoid bad irq. USB host
+irq was re-enabled in resume. BTW, set host-to-gadget discharge 20ms.
+
+Signed-off-by: Zhang Yan <b34916@freescale.com>
+---
+ drivers/usb/host/ehci-arc.c |    3 +++
+ drivers/usb/otg/fsl_otg.c   |    2 +-
+ 2 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index af86a96..cf932e3 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -130,6 +130,9 @@ void fsl_usb_recover_hcd(struct platform_device *pdev)
+ 		/* Resume root hub here? */
+ 		usb_hcd_resume_root_hub(hcd);
+ 	}
++
++	/* disable all interrupt, will re-enable in resume */
++	ehci_writel(ehci, 0, &ehci->regs->intr_enable);
+ }
+ 
+ /**
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index b52f577..512e848 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -158,7 +158,7 @@ static void fsl_otg_wait_dischrg_vbus(void)
+ {
+ 	fsl_otg_clk_gate(true);
+ 	fsl_otg_dischrg_vbus(1);
+-	msleep(5);
++	msleep(20);
+ 	fsl_otg_dischrg_vbus(0);
+ 	fsl_otg_clk_gate(false);
+ }
+-- 
+1.5.4.4
+

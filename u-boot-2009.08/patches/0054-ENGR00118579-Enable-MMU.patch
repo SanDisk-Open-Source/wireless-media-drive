@@ -1,0 +1,394 @@
+From 3f86cf9693f8b98c44999e81d4067943c634b421 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Thu, 19 Nov 2009 16:43:08 +0800
+Subject: [PATCH] ENGR00118579 Enable MMU
+
+To enable MMU, it is porting from redboot.
+Enable MMU and enable I/D cache.
+
+Signed-off-by:Fred Fan <r01011@freescale.com>
+---
+ board/freescale/mx35_3stack/mx35_3stack.c |   66 ++++++++++++++
+ cpu/arm1136/mx35/generic.c                |    9 ++
+ cpu/arm1136/start.S                       |    4 +-
+ include/asm-arm/arch                      |    1 +
+ include/asm-arm/arch-mx35/mmu.h           |  135 +++++++++++++++++++++++++++++
+ include/asm-arm/mmu.h                     |   79 +++++++++++++++++
+ include/asm-arm/proc                      |    1 +
+ include/configs/mx35_3stack.h             |    2 +
+ 8 files changed, 296 insertions(+), 1 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index bd6585b..9eea6ad 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -36,6 +36,10 @@
+ #include <fsl_esdhc.h>
+ #endif
+ 
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+@@ -68,6 +72,68 @@ int is_soc_rev(int rev)
+ 	return (system_rev & 0xFF) - rev;
+ }
+ 
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x40000;
++	unsigned long i;
++
++	/*
++	 * Set the TTB register
++	 */
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	 * Set the Domain Access Control Register
++	 */
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	 * First clear all TT entries - ie Set them to Faulting
++	 */
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes   	Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0xF00, 0x1,
++			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* ROM */
++	X_ARM_MMU_SECTION(0x100, 0x100, 0x1,
++			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* iRAM */
++	X_ARM_MMU_SECTION(0x300, 0x300, 0x1,
++			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* L2CC */
++	/* Internal Regsisters upto SDRAM*/
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x400,
++			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW);
++	X_ARM_MMU_SECTION(0x800, 0x000, 0x80,
++			  ARM_CACHEABLE, ARM_BUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* SDRAM 0:128M*/
++	X_ARM_MMU_SECTION(0x800, 0x800, 0x80,
++			  ARM_CACHEABLE, ARM_BUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* SDRAM 0:128M*/
++	X_ARM_MMU_SECTION(0x800, 0x880, 0x80,
++			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* SDRAM 0:128M*/
++	X_ARM_MMU_SECTION(0x900, 0x900, 0x80,
++			  ARM_CACHEABLE, ARM_BUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* SDRAM 1:128M*/
++	X_ARM_MMU_SECTION(0xA00, 0xA00, 0x40,
++			  ARM_CACHEABLE, ARM_BUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* Flash */
++	X_ARM_MMU_SECTION(0xB00, 0xB00, 0x20,
++			  ARM_CACHEABLE, ARM_BUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW); /* PSRAM */
++	/* ESDCTL, WEIM, M3IF, EMI, NFC, External I/O */
++	X_ARM_MMU_SECTION(0xB20, 0xB20, 0x1E0,
++			  ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			  ARM_ACCESS_PERM_RW_RW);
++}
++#endif
++
+ int dram_init(void)
+ {
+ 	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+diff --git a/cpu/arm1136/mx35/generic.c b/cpu/arm1136/mx35/generic.c
+index 31bcbec..fbe9084 100644
+--- a/cpu/arm1136/mx35/generic.c
++++ b/cpu/arm1136/mx35/generic.c
+@@ -372,3 +372,12 @@ int cpu_eth_init(bd_t *bis)
+ #endif
+ 	return rc;
+ }
++
++#if defined(CONFIG_ARCH_CPU_INIT)
++int arch_cpu_init(void)
++{
++	icache_enable();
++	dcache_enable();
++	return 0;
++}
++#endif
+diff --git a/cpu/arm1136/start.S b/cpu/arm1136/start.S
+index b1d7087..2da16e7 100644
+--- a/cpu/arm1136/start.S
++++ b/cpu/arm1136/start.S
+@@ -251,7 +251,9 @@ clbss_l:str	r2, [r0]		/* clear loop...		    */
+ 	cmp	r0, r1
+ 	bne	clbss_l
+ #endif
+-
++#ifdef CONFIG_ARCH_MMU
++	bl board_mmu_init
++#endif
+ 	ldr	pc, _start_armboot
+ 
+ #ifdef CONFIG_NAND_SPL
+diff --git a/include/asm-arm/arch b/include/asm-arm/arch
+new file mode 120000
+index 0000000..cd1d867
+--- /dev/null
++++ b/include/asm-arm/arch
+@@ -0,0 +1 @@
++arch-mx35
+\ No newline at end of file
+diff --git a/include/asm-arm/arch-mx35/mmu.h b/include/asm-arm/arch-mx35/mmu.h
+new file mode 100644
+index 0000000..a701c72
+--- /dev/null
++++ b/include/asm-arm/arch-mx35/mmu.h
+@@ -0,0 +1,135 @@
++/*
++ * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#ifndef __ARM_ARCH_MMU_H
++#define __ARM_ARCH_MMU_H
++
++/*
++ * Translation Table Base Bit Masks
++ */
++#define ARM_TRANSLATION_TABLE_MASK               0xFFFFC000
++
++/*
++ * Domain Access Control Bit Masks
++ */
++#define ARM_ACCESS_TYPE_NO_ACCESS(domain_num)    (0x0 << (domain_num)*2)
++#define ARM_ACCESS_TYPE_CLIENT(domain_num)       (0x1 << (domain_num)*2)
++#define ARM_ACCESS_TYPE_MANAGER(domain_num)      (0x3 << (domain_num)*2)
++
++struct ARM_MMU_FIRST_LEVEL_FAULT {
++	unsigned int id:2;
++	unsigned int sbz:30;
++};
++
++#define ARM_MMU_FIRST_LEVEL_FAULT_ID 0x0
++
++struct ARM_MMU_FIRST_LEVEL_PAGE_TABLE {
++	unsigned int id:2;
++	unsigned int imp:2;
++	unsigned int domain:4;
++	unsigned int sbz:1;
++	unsigned int base_address:23;
++};
++
++#define ARM_MMU_FIRST_LEVEL_PAGE_TABLE_ID 0x1
++
++struct ARM_MMU_FIRST_LEVEL_SECTION {
++	unsigned int id:2;
++	unsigned int b:1;
++	unsigned int c:1;
++	unsigned int imp:1;
++	unsigned int domain:4;
++	unsigned int sbz0:1;
++	unsigned int ap:2;
++	unsigned int sbz1:8;
++	unsigned int base_address:12;
++};
++
++#define ARM_MMU_FIRST_LEVEL_SECTION_ID 0x2
++
++struct ARM_MMU_FIRST_LEVEL_RESERVED {
++	unsigned int id:2;
++	unsigned int sbz:30;
++};
++
++#define ARM_MMU_FIRST_LEVEL_RESERVED_ID 0x3
++
++#define ARM_MMU_FIRST_LEVEL_DESCRIPTOR_ADDRESS(ttb_base, table_index) \
++	(unsigned long *)((unsigned long)(ttb_base) + ((table_index) << 2))
++
++#define ARM_FIRST_LEVEL_PAGE_TABLE_SIZE 0x4000
++
++#define ARM_MMU_SECTION(ttb_base, actual_base, virtual_base,		\
++			cacheable, bufferable, perm)			\
++	{								\
++	register union ARM_MMU_FIRST_LEVEL_DESCRIPTOR desc;		\
++	desc.word = 0;							\
++	desc.section.id = ARM_MMU_FIRST_LEVEL_SECTION_ID;		\
++	desc.section.domain = 0;					\
++	desc.section.c = (cacheable);					\
++	desc.section.b = (bufferable);					\
++	desc.section.ap = (perm);					\
++	desc.section.base_address = (actual_base);			\
++	*ARM_MMU_FIRST_LEVEL_DESCRIPTOR_ADDRESS(ttb_base, (virtual_base)) \
++				= desc.word;				\
++	}
++
++#define X_ARM_MMU_SECTION(abase, vbase, size, cache, buff, access)	\
++	{								\
++		int i; int j = abase; int k = vbase;			\
++		for (i = size; i > 0 ; i--, j++, k++)			\
++			ARM_MMU_SECTION(ttb_base, j, k, cache, buff, access); \
++	}
++
++union ARM_MMU_FIRST_LEVEL_DESCRIPTOR {
++	unsigned long word;
++	struct ARM_MMU_FIRST_LEVEL_FAULT fault;
++	struct ARM_MMU_FIRST_LEVEL_PAGE_TABLE page_table;
++	struct ARM_MMU_FIRST_LEVEL_SECTION section;
++	struct ARM_MMU_FIRST_LEVEL_RESERVED reserved;
++};
++
++#define ARM_UNCACHEABLE		0
++#define ARM_CACHEABLE		1
++#define ARM_UNBUFFERABLE	0
++#define ARM_BUFFERABLE		1
++
++#define ARM_ACCESS_PERM_NONE_NONE	0
++#define ARM_ACCESS_PERM_RO_NONE		0
++#define ARM_ACCESS_PERM_RO_RO		0
++#define ARM_ACCESS_PERM_RW_NONE		1
++#define ARM_ACCESS_PERM_RW_RO		2
++#define ARM_ACCESS_PERM_RW_RW		3
++
++/*
++ * Initialization for the Domain Access Control Register
++ */
++#define ARM_ACCESS_DACR_DEFAULT      (	\
++	ARM_ACCESS_TYPE_MANAGER(0)    |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(1)  |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(2)  |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(3)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(4)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(5)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(6)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(7)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(8)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(9)  | \
++	ARM_ACCESS_TYPE_NO_ACCESS(10) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(11) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(12) | \
++	ARM_ACCESS_TYPE_NO_ACCESS(13) |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(14) |	\
++	ARM_ACCESS_TYPE_NO_ACCESS(15))
++
++#endif
+diff --git a/include/asm-arm/mmu.h b/include/asm-arm/mmu.h
+new file mode 100644
+index 0000000..668dfc9
+--- /dev/null
++++ b/include/asm-arm/mmu.h
+@@ -0,0 +1,79 @@
++/*
++ * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#ifndef __ASM_MMU_H
++#define __ASM_MMU_H
++
++
++#define MMU_L1_TYPE         0x03  /* Descriptor type */
++#define MMU_L1_TYPE_Fault   0x00  /* Invalid */
++#define MMU_L1_TYPE_Page    0x11  /* Individual page mapping */
++#define MMU_L1_TYPE_Section 0x12  /* Mapping for 1M segment */
++
++#define MMU_L2_TYPE         0x03  /* Descriptor type */
++#define MMU_L2_TYPE_Fault   0x00  /* Invalid data */
++#define MMU_L2_TYPE_Large   0x01  /* Large page (64K) */
++#define MMU_L2_TYPE_Small   0x02  /* Small page (4K) */
++
++#define MMU_Bufferable      0x04  /* Data can use write-buffer */
++#define MMU_Cacheable       0x08  /* Data can use cache */
++
++#define MMU_AP_Limited     0x000  /* Limited access */
++#define MMU_AP_Supervisor  0x400  /* Supervisor RW, User none */
++#define MMU_AP_UserRead    0x800  /* Supervisor RW, User read only */
++#define MMU_AP_Any         0xC00  /* Supervisor RW, User RW */
++
++#define MMU_AP_ap0_Any     0x030
++#define MMU_AP_ap1_Any     0x0C0
++#define MMU_AP_ap2_Any     0x300
++#define MMU_AP_ap3_Any     0xC00
++#define MMU_AP_All (MMU_AP_ap0_Any|MMU_AP_ap1_Any|MMU_AP_ap2_Any|MMU_AP_ap3_Any)
++
++#define MMU_DOMAIN(x)      ((x)<<5)
++
++#define MMU_PAGE_SIZE      0x1000
++#define MMU_SECTION_SIZE   0x100000
++
++#define MMU_CP               p15      /* Co-processor ID */
++#define MMU_Control          c1       /* Control register */
++#define MMU_Base             c2       /* Page tables base */
++#define MMU_DomainAccess     c3       /* Domain access control */
++#define MMU_FaultStatus      c5       /* Fault status register */
++#define MMU_FaultAddress     c6       /* Fault Address */
++#define MMU_InvalidateCache  c7       /* Invalidate cache data */
++#define MMU_TLB              c8       /* Translation Lookaside Buffer */
++
++/* These seem to be 710 specific */
++#define MMU_FlushTLB         c5
++#define MMU_FlushIDC         c7
++
++#define MMU_Control_M  0x001    /* Enable MMU */
++#define MMU_Control_A  0x002    /* Enable address alignment faults */
++#define MMU_Control_C  0x004    /* Enable cache */
++#define MMU_Control_W  0x008    /* Enable write-buffer */
++#define MMU_Control_P  0x010    /* Compatability: 32 bit code */
++#define MMU_Control_D  0x020    /* Compatability: 32 bit data */
++#define MMU_Control_L  0x040    /* Compatability: */
++#define MMU_Control_B  0x080    /* Enable Big-Endian */
++#define MMU_Control_S  0x100    /* Enable system protection */
++#define MMU_Control_R  0x200    /* Enable ROM protection */
++#define MMU_Control_I  0x1000   /* Enable Instruction cache */
++#define MMU_Control_X  0x2000   /* Set interrupt vectors at 0xFFFF0000 */
++#define MMU_Control_Init (MMU_Control_P|MMU_Control_D|MMU_Control_L)
++
++/* Extras for some newer versions eg. ARM920 with architecture version 4. */
++#define MMU_Control_F  0x400    /* IMPLEMENTATION DEFINED */
++#define MMU_Control_Z  0x800    /* Enable branch predicion */
++#define MMU_Control_RR 0x4000   /* Select non-random cache replacement */
++
++#endif
+diff --git a/include/asm-arm/proc b/include/asm-arm/proc
+new file mode 120000
+index 0000000..c7f3c20
+--- /dev/null
++++ b/include/asm-arm/proc
+@@ -0,0 +1 @@
++proc-armv
+\ No newline at end of file
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index 4140a86..7b3f1db 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -148,6 +148,8 @@
+  */
+ #define CONFIG_SYS_LONGHELP	/* undef to save memory */
+ #define CONFIG_SYS_PROMPT	"MX35 U-Boot > "
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
+ #define CONFIG_AUTO_COMPLETE
+ #define CONFIG_SYS_CBSIZE	256	/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+-- 
+1.5.4.4
+

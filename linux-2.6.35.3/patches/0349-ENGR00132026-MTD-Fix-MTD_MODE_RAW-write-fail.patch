@@ -1,0 +1,36 @@
+From 61c0d92ab072e92882d07d716bacf8468934f35e Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Tue, 19 Oct 2010 18:25:02 +0800
+Subject: [PATCH] ENGR00132026 MTD: Fix MTD_MODE_RAW write fail
+
+Kobs-ng use MTD_MODE_RAW write boot stream to NAND flash.
+mtdchar have not initilized all field of struct mtd_oob_ops
+in mtd_write when mode is MTD_MODE_RAW.
+
+function nand_do_write_ops
+	if (ops->ooboffs && (ops->ooboffs + ops->ooblen > oobmaxlen))
+		return -EINVAL;
+
+ooboffs is not initilized at mtd_write.
+So random data cause nand_do_write_ops return fail.
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/mtd/mtdchar.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/mtdchar.c b/drivers/mtd/mtdchar.c
+index 91c8013..8bebfa5 100644
+--- a/drivers/mtd/mtdchar.c
++++ b/drivers/mtd/mtdchar.c
+@@ -304,6 +304,7 @@ static ssize_t mtd_write(struct file *file, const char __user *buf, size_t count
+ 		case MTD_MODE_RAW:
+ 		{
+ 			struct mtd_oob_ops ops;
++			memset(&ops, 0, sizeof(struct mtd_oob_ops));
+ 
+ 			ops.mode = MTD_OOB_RAW;
+ 			ops.datbuf = kbuf;
+-- 
+1.5.4.4
+

@@ -1,0 +1,58 @@
+From 281099e8078fa6b590517104ba32b275fba921fe Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Thu, 19 Aug 2010 11:18:29 +0800
+Subject: [PATCH] ENGR00126451 NAND:Set 4-bit ECC correctly on MX51
+
+4-bit ECC is not set correctly when the driver does
+consolidation. This patch fix it
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nd2.h |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nd2.h b/drivers/mtd/nand/mxc_nd2.h
+index 99b8bfc..d6b19de 100644
+--- a/drivers/mtd/nand/mxc_nd2.h
++++ b/drivers/mtd/nand/mxc_nd2.h
+@@ -141,7 +141,7 @@ do { \
+ 					NFC_ECC_MODE_16), NFC_CONFIG2); \
+ 		else \
+ 			raw_write(((raw_read(NFC_CONFIG2) & \
+-					~(3 << 6)) & \
++					~(3 << 6)) | \
+ 					NFC_ECC_MODE_4), NFC_CONFIG2); \
+ 	} else if (cpu_is_mx51_rev(CHIP_REV_2_0) > 0) { \
+ 		if ((v) == NFC_SPAS_218 || (v) == NFC_SPAS_112) \
+@@ -150,16 +150,17 @@ do { \
+ 					NFC_ECC_MODE_8), NFC_CONFIG2); \
+ 		else \
+ 			raw_write(((raw_read(NFC_CONFIG2) & \
+-					~(1 << 6)) & \
++					~(1 << 6)) | \
+ 					NFC_ECC_MODE_4), NFC_CONFIG2); \
+ 	} else { \
+ 		if ((v) == NFC_SPAS_218 || (v) == NFC_SPAS_112) \
+ 			raw_write(((raw_read(NFC_CONFIG2) & \
+-					~(1 << 6))), NFC_CONFIG2); \
++					~(1 << 6)) | \
++					NFC_ECC_MODE_4), NFC_CONFIG2); \
+ 		else \
+ 			raw_write(((raw_read(NFC_CONFIG2) & \
+ 					~(1 << 6)) | \
+-					NFC_ECC_MODE_4), NFC_CONFIG2); \
++					NFC_ECC_MODE_8), NFC_CONFIG2); \
+ 	} \
+ } while (0)
+ 
+@@ -315,7 +316,6 @@ do { \
+     defined(CONFIG_ARCH_MXC_HAS_NFC_V3_2)
+ #define NFC_ECC_MODE_4    		(0x0 << 6)
+ #define NFC_ECC_MODE_8			(0x1 << 6)
+-#define NFC_ECC_MODE_14                 (0x3 << 6)
+ #define NFC_ECC_MODE_16                 (0x3 << 6)
+ #define NFC_SPAS_16			8
+ #define NFC_SPAS_64		 	32
+-- 
+1.5.4.4
+

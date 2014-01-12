@@ -1,0 +1,51 @@
+From 54b9db32ed56b35f60b19ee6fe9c108683687229 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Tue, 7 Dec 2010 18:37:26 +0800
+Subject: [PATCH] ENGR00136042 Add ZQ calib config and update script for DDR2
+
+script v2:
+http://compass.freescale.net/livelink/livelink/219931536/
+Codex_DDR2_266MHz.inc.txt?func=doc.Fetch&nodeid=219931536
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ board/freescale/mx50_rdp/flash_header.S |    4 ++--
+ include/configs/mx50_arm2.h             |    7 +++++++
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/board/freescale/mx50_rdp/flash_header.S b/board/freescale/mx50_rdp/flash_header.S
+index 98eb3eb..d81e987 100644
+--- a/board/freescale/mx50_rdp/flash_header.S
++++ b/board/freescale/mx50_rdp/flash_header.S
+@@ -1296,8 +1296,8 @@ wait_pll1_lock:
+ /*	setmem /32 0x14000118    = 0x01010002 */
+ 	ldr r1, =0x01010002
+ 	str r1, [r0, #0x118]
+-/*	setmem /32 0x1400011c    = 0x00001000 */
+-	ldr r1, =0x00001000
++/*	setmem /32 0x1400011c    = 0x00000000 */
++	ldr r1, =0x00000000
+ 	str r1, [r0, #0x11c]
+ /*	setmem /32 0x14000120    = 0x00000000 */
+ 	ldr r1, =0x00000000
+diff --git a/include/configs/mx50_arm2.h b/include/configs/mx50_arm2.h
+index 8dfbb3f..911f18b 100644
+--- a/include/configs/mx50_arm2.h
++++ b/include/configs/mx50_arm2.h
+@@ -165,6 +165,13 @@
+ #define CONFIG_DISCOVER_PHY
+ 
+ /*
++ * DDR ZQ calibration
++ */
++/*
++#define CONFIG_ZQ_CALIB
++*/
++
++/*
+ #define CONFIG_SPLASH_SCREEN
+ */
+ 
+-- 
+1.5.4.4
+

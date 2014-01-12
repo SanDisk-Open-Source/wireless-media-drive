@@ -1,0 +1,33 @@
+From 3dda0bdcea9cedb4c6fa5aeb10363e51e6e5e854 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Thu, 30 Sep 2010 16:13:04 -0500
+Subject: [PATCH] ENGR00132151 MX50-EVK: Fix Suspend/Resume.
+
+Remove keypad driver for MX50EVK as its not supported.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    7 -------
+ 1 files changed, 0 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 4c040b6..ee82d92 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1074,13 +1074,6 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&busfreq_device, NULL);
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 
+-	/*
+-	mxc_register_device(&mx53_lpmode_device, NULL);
+-	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+-	*/
+-
+-	mxc_register_device(&mxc_keypad_device, &keypad_plat_data);
+-
+ 	mxc_register_device(&mxcsdhc1_device, &mmc1_data);
+ 	mxc_register_device(&mxcsdhc2_device, &mmc2_data);
+ 	mxc_register_device(&mxcsdhc3_device, &mmc3_data);
+-- 
+1.5.4.4
+

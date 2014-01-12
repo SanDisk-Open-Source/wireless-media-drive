@@ -1,0 +1,44 @@
+From 260f84bfae11f148ea11450ec4a9ca43f7ee4679 Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Tue, 9 Nov 2010 11:03:48 +0800
+Subject: [PATCH] ENGR00133511 MX28: Fixed 1588 clock divider setting error
+
+1588 clock need to set divider in HW_CLKCTRL_ENET register,
+and these bits should be cleaned before set them.
+
+Signed-off-by: Xie Xiaobo <X.Xie@freescale.com>
+---
+ arch/arm/mach-mx28/clock.c        |    4 +++-
+ arch/arm/mach-mx28/regs-clkctrl.h |    1 -
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/clock.c b/arch/arm/mach-mx28/clock.c
+index 2232afb..418c27f 100644
+--- a/arch/arm/mach-mx28/clock.c
++++ b/arch/arm/mach-mx28/clock.c
+@@ -1771,7 +1771,9 @@ void  mx28_enet_clk_hook(void)
+ 	reg &= ~BM_CLKCTRL_ENET_SLEEP;
+ 	reg |= BM_CLKCTRL_ENET_CLK_OUT_EN;
+ 	/* select clock for 1588 module */
+-	reg |= BM_CLKCTRL_ENET_1588_40MHZ;
++	reg &= ~(BM_CLKCTRL_ENET_DIV_TIME | BM_CLKCTRL_ENET_TIME_SEL);
++	reg |= BF_CLKCTRL_ENET_TIME_SEL(BV_CLKCTRL_ENET_TIME_SEL__PLL)
++		| BF_CLKCTRL_ENET_DIV_TIME(12);
+ 
+ 	__raw_writel(reg, CLKCTRL_BASE_ADDR + HW_CLKCTRL_ENET);
+ }
+diff --git a/arch/arm/mach-mx28/regs-clkctrl.h b/arch/arm/mach-mx28/regs-clkctrl.h
+index 9de1927..161860c 100644
+--- a/arch/arm/mach-mx28/regs-clkctrl.h
++++ b/arch/arm/mach-mx28/regs-clkctrl.h
+@@ -478,7 +478,6 @@
+ #define BM_CLKCTRL_ENET_RSRVD0	0x0000FFFF
+ #define BF_CLKCTRL_ENET_RSRVD0(v)  \
+ 		(((v) << 0) & BM_CLKCTRL_ENET_RSRVD0)
+-#define BM_CLKCTRL_ENET_1588_40MHZ	0x01880000
+ 
+ #define HW_CLKCTRL_HSADC	(0x00000150)
+ 
+-- 
+1.5.4.4
+

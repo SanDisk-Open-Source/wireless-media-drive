@@ -1,0 +1,29 @@
+From 87a3c35859cc3ed41204bc1854ca2430e5259300 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Thu, 18 Nov 2010 13:41:11 -0600
+Subject: [PATCH] ENGR00133828-1: MX50 EVK: Shutting down VUSB2 in suspend causes USB failures
+
+VUSB2 cannot be shutdown in suspend, else USB remote wakeup fails.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+index 1efe514..883108a 100644
+--- a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+@@ -75,8 +75,7 @@
+ #define SD_STBY_MASK		(1 << 19)
+ 
+ #define REG_MODE_0_ALL_MASK	(DIG_STBY_MASK | GEN1_STBY_MASK\
+-					| USB2_STBY_MASK | PLL_STBY_MASK\
+-					| IOHI_STBY_MASK)
++					| PLL_STBY_MASK | IOHI_STBY_MASK)
+ #define REG_MODE_1_ALL_MASK	(CAM_STBY_MASK | VIDEO_STBY_MASK |\
+ 				AUDIO_STBY_MASK | SD_STBY_MASK | GEN3_STBY_MASK)
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,32 @@
+From bd4bb4c1957915020027f81f7889ad83f7723288 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Wed, 5 Jan 2011 17:23:54 +0800
+Subject: [PATCH] ENGR00137615 imx23 : disable the MTD_UBI_GLUEBI
+
+If enable it, the gluebi will make the ubi->ref_count in
+a wrong value when you run `ubimkvol`.This will lead to the failure of
+`ubidetach` or `mount`
+
+Disable the MTD_UBI_GLUEBI for imx23.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/configs/imx23evk_defconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx23evk_defconfig b/arch/arm/configs/imx23evk_defconfig
+index 38b1c90..054cfb3 100644
+--- a/arch/arm/configs/imx23evk_defconfig
++++ b/arch/arm/configs/imx23evk_defconfig
+@@ -654,7 +654,7 @@ CONFIG_MTD_NAND_GPMI_NFC=y
+ CONFIG_MTD_UBI=y
+ CONFIG_MTD_UBI_WL_THRESHOLD=4096
+ CONFIG_MTD_UBI_BEB_RESERVE=1
+-CONFIG_MTD_UBI_GLUEBI=y
++# CONFIG_MTD_UBI_GLUEBI is not set
+ 
+ #
+ # UBI debugging options
+-- 
+1.5.4.4
+

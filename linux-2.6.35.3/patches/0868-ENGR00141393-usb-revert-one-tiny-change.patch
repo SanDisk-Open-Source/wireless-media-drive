@@ -1,0 +1,58 @@
+From c0b2882d78ebf70af66694be2efb6535c96d812c Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Thu, 31 Mar 2011 11:24:07 +0800
+Subject: [PATCH] ENGR00141393 usb: revert one tiny change
+
+The variables for low power should be updated after phcd updated
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |    2 +-
+ drivers/usb/host/ehci-arc.c     |    4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 0b5c8b6..9f12c9f 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -320,7 +320,6 @@ static void dr_phy_low_power_mode(struct fsl_udc *udc, bool enable)
+ 	struct fsl_usb2_platform_data *pdata = udc->pdata;
+ 	u32 portsc;
+ 
+-	pdata->lowpower = enable;
+ 	if (pdata && pdata->phy_lowpower_suspend) {
+ 		pdata->phy_lowpower_suspend(pdata, enable);
+ 	} else {
+@@ -334,6 +333,7 @@ static void dr_phy_low_power_mode(struct fsl_udc *udc, bool enable)
+ 			fsl_writel(portsc, &dr_regs->portsc1);
+ 		}
+ 	}
++	pdata->lowpower = enable;
+ }
+ 
+ 
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index e54eef8..8178ba1 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -33,8 +33,6 @@ extern int usb_host_wakeup_irq(struct device *wkup_dev);
+ extern void usb_host_set_wakeup(struct device *wkup_dev, bool para);
+ static void fsl_usb_lowpower_mode(struct fsl_usb2_platform_data *pdata, bool enable)
+ {
+-	pdata->lowpower = enable;
+-
+ 	if (enable) {
+ 		if (pdata->phy_lowpower_suspend)
+ 			pdata->phy_lowpower_suspend(pdata, true);
+@@ -42,6 +40,8 @@ static void fsl_usb_lowpower_mode(struct fsl_usb2_platform_data *pdata, bool ena
+ 		if (pdata->phy_lowpower_suspend)
+ 			pdata->phy_lowpower_suspend(pdata, false);
+ 	}
++
++	pdata->lowpower = enable;
+ }
+ 
+ static void fsl_usb_clk_gate(struct fsl_usb2_platform_data *pdata, bool enable)
+-- 
+1.5.4.4
+

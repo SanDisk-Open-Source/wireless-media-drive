@@ -1,0 +1,44 @@
+From d9e9aa9d87cc4ab111421011845c6d001b1ffabb Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Tue, 1 Mar 2011 10:22:58 +0800
+Subject: [PATCH] ENGR00139924 mx53 smd &loco: set bootup vdd GP to 1.2v
+
+set bootup vdd GP to 1.2v for mx53 smd &loco
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ board/freescale/mx53_loco/mx53_loco.c |    3 +++
+ board/freescale/mx53_smd/mx53_smd.c   |    3 +++
+ 2 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx53_loco/mx53_loco.c b/board/freescale/mx53_loco/mx53_loco.c
+index 4c26d8f..83977de 100644
+--- a/board/freescale/mx53_loco/mx53_loco.c
++++ b/board/freescale/mx53_loco/mx53_loco.c
+@@ -307,6 +307,9 @@ void setup_pmic_voltages(void)
+ 	/* increase VDDGP as 1.2V for 1GHZ */
+ 	value = 0x5c;
+ 	i2c_write(0x48, 0x2e, 1, &value, 1);
++	i2c_read(0x48, 60, 1, &value, 1);
++	value |= 0x1;
++	i2c_write(0x48, 60, 1, &value, 1);
+ }
+ #endif
+ 
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index 2675046..037a7b6 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -371,6 +371,9 @@ void setup_pmic_voltages(void)
+ 	/* increase VDDGP as 1.2V for 1GHZ */
+ 	value = 0x5c;
+ 	i2c_write(0x48, 0x2e, 1, &value, 1);
++	i2c_read(0x48, 60, 1, &value, 1);
++	value |= 0x1;
++	i2c_write(0x48, 60, 1, &value, 1);
+ }
+ 
+ #endif
+-- 
+1.5.4.4
+

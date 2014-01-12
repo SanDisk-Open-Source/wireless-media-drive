@@ -1,0 +1,185 @@
+From 6d0ee0484af3905a044c10028e32e1923d80157c Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Wed, 18 Aug 2010 13:45:03 +0800
+Subject: [PATCH] ENGR00126363 USB:Fix dead loop when cat iomem
+
+  The origin code reuse the otg_resource as the resource for udc
+device. This will cause a small bug, the following command will
+print endless log:
+	#cat /proc/iomem
+
+  The reason of the bug is that reuse the otg_resources for the
+udc device will register the otg_resources twice which will make
+the ->child and ->parent of the otg_resources pointer to himself.
+So the above command will traverse in a dead loop for ever.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/mach-mx23/usb_dr.c |   28 +++++++++++++++++++++++++---
+ arch/arm/mach-mx28/usb_dr.c |   22 +++++++++++++++++++---
+ arch/arm/mach-mx5/devices.c |   28 +++++++++++++++++++++-------
+ 3 files changed, 65 insertions(+), 13 deletions(-)
+
+diff --git a/arch/arm/mach-mx23/usb_dr.c b/arch/arm/mach-mx23/usb_dr.c
+index 1ab8ed0..4c702ff 100644
+--- a/arch/arm/mach-mx23/usb_dr.c
++++ b/arch/arm/mach-mx23/usb_dr.c
+@@ -64,7 +64,7 @@ static struct fsl_usb2_platform_data __maybe_unused dr_utmi_config = {
+ };
+ 
+ /*
+- * resources
++ * OTG resources
+  */
+ static struct resource otg_resources[] = {
+ 	[0] = {
+@@ -84,6 +84,28 @@ static struct resource otg_resources[] = {
+ 	},
+ };
+ 
++/*
++ * UDC resources (same as OTG resource)
++ */
++static struct resource udc_resources[] = {
++	[0] = {
++		.start	= (u32)USBCTRL_PHYS_ADDR,
++		.end	= (u32)(USBCTRL_PHYS_ADDR + 0x1ff),
++		.flags	= IORESOURCE_MEM,
++	},
++
++	[1] = {
++		.start	= IRQ_USB_CTRL,
++		.flags	= IORESOURCE_IRQ,
++	},
++
++	[2] = {
++		.start = IRQ_USB_WAKEUP,
++		.flags = IORESOURCE_IRQ,
++	},
++};
++
++
+ static u64 dr_udc_dmamask = ~(u32) 0;
+ static void dr_udc_release(struct device *dev)
+ {
+@@ -101,8 +123,8 @@ static struct platform_device dr_udc_device = {
+ 		.dma_mask          = &dr_udc_dmamask,
+ 		.coherent_dma_mask = 0xffffffff,
+ 	},
+-	.resource      = otg_resources,
+-	.num_resources = ARRAY_SIZE(otg_resources),
++	.resource      = udc_resources,
++	.num_resources = ARRAY_SIZE(udc_resources),
+ };
+ 
+ static u64 dr_otg_dmamask = ~(u32) 0;
+diff --git a/arch/arm/mach-mx28/usb_dr.c b/arch/arm/mach-mx28/usb_dr.c
+index c815588..50a2f8b 100644
+--- a/arch/arm/mach-mx28/usb_dr.c
++++ b/arch/arm/mach-mx28/usb_dr.c
+@@ -63,7 +63,7 @@ static struct fsl_usb2_platform_data __maybe_unused dr_utmi_config = {
+ };
+ 
+ /*
+- * resources
++ * OTG resources
+  */
+ static struct resource otg_resources[] = {
+ 	[0] = {
+@@ -78,6 +78,22 @@ static struct resource otg_resources[] = {
+ 	},
+ };
+ 
++/*
++ * UDC resources (same as OTG resource)
++ */
++static struct resource udc_resources[] = {
++	[0] = {
++		.start	= (u32)USBCTRL0_PHYS_ADDR,
++		.end	= (u32)(USBCTRL0_PHYS_ADDR + 0x1ff),
++		.flags	= IORESOURCE_MEM,
++	},
++
++	[1] = {
++		.start	= IRQ_USB0,
++		.flags	= IORESOURCE_IRQ,
++	},
++};
++
+ static u64 dr_udc_dmamask = ~(u32) 0;
+ static void dr_udc_release(struct device *dev)
+ {
+@@ -111,8 +127,8 @@ static struct platform_device __maybe_unused dr_otg_device = {
+ 		.dma_mask          = &dr_otg_dmamask,
+ 		.coherent_dma_mask = 0xffffffff,
+ 	},
+-	.resource      = otg_resources,
+-	.num_resources = ARRAY_SIZE(otg_resources),
++	.resource      = udc_resources,
++	.num_resources = ARRAY_SIZE(udc_resources),
+ };
+ 
+ 
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index 601dafb..3fff897 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -1035,7 +1035,19 @@ struct platform_device ahci_fsl_device = {
+ 
+ static u64 usb_dma_mask = DMA_BIT_MASK(32);
+ 
+-static struct resource usbotg_resources[] = {
++static struct resource usbotg_host_resources[] = {
++	{
++		.start = OTG_BASE_ADDR,
++		.end = OTG_BASE_ADDR + 0x1ff,
++		.flags = IORESOURCE_MEM,
++	},
++	{
++		.start = MXC_INT_USB_OTG,
++		.flags = IORESOURCE_IRQ,
++	},
++};
++
++static struct resource usbotg_udc_resources[] = {
+ 	{
+ 		.start = OTG_BASE_ADDR,
+ 		.end = OTG_BASE_ADDR + 0x1ff,
+@@ -1066,8 +1078,8 @@ struct platform_device mxc_usbdr_udc_device = {
+ 		.dma_mask = &usb_dma_mask,
+ 		.coherent_dma_mask = DMA_BIT_MASK(32),
+ 	},
+-	.resource      = usbotg_resources,
+-	.num_resources	= ARRAY_SIZE(usbotg_resources),
++	.resource      = usbotg_udc_resources,
++	.num_resources = ARRAY_SIZE(usbotg_udc_resources),
+ };
+ 
+ struct platform_device mxc_usbdr_otg_device = {
+@@ -1084,8 +1096,8 @@ struct platform_device mxc_usbdr_otg_device = {
+ struct platform_device mxc_usbdr_host_device = {
+ 	.name = "fsl-ehci",
+ 	.id = 0,
+-	.num_resources = ARRAY_SIZE(usbotg_resources),
+-	.resource = usbotg_resources,
++	.num_resources = ARRAY_SIZE(usbotg_host_resources),
++	.resource = usbotg_host_resources,
+ 	.dev = {
+ 		.dma_mask = &usb_dma_mask,
+ 		.coherent_dma_mask = DMA_BIT_MASK(32),
+@@ -1664,8 +1676,10 @@ int __init mxc_init_devices(void)
+ 		mxcsdhc2_resources[0].end -= MX53_OFFSET;
+ 		mxcsdhc3_resources[0].start -= MX53_OFFSET;
+ 		mxcsdhc3_resources[0].end -= MX53_OFFSET;
+-		usbotg_resources[0].start -= MX53_OFFSET;
+-		usbotg_resources[0].end -= MX53_OFFSET;
++		usbotg_host_resources[0].start -= MX53_OFFSET;
++		usbotg_host_resources[0].end -= MX53_OFFSET;
++		usbotg_udc_resources[0].start -= MX53_OFFSET;
++		usbotg_udc_resources[0].end -= MX53_OFFSET;
+ 		usbotg_xcvr_resources[0].start -= MX53_OFFSET;
+ 		usbotg_xcvr_resources[0].end -= MX53_OFFSET;
+ 		usbh1_resources[0].start -= MX53_OFFSET;
+-- 
+1.5.4.4
+

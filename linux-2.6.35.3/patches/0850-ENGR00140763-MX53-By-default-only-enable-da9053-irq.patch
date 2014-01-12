@@ -1,0 +1,35 @@
+From bc676214b92db468c7b72dc495312809dbfc37bf Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Thu, 17 Mar 2011 14:06:59 +0800
+Subject: [PATCH] ENGR00140763 MX53: By default only enable da9053 irq as wakeup source
+
+by default only enable da9053 irq as wakeup source
+for board with new OTP DA9053, need to reverse this patch
+to enable other irq wakeup
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/pm.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index dc2954c..e1d4bfa 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -125,8 +125,12 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 					machine_is_mx53_loco()) {
+ 					mx53_smd_loco_irq_wake_fixup();
+ 					da9053_suspend_cmd_sw();
+-				} else
++				} else {
++			/* for new OTP DA9053 board, comment out next */
++			/* line to enable other irq for wakeup */
++					mx53_smd_loco_irq_wake_fixup();
+ 					da9053_suspend_cmd_hw();
++				}
+ 			}
+ 			/* Run the suspend code from iRAM. */
+ 			suspend_in_iram(suspend_param1);
+-- 
+1.5.4.4
+

@@ -1,0 +1,75 @@
+<HEAD><TITLE>Compilando MaraDNS</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Compilando MaraDNS</H1>
+
+<H2>Requisitos</H2>
+
+MaraDNS precisa de um sistema operacional Unix-compatível, 
+idealmente um que não seja proprietário, como Linux ou FreeBSD. 
+MaraDNS está sendo atualmente desenvolvido em uma máquina 
+CentOS 3.6 (RHEL 3 compatível).
+
+<p>
+MaraDNS atualmente compilará somente em Linux, FreeBSD, 
+e sistemas com Cygwin. Podendo ser portado facilmente para outros sistemas. 
+MaraDNS também tem suporte parcial a MinGW32; isto permite MaraDNS 
+ser executado (parcialmente) como um arquivo binário nativo Win32.
+ 
+
+<H2>Adiquirindo, compilando, e instalando MaraDNS</H2>
+
+<UL>
+
+<LI>Obtenha MaraDNS em <A 
+    href=http://www.maradns.org/>www.maradns.org</a>
+ 
+<LI>Extráia o pacote fonte do MaraDNS: 
+
+<blockquote>
+  <TT>bzip2 -cd maradns-*.tar.bz2 | tar xvf -</TT>
+ </blockquote>
+
+<LI>Entre no diretório que a extração anterior gerou. 
+
+<LI>Compile MaraDNS.  Digite <TT>./configure</TT>seguido por
+<TT>make</TT>no diretório topo do MaraDNS.
+  
+
+<LI>Instale o pacote MaraDNS como root:
+
+<blockquote>
+<TT>make install</TT>
+</blockquote>
+
+Isto instalará tanto os binários como os man-pages para 
+'maradns', 'askmara', 'duende', 'fetchzone', e 'zoneserver.'
+Além disso, irá (se os arquivos já não estiverem presente) 
+instalar exemplos de arquivos para /etc/mararc, o diretório 
+/etc/maradns e um arquivo de zona de exemplo (db.example.com) 
+em  /etc/maradns.
+
+Finalmente, instalará a documentação MaraDNS dentro de 
+/usr/local/doc.
+  
+</UL>
+</BODY>
+

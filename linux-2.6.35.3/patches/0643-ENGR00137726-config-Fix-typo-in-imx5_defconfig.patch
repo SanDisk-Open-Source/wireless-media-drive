@@ -1,0 +1,31 @@
+From ed98f05377ab98ade52fe3c9b93c5e0b6f62dfe5 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Fri, 7 Jan 2011 14:49:03 +0800
+Subject: [PATCH] ENGR00137726 config: Fix typo in imx5_defconfig
+
+Fix a typo which miss by patch apply.
+It will cause make defconfig give a warrning.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 77630ce..cc8c1bc 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -529,8 +529,8 @@ CONFIG_BT_HCIBTUSB=y
+ # CONFIG_BT_HCIBTSDIO is not set
+ CONFIG_BT_HCIUART is not set
+ # CONFIG_BT_HCIUART_H4 is not set
+-+# CONFIG_BT_HCIUART_BCSP is not set
+-+# CONFIG_BT_HCIUART_LL is not set
++# CONFIG_BT_HCIUART_BCSP is not set
++# CONFIG_BT_HCIUART_LL is not set
+ # CONFIG_BT_HCIBCM203X is not set
+ # CONFIG_BT_HCIBPA10X is not set
+ # CONFIG_BT_HCIBFUSB is not set
+-- 
+1.5.4.4
+

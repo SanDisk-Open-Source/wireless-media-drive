@@ -1,0 +1,37 @@
+From a46313dba9daa51e482359fa3c53afe907175f37 Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Thu, 2 Dec 2010 17:45:04 +0800
+Subject: [PATCH] ENGR00126516 L2Switch: Fixed port learning function issue
+
+Enable/disable L2 switch port learning does not take effect,
+and this patch fixed the issue.
+
+Signed-off-by: Fan zhicheng <B32736@freescale.com>
+---
+ drivers/net/fec_switch.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/fec_switch.c b/drivers/net/fec_switch.c
+index 9fd411a..cdb6b2d 100644
+--- a/drivers/net/fec_switch.c
++++ b/drivers/net/fec_switch.c
+@@ -905,6 +905,7 @@ static int esw_port_learning_config(
+ 	tmp = readl(&fecp->ESW_BKLR);
+ 	if (disable == 1) {
+ 		fep->learning_irqhandle_enable = 0;
++		fecp->switch_imask &= ~MCF_ESW_IMR_LRN;
+ 		if (port == 0)
+ 			tmp |= MCF_ESW_BKLR_LD0;
+ 		else if (port == 1)
+@@ -3521,7 +3522,7 @@ switch_enet_open(struct net_device *dev)
+ 		fep->sequence_done = 0;
+ 
+ 	fep->currTime = 0;
+-	fep->learning_irqhandle_enable = 0;
++	fep->learning_irqhandle_enable = 1;
+ 
+ 	esw_main(fep);
+ 
+-- 
+1.5.4.4
+

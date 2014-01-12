@@ -1,0 +1,28 @@
+From fbdb42446aff46ed706986656d22a6e14df9d3bd Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Mon, 13 Dec 2010 17:36:38 +0800
+Subject: [PATCH] ENGR00136875-2 make video buffer cacheable to improve video performance
+
+Use pgprot_writethru() instead of pgprot_noncached()
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/media/video/videobuf-dma-contig.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/media/video/videobuf-dma-contig.c b/drivers/media/video/videobuf-dma-contig.c
+index 3d9a6aa..f57db60 100644
+--- a/drivers/media/video/videobuf-dma-contig.c
++++ b/drivers/media/video/videobuf-dma-contig.c
+@@ -306,7 +306,7 @@ static int __videobuf_mmap_mapper(struct videobuf_queue *q,
+ 	size = vma->vm_end - vma->vm_start;
+ 	size = (size < mem->size) ? size : mem->size;
+ 
+-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++	vma->vm_page_prot = pgprot_writethru(vma->vm_page_prot);
+ 	retval = remap_pfn_range(vma, vma->vm_start,
+ 				 mem->dma_handle >> PAGE_SHIFT,
+ 				 size, vma->vm_page_prot);
+-- 
+1.5.4.4
+

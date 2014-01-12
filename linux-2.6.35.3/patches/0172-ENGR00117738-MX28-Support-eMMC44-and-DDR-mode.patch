@@ -1,0 +1,46 @@
+From e3a29a237413a1bc7921c612995a971faade07a5 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Fri, 16 Jul 2010 18:01:56 +0800
+Subject: [PATCH] ENGR00117738 MX28: Support eMMC44 and DDR mode
+
+Support the eMMC44 cards, and enable ddr mode
+on MX28 EVK board.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ arch/arm/mach-mx28/mx28evk_pins.c |    8 ++++----
+ 1 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/mx28evk_pins.c b/arch/arm/mach-mx28/mx28evk_pins.c
+index 0cb569f..7d5b643 100644
+--- a/arch/arm/mach-mx28/mx28evk_pins.c
++++ b/arch/arm/mach-mx28/mx28evk_pins.c
+@@ -531,10 +531,10 @@ static struct pin_desc mx28evk_fixed_pins[] = {
+ 	 .name	= "SSP0_SCK",
+ 	 .id	= PINID_SSP0_SCK,
+ 	 .fun	= PIN_FUN1,
+-	 .strength	= PAD_8MA,
++	 .strength	= PAD_12MA,
+ 	 .voltage	= PAD_3_3V,
+ 	 .pullup	= 0,
+-	 .drive 	= 1,
++	 .drive 	= 2,
+ 	 .pull 		= 0,
+ 	 },
+ #endif
+@@ -898,10 +898,10 @@ static struct pin_desc mx28evk_ssp1_pins[] = {
+ 	 .name	= "SSP1_SCK",
+ 	 .id	= PINID_GPMI_WRN,
+ 	 .fun	= PIN_FUN2,
+-	 .strength	= PAD_8MA,
++	 .strength	= PAD_12MA,
+ 	 .voltage	= PAD_3_3V,
+ 	 .pullup	= 0,
+-	 .drive 	= 1,
++	 .drive 	= 2,
+ 	 .pull 		= 0,
+ 	 },
+ };
+-- 
+1.5.4.4
+

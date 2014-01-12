@@ -1,0 +1,137 @@
+From cd4a2cca56bb62371975b091c5ab1c230ea5d252 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Thu, 10 Feb 2011 15:41:59 -0600
+Subject: [PATCH] ENGR00139053-2: MX50_ARM2:Incorrect num_cpu_wp initialization breaks dvfs_core
+
+Incorrect initialization of num_cpu_wp breaks DVFS-CORE on MX50_ARM2.
+Fix by removing static initialization of the global variable.
+Instead initialize it to the size of the cpu_wp array defined
+in the board file.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c    |    4 ++--
+ arch/arm/mach-mx5/mx50_rdp.c     |    4 ++--
+ arch/arm/mach-mx5/mx51_3stack.c  |    4 ++--
+ arch/arm/mach-mx5/mx51_babbage.c |    4 ++--
+ 4 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index 369c14f..5308964 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -110,7 +110,7 @@ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void (*set_num_cpu_wp)(int num);
+ extern struct dvfs_wp *(*get_dvfs_core_wp)(int *wp);
+ static int max17135_regulator_init(struct max17135 *max17135);
+-static int num_cpu_wp = 2;
++static int num_cpu_wp;
+ 
+ static iomux_v3_cfg_t  mx50_armadillo2[] = {
+ 	/* SD1 */
+@@ -299,7 +299,6 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.upcnt_val = 10,
+ 	.dncnt_val = 10,
+ 	.delay_time = 30,
+-	.num_wp = 2,
+ };
+ 
+ static struct mxc_bus_freq_platform_data bus_freq_data = {
+@@ -1111,6 +1110,7 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
+ 	get_cpu_wp = mx50_arm2_get_cpu_wp;
+ 	set_num_cpu_wp = mx50_arm2_set_num_cpu_wp;
+ 	get_dvfs_core_wp = mx50_arm2_get_dvfs_core_table;
++	num_cpu_wp = ARRAY_SIZE(cpu_wp_auto);
+ }
+ 
+ static void __init mx50_arm2_io_init(void)
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index eb30b1b..23c56d3 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -128,7 +128,7 @@ static void fec_gpio_iomux_init(void);
+ static void fec_gpio_iomux_deinit(void);
+ 
+ static int max17135_regulator_init(struct max17135 *max17135);
+-static int num_cpu_wp = 3;
++static int num_cpu_wp;
+ 
+ static iomux_v3_cfg_t mx50_rdp[] = {
+ 	/* SD1 */
+@@ -457,7 +457,6 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.upcnt_val = 10,
+ 	.dncnt_val = 10,
+ 	.delay_time = 80,
+-	.num_wp = 3,
+ };
+ 
+ static struct mxc_bus_freq_platform_data bus_freq_data = {
+@@ -1432,6 +1431,7 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
+ 	get_cpu_wp = mx50_rdp_get_cpu_wp;
+ 	set_num_cpu_wp = mx50_rdp_set_num_cpu_wp;
+ 	get_dvfs_core_wp = mx50_rdp_get_dvfs_core_table;
++	num_cpu_wp = ARRAY_SIZE(cpu_wp_auto);
+ }
+ 
+ static void __init mx50_rdp_io_init(void)
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index 0cfe5a2..544333d 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -105,7 +105,7 @@ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void (*set_num_cpu_wp)(int num);
+ extern struct dvfs_wp *(*get_dvfs_core_wp)(int *wp);
+ 
+-static int num_cpu_wp = 3;
++static int num_cpu_wp;
+ static bool debug_board_present;
+ 
+ static struct dvfs_wp dvfs_core_setpoint[] = {
+@@ -304,7 +304,6 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.upcnt_val = 10,
+ 	.dncnt_val = 10,
+ 	.delay_time = 30,
+-	.num_wp = 3,
+ };
+ 
+ static struct mxc_bus_freq_platform_data bus_freq_data = {
+@@ -928,6 +927,7 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
+ 	get_cpu_wp = mx51_3stack_get_cpu_wp;
+ 	set_num_cpu_wp = mx51_3stack_set_num_cpu_wp;
+ 	get_dvfs_core_wp = mx51_3stack_get_dvfs_core_table;
++	num_cpu_wp = ARRAY_SIZE(cpu_wp_auto);
+ }
+ 
+ static struct mxc_gps_platform_data gps_data = {
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 318bf36..b99eee0 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -100,7 +100,7 @@ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void (*set_num_cpu_wp)(int num);
+ extern struct dvfs_wp *(*get_dvfs_core_wp)(int *wp);
+ 
+-static int num_cpu_wp = 3;
++static int num_cpu_wp;
+ 
+ static iomux_v3_cfg_t mx51babbage_pads[] = {
+ 	/* UART1 */
+@@ -475,7 +475,6 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.upcnt_val = 10,
+ 	.dncnt_val = 10,
+ 	.delay_time = 30,
+-	.num_wp = 3,
+ };
+ 
+ static struct mxc_bus_freq_platform_data bus_freq_data = {
+@@ -1006,6 +1005,7 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
+ 	get_cpu_wp = mx51_babbage_get_cpu_wp;
+ 	set_num_cpu_wp = mx51_babbage_set_num_cpu_wp;
+ 	get_dvfs_core_wp = mx51_babbage_get_dvfs_core_table;
++	num_cpu_wp = ARRAY_SIZE(cpu_wp_auto);
+ 
+ 	for_each_tag(mem_tag, tags) {
+ 		if (mem_tag->hdr.tag == ATAG_MEM) {
+-- 
+1.5.4.4
+

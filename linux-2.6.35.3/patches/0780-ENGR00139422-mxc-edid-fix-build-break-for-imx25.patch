@@ -1,0 +1,48 @@
+From 4bebb4122d44fee4952e63a1fefe1f019a8931f1 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Fri, 18 Feb 2011 10:46:40 +0800
+Subject: [PATCH] ENGR00139422 mxc edid: fix build break for imx25
+
+fix build break for imx25
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/video/mxc/mxc_edid.c      |    2 ++
+ drivers/video/mxc/mxcfb_sii902x.c |    2 ++
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_edid.c b/drivers/video/mxc/mxc_edid.c
+index 7126a7b..0eafe0f 100644
+--- a/drivers/video/mxc/mxc_edid.c
++++ b/drivers/video/mxc/mxc_edid.c
+@@ -475,9 +475,11 @@ static int __devinit mxc_ddc_probe(struct i2c_client *client,
+ 		if (mxc_edid_read(client->adapter, client->addr,
+ 					mxc_ddc.edid, &mxc_ddc.edid_cfg, &edid_fbi) < 0)
+ 			dev_warn(&client->dev, "Can not read edid\n");
++#if defined(CONFIG_MXC_IPU_V3) && defined(CONFIG_FB_MXC_SYNC_PANEL)
+ 		else
+ 			mxcfb_register_mode(mxc_ddc.di, edid_fbi.monspecs.modedb,
+ 					edid_fbi.monspecs.modedb_len, MXC_DISP_DDC_DEV);
++#endif
+ 	} else
+ 		mxc_ddc.cable_plugin = 0;
+ 
+diff --git a/drivers/video/mxc/mxcfb_sii902x.c b/drivers/video/mxc/mxcfb_sii902x.c
+index 8367f10..502c4a4 100644
+--- a/drivers/video/mxc/mxcfb_sii902x.c
++++ b/drivers/video/mxc/mxcfb_sii902x.c
+@@ -329,9 +329,11 @@ static int __devinit sii902x_probe(struct i2c_client *client,
+ 	/* try to read edid */
+ 	if (sii902x_read_edid(&edid_fbi) < 0)
+ 		dev_warn(&sii902x.client->dev, "Can not read edid\n");
++#if defined(CONFIG_MXC_IPU_V3) && defined(CONFIG_FB_MXC_SYNC_PANEL)
+ 	else
+ 		mxcfb_register_mode(IPU_DISP_PORT, edid_fbi.monspecs.modedb,
+ 				edid_fbi.monspecs.modedb_len, MXC_DISP_DDC_DEV);
++#endif
+ 
+ 	if (sii902x.client->irq) {
+ 		ret = request_irq(sii902x.client->irq, sii902x_detect_handler,
+-- 
+1.5.4.4
+

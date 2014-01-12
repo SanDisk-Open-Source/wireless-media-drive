@@ -1,0 +1,57 @@
+From edb0b7539832a674109163fd53c642593ab9251b Mon Sep 17 00:00:00 2001
+From: Alan Tull <alan.tull@freescale.com>
+Date: Wed, 27 Oct 2010 10:44:34 -0500
+Subject: [PATCH] ENGR00133149 MX50: external speaker amp shutdown
+
+Use gpio_6_15 to shutdown external speaker amp when not in use.
+
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |   10 +++++++++-
+ 1 files changed, 9 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 5d87d04..377de3c 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -112,6 +112,7 @@
+ #define CSPI_CS1	(3*32 + 13)	/*GPIO_4_13 */
+ #define CSPI_CS2	(3*32 + 11) /*GPIO_4_11*/
+ #define SGTL_OSCEN (5*32 + 8) /*GPIO_6_8*/
++#define SGTL_AMP_SHDN		(5*32 + 15) /*GPIO_6_15*/
+ #define FEC_EN (5*32 + 23) /*GPIO_6_23*/
+ #define FEC_RESET_B (3*32 + 12) /*GPIO_4_12*/
+ #define USB_OTG_PWR	(5*32 + 25) /*GPIO_6_25*/
+@@ -266,6 +267,10 @@ static struct pad_desc  mx50_rdp[] = {
+ 
+ 	/* SGTL500_OSC_EN */
+ 	MX50_PAD_UART1_CTS__GPIO_6_8,
++
++	/* SGTL_AMP_SHDN */
++	MX50_PAD_UART3_RXD__GPIO_6_15,
++
+ 	/* Keypad */
+ 	MX50_PAD_KEY_COL0__KEY_COL0,
+ 	MX50_PAD_KEY_ROW0__KEY_ROW0,
+@@ -999,7 +1004,7 @@ static struct mxc_mmc_platform_data mmc3_data = {
+ 
+ static int mxc_sgtl5000_amp_enable(int enable)
+ {
+-/* TO DO */
++	gpio_set_value(SGTL_AMP_SHDN, !enable);
+ 	return 0;
+ }
+ 
+@@ -1279,6 +1284,9 @@ static void __init mx50_rdp_io_init(void)
+ 	gpio_request(SGTL_OSCEN, "sgtl5000-osc-en");
+ 	gpio_direction_output(SGTL_OSCEN, 1);
+ 
++	gpio_request(SGTL_AMP_SHDN, "sgtl5000-amp-shdn");
++	gpio_direction_output(SGTL_AMP_SHDN, 1);
++
+ 	gpio_request(FEC_EN, "fec-en");
+ 	gpio_direction_output(FEC_EN, 0);
+ 
+-- 
+1.5.4.4
+

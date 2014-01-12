@@ -1,0 +1,61 @@
+From fd837589b18aeecccc0ed0524d0717124227a036 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 13 Oct 2010 14:44:23 +0800
+Subject: [PATCH] ENGR00132551 NAND: Adjust the boot partition size for MX53
+
+MX53 ROM require the boot FCB/DBBT support which need
+more space to store such info on NAND boot partition.
+MX53 ROM require at least:
+4 search blocks for FCB and 4 blocks for DBBT, then,
+the original 3M for boot partition is not enough.
+16M should cover all kind of NAND boot support on MX53.
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c |    6 +++++-
+ arch/arm/mach-mx5/mx53_evk.c |    6 +++++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 7a2aa0d..03d0e4c 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1031,10 +1031,14 @@ static struct mxc_mlb_platform_data mlb_data = {
+ /* NAND Flash Partitions */
+ #ifdef CONFIG_MTD_PARTITIONS
+ static struct mtd_partition nand_flash_partitions[] = {
++/* MX53 ROM require the boot FCB/DBBT support which need
++ * more space to store such info on NAND boot partition.
++ * 16M should cover all kind of NAND boot support on MX53.
++ */
+ 	{
+ 	 .name = "bootloader",
+ 	 .offset = 0,
+-	 .size = 3 * 1024 * 1024},
++	 .size = 16 * 1024 * 1024},
+ 	{
+ 	 .name = "nand.kernel",
+ 	 .offset = MTDPART_OFS_APPEND,
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 1a1c567..107973e 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1256,10 +1256,14 @@ static struct mxc_mlb_platform_data mlb_data = {
+ /* NAND Flash Partitions */
+ #ifdef CONFIG_MTD_PARTITIONS
+ static struct mtd_partition nand_flash_partitions[] = {
++/* MX53 ROM require the boot FCB/DBBT support which need
++ * more space to store such info on NAND boot partition.
++ * 16M should cover all kind of NAND boot support on MX53.
++ */
+ 	{
+ 	 .name = "bootloader",
+ 	 .offset = 0,
+-	 .size = 3 * 1024 * 1024},
++	 .size = 16 * 1024 * 1024},
+ 	{
+ 	 .name = "nand.kernel",
+ 	 .offset = MTDPART_OFS_APPEND,
+-- 
+1.5.4.4
+

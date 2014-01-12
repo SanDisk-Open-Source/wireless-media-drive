@@ -1,0 +1,59 @@
+From f3c300f8682d03ab07c568210fc13b3c3b0d9ee2 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Sat, 8 Jan 2011 17:17:32 +0800
+Subject: [PATCH] ENGR00137762-2 usb: change the function name for debounce vbus & id value
+
+Driver part
+
+To be more clear for reader
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |    4 ++--
+ drivers/usb/otg/fsl_otg.c       |    3 +--
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 11c8091..a31c07c 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -71,7 +71,7 @@
+ 
+ #define	DMA_ADDR_INVALID	(~(dma_addr_t)0)
+ DEFINE_MUTEX(udc_resume_mutex);
+-extern void usb_debounce_id_pin(void);
++extern void usb_debounce_id_vbus(void);
+ static const char driver_name[] = "fsl-usb2-udc";
+ static const char driver_desc[] = DRIVER_DESC;
+ 
+@@ -3214,7 +3214,7 @@ static int fsl_udc_resume(struct platform_device *pdev)
+ 			dr_clk_gate(true);
+ 		dr_wake_up_enable(udc_controller, false);
+ 		dr_phy_low_power_mode(udc_controller, false);
+-		usb_debounce_id_pin();
++		usb_debounce_id_vbus();
+ 		/* if in host mode, we need to do nothing */
+ 		if ((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0) {
+ 			dr_phy_low_power_mode(udc_controller, true);
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index f261461..85fac13 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2005-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2005-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * Author: Li Yang <LeoLi@freescale.com>
+  *         Jerry Huang <Chang-Ming.Huang@freescale.com>
+@@ -789,7 +789,6 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+  * such as port change.
+  */
+ extern int usb_event_is_otg_wakeup(void);
+-extern void usb_debounce_id_pin(void);
+ irqreturn_t fsl_otg_isr(int irq, void *dev_id)
+ {
+ 	struct fsl_otg *fotg = (struct fsl_otg *)dev_id;
+-- 
+1.5.4.4
+

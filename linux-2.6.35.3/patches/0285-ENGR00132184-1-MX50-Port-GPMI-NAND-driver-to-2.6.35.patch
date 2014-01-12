@@ -1,0 +1,144 @@
+From ba7dd7d2fa03b35ebe703756816b45f621192fbc Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Tue, 28 Sep 2010 17:51:24 +0800
+Subject: [PATCH] ENGR00132184-1 MX50: Port GPMI NAND driver to 2.6.35
+
+Add MSL part for GPMI Nand driver for Reference Design Board
+Move __setup() to driver to remove the conflict between ARM2 and RD board
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_arm2.c |   17 ++-----------
+ arch/arm/mach-mx5/mx50_rdp.c  |   53 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 56 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index bfaffe3..eb5801b 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -924,15 +924,6 @@ static int __init w1_setup(char *__unused)
+ 
+ __setup("w1", w1_setup);
+ 
+-int enable_gpmi_nand = { 0 };
+-static int __init gpmi_nand_setup(char *__unused)
+-{
+-	enable_gpmi_nand = 1;
+-	return 1;
+-}
+-
+-__setup("gpmi:nand", gpmi_nand_setup);
+-
+ static struct mxs_dma_plat_data dma_apbh_data = {
+ 	.chan_base = MXS_DMA_CHANNEL_AHB_APBH,
+ 	.chan_num = MXS_MAX_DMA_CHANNELS,
+@@ -940,7 +931,9 @@ static struct mxs_dma_plat_data dma_apbh_data = {
+ 
+ static int gpmi_nfc_platform_init(unsigned int max_chip_count)
+ {
+-	return !enable_gpmi_nand;
++	mxc_iomux_v3_setup_multiple_pads(mx50_gpmi_nand,
++				ARRAY_SIZE(mx50_gpmi_nand));
++	return 0;
+ }
+ 
+ static void gpmi_nfc_platform_exit(unsigned int max_chip_count)
+@@ -1060,10 +1053,6 @@ static void __init mx50_arm2_io_init(void)
+ 		mxc_iomux_v3_setup_pad(&one_wire);
+ 	}
+ 
+-	if (enable_gpmi_nand)
+-		mxc_iomux_v3_setup_multiple_pads(mx50_gpmi_nand, \
+-					ARRAY_SIZE(mx50_gpmi_nand));
+-
+ 	/* USB OTG PWR */
+ 	gpio_request(USB_OTG_PWR, "usb otg power");
+ 	gpio_direction_output(USB_OTG_PWR, 1);
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 8a3ae40..5d8b1d1 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -44,6 +44,7 @@
+ #include <linux/videodev2.h>
+ #include <linux/mxcfb.h>
+ #include <linux/fec.h>
++#include <linux/gpmi-nfc.h>
+ #include <asm/irq.h>
+ #include <asm/setup.h>
+ #include <asm/mach-types.h>
+@@ -272,6 +273,28 @@ static struct pad_desc  mx50_rdp[] = {
+ 
+ };
+ 
++static struct pad_desc  mx50_gpmi_nand[] = {
++	MX50_PIN_EIM_DA8__NANDF_CLE,
++	MX50_PIN_EIM_DA9__NANDF_ALE,
++	MX50_PIN_EIM_DA10__NANDF_CE0,
++	MX50_PIN_EIM_DA11__NANDF_CE1,
++	MX50_PIN_EIM_DA12__NANDF_CE2,
++	MX50_PIN_EIM_DA13__NANDF_CE3,
++	MX50_PIN_EIM_DA14__NANDF_READY,
++	MX50_PIN_EIM_DA15__NANDF_DQS,
++	MX50_PIN_SD3_D4__NANDF_D0,
++	MX50_PIN_SD3_D5__NANDF_D1,
++	MX50_PIN_SD3_D6__NANDF_D2,
++	MX50_PIN_SD3_D7__NANDF_D3,
++	MX50_PIN_SD3_D0__NANDF_D4,
++	MX50_PIN_SD3_D1__NANDF_D5,
++	MX50_PIN_SD3_D2__NANDF_D6,
++	MX50_PIN_SD3_D3__NANDF_D7,
++	MX50_PIN_SD3_CLK__NANDF_RDN,
++	MX50_PIN_SD3_CMD__NANDF_WRN,
++	MX50_PIN_SD3_WP__NANDF_RESETN,
++};
++
+ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "SW1",
+ 	.clk1_id = "cpu_clk",
+@@ -959,6 +982,35 @@ static int __init w1_setup(char *__unused)
+ 
+ __setup("w1", w1_setup);
+ 
++static int gpmi_nfc_platform_init(unsigned int max_chip_count)
++{
++	mxc_iomux_v3_setup_multiple_pads(mx50_gpmi_nand,
++				ARRAY_SIZE(mx50_gpmi_nand));
++
++	return 0;
++}
++
++static void gpmi_nfc_platform_exit(unsigned int max_chip_count)
++{
++}
++
++static const char *gpmi_nfc_partition_source_types[] = { "cmdlinepart", 0 };
++
++static struct gpmi_nfc_platform_data  gpmi_nfc_platform_data = {
++	.nfc_version             = 2,
++	.boot_rom_version        = 1,
++	.clock_name              = "gpmi-nfc",
++	.platform_init           = gpmi_nfc_platform_init,
++	.platform_exit           = gpmi_nfc_platform_exit,
++	.min_prop_delay_in_ns    = 5,
++	.max_prop_delay_in_ns    = 9,
++	.max_chip_count          = 2,
++	.boot_area_size_in_bytes = 20 * SZ_1M,
++	.partition_source_types  = gpmi_nfc_partition_source_types,
++	.partitions              = 0,
++	.partition_count         = 0,
++};
++
+ /*!
+  * Board specific fixup function. It is called by \b setup_arch() in
+  * setup.c file very early on during kernel starts. It allows the user to
+@@ -1100,6 +1152,7 @@ static void __init mxc_board_init(void)
+ 	*/
+ 	mx5_set_otghost_vbus_func(mx50_arm2_usb_set_vbus);
+ 	mxc_register_device(&mxc_sgtl5000_device, &sgtl5000_data);
++	mxc_register_device(&gpmi_nfc_device, &gpmi_nfc_platform_data);
+ 	mx5_usb_dr_init();
+ 	mx5_usbh1_init();
+ }
+-- 
+1.5.4.4
+

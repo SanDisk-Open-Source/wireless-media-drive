@@ -1,0 +1,34 @@
+From 0489df2258a7e04068a21c2c6874181fa8cc89b8 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Thu, 13 Jan 2011 10:27:28 +0800
+Subject: [PATCH] ENGR00137489 mx50 rdp: specify the regulator in esdhc2 platform data
+
+By defining the regulator name in the esdhc platform data,
+the esdhc driver will dynamically check and set a proper voltage
+for the card.
+This can fix the issue that SD32 can not work well on mx50 rdp board
+because the default voltage of VSD seems can not meet its requirement.
+
+This is only a workaround.
+The root cause may be related to HW, board degsin or WiFi card.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index f6ca52c..c7029e8 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -1036,6 +1036,7 @@ static struct mxc_mmc_platform_data mmc2_data = {
+ 	.status = sdhc_get_card_det_status,
+ 	.wp_status = sdhc_write_protect,
+ 	.clock_mmc = "esdhc_clk",
++	.power_mmc = "VSD"
+ };
+ 
+ static struct mxc_mmc_platform_data mmc3_data = {
+-- 
+1.5.4.4
+

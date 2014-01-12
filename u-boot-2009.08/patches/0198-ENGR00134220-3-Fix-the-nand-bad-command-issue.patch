@@ -1,0 +1,61 @@
+From 70509be0d18c5d8e21dcfda03b17d09af8563d73 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Thu, 2 Dec 2010 16:52:37 +0800
+Subject: [PATCH] ENGR00134220-3 Fix the nand bad command issue
+
+Now, uboot cmd_nand of mainline does not support 64-bit
+address space, which means that currently nand command
+can't access more than 4GB NAND address even when working on
+more than 4GB NAND. For example,
+
+MX51 U-Boot > nand read ${loadaddr} 100100000 1000
+NAND read: device 0 offset 0x100000, size 0x1000
+4096 bytes read: OK
+
+The reason for not support 64-bit address space of nand cmd
+is that it use ulong type for addr in file common/cmd_nand.c,
+but which is 32-bit width on arm gcc tool chain.
+
+So, it will stuck in infinite loop when working with 4GB NAND
+using nand bad command when off overflow.
+
+ulong off; //off - 32bit, typeof(nand->size) is ull;
+for (off = 0; off < nand->size; off += nand->erasesize) {
+	...
+}
+
+Simply break the for loop when off overflow is temp fix.
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ common/cmd_nand.c |   12 +++++++++++-
+ 1 files changed, 11 insertions(+), 1 deletions(-)
+
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index 158a55f..f9e63eb 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -296,9 +296,19 @@ int do_nand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 
+ 	if (strcmp(cmd, "bad") == 0) {
+ 		printf("\nDevice %d bad blocks:\n", nand_curr_device);
+-		for (off = 0; off < nand->size; off += nand->erasesize)
++		for (off = 0; off < nand->size; off += nand->erasesize) {
+ 			if (nand_block_isbad(nand, off))
+ 				printf("  %08lx\n", off);
++			/*
++			 *FIXME: currently, uboot cmd_nand does not
++			 * support 64bit address space. It will make
++			 * the for loop the infinit loop due to off is
++			 * 32bit width with ulong definiton on arm gcc.
++			 * Break the for loop when off overflow.
++			 */
++			if (off > off + nand->erasesize)
++				break;
++		}
+ 		return 0;
+ 	}
+ 
+-- 
+1.5.4.4
+

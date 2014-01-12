@@ -1,0 +1,28 @@
+From 2d939af982bbd25e056b5908097f071dbf0b8520 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Sat, 12 Feb 2011 11:16:11 +0800
+Subject: [PATCH] ENGR00138644-6 imx5_defconfig: change config name for hdmi
+
+Change from CONFIG_FB_MXC_SII9022 to CONFIG_FB_MXC_SII902X.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 53aa870..4907968 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1577,7 +1577,7 @@ CONFIG_FB_MXC_TVOUT_TVE=y
+ CONFIG_FB_MXC_LDB=y
+ # CONFIG_FB_MXC_CLAA_WVGA_SYNC_PANEL is not set
+ # CONFIG_FB_MXC_SEIKO_WVGA_SYNC_PANEL is not set
+-CONFIG_FB_MXC_SII9022=y
++CONFIG_FB_MXC_SII902X=y
+ CONFIG_FB_MXC_CH7026=y
+ # CONFIG_FB_MXC_TVOUT_CH7024 is not set
+ # CONFIG_FB_MXC_ASYNC_PANEL is not set
+-- 
+1.5.4.4
+

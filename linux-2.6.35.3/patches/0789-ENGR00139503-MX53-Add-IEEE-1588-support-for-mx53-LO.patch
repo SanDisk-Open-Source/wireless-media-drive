@@ -1,0 +1,40 @@
+From f6a816edb7106f0693c13856ecabec91d0ee6845 Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Mon, 21 Feb 2011 09:23:20 +0800
+Subject: [PATCH] ENGR00139503 MX53: Add IEEE 1588 support for mx53 LOCO and SMD boards
+
+Add IEEE 1588 support for mx53 LOCO and SMD boards
+
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_loco.c |    1 +
+ arch/arm/mach-mx5/mx53_smd.c  |    1 +
+ 2 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 201d722..a474398 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -771,6 +771,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_alsa_spdif_device, &mxc_spdif_data);
+ 	mxc_register_device(&ahci_fsl_device, &sata_data);
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
++	mxc_register_device(&mxc_ptp_device, NULL);
+ 	/* ASRC is only available for MX53 TO2.0 */
+ 	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 1ce02f3..aed4ae3 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -1121,6 +1121,7 @@ static void __init mxc_board_init(void)
+ 	gpio_direction_output(MX53_SMD_SATA_PWR_EN, 1);
+ 
+ 	mxc_register_device(&mxc_fec_device, &fec_data);
++	mxc_register_device(&mxc_ptp_device, NULL);
+ 	/* ASRC is only available for MX53 TO2.0 */
+ 	if (cpu_is_mx53_rev(CHIP_REV_2_0) >= 1) {
+ 		mxc_asrc_data.asrc_core_clk = clk_get(NULL, "asrc_clk");
+-- 
+1.5.4.4
+

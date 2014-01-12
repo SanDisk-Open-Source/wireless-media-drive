@@ -1,0 +1,27 @@
+From b5f624e490521d8c1f46e118b8f6924eb02be683 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Sat, 25 Sep 2010 14:16:09 +0800
+Subject: [PATCH] ENGR00131909 OCOTP: fix compile error
+
+add the proper header to fix the compile error.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/char/fsl_otp.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/char/fsl_otp.c b/drivers/char/fsl_otp.c
+index 1a7db62..fbc52b8 100755
+--- a/drivers/char/fsl_otp.c
++++ b/drivers/char/fsl_otp.c
+@@ -28,6 +28,7 @@
+ #include <linux/clk.h>
+ #include <linux/err.h>
+ #include <linux/io.h>
++#include <linux/slab.h>
+ #include <linux/platform_device.h>
+ 
+ #include "fsl_otp.h"
+-- 
+1.5.4.4
+

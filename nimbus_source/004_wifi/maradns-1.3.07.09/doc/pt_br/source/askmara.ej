@@ -1,0 +1,140 @@
+<HEAD>
+<TH>ASKMARA 1 "askmara" "Janeiro 2002" "askmara"</TH>
+<DTWIDTH>4</DTWIDTH>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<BODY>
+<H1>NOME</H1>
+askmara - faz simples consultas de DNS
+<H1>DESCRIÇÃO</H1>
+
+<b>askmara </b>examina o servidor de dns especificado pelo usuáro
+por registros, e reproduz a resposta em formato csv2-compatível (csv2
+é o formato de arquivos de zona que <b>maradns </b>utiliza).
+
+<H1>USO</H1>
+<b>askmara </b> [-n] [ -v | -t timeout] query [ server ] 
+ 
+<H1>OPÇÕES</H1>
+
+<dl>
+<dt>-t 
+<dd>
+Se isto estiver presente, o argumento seguinte é o intervalo de tempo
+do askmara, em segundos. Nota que <b>askmara</b> não pode ter 
+ao mesmo tempo o intervalo de tempo (-t) e a saída verbosa (-v) 
+definida pelo usuário.
+ 
+<dt>-v 
+<dd>
+Se isto estiver setado, <b>askmara</b> irá mostrar a produção da 
+resposta completa que o servidor enviou. Note que esta saída verbosa 
+não é csv2-compatível.
+ 
+<dt>-n 
+<dd>
+Se estiver setado, <b>askmara</b>ao enviar uma consulta, não 
+pedirá recursão de DNS; em outras palavras, askmara pedirá que o 
+servidor de DNS remoto não contate outro servidor de DNS para 
+responder a consulta em questão.
+
+<dt>query
+<dd>
+registro de dns à ser consultado.  A consulta tem duas seções: 
+O tipo de registro que nós desejamos, e o hostname desejado para 
+este registro. 
+
+<p>
+O tipo de consulta pode ter duas formas: Tipo mnemônico uma-letra, ou um
+rtype numérico seguido por dois pontos (:). Isto é concatenado 
+imediatamente pelo nome completo do hostname que nós desejamos 
+observar.
+
+<p>
+Por exemplo, para pedir o IP de 'example.com.', nós podemos usar um 
+mnemônico de uma-letra, na forma 'Aexample.com.', ou nós podemos usar o
+RR numérico seguido por dois pontos, dando a consulta 1:example.com. ' 
+(já que  A tem o tipo de registro de um). Nota que o nome de consulta precisa 
+do ponto '.' no final. 
+
+<p>
+Askmara aceita uma variedade de mnemônico uma-letra, como segue: 
+<P>
+
+<b>A</b>significa uma requisição para um RR tipo A (endereço ipv4 ) <p>
+<b>N </b>significa um RR NS <p>
+<b>C </b>significa que nós estamos pedindo por um RR CNAME <p>
+<b>S </b>significa que nós queremos um RR SOA <p>
+<b>P </b>significa que nós queremos um RR PTR <p>
+<b>@ </b>significa que nós queremos um RR MX <p>
+<b>T </b>significa que nós queremos um RR TXT <p>
+<b>Z </b>significa que nós queremos pedir por todos os RRs. 
+
+<dt>server 
+<dd>Endereço IP do servidor de dns a ser examinado. Se nenhum 
+servidor for determinado, askmara examinará 127.0.0.1.
+</dl>
+
+<h1>EXEMPLOS</h1>
+Pedindo ao servidor com o IP 127.0.0.1 o endereço de IP de example.com: 
+<pre>
+askmara Aexample.com.
+</pre>
+
+Pedindo ao servidor com o IP 198.41.0.4 o endereço de IP de example.com: 
+<pre>
+askmara Aexample.com. 198.41.0.4
+</pre>
+
+Pedindo ao servidor com o endereço IP 127.0.0.1 o endereço de IP de 
+example.com, usando o formato de rr_number:query,:
+<pre>
+askmara 1:example.com. 
+</pre>
+
+Pedindo ao servidor com o endereço ip 127.0.0.1 por um registro SRV.  
+Em particular, nós pedimos o serviço "http sobre tcp" para example.net.
+Já que askmara não tem um mnemônico para tipos de registro SRV, 
+usamos então o código numérico (33 para SRV):
+<pre>
+askmara 33:_http._tcp.example.net.
+</pre>
+
+Pedindo ao servidor com o endereço IP 127.0.0.1 o registro AAAA 
+(endereço ipv6) para example.net:
+<pre>
+askmara 28:example.net. 
+</pre>
+
+Nota que a saída será um pacote de DNS cru em ambos exemplos
+SRV e AAAA.
+ 
+<h1>BUGS</h1>
+
+Quando askmara é solicitado para um registro SOA, a saída do
+<b>askmara </b>se assemelha ao formato de um arquivo csv2,
+mas não pode ser analisado gramaticalmente como um arquivo csv2
+sem modificações. 
+
+<p>
+askmara produz saídas multi-chunk ("character-string") TXT 
+incorretamente (só mostra o primeiro pedaço).
+
+<h1>TAMBÉM VEJA</h1>
+<b>maradns(8)</b>
+ 
+<BR>
+<A href=http://www.maradns.org>http://www.maradns.org</a>
+ 
+<h1>RETRATAÇÃO LEGAL</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+<h1>AUTOR</h1>
+MaraDNS é escrito por Sam Trenholme. Jaakko Niemi usou 5 minutos para
+criar este manpage junto com o autro, o qual Sam revisou subsequentemente.
+ 
+<h1>TRADUÇÃO</h1>
+A tradução deste documento foi realizada por Daniel Zilli.
+
+</BODY>

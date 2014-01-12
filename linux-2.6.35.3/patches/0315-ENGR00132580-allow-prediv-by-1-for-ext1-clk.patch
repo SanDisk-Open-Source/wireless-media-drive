@@ -1,0 +1,29 @@
+From 58d4ee1057bc5d0db055a80c29c9861f9b79b183 Mon Sep 17 00:00:00 2001
+From: Alan Tull <alan.tull@freescale.com>
+Date: Wed, 13 Oct 2010 14:20:02 -0500
+Subject: [PATCH] ENGR00132580 allow prediv by 1 for ext1 clk
+
+Not allowed in the spec, but the hardware guy said it was ok.
+Needed because clock is shared between audio and camera.
+
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 78e73fb..7e77a5f 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -2647,8 +2647,6 @@ static unsigned long _clk_ssi_ext1_get_rate(struct clk *clk)
+ 		reg = __raw_readl(MXC_CCM_CS1CDR);
+ 		prediv = ((reg & MXC_CCM_CS1CDR_SSI_EXT1_CLK_PRED_MASK) >>
+ 			  MXC_CCM_CS1CDR_SSI_EXT1_CLK_PRED_OFFSET) + 1;
+-		if (prediv == 1)
+-			BUG();
+ 		podf = ((reg & MXC_CCM_CS1CDR_SSI_EXT1_CLK_PODF_MASK) >>
+ 			MXC_CCM_CS1CDR_SSI_EXT1_CLK_PODF_OFFSET) + 1;
+ 		div = prediv * podf;
+-- 
+1.5.4.4
+

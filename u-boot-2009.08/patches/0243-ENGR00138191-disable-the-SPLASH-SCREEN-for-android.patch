@@ -1,0 +1,40 @@
+From 0f6e94be5718627731e23b6737693975fa1e1334 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 19 Jan 2011 16:55:23 +0800
+Subject: [PATCH] ENGR00138191 disable the SPLASH SCREEN for android
+
+Disable for BBG and SMD
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ include/configs/mx51_bbg_android.h |    1 -
+ include/configs/mx53_smd_android.h |    1 -
+ 2 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index 7b054e3..a460954 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -349,7 +349,6 @@
+ #undef CONFIG_JFFS2_CMDLINE
+ #define CONFIG_JFFS2_DEV	"nand0"
+ 
+-#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index 661a8f6..7fa73fc 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -322,7 +322,6 @@
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
+ 
+-#define CONFIG_SPLASH_SCREEN
+ #ifdef CONFIG_SPLASH_SCREEN
+ 	/*
+ 	 * Framebuffer and LCD
+-- 
+1.5.4.4
+

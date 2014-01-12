@@ -1,0 +1,141 @@
+From ffd4c24b9d66147c0960b687817b5535166672ef Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Wed, 29 Sep 2010 14:05:11 +0800
+Subject: [PATCH] ENGR00132073-2 usb: wakeup capability should be controlled by user
+
+Driver part
+
+The usb wakeup system capability should be controlled by user,
+For example, the users don't expect wakeup system at below situations:
+1. When they plug in Micro B line, maybe the users just want to charge
+from PC
+2. Plug in a usb device, such as usb camera or usb 3G moden
+The wakeup capability can be controlled by sys interface
+1. At otg mode:
+echo enabled > /sys/devices/platform/fsl-usb2-otg/power/wakeup
+2. At non-otg mode:
+device mode:
+echo enabled > /sys/devices/platform/fsl-usb2-otg/power/wakeup
+host mode
+echo enabled > /sys/devices/platform/fsl-ehci.x/power/wakeup
+x is the usb port num (from 0 to n-1)
+NOTE: The user must load one gadget module if he wants to usb otg wakeup
+function.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |   28 ++++++++++++++++++----------
+ drivers/usb/host/ehci-arc.c     |   23 +++++++++++++++++++++--
+ 2 files changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 0eee633..ee72f61 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -3050,6 +3050,22 @@ static int __exit fsl_udc_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++static bool udc_can_wakeup_system(void)
++{
++	struct fsl_usb2_platform_data *pdata = udc_controller->pdata;
++
++	if (pdata->operating_mode == FSL_USB2_DR_OTG)
++		if (device_may_wakeup(udc_controller->transceiver->dev))
++			return true;
++		else
++			return false;
++	else
++		if (device_may_wakeup(udc_controller->gadget.dev.parent))
++			return true;
++		else
++			return false;
++}
++
+ static int udc_suspend(struct fsl_udc *udc)
+ {
+ 	u32 mode, usbcmd;
+@@ -3063,7 +3079,7 @@ static int udc_suspend(struct fsl_udc *udc)
+ 	printk(KERN_DEBUG "udc suspend begins\n");
+ 	if (udc_controller->gadget.dev.parent->power.status
+ 			== DPM_SUSPENDING) {
+-		if (!device_may_wakeup(udc_controller->gadget.dev.parent))
++		if (!udc_can_wakeup_system())
+ 			dr_wake_up_enable(udc, false);
+ 		else
+ 			dr_wake_up_enable(udc, true);
+@@ -3095,14 +3111,6 @@ static int udc_suspend(struct fsl_udc *udc)
+ 	usbcmd = fsl_readl(&dr_regs->usbcmd) & ~USB_CMD_RUN_STOP;
+ 	fsl_writel(usbcmd, &dr_regs->usbcmd);
+ 
+-	/* if the suspend is not for switch to host in otg mode */
+-	if ((!(udc->gadget.is_otg)) ||
+-			(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
+-		if (device_may_wakeup(udc_controller->gadget.dev.parent)) {
+-			dr_wake_up_enable(udc, true);
+-		}
+-	}
+-
+ 	dr_phy_low_power_mode(udc, true);
+ 	printk(KERN_DEBUG "USB Gadget suspend ends\n");
+ out:
+@@ -3162,7 +3170,7 @@ static int fsl_udc_resume(struct platform_device *pdev)
+ 		 * set the abilities to wakeup itself. Otherwise, the usb
+ 		 * subsystem will not leave from low power mode.
+ 		 */
+-		if (!device_may_wakeup(udc_controller->gadget.dev.parent) &&
++		if (!udc_can_wakeup_system() &&
+ 			udc_controller->gadget.dev.parent->power.status
+ 			== DPM_RESUMING){
+ 			if (udc_controller->pdata->usb_clock_for_pm)
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index b4bea17..60e11b9 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -539,6 +539,25 @@ static int ehci_fsl_drv_remove(struct platform_device *pdev)
+ }
+ 
+ #ifdef CONFIG_PM
++
++static bool host_can_wakeup_system(struct platform_device *pdev)
++{
++	struct usb_hcd *hcd = platform_get_drvdata(pdev);
++	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
++	struct fsl_usb2_platform_data *pdata = pdev->dev.platform_data;
++
++	if (pdata->operating_mode == FSL_USB2_DR_OTG)
++		if (device_may_wakeup(ehci->transceiver->dev))
++			return true;
++		else
++			return false;
++	else
++		if (device_may_wakeup(&(pdev->dev)))
++			return true;
++		else
++			return false;
++}
++
+ /* suspend/resume, section 4.3 */
+ 
+ /* These routines rely on the bus (pci, platform, etc)
+@@ -561,7 +580,7 @@ static int ehci_fsl_drv_suspend(struct platform_device *pdev,
+ 	/* Only handles OTG mode switch event, system suspend event will be done in bus suspend */
+ 	if (pdev->dev.power.status == DPM_SUSPENDING) {
+ 		printk(KERN_DEBUG "%s, pm event \n", __func__);
+-		if (!device_may_wakeup(&(pdev->dev))) {
++		if (!host_can_wakeup_system(pdev)) {
+ 			int mask;
+ 			/* Need open clock for register access */
+ 			if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags))
+@@ -643,7 +662,7 @@ static int ehci_fsl_drv_resume(struct platform_device *pdev)
+ 	printk(KERN_DEBUG "ehci fsl drv resume begins: %s\n", pdata->name);
+ 	if (pdev->dev.power.status == DPM_RESUMING) {
+ 		printk(KERN_DEBUG "%s, pm event \n", __func__);
+-		if (!device_may_wakeup(&(pdev->dev))) {
++		if (!host_can_wakeup_system(pdev)) {
+ 			if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
+ 				fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
+ 			}
+-- 
+1.5.4.4
+

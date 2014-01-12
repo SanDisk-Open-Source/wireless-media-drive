@@ -1,0 +1,54 @@
+From 1b7aeb43170b12f46d7b13d37dee7e43d3fcdcad Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Mon, 10 Jan 2011 18:39:52 +0800
+Subject: [PATCH] ENGR00137783-1 MXC V4L2 capture:Add several ioctrl support
+
+This patch supports VIDIOC_ENUM_FMT, VIDIOC_ENUM_FRAMESIZES
+and VIDIOC_DBG_G_CHIP_IDENT ioctrls.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.c |   20 ++++++++++++++++++--
+ 1 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+index de0c57f..5af7bbf 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+@@ -33,6 +33,7 @@
+ #include <linux/fb.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/mxcfb.h>
++#include <media/v4l2-chip-ident.h>
+ #include <media/v4l2-ioctl.h>
+ #include <media/v4l2-int-device.h>
+ #include "mxc_v4l2_capture.h"
+@@ -2100,8 +2101,23 @@ static long mxc_v4l_do_ioctl(struct file *file,
+ 		cam->current_input = *index;
+ 		break;
+ 	}
+-
+-	case VIDIOC_ENUM_FMT:
++	case VIDIOC_ENUM_FMT: {
++		struct v4l2_fmtdesc *f = arg;
++		retval = vidioc_int_enum_fmt_cap(cam->sensor, f);
++		break;
++	}
++	case VIDIOC_ENUM_FRAMESIZES: {
++		struct v4l2_frmsizeenum *fsize = arg;
++		retval = vidioc_int_enum_framesizes(cam->sensor, fsize);
++		break;
++	}
++	case VIDIOC_DBG_G_CHIP_IDENT: {
++		struct v4l2_dbg_chip_ident *p = arg;
++		p->ident = V4L2_IDENT_NONE;
++		p->revision = 0;
++		retval = vidioc_int_g_chip_ident(cam->sensor, (int *)p);
++		break;
++	}
+ 	case VIDIOC_TRY_FMT:
+ 	case VIDIOC_QUERYCTRL:
+ 	case VIDIOC_G_TUNER:
+-- 
+1.5.4.4
+

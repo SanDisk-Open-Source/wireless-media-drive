@@ -1,0 +1,867 @@
+From 765b588dba3e1672d66f6e63727b5f6691424e5e Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Mon, 23 Feb 2009 14:50:43 +0800
+Subject: [PATCH] ENGR00107886 Porting MX31, MX35 3stack to u-boot V2009.01
+
+Modify and Verfiy MX31 & MX35 3stack according to the changes in V2009.01
+
+Signed-off-by: Fred Fan <r01011@freescale.com>
+---
+ board/freescale/mx31_3stack/mx31_3stack.c |    2 +-
+ board/freescale/mx31_3stack/u-boot.lds    |    2 +-
+ board/freescale/mx35_3stack/mx35_3stack.c |   10 +++
+ cpu/arm1136/mx35/generic.c                |   14 ++++
+ drivers/i2c/mxc_i2c.c                     |    2 +-
+ drivers/mtd/nand/mx31_nand.c              |  103 ++++++++++++++---------------
+ drivers/mtd/nand/mxc_nand.c               |   76 ++++++++++-----------
+ drivers/mtd/nand/nand_ids.c               |    2 +-
+ drivers/net/smc911x.c                     |    2 -
+ include/asm-arm/arch-mx35/mxc_nand.h      |    6 +-
+ include/configs/mx31_3stack.h             |   50 +++++++-------
+ include/configs/mx35_3stack.h             |    4 +-
+ 12 files changed, 144 insertions(+), 129 deletions(-)
+
+diff --git a/board/freescale/mx31_3stack/mx31_3stack.c b/board/freescale/mx31_3stack/mx31_3stack.c
+index 33adfd3..c8dd7ce 100644
+--- a/board/freescale/mx31_3stack/mx31_3stack.c
++++ b/board/freescale/mx31_3stack/mx31_3stack.c
+@@ -48,7 +48,7 @@ int board_init(void)
+ 	mx31_gpio_mux(MUX_RXD1__UART1_RXD_MUX);
+ 	mx31_gpio_mux(MUX_TXD1__UART1_TXD_MUX);
+ 	mx31_gpio_mux(MUX_RTS1__UART1_RTS_B);
+-	mx31_gpio_mux(MUX_RTS1__UART1_CTS_B);
++	mx31_gpio_mux(MUX_CTS1__UART1_CTS_B);
+ 
+ 	/* SPI2 */
+ 	mx31_gpio_mux((MUX_CTL_FUNC << 8) | MUX_CTL_CSPI2_SS2);
+diff --git a/board/freescale/mx31_3stack/u-boot.lds b/board/freescale/mx31_3stack/u-boot.lds
+index 8b717ff..b26def7 100644
+--- a/board/freescale/mx31_3stack/u-boot.lds
++++ b/board/freescale/mx31_3stack/u-boot.lds
+@@ -46,7 +46,7 @@ SECTIONS
+ 	  drivers/mtd/libmtd.a		(.text)
+ 
+ 	  . = DEFINED(env_offset) ? env_offset : .;
+-	  common/environment.o(.text)
++	  common/env_embedded.o(.text)
+ 
+ 	  *(.text)
+ 	}
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 267e9f1..41163f4 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -24,6 +24,7 @@
+ 
+ #include <common.h>
+ #include <asm/io.h>
++#include <asm/errno.h>
+ #include <asm/arch/mx35.h>
+ #include <asm/arch/mx35_pins.h>
+ #include <asm/arch/iomux.h>
+@@ -269,3 +270,12 @@ int checkboard(void)
+ 	printf("]\n");
+ 	return 0;
+ }
++
++int board_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_DRIVER_SMC911X)
++	rc = smc911x_initialize(bis);
++#endif
++	return rc;
++}
+diff --git a/cpu/arm1136/mx35/generic.c b/cpu/arm1136/mx35/generic.c
+index d6ad6d7..b70c3ea 100644
+--- a/cpu/arm1136/mx35/generic.c
++++ b/cpu/arm1136/mx35/generic.c
+@@ -24,6 +24,7 @@
+  */
+ 
+ #include <common.h>
++#include <asm/errno.h>
+ #include <asm/arch/mx35.h>
+ #include "crm_regs.h"
+ 
+@@ -203,3 +204,16 @@ int print_cpuinfo(void)
+ 	return 0;
+ }
+ #endif
++
++/*
++ * Initializes on-chip ethernet controllers.
++ * to override, implement board_eth_init()
++ */
++int cpu_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++#if defined(CONFIG_MXC_FEC)
++	rc = mxc_fec_initialize(bis);
++#endif
++	return rc;
++}
+diff --git a/drivers/i2c/mxc_i2c.c b/drivers/i2c/mxc_i2c.c
+index 1f36970..530b332 100644
+--- a/drivers/i2c/mxc_i2c.c
++++ b/drivers/i2c/mxc_i2c.c
+@@ -58,7 +58,7 @@
+ #ifdef CONFIG_SYS_I2C_PORT
+ # define I2C_BASE	CONFIG_SYS_I2C_PORT
+ #else
+-# error "define CFG_I2C_PORT(I2C base address) to use the I2C driver"
++# error "define CONFIG_SYS_I2C_PORT(I2C base address) to use the I2C driver"
+ #endif
+ 
+ #define I2C_MAX_TIMEOUT		100000
+diff --git a/drivers/mtd/nand/mx31_nand.c b/drivers/mtd/nand/mx31_nand.c
+index 325e0f0..867f347 100644
+--- a/drivers/mtd/nand/mx31_nand.c
++++ b/drivers/mtd/nand/mx31_nand.c
+@@ -43,8 +43,7 @@ static int ecc_disabled;
+ /*
+  * OOB placement block for use with hardware ecc generation
+  */
+-static struct nand_oobinfo nand_hw_eccoob_8 = {
+-	.useecc = MTD_NANDECC_AUTOPL_USR,
++static struct nand_ecclayout nand_hw_eccoob_8 = {
+ 	.eccbytes = 5,
+ 	.eccpos = {6, 7, 8, 9, 10},
+ 	.oobfree = {
+@@ -53,8 +52,7 @@ static struct nand_oobinfo nand_hw_eccoob_8 = {
+ 		    }
+ };
+ 
+-static struct nand_oobinfo nand_hw_eccoob_2k = {
+-	.useecc = MTD_NANDECC_AUTOPL_USR,
++static struct nand_ecclayout nand_hw_eccoob_2k = {
+ 	.eccbytes = 20,
+ 	.eccpos = {6, 7, 8, 9, 10, 22, 23, 24, 25, 26,
+ 		   38, 39, 40, 41, 42, 54, 55, 56, 57, 58},
+@@ -142,7 +140,7 @@ static void wait_op_done(int max_retries)
+ 		udelay(1);
+ 	}
+ 	if (max_retries <= 0)
+-		DEBUG(MTD_DEBUG_LEVEL0, "wait: INT not set\n");
++		MTDDEBUG(MTD_DEBUG_LEVEL0, "wait: INT not set\n");
+ }
+ 
+ /**
+@@ -153,7 +151,7 @@ static void wait_op_done(int max_retries)
+  */
+ static void send_cmd(u16 cmd)
+ {
+-	DEBUG(MTD_DEBUG_LEVEL3, "send_cmd(0x%x)\n", cmd);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "send_cmd(0x%x)\n", cmd);
+ 
+ 	NFC_FLASH_CMD = (u16) cmd;
+ 	NFC_CONFIG2 = NFC_CMD;
+@@ -172,7 +170,7 @@ static void send_cmd(u16 cmd)
+  */
+ static void send_addr(u16 addr)
+ {
+-	DEBUG(MTD_DEBUG_LEVEL3, "send_addr(0x%x %d)\n", addr);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "send_addr(0x%x %d)\n", addr);
+ 
+ 	NFC_FLASH_ADDR = addr;
+ 	NFC_CONFIG2 = NFC_ADDR;
+@@ -190,7 +188,7 @@ static void send_addr(u16 addr)
+  */
+ static void send_prog_page(u8 buf_id)
+ {
+-	DEBUG(MTD_DEBUG_LEVEL3, "send_prog_page (%d)\n", nandinfo.oob);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "send_prog_page (%d)\n", nandinfo.oob);
+ 
+ 	/* NANDFC buffer 0 is used for page read/write */
+ 
+@@ -227,7 +225,7 @@ static void mxc_nd_correct_error(u8 buf_id, u16 eccpos, int oob)
+ 	col = COLPOS(eccpos);	/* Get half-word position */
+ 	pos = BITPOS(eccpos);	/* Get bit position */
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "mxc_nd_correct_error (col=%d pos=%d)\n", col, pos);
+ 
+ 	/* Set the pointer for main / spare area */
+@@ -253,7 +251,7 @@ static void mxc_nd_correct_ecc(u8 buf_id, int spare)
+ 
+ 	/* Read the ECC result */
+ 	ecc_status = NFC_ECC_STATUS_RESULT;
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "mxc_nd_correct_ecc (Ecc status=%x)\n", ecc_status);
+ 
+ 	if (((ecc_status & 0xC) == MAIN_SINGLEBIT_ERROR)
+@@ -298,7 +296,7 @@ static void mxc_nd_correct_ecc(u8 buf_id, int spare)
+  */
+ static void send_read_page(u8 buf_id)
+ {
+-	DEBUG(MTD_DEBUG_LEVEL3, "send_read_page (%d)\n", nandinfo.oob);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "send_read_page (%d)\n", nandinfo.oob);
+ 
+ 	/* NANDFC buffer 0 is used for page read/write */
+ 	NFC_BUF_ADDR = buf_id;
+@@ -397,7 +395,7 @@ static int mxc_nand_correct_data(struct mtd_info *mtd, unsigned char *dat,
+ 	u16 ecc_status = NFC_ECC_STATUS_RESULT;
+ 
+ 	if (((ecc_status & 0x3) == 2) || ((ecc_status >> 2) == 2)) {
+-		DEBUG(MTD_DEBUG_LEVEL0,
++		MTDDEBUG(MTD_DEBUG_LEVEL0,
+ 		      "MXC_NAND: HWECC uncorrectable 2-bit ECC error\n");
+ 		return -1;
+ 	}
+@@ -467,17 +465,17 @@ static u16 mxc_nand_read_word(struct mtd_info *mtd)
+ 	u16 rd_word, ret_val;
+ 	volatile u16 *p;
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3, "mxc_nand_read_word(col = %d)\n", nandinfo.col);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "mxc_nand_read_word(col = %d)\n", nandinfo.col);
+ 
+ 	col = nandinfo.col;
+ 	/* Adjust saved column address */
+-	if (col < mtd->oobblock && nandinfo.oob)
+-		col += mtd->oobblock;
++	if (col < mtd->writesize && nandinfo.oob)
++		col += mtd->writesize;
+ 
+-	if (col < mtd->oobblock)
++	if (col < mtd->writesize)
+ 		p = (MAIN_AREA0) + (col >> 1);
+ 	else
+-		p = (SPARE_AREA0) + ((col - mtd->oobblock) >> 1);
++		p = (SPARE_AREA0) + ((col - mtd->writesize) >> 1);
+ 
+ 	if (col & 1) {
+ 		rd_word = *p;
+@@ -510,33 +508,33 @@ static void mxc_nand_write_buf(struct mtd_info *mtd,
+ 	int col;
+ 	int i = 0;
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "mxc_nand_write_buf(col = %d, len = %d)\n", nandinfo.col, len);
+ 
+ 	col = nandinfo.col;
+ 
+ 	/* Adjust saved column address */
+-	if (col < mtd->oobblock && nandinfo.oob)
+-		col += mtd->oobblock;
++	if (col < mtd->writesize && nandinfo.oob)
++		col += mtd->writesize;
+ 
+-	n = mtd->oobblock + mtd->oobsize - col;
+-	if (len > mtd->oobblock + mtd->oobsize - col)
+-		DEBUG(MTD_DEBUG_LEVEL1, "Error: too much data.\n");
++	n = mtd->writesize + mtd->oobsize - col;
++	if (len > mtd->writesize + mtd->oobsize - col)
++		MTDDEBUG(MTD_DEBUG_LEVEL1, "Error: too much data.\n");
+ 
+ 	n = min(len, n);
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "%s:%d: col = %d, n = %d\n", __FUNCTION__, __LINE__, col, n);
+ 
+ 	while (n) {
+ 		volatile u32 *p;
+-		if (col < mtd->oobblock)
++		if (col < mtd->writesize)
+ 			p = (volatile u32 *)((ulong) (MAIN_AREA0) + (col & ~3));
+ 		else
+ 			p = (volatile u32 *)((ulong) (SPARE_AREA0) -
+-					     mtd->oobblock + (col & ~3));
++					     mtd->writesize + (col & ~3));
+ 
+-		DEBUG(MTD_DEBUG_LEVEL3, "%s:%d: p = %p\n",
++		MTDDEBUG(MTD_DEBUG_LEVEL3, "%s:%d: p = %p\n",
+ 		      __FUNCTION__, __LINE__, p);
+ 
+ 		if (((col | (int)&buf[i]) & 3) || n < 16) {
+@@ -578,14 +576,14 @@ static void mxc_nand_write_buf(struct mtd_info *mtd,
+ 
+ 			*p = data;
+ 		} else {
+-			int m = mtd->oobblock - col;
++			int m = mtd->writesize - col;
+ 
+-			if (col >= mtd->oobblock)
++			if (col >= mtd->writesize)
+ 				m += mtd->oobsize;
+ 
+ 			m = min(n, m) & ~3;
+ 
+-			DEBUG(MTD_DEBUG_LEVEL3,
++			MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 			      "%s:%d: n = %d, m = %d, i = %d, col = %d\n",
+ 			      __FUNCTION__, __LINE__, n, m, i, col);
+ 
+@@ -615,7 +613,7 @@ static void mxc_nand_read_buf(struct mtd_info *mtd, unsigned char *buf, int len)
+ 	int col;
+ 	int i = 0;
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "mxc_nand_read_buf(col = %d, len = %d)\n", nandinfo.col, len);
+ 
+ 	col = nandinfo.col;
+@@ -623,20 +621,20 @@ static void mxc_nand_read_buf(struct mtd_info *mtd, unsigned char *buf, int len)
+ 	 * Adjust saved column address
+ 	 * for nand_read_oob will pass col within oobsize
+ 	 */
+-	if (col < mtd->oobblock && nandinfo.oob)
+-		col += mtd->oobblock;
++	if (col < mtd->writesize && nandinfo.oob)
++		col += mtd->writesize;
+ 
+-	n = mtd->oobblock + mtd->oobsize - col;
++	n = mtd->writesize + mtd->oobsize - col;
+ 	n = min(len, n);
+ 
+ 	while (n) {
+ 		volatile u32 *p;
+ 
+-		if (col < mtd->oobblock)
++		if (col < mtd->writesize)
+ 			p = (volatile u32 *)((ulong) (MAIN_AREA0) + (col & ~3));
+ 		else
+ 			p = (volatile u32 *)((ulong) (SPARE_AREA0) -
+-					     mtd->oobblock + (col & ~3));
++					     mtd->writesize + (col & ~3));
+ 
+ 		if (((col | (int)&buf[i]) & 3) || n < 16) {
+ 			u32 data;
+@@ -669,9 +667,9 @@ static void mxc_nand_read_buf(struct mtd_info *mtd, unsigned char *buf, int len)
+ 				}
+ 			}
+ 		} else {
+-			int m = mtd->oobblock - col;
++			int m = mtd->writesize - col;
+ 
+-			if (col >= mtd->oobblock)
++			if (col >= mtd->writesize)
+ 				m += mtd->oobsize;
+ 
+ 			m = min(n, m) & ~3;
+@@ -724,7 +722,7 @@ static void mxc_nand_select_chip(struct mtd_info *mtd, int chip)
+ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 			     int column, int page_addr)
+ {
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "mxc_nand_command (cmd = 0x%x, col = 0x%x, page = 0x%x)\n",
+ 	      command, column, page_addr);
+ 
+@@ -752,7 +750,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 		break;
+ 
+ 	case NAND_CMD_SEQIN:
+-		if (column >= mtd->oobblock) {
++		if (column >= mtd->writesize) {
+ 			/* write oob routine caller */
+ 			if (nandinfo.largepage) {
+ 				/*
+@@ -766,7 +764,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 				mxc_nand_command(mtd, NAND_CMD_READ0, 0,
+ 						 page_addr);
+ 			}
+-			nandinfo.col = column - mtd->oobblock;
++			nandinfo.col = column - mtd->writesize;
+ 			nandinfo.oob = 1;
+ 			/* Set program pointer to spare region */
+ 			if (!nandinfo.largepage)
+@@ -878,6 +876,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 
+ 	case NAND_CMD_READID:
+ 		send_read_id();
++		nandinfo.col = column;
+ 		break;
+ 
+ 	case NAND_CMD_PAGEPROG:
+@@ -898,8 +897,8 @@ static int mxc_nand_scan_bbt(struct mtd_info *mtd)
+ 
+ 	/* Config before scanning */
+ 	/* Do not rely on NFMS_BIT, set/clear NFMS bit based
+-	 * on mtd->oobblock */
+-	if (mtd->oobblock == 2048)
++	 * on mtd->writesize */
++	if (mtd->writesize == 2048)
+ 		NFMS |= 1 << NFMS_BIT;
+ 	else if ((NFMS >> NFMS_BIT) & 0x1)
+ 		NFMS &= ~(1 << NFMS_BIT);
+@@ -915,7 +914,7 @@ static int mxc_nand_scan_bbt(struct mtd_info *mtd)
+ 		if (nandinfo.largepage)
+ 			this->badblock_pattern = &smallpage_memorybased;
+ 		else
+-			this->badblock_pattern = (mtd->oobblock > 512) ?
++			this->badblock_pattern = (mtd->writesize > 512) ?
+ 			    &largepage_memorybased : &smallpage_memorybased;
+ 	}
+ 	/* Build bad block table */
+@@ -934,12 +933,12 @@ int board_nand_init(struct nand_chip *nand)
+ 	nand->read_buf = mxc_nand_read_buf;
+ 	nand->verify_buf = mxc_nand_verify_buf;
+ 	nand->scan_bbt = mxc_nand_scan_bbt;
+-	nand->calculate_ecc = mxc_nand_calculate_ecc;
+-	nand->correct_data = mxc_nand_correct_data;
+-	nand->enable_hwecc = mxc_nand_enable_hwecc;
+-	nand->eccmode = NAND_ECC_HW3_512;
+-	nand->eccbytes = 512;
+-	nand->eccsize = 3;
++	nand->ecc.calculate = mxc_nand_calculate_ecc;
++	nand->ecc.correct = mxc_nand_correct_data;
++	nand->ecc.hwctl = mxc_nand_enable_hwecc;
++	nand->ecc.mode = NAND_ECC_HW;
++	nand->ecc.bytes = 3;
++	nand->ecc.size = 512;
+ 
+ 	/* Reset NAND */
+ 	NFC_CONFIG1 |= NFC_INT_MSK | NFC_RST | NFC_ECC_EN;
+@@ -959,10 +958,10 @@ int board_nand_init(struct nand_chip *nand)
+ 
+ 	if ((NFMS >> NFMS_BIT) & 1) {
+ 		nandinfo.largepage = 1;
+-		nand->autooob = &nand_hw_eccoob_2k;
++		nand->ecc.layout = &nand_hw_eccoob_2k;
+ 	} else {
+ 		nandinfo.largepage = 0;
+-		nand->autooob = &nand_hw_eccoob_8;
++		nand->ecc.layout = &nand_hw_eccoob_8;
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index d458d0a..7e224b7 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -16,7 +16,6 @@
+ #include <asm/io.h>
+ #include <asm/errno.h>
+ #include <nand.h>
+-#include <linux/mtd/compat.h>
+ #include <asm-arm/arch/mxc_nand.h>
+ 
+ struct nand_info {
+@@ -39,22 +38,19 @@ struct nand_info {
+ /*
+  * OOB placement block for use with hardware ecc generation
+  */
+-static struct nand_oobinfo nand_hw_eccoob_512 = {
+-	.useecc = MTD_NANDECC_AUTOPL_USR,
++static struct nand_ecclayout nand_hw_eccoob_512 = {
+ 	.eccbytes = 9,
+ 	.eccpos = {7, 8, 9, 10, 11, 12, 13, 14, 15},
+ 	.oobfree = {{0, 4} }
+ };
+ 
+-static struct nand_oobinfo nand_hw_eccoob_2k = {
+-	.useecc = MTD_NANDECC_AUTOPL_USR,
++static struct nand_ecclayout nand_hw_eccoob_2k = {
+ 	.eccbytes = 9,
+ 	.eccpos = {7, 8, 9, 10, 11, 12, 13, 14, 15},
+ 	.oobfree = {{2, 4} }
+ };
+ 
+-static struct nand_oobinfo nand_hw_eccoob_4k = {
+-	.useecc = MTD_NANDECC_AUTOPL_USR,
++static struct nand_ecclayout nand_hw_eccoob_4k = {
+ 	.eccbytes = 9,
+ 	.eccpos = {7, 8, 9, 10, 11, 12, 13, 14, 15},
+ 	.oobfree = {{2, 4} }
+@@ -97,7 +93,7 @@ copy_spare(struct mtd_info *mtd, void *pbuf, void *pspare, int len, int bfrom)
+ {
+ 	u16 i, j;
+ 	u16 m = mtd->oobsize;
+-	u16 n = mtd->oobblock >> 9;
++	u16 n = mtd->writesize >> 9;
+ 	u8 *d = (u8 *) pbuf;
+ 	u8 *s = (u8 *) pspare;
+ 	u16 t = SPARE_LEN;
+@@ -144,7 +140,7 @@ static void wait_op_done(int max_retries)
+ 		udelay(1);
+ 	}
+ 	if (max_retries <= 0)
+-		DEBUG(MTD_DEBUG_LEVEL0, "wait: INT not set\n");
++		MTDDEBUG(MTD_DEBUG_LEVEL0, "wait: INT not set\n");
+ }
+ 
+ static void send_cmd_atomic(struct mtd_info *mtd, u16 cmd)
+@@ -211,7 +207,7 @@ static void send_cmd_interleave(struct mtd_info *mtd, u16 cmd)
+ 	u32 page_addr = addr_low >> 16 | addr_high << 16;
+ 	u8 *dbuf = mtd->info.data_buf;
+ 	u8 *obuf = mtd->info.oob_buf;
+-	u32 dlen = mtd->oobblock / j;
++	u32 dlen = mtd->writesize / j;
+ 	u32 olen = mtd->oobsize / j;
+ 
+ 	/* adjust the addr value
+@@ -303,7 +299,7 @@ static void send_cmd(struct mtd_info *mtd, u16 cmd)
+ 	else
+ 		send_cmd_atomic(mtd, cmd);
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3, "send_cmd(0x%x, %d)\n", cmd);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "send_cmd(0x%x, %d)\n", cmd);
+ }
+ 
+ /*!
+@@ -316,7 +312,7 @@ static void send_cmd(struct mtd_info *mtd, u16 cmd)
+  */
+ static void send_addr(u16 addr)
+ {
+-	DEBUG(MTD_DEBUG_LEVEL3, "send_addr(0x%x %d)\n", addr);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "send_addr(0x%x %d)\n", addr);
+ 
+ 	/* fill address */
+ 	raw_write((addr << NFC_FLASH_ADDR_SHIFT), REG_NFC_FLASH_ADDR);
+@@ -355,7 +351,7 @@ static void send_prog_page(struct mtd_info *mtd, u8 buf_id)
+ 		/* Wait for operation to complete */
+ 		wait_op_done(TROP_US_DELAY);
+ 
+-		DEBUG(MTD_DEBUG_LEVEL3, "%s\n", __func__);
++		MTDDEBUG(MTD_DEBUG_LEVEL3, "%s\n", __func__);
+ 	}
+ }
+ 
+@@ -384,7 +380,7 @@ static void send_read_page(struct mtd_info *mtd, u8 buf_id)
+ 		/* Wait for operation to complete */
+ 		wait_op_done(TROP_US_DELAY);
+ 
+-		DEBUG(MTD_DEBUG_LEVEL3, "%s(%d)\n", __func__, buf_id);
++		MTDDEBUG(MTD_DEBUG_LEVEL3, "%s(%d)\n", __func__, buf_id);
+ 
+ 	}
+ 
+@@ -511,7 +507,7 @@ static int mxc_nand_ecc_status(struct mtd_info *mtd)
+ 	ecc_bit_mask = (IS_4BIT_ECC ? 0x7 : 0xf);
+ 	err_limit = (IS_4BIT_ECC ? 0x4 : 0x8);
+ 
+-	no_subpages = mtd->oobblock >> 9;
++	no_subpages = mtd->writesize >> 9;
+ 
+ 	no_subpages /= info->num_of_intlv;
+ 
+@@ -527,7 +523,7 @@ static int mxc_nand_ecc_status(struct mtd_info *mtd)
+ 		ecc_stat >>= 4;
+ 	} while (--no_subpages);
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3, "%d Symbol Correctable RS-ECC Error\n", ret);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "%d Symbol Correctable RS-ECC Error\n", ret);
+ 
+ 	return ret;
+ }
+@@ -574,9 +570,9 @@ static void mxc_nand_read_buf(struct mtd_info *mtd, u_char * buf, int len)
+ 	u8 *data_buf = info->data_buf;
+ 	u8 *oob_buf = info->oob_buf;
+ 
+-	if (mtd->oobblock) {
++	if (mtd->writesize) {
+ 
+-		int j = mtd->oobblock - col;
++		int j = mtd->writesize - col;
+ 		int n = mtd->oobsize + j;
+ 
+ 		n = min(n, len);
+@@ -589,7 +585,7 @@ static void mxc_nand_read_buf(struct mtd_info *mtd, u_char * buf, int len)
+ 				memcpy(buf, &data_buf[col], n);
+ 			}
+ 		} else {
+-			col -= mtd->oobblock;
++			col -= mtd->writesize;
+ 			memcpy(buf, &oob_buf[col], len);
+ 		}
+ 
+@@ -598,7 +594,7 @@ static void mxc_nand_read_buf(struct mtd_info *mtd, u_char * buf, int len)
+ 
+ 	} else {
+ 		/* At flash identify phase,
+-		 * mtd->oobblock has not been
++		 * mtd->writesize has not been
+ 		 * set correctly, it should
+ 		 * be zero.And len will less 2
+ 		 */
+@@ -683,7 +679,7 @@ static void mxc_nand_write_buf(struct mtd_info *mtd,
+ 	u16 col = info->col_addr;
+ 	u8 *data_buf = info->data_buf;
+ 	u8 *oob_buf = info->oob_buf;
+-	int j = mtd->oobblock - col;
++	int j = mtd->writesize - col;
+ 	int n = mtd->oobsize + j;
+ 
+ 	n = min(n, len);
+@@ -696,7 +692,7 @@ static void mxc_nand_write_buf(struct mtd_info *mtd,
+ 			memcpy(&data_buf[col], buf, n);
+ 		}
+ 	} else {
+-		col -= mtd->oobblock;
++		col -= mtd->writesize;
+ 		memcpy(&oob_buf[col], buf, len);
+ 	}
+ 
+@@ -773,7 +769,7 @@ static void mxc_do_addr_cycle_auto(struct mtd_info *mtd, int column,
+ 		raw_write(page_addr, NFC_FLASH_ADDR0);
+ 	}
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "AutoMode:the ADDR REGS value is (0x%x, 0x%x)\n",
+ 	      raw_read(NFC_FLASH_ADDR0), raw_read(NFC_FLASH_ADDR8));
+ #endif
+@@ -836,7 +832,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 	struct nand_chip *this = mtd->priv;
+ 	struct nand_info *info = this->priv;
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3,
++	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 	      "mxc_nand_command (cmd = 0x%x, col = 0x%x, page = 0x%x)\n",
+ 	      command, column, page_addr);
+ 	/*
+@@ -888,7 +884,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 
+ 	case NAND_CMD_PAGEPROG:
+ 		if (!info->auto_mode) {
+-			nfc_memcpy(MAIN_AREA0, info->data_buf, mtd->oobblock);
++			nfc_memcpy(MAIN_AREA0, info->data_buf, mtd->writesize);
+ 			copy_spare(mtd, info->oob_buf, SPARE_AREA0,
+ 						mtd->oobsize, 0);
+ 		}
+@@ -923,7 +919,7 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
+ 
+ 		if (!info->auto_mode) {
+ 			mxc_nand_ecc_status(mtd);
+-			nfc_memcpy(info->data_buf, MAIN_AREA0, mtd->oobblock);
++			nfc_memcpy(info->data_buf, MAIN_AREA0, mtd->writesize);
+ 			copy_spare(mtd, info->oob_buf, SPARE_AREA0,
+ 						mtd->oobsize, 1);
+ 		}
+@@ -989,14 +985,14 @@ static int mxc_nand_scan_bbt(struct mtd_info *mtd)
+ 
+ 	if (IS_2K_PAGE_NAND) {
+ 		NFC_SET_NFMS(1 << NFMS_NF_PG_SZ);
+-		this->autooob = &nand_hw_eccoob_2k;
++		this->ecc.layout = &nand_hw_eccoob_2k;
+ 		info->large_page = 1;
+ 	} else if (IS_4K_PAGE_NAND) {
+ 		NFC_SET_NFMS(1 << NFMS_NF_PG_SZ);
+-		this->autooob = &nand_hw_eccoob_4k;
++		this->ecc.layout = &nand_hw_eccoob_4k;
+ 		info->large_page = 1;
+ 	} else {
+-		this->autooob = &nand_hw_eccoob_512;
++		this->ecc.layout = &nand_hw_eccoob_512;
+ 		info->large_page = 0;
+ 	}
+ 
+@@ -1012,17 +1008,17 @@ static int mxc_nand_scan_bbt(struct mtd_info *mtd)
+ 		 */
+ 		mtd->size = this->chipsize;
+ 		mtd->erasesize *= info->num_of_intlv;
+-		mtd->oobblock *= info->num_of_intlv;
++		mtd->writesize *= info->num_of_intlv;
+ 		mtd->oobsize *= info->num_of_intlv;
+-		this->page_shift = ffs(mtd->oobblock) - 1;
++		this->page_shift = ffs(mtd->writesize) - 1;
+ 		this->bbt_erase_shift =
+ 		this->phys_erase_shift = ffs(mtd->erasesize) - 1;
+ 		this->chip_shift = ffs(this->chipsize) - 1;
+-		/*this->oob_poi = this->buffers->databuf + mtd->oobblock;*/
++		/*this->oob_poi = this->buffers->databuf + mtd->writesize;*/
+ 	}
+ 
+ 	/* propagate ecc.layout to mtd_info */
+-	memcpy(&mtd->oobinfo, this->autooob, sizeof(mtd->oobinfo));
++	mtd->ecclayout = this->ecc.layout;
+ 
+ 	/* jffs2 not write oob */
+ 	/*mtd->flags &= ~MTD_OOB_WRITEABLE;*/
+@@ -1035,7 +1031,7 @@ static int mxc_nand_scan_bbt(struct mtd_info *mtd)
+ 	this->options |= NAND_USE_FLASH_BBT;
+ 
+ 	if (!this->badblock_pattern) {
+-		this->badblock_pattern = (mtd->oobblock > 512) ?
++		this->badblock_pattern = (mtd->writesize > 512) ?
+ 		    &largepage_memorybased : &smallpage_memorybased;
+ 	}
+ 
+@@ -1136,12 +1132,12 @@ int board_nand_init(struct nand_chip *nand)
+ 	this->read_buf = mxc_nand_read_buf;
+ 	this->verify_buf = mxc_nand_verify_buf;
+ 	this->scan_bbt = mxc_nand_scan_bbt;
+-	this->calculate_ecc = mxc_nand_calculate_ecc;
+-	this->correct_data = mxc_nand_correct_data;
+-	this->enable_hwecc = mxc_nand_enable_hwecc;
+-	this->eccmode = NAND_ECC_HW3_512;
+-	this->eccbytes = 9;
+-	this->eccsize = 512;
++	this->ecc.calculate = mxc_nand_calculate_ecc;
++	this->ecc.correct = mxc_nand_correct_data;
++	this->ecc.hwctl = mxc_nand_enable_hwecc;
++	this->ecc.mode = NAND_ECC_HW;
++	this->ecc.bytes = 9;
++	this->ecc.size = 512;
+ 
+ 	return 0;
+ 
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index f48cccb..3fd4220 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -23,7 +23,7 @@
+ *	512	512 Byte page size
+ */
+ struct nand_flash_dev nand_flash_ids[] = {
+-#if 0
++#ifdef CONFIG_MTD_NAND_MUSEUM_IDS
+ 	{"NAND 1MiB 5V 8-bit", 		0x6e, 256, 1, 0x1000, 0},
+ 	{"NAND 2MiB 5V 8-bit", 		0x64, 256, 2, 0x1000, 0},
+ 	{"NAND 4MiB 5V 8-bit", 		0x6b, 512, 4, 0x2000, 0},
+diff --git a/drivers/net/smc911x.c b/drivers/net/smc911x.c
+index 13cb6ea..5c00028 100644
+--- a/drivers/net/smc911x.c
++++ b/drivers/net/smc911x.c
+@@ -711,5 +711,3 @@ int smc911x_initialize(u8 dev_num, int base_addr)
+ 	return 0;
+ }
+ #endif
+-
+-#endif
+diff --git a/include/asm-arm/arch-mx35/mxc_nand.h b/include/asm-arm/arch-mx35/mxc_nand.h
+index f4d2ae7..bc04c09 100644
+--- a/include/asm-arm/arch-mx35/mxc_nand.h
++++ b/include/asm-arm/arch-mx35/mxc_nand.h
+@@ -25,11 +25,11 @@
+ 
+ #include <asm/arch/mx35.h>
+ 
+-#define IS_2K_PAGE_NAND         ((mtd->oobblock / info->num_of_intlv) \
++#define IS_2K_PAGE_NAND         ((mtd->writesize / info->num_of_intlv) \
+ 						== NAND_PAGESIZE_2KB)
+-#define IS_4K_PAGE_NAND         ((mtd->oobblock / info->num_of_intlv) \
++#define IS_4K_PAGE_NAND         ((mtd->writesize / info->num_of_intlv) \
+ 						== NAND_PAGESIZE_4KB)
+-#define IS_LARGE_PAGE_NAND      ((mtd->oobblock / info->num_of_intlv) > 512)
++#define IS_LARGE_PAGE_NAND      ((mtd->writesize / info->num_of_intlv) > 512)
+ 
+ #define NAND_PAGESIZE_2KB	2048
+ #define NAND_PAGESIZE_4KB	4096
+diff --git a/include/configs/mx31_3stack.h b/include/configs/mx31_3stack.h
+index 887ffe3..e90df0a 100644
+--- a/include/configs/mx31_3stack.h
++++ b/include/configs/mx31_3stack.h
+@@ -44,27 +44,27 @@
+ /*
+  * Size of malloc() pool
+  */
+-#define CFG_MALLOC_LEN		(CFG_ENV_SIZE + 128 * 1024)
+-#define CFG_GBL_DATA_SIZE	128
++#define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 512 * 1024)
++#define CONFIG_SYS_GBL_DATA_SIZE	128
+ 
+ /*
+  * Hardware drivers
+  */
+ 
+ #define CONFIG_MX31_UART	1
+-#define CFG_MX31_UART1		1
++#define CONFIG_SYS_MX31_UART1		1
+ 
+-#define CONFIG_HARD_SPI		1
+ #define CONFIG_MXC_SPI		1
+-#define CONFIG_MXC_SPI_IFACE	1
+ 
+ #define CONFIG_RTC_MC13783	1
++#define CONFIG_MC13783_SPI_BUS	1
++#define CONFIG_MC13783_SPI_CS   0
+ 
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+ #define CONFIG_CONS_INDEX	1
+ #define CONFIG_BAUDRATE		115200
+-#define CFG_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
++#define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
+ 
+ /***********************************************************
+  * Command definition
+@@ -99,32 +99,31 @@
+ 		"tftpboot ${loadaddr} ${tftp_server}:${kernel}; bootm\0"
+ 
+ /* configure for smc91xx debug board ethernet */
+-#define CONFIG_NET_MULTI 1
+ #define CONFIG_DRIVER_SMC911X          1
++#define CONFIG_DRIVER_SMC911X_16_BIT   1
+ #define CONFIG_DRIVER_SMC911X_BASE     CS5_BASE
+-#define CONFIG_DRIVER_SMC911X_32_BIT   1
+ 
+ #define CONFIG_ARP_TIMEOUT	200UL
+ 
+ /*
+  * Miscellaneous configurable options
+  */
+-#define CFG_LONGHELP		/* undef to save memory */
+-#define CFG_PROMPT		"=> "
+-#define CFG_CBSIZE		256		/* Console I/O Buffer Size */
++#define CONFIG_SYS_LONGHELP	/* undef to save memory */
++#define CONFIG_SYS_PROMPT	"=> "
++#define CONFIG_SYS_CBSIZE	256		/* Console I/O Buffer Size */
+ /* Print Buffer Size */
+-#define CFG_PBSIZE		(CFG_CBSIZE + sizeof(CFG_PROMPT) + 16)
+-#define CFG_MAXARGS		16		/* max number of command args */
+-#define CFG_BARGSIZE		CFG_CBSIZE	/* Boot Argument Buffer Size */
++#define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
++#define CONFIG_SYS_MAXARGS	16		/* max number of command args */
++#define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
+ 
+-#define CFG_MEMTEST_START	0		/* memtest works on */
+-#define CFG_MEMTEST_END		0x10000
++#define CONFIG_SYS_MEMTEST_START	0	/* memtest works on */
++#define CONFIG_SYS_MEMTEST_END		0x10000
+ 
+-#undef	CFG_CLKS_IN_HZ		/* everything, incl board info, in Hz */
++#undef	CONFIG_SYS_CLKS_IN_HZ	/* everything, incl board info, in Hz */
+ 
+-#define CFG_LOAD_ADDR		CONFIG_LOADADDR
++#define CONFIG_SYS_LOAD_ADDR	CONFIG_LOADADDR
+ 
+-#define CFG_HZ			CONFIG_MX31_CLK32
++#define CONFIG_SYS_HZ		CONFIG_MX31_CLK32
+ 
+ #define CONFIG_CMDLINE_EDITING	1
+ 
+@@ -146,15 +145,14 @@
+  * TODO: NAND Flash configure
+  */
+ 
+-#define CFG_NO_FLASH
++#define CONFIG_SYS_NO_FLASH
+ #define NAND_MAX_CHIPS         1
+-#define CFG_MAX_NAND_DEVICE    1
+-#define CFG_NAND_BASE          0x40000000
+-
+-#define	CFG_ENV_IS_IN_NAND	1
+-#define CFG_ENV_OFFSET		0x40000	/* 2nd block */
+-#define CFG_ENV_SIZE		(128*1024)
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
+ 
++#define	CONFIG_ENV_IS_IN_NAND	1
++#define CONFIG_ENV_OFFSET	0x40000	/* 2nd block */
++#define CONFIG_ENV_SIZE		(128*1024)
+ /*
+  * JFFS2 partitions TODO:
+  */
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index a141ad0..58b098e 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -217,8 +217,8 @@
+  * NAND FLASH driver setup
+  */
+ #define NAND_MAX_CHIPS         1
+-#define CFG_MAX_NAND_DEVICE    1
+-#define CFG_NAND_BASE          0x40000000
++#define CONFIG_SYS_MAX_NAND_DEVICE    1
++#define CONFIG_SYS_NAND_BASE          0x40000000
+ /*
+  * JFFS2 partitions
+  */
+-- 
+1.5.4.4
+

@@ -1,0 +1,2940 @@
+From 9f649aed95b9b0f860236e9ff96ba0ddb091be91 Mon Sep 17 00:00:00 2001
+From: Lionel Xu <r63889@freescale.com>
+Date: Fri, 31 Jul 2009 15:14:01 +0800
+Subject: [PATCH] ENGR00113941 MX233: Make UBOOT v2009.01 work on EVK board
+
+Porting MX233 UBOOT from 1.3.3 to V2009.01. Clear old cfg macro, such as
+CFG_HZ. Change MAC address getting source from initial configuration to
+On-Chip OTP.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ Makefile                                 |    3 +
+ board/stmp378x_dev/Makefile              |   52 ++
+ board/stmp378x_dev/config.mk             |    5 +
+ board/stmp378x_dev/lowlevel_init.S       |   34 +
+ board/stmp378x_dev/stmp378x_dev.c        |  158 +++++
+ board/stmp378x_dev/u-boot.lds            |   51 ++
+ cpu/arm926ejs/stmp378x/Makefile          |   47 ++
+ cpu/arm926ejs/stmp378x/config.mk         |    2 +
+ cpu/arm926ejs/stmp378x/reset.S           |   43 ++
+ cpu/arm926ejs/stmp378x/spi.c             |  255 ++++++++
+ cpu/arm926ejs/stmp378x/timer.c           |  246 ++++++++
+ drivers/net/Makefile                     |    2 +-
+ drivers/net/enc28j60_eth.c               | 1013 ++++++++++++++++++++++++++++++
+ drivers/serial/Makefile                  |    2 +
+ drivers/serial/stmp3xxx_dbguart.c        |  114 ++++
+ drivers/serial/stmp3xxx_dbguart.h        |   61 ++
+ include/asm-arm/arch-stmp378x/clkctrl.h  |   64 ++
+ include/asm-arm/arch-stmp378x/dbguart.h  |   30 +
+ include/asm-arm/arch-stmp378x/ocotp.h    |   69 ++
+ include/asm-arm/arch-stmp378x/pinmux.h   |   42 ++
+ include/asm-arm/arch-stmp378x/spi.h      |   69 ++
+ include/asm-arm/arch-stmp378x/ssp.h      |  100 +++
+ include/asm-arm/arch-stmp378x/stmp378x.h |   40 ++
+ include/asm-arm/arch-stmp378x/timrot.h   |   63 ++
+ include/configs/stmp378x_dev.h           |  151 +++++
+ lib_arm/board.c                          |    5 +
+ 26 files changed, 2720 insertions(+), 1 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 5eac5fb..56b447e 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2938,6 +2938,9 @@ nhk8815_onenand_config:	unconfig
+ omap1510inn_config :	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm925t omap1510inn
+ 
++stmp378x_dev_config : unconfig
++	@$(MKCONFIG) $(@:_config=) arm arm926ejs stmp378x_dev NULL stmp378x
++
+ xtract_omap1610xxx = $(subst _cs0boot,,$(subst _cs3boot,,$(subst _cs_autoboot,,$(subst _config,,$1))))
+ 
+ omap1610inn_config \
+diff --git a/board/stmp378x_dev/Makefile b/board/stmp378x_dev/Makefile
+new file mode 100644
+index 0000000..3c3eabd
+--- /dev/null
++++ b/board/stmp378x_dev/Makefile
+@@ -0,0 +1,52 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= stmp378x_dev.o
++SOBJS	:= lowlevel_init.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
++
+diff --git a/board/stmp378x_dev/config.mk b/board/stmp378x_dev/config.mk
+new file mode 100644
+index 0000000..cfd24d1
+--- /dev/null
++++ b/board/stmp378x_dev/config.mk
+@@ -0,0 +1,5 @@
++#
++# image should be loaded at 0x41008000
++#
++
++TEXT_BASE = 0x41008000
+diff --git a/board/stmp378x_dev/lowlevel_init.S b/board/stmp378x_dev/lowlevel_init.S
+new file mode 100644
+index 0000000..e874e4f
+--- /dev/null
++++ b/board/stmp378x_dev/lowlevel_init.S
+@@ -0,0 +1,34 @@
++/*
++ * Board specific setup info
++ *
++ * (C) Copyright 2003, ARM Ltd.
++ * Philippe Robin, <philippe.robin@arm.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <version.h>
++
++/* Set up the platform, once the cpu has been initialized */
++.globl lowlevel_init
++lowlevel_init:
++
++	/* All SDRAM settings are done by sdram_prep */
++	mov pc, lr
+diff --git a/board/stmp378x_dev/stmp378x_dev.c b/board/stmp378x_dev/stmp378x_dev.c
+new file mode 100644
+index 0000000..95f5d5b
+--- /dev/null
++++ b/board/stmp378x_dev/stmp378x_dev.c
+@@ -0,0 +1,158 @@
++/*
++ *
++ * (c) 2008 Embedded Alley Solutions, Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#include <common.h>
++#include <asm/arch/stmp378x.h>
++#include <asm/arch/clkctrl.h>
++#include <asm/arch/pinmux.h>
++#include <asm/arch/spi.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define KHz	1000
++#define MHz	(1000 * KHz)
++
++static void set_pinmux(void)
++{
++
++#if defined(CONFIG_SPI_SSP1)
++
++	/* Configure SSP1 pins for ENC28j60: 8maA */
++	REG_CLR(PINCTRL_BASE + PINCTRL_MUXSEL(4), 0x00003fff);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_DRIVE(8), 0X03333333);
++	REG_SET(PINCTRL_BASE + PINCTRL_DRIVE(8), 0x01111111);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_PULL(2), 0x0000003f);
++#endif
++
++#if defined(CONFIG_SPI_SSP2)
++
++	/* Configure SSP2 pins for ENC28j60: 8maA */
++	REG_CLR(PINCTRL_BASE + PINCTRL_MUXSEL(0), 0x00000fc3);
++	REG_SET(PINCTRL_BASE + PINCTRL_MUXSEL(0), 0x00000a82);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_MUXSEL(1), 0x00030300);
++	REG_SET(PINCTRL_BASE + PINCTRL_MUXSEL(1), 0x00020200);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_DRIVE(0), 0X00333003);
++	REG_SET(PINCTRL_BASE + PINCTRL_DRIVE(0), 0x00111001);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_DRIVE(2), 0x00030000);
++	REG_SET(PINCTRL_BASE + PINCTRL_DRIVE(2), 0x00010000);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_DRIVE(3), 0x00000003);
++	REG_SET(PINCTRL_BASE + PINCTRL_DRIVE(3), 0x00000001);
++
++	REG_CLR(PINCTRL_BASE + PINCTRL_PULL(0), 0x00100039);
++#endif
++
++}
++
++#define IO_DIVIDER	18
++static void set_clocks(void)
++{
++	u32 ssp_source_clk, ssp_clk;
++	u32 ssp_div = 1;
++	u32 val = 0;
++
++	/*
++	 * Configure 480Mhz IO clock
++	 */
++
++	/* Ungate IO_CLK and set divider */
++	REG_CLR(CLKCTRL_BASE + CLKCTRL_FRAC, FRAC_CLKGATEIO);
++	REG_CLR(CLKCTRL_BASE + CLKCTRL_FRAC, 0x3f << FRAC_IOFRAC);
++	REG_SET(CLKCTRL_BASE + CLKCTRL_FRAC, IO_DIVIDER << FRAC_IOFRAC);
++
++	/*
++	 * Set SSP CLK to desired value
++	 */
++
++	/* Calculate SSP_CLK divider relatively to 480Mhz IO_CLK*/
++	ssp_source_clk = 480 * MHz;
++	ssp_clk = CONFIG_SSP_CLK;
++	ssp_div = (ssp_source_clk + ssp_clk - 1) / ssp_clk;
++
++	/* Enable SSP clock */
++	val = REG_RD(CLKCTRL_BASE + CLKCTRL_SSP);
++	val &= ~SSP_CLKGATE;
++	REG_WR(CLKCTRL_BASE + CLKCTRL_SSP, val);
++
++	/* Wait while clock is gated */
++	while (REG_RD(CLKCTRL_BASE + CLKCTRL_SSP) & SSP_CLKGATE)
++		;
++
++	/* Set SSP clock divider */
++	val &= ~(0x1ff << SSP_DIV);
++	val |= ssp_div << SSP_DIV;
++	REG_WR(CLKCTRL_BASE + CLKCTRL_SSP, val);
++
++	/* Wait until new divider value is set */
++	while (REG_RD(CLKCTRL_BASE + CLKCTRL_SSP) & SSP_BUSY)
++		;
++
++	/* Set SSP clock source to IO_CLK */
++	REG_SET(CLKCTRL_BASE + CLKCTRL_CLKSEQ, CLKSEQ_BYPASS_SSP);
++	REG_CLR(CLKCTRL_BASE + CLKCTRL_CLKSEQ, CLKSEQ_BYPASS_SSP);
++}
++
++int dram_init(void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++
++	return 0;
++}
++
++int board_init(void)
++{
++	/* arch number of Freescale STMP 378x development board */
++	gd->bd->bi_arch_number = MACH_TYPE_STMP378X;
++
++	/* adress of boot parameters */
++	gd->bd->bi_boot_params = LINUX_BOOT_PARAM_ADDR;
++
++	set_clocks();
++
++	set_pinmux();
++
++	/* Configure SPI on SSP1 or SSP2 */
++	spi_init();
++
++	return 0;
++}
++
++int misc_init_r(void)
++{
++	return 0;
++}
++
++int checkboard(void)
++{
++	printf("Board: STMP378x dev. \n");
++	return 0;
++}
+diff --git a/board/stmp378x_dev/u-boot.lds b/board/stmp378x_dev/u-boot.lds
+new file mode 100644
+index 0000000..82cb8e3
+--- /dev/null
++++ b/board/stmp378x_dev/u-boot.lds
+@@ -0,0 +1,51 @@
++/*
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++	. = ALIGN(4);
++	.text	:
++	{
++	  cpu/arm926ejs/start.o	(.text)
++	  *(.text)
++	}
++	.rodata : { *(.rodata) }
++	. = ALIGN(4);
++	.data : { *(.data) }
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss (NOLOAD) : { *(.bss) }
++	_end = .;
++}
+diff --git a/cpu/arm926ejs/stmp378x/Makefile b/cpu/arm926ejs/stmp378x/Makefile
+new file mode 100644
+index 0000000..3b23886
+--- /dev/null
++++ b/cpu/arm926ejs/stmp378x/Makefile
+@@ -0,0 +1,47 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= timer.o spi.o
++SOBJS	= reset.o
++
++SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS) $(SOBJS))
++START	:= $(addprefix $(obj),$(START))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/arm926ejs/stmp378x/config.mk b/cpu/arm926ejs/stmp378x/config.mk
+new file mode 100644
+index 0000000..b524ad1
+--- /dev/null
++++ b/cpu/arm926ejs/stmp378x/config.mk
+@@ -0,0 +1,2 @@
++PLATFORM_CPPFLAGS += -march=armv5te
++PLATFORM_CPPFLAGS += $(call cc-option,-mtune=arm926ejs,)
+\ No newline at end of file
+diff --git a/cpu/arm926ejs/stmp378x/reset.S b/cpu/arm926ejs/stmp378x/reset.S
+new file mode 100644
+index 0000000..a64103b
+--- /dev/null
++++ b/cpu/arm926ejs/stmp378x/reset.S
+@@ -0,0 +1,43 @@
++/*
++ * Processor reset for Freescale STMP378x SoC.
++ *
++ * Copyright (C) 2007 Sergey Kubushyn <ksi@koi8.net>
++ *
++ * -----------------------------------------------------
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++.globl reset_cpu
++reset_cpu:
++	ldr	r0, POWER_CHARGE
++	mov	r1, #0x0
++	str	r1, [r0]
++	ldr	r0, POWER_MINPWR
++	str	r1, [r0]
++	ldr	r0, CLKCTRL_RESET
++	mov	r1, #0x1
++	str	r1, [r0]
++_loop_forever:
++	b	_loop_forever
++
++POWER_MINPWR:
++	.word 0x80044020
++POWER_CHARGE:
++	.word 0x80044030
++CLKCTRL_RESET:
++	.word 0x80040120
++
+diff --git a/cpu/arm926ejs/stmp378x/spi.c b/cpu/arm926ejs/stmp378x/spi.c
+new file mode 100644
+index 0000000..fed0b97
+--- /dev/null
++++ b/cpu/arm926ejs/stmp378x/spi.c
+@@ -0,0 +1,255 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Freescale STMP378x SSP/SPI driver
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#include <asm/arch/spi.h>
++
++#define SPI_NUM_BUSES	2
++#define SPI_NUM_SLAVES	3
++
++/* Initalized in spi_init() depending on SSP port configuration */
++static unsigned long ssp_bases[SPI_NUM_BUSES];
++
++/* Set in spi_set_cfg() depending on which SSP port is being used */
++static unsigned long ssp_base = SSP1_BASE;
++
++/*
++ * Init SSP port: SSP1 (@bus = 0) or SSP2 (@bus == 1)
++ */
++static void ssp_spi_init(unsigned int bus)
++{
++	u32 spi_div;
++	u32 val = 0;
++
++	if (bus >= SPI_NUM_BUSES) {
++		printf("SPI bus %d doesn't exist\n", bus);
++		return;
++	}
++
++	ssp_base = ssp_bases[bus];
++
++	/* Reset block */
++
++	/* Clear SFTRST */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
++	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_SFTRST)
++		;
++
++	/* Clear CLKGATE */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_CLKGATE);
++
++	/* Set SFTRST and wait until CLKGATE is set */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
++	while (!(REG_RD(ssp_base + SSP_CTRL0) & CTRL0_CLKGATE))
++		;
++
++	/* Clear SFTRST and CLKGATE */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_SFTRST);
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_CLKGATE);
++
++	/*
++	* Set CLK to desired value
++	*/
++
++	spi_div = ((CONFIG_SSP_CLK>>1) + CONFIG_SPI_CLK - 1) / CONFIG_SPI_CLK;
++	val = (2 << TIMING_CLOCK_DIVIDE) | ((spi_div - 1) << TIMING_CLOCK_RATE);
++	REG_WR(ssp_base + SSP_TIMING, val);
++
++	/* Set transfer parameters */
++
++	/* Set SSP SPI Master mode and word length to 8 bit */
++	REG_WR(ssp_base + SSP_CTRL1, WORD_LENGTH8 | SSP_MODE_SPI);
++
++	/* Set BUS_WIDTH to 1 bit and XFER_COUNT to 1 byte */
++	REG_WR(ssp_base + SSP_CTRL0,
++	       BUS_WIDTH_SPI1 | (0x1 << CTRL0_XFER_COUNT));
++
++	/*
++	* Set BLOCK_SIZE and BLOCK_COUNT to 0, so that XFER_COUNT
++	* reflects number of bytes to send. Disalbe other bits as
++	* well
++	*/
++	REG_WR(ssp_base + SSP_CMD0, 0x0);
++}
++
++/*
++ * Init SSP ports, must be called first and only once
++ */
++void spi_init(void)
++{
++#ifdef CONFIG_SPI_SSP1
++	ssp_bases[0] = SSP1_BASE;
++	ssp_spi_init(0);
++#endif
++
++#ifdef CONFIG_SPI_SSP2
++	ssp_bases[1] = SSP2_BASE;
++	ssp_spi_init(1);
++#endif
++}
++
++void spi_set_cfg(unsigned int bus, unsigned int cs, unsigned long mode)
++{
++	u32 clr_mask = 0;
++	u32 set_mask = 0;
++
++	if (bus >= SPI_NUM_BUSES || cs >= SPI_NUM_SLAVES) {
++		printf("SPI device %d:%d doesn't exist", bus, cs);
++		return;
++	}
++
++	if (ssp_bases[bus] == 0) {
++		printf("SSP port %d isn't in SPI mode\n", bus + 1);
++		return;
++	}
++
++	/* Set SSP port to use */
++	ssp_base = ssp_bases[bus];
++
++	/* Set phase and polarity: HW_SSP_CTRL1 */
++	if (mode & SPI_PHASE)
++		set_mask |= CTRL1_PHASE;
++	else
++		clr_mask |= CTRL1_PHASE;
++
++	if (mode & SPI_POLARITY)
++		set_mask |= CTRL1_POLARITY;
++	else
++		clr_mask |= CTRL1_POLARITY;
++
++	REG_SET(ssp_base + SSP_CTRL1, set_mask);
++	REG_CLR(ssp_base + SSP_CTRL1, clr_mask);
++
++	/* Set SSn number: HW_SSP_CTRL0 */
++	REG_CLR(ssp_base + SSP_CTRL0, SPI_CS_CLR_MASK);
++
++	switch (cs) {
++	case 0:
++		set_mask = SPI_CS0;
++		break;
++	case 1:
++		set_mask = SPI_CS1;
++		break;
++	case 2:
++		set_mask = SPI_CS2;
++		break;
++	}
++
++	REG_SET(ssp_base + SSP_CTRL0, set_mask);
++}
++
++/* Read single data byte */
++static unsigned char spi_read(void)
++{
++	unsigned char b = 0;
++
++	/* Set XFER_LENGTH to 1 */
++	REG_CLR(ssp_base + SSP_CTRL0, 0xffff);
++	REG_SET(ssp_base + SSP_CTRL0, 1);
++
++	/* Enable READ mode */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_READ);
++
++	/* Set RUN bit */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_RUN);
++
++
++	/* Set transfer */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_DATA_XFER);
++
++	while (REG_RD(ssp_base + SSP_STATUS) & STATUS_FIFO_EMPTY)
++		;
++
++	/* Read data byte */
++	b = REG_RD(ssp_base + SSP_DATA) & 0xff;
++
++	/* Wait until RUN bit is cleared */
++	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_RUN)
++			;
++
++	return b;
++}
++
++/* Write single data byte */
++static void spi_write(unsigned char b)
++{
++	/* Set XFER_LENGTH to 1 */
++	REG_CLR(ssp_base + SSP_CTRL0, 0xffff);
++	REG_SET(ssp_base + SSP_CTRL0, 1);
++
++	/* Enable WRITE mode */
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_READ);
++
++	/* Set RUN bit */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_RUN);
++
++	/* Write data byte */
++	REG_WR(ssp_base + SSP_DATA, b);
++
++	/* Set transfer */
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_DATA_XFER);
++
++	/* Wait until RUN bit is cleared */
++	while (REG_RD(ssp_base + SSP_CTRL0) & CTRL0_RUN)
++		;
++}
++
++static void spi_lock_cs(void)
++{
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_IGNORE_CRC);
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_LOCK_CS);
++}
++
++static void spi_unlock_cs(void)
++{
++	REG_CLR(ssp_base + SSP_CTRL0, CTRL0_LOCK_CS);
++	REG_SET(ssp_base + SSP_CTRL0, CTRL0_IGNORE_CRC);
++}
++
++void spi_txrx(const char *dout, unsigned int tx_len, char *din,
++	       unsigned int rx_len, unsigned long flags)
++{
++	int i;
++
++	if (tx_len == 0 && rx_len == 0)
++		return;
++
++	if (flags & SPI_START)
++		spi_lock_cs();
++
++	for (i = 0; i < tx_len; i++) {
++
++		/* Check if it is last data byte to transfer */
++		if (flags & SPI_STOP && rx_len == 0 && i == tx_len - 1)
++			spi_unlock_cs();
++
++		spi_write(dout[i]);
++	}
++
++	for (i = 0; i < rx_len; i++) {
++
++		/* Check if it is last data byte to transfer */
++		if (flags & SPI_STOP && i == rx_len - 1)
++			spi_unlock_cs();
++
++		din[i] = spi_read();
++	}
++}
+diff --git a/cpu/arm926ejs/stmp378x/timer.c b/cpu/arm926ejs/stmp378x/timer.c
+new file mode 100644
+index 0000000..07834ac
+--- /dev/null
++++ b/cpu/arm926ejs/stmp378x/timer.c
+@@ -0,0 +1,246 @@
++/*
++ * (C) Copyright 2003
++ * Texas Instruments <www.ti.com>
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Marius Groeger <mgroeger@sysgo.de>
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Alex Zuepke <azu@sysgo.de>
++ *
++ * (C) Copyright 2002-2004
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * (C) Copyright 2004
++ * Philippe Robin, ARM Ltd. <philippe.robin@arm.com>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <arm926ejs.h>
++#include <asm/arch/stmp378x.h>
++#include <asm/arch/timrot.h>
++
++#define CONFIG_USE_TIMER0
++
++#if defined(CONFIG_USE_TIMER0)
++#define TIMCTRL		TIMCTRL0
++#define TIMCOUNT	TIMCOUNT0
++#elif defined(CONFIG_USE_TIMER1)
++#define TIMCTRL		TIMCTRL1
++#define TIMCOUNT	TIMCOUNT1
++#elif defined(CONFIG_USE_TIMER2)
++#define TIMCTRL		TIMCTRL2
++#define TIMCOUNT	TIMCOUNT2
++#elif defined(CONFIG_USE_TIMER3)
++#define TIMCTRL		TIMCTRL3
++#define TIMCOUNT	TIMCOUNT3
++#else
++#error "Define which STMP378x timer to use"
++#endif
++
++#define TIMER_LOAD_VAL 0x0000ffff
++
++/* macro to read the 16 bit timer */
++#define READ_TIMER ((REG_RD(TIMROT_BASE + TIMCOUNT) & 0xffff0000) >> 16)
++
++static ulong timestamp;
++static ulong lastdec;
++
++int timer_init(void)
++{
++	u32 val;
++
++	/*
++	 * Reset Timers and Rotary Encoder module
++	 */
++
++	/* Clear SFTRST */
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 31);
++	while (REG_RD(TIMROT_BASE + ROTCTRL) & (1 << 31))
++		;
++
++	/* Clear CLKGATE */
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 30);
++
++	/* Set SFTRST and wait until CLKGATE is set */
++	REG_SET(TIMROT_BASE + ROTCTRL, 1 << 31);
++	while (!(REG_RD(TIMROT_BASE + ROTCTRL) & (1 << 30)))
++		;
++
++	/* Clear SFTRST and CLKGATE */
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 31);
++	REG_CLR(TIMROT_BASE + ROTCTRL, 1 << 30);
++
++	/*
++	* Now initialize timer
++	*/
++
++	/* Set fixed_count to 0 */
++	REG_WR(TIMROT_BASE + TIMCOUNT, 0);
++
++	/* set UPDATE bit and 1Khz frequency */
++	REG_WR(TIMROT_BASE + TIMCTRL,
++	       TIMCTRL_RELOAD | TIMCTRL_UPDATE | TIMCTRL_SELECT_1KHZ);
++
++	/* Set fixed_count to maximal value */
++	REG_WR(TIMROT_BASE + TIMCOUNT, TIMER_LOAD_VAL);
++
++	/* init the timestamp and lastdec value */
++	reset_timer_masked();
++
++	return 0;
++}
++
++/*
++ * timer without interrupts
++ */
++
++void reset_timer(void)
++{
++	reset_timer_masked();
++}
++
++ulong get_timer(ulong base)
++{
++	return get_timer_masked() - base;
++}
++
++void set_timer(ulong t)
++{
++	timestamp = t;
++}
++
++/* delay x useconds AND perserve advance timstamp value */
++void udelay(unsigned long usec)
++{
++	ulong tmo, tmp;
++
++	if (usec >= 1000) {
++		/* if "big" number, spread normalization to seconds */
++		tmo = usec / 1000;
++		/* start to normalize for usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;
++		/* find number of "ticks" to wait to achieve target */
++		tmo /= 1000;
++		/* finish normalize. */
++	} else {
++		/* else small number, don't kill it prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++		tmo /= (1000*1000);
++	}
++
++	tmp = get_timer(0);
++		/* get current timestamp */
++	if ((tmo + tmp + 1) < tmp)
++		/* if setting this fordward will roll time stamp */
++		reset_timer_masked();
++		/* reset "advancing" timestamp to 0, set lastdec value */
++	else
++		tmo += tmp;
++		/* else, set advancing stamp wake up time */
++
++	while (get_timer_masked() < tmo)/* loop till event */
++		/*NOP*/;
++}
++
++void reset_timer_masked(void)
++{
++	/* reset time */
++	lastdec = READ_TIMER;  /* capure current decrementer value time */
++	timestamp = 0;	       /* start "advancing" time stamp from 0 */
++}
++
++ulong get_timer_masked(void)
++{
++	ulong now = READ_TIMER;		/* current tick value */
++
++	if (lastdec >= now) {		/* normal mode (non roll) */
++		/* normal mode */
++		timestamp += lastdec - now;
++		/* move stamp fordward with absoulte diff ticks */
++	} else {
++		/* we have overflow of the count down timer */
++		/* nts = ts + ld + (TLV - now)
++		 * ts=old stamp, ld=time that passed before passing through -1
++		 * (TLV-now) amount of time after passing though -1
++		 * nts = new "advancing time stamp"...it could also roll
++		 * and cause problems.
++		 */
++		timestamp += lastdec + TIMER_LOAD_VAL - now + 1;
++	}
++	lastdec = now;
++
++	return timestamp;
++}
++
++/* waits specified delay value and resets timestamp */
++void udelay_masked(unsigned long usec)
++{
++	ulong tmo;
++	ulong endtime;
++	signed long diff;
++
++	if (usec >= 1000) {
++		/* if "big" number, spread normalization to seconds */
++		tmo = usec / 1000;
++		/* start to normalize for usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;
++		/* find number of "ticks" to wait to achieve target */
++		tmo /= 1000;
++		/* finish normalize. */
++	} else {
++		/* else small number, don't kill it prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++		tmo /= (1000*1000);
++	}
++
++	endtime = get_timer_masked() + tmo;
++
++	do {
++		ulong now = get_timer_masked();
++		diff = endtime - now;
++	} while (diff >= 0);
++}
++
++/*
++ * This function is derived from PowerPC code (read timebase as long long).
++ * On ARM it just returns the timer value.
++ */
++unsigned long long get_ticks(void)
++{
++	return get_timer(0);
++}
++
++/*
++ * This function is derived from PowerPC code (timebase clock frequency).
++ * On ARM it returns the number of timer ticks per second.
++ */
++ulong get_tbclk(void)
++{
++	ulong tbclk;
++
++	tbclk = CONFIG_SYS_HZ;
++	return tbclk;
++}
+diff --git a/drivers/net/Makefile b/drivers/net/Makefile
+index e24c4ec..6ba00be 100644
+--- a/drivers/net/Makefile
++++ b/drivers/net/Makefile
+@@ -37,7 +37,7 @@ COBJS-$(CONFIG_DNET) += dnet.o
+ COBJS-$(CONFIG_E1000) += e1000.o
+ COBJS-$(CONFIG_EEPRO100) += eepro100.o
+ COBJS-$(CONFIG_ENC28J60) += enc28j60.o
+-COBJS-$(CONFIG_FEC_MXC) += fec_mxc.o
++COBJS-$(CONFIG_ENC28J60_ETH) += enc28j60_eth.o
+ COBJS-$(CONFIG_FSLDMAFEC) += fsl_mcdmafec.o mcfmii.o
+ COBJS-$(CONFIG_FTMAC100) += ftmac100.o
+ COBJS-$(CONFIG_GRETH) += greth.o
+diff --git a/drivers/net/enc28j60_eth.c b/drivers/net/enc28j60_eth.c
+new file mode 100644
+index 0000000..c1c88d2
+--- /dev/null
++++ b/drivers/net/enc28j60_eth.c
+@@ -0,0 +1,1013 @@
++/*
++ * Copyright (c) 2008 Embedded Alley Solutions, Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Based on drivers/net/enc28j60.c
++ *
++ * The original driver is tied to LPC2292 SPI interface. So SPI
++ * layer had to be changed in order to get the driver working for
++ * STMP378x.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#ifdef CONFIG_ENC28J60_ETH
++#include <net.h>
++#include <asm/arch/spi.h>
++
++/*
++ * Control Registers in Bank 0
++ */
++
++#define CTL_REG_ERDPTL	 0x00
++#define CTL_REG_ERDPTH	 0x01
++#define CTL_REG_EWRPTL	 0x02
++#define CTL_REG_EWRPTH	 0x03
++#define CTL_REG_ETXSTL	 0x04
++#define CTL_REG_ETXSTH	 0x05
++#define CTL_REG_ETXNDL	 0x06
++#define CTL_REG_ETXNDH	 0x07
++#define CTL_REG_ERXSTL	 0x08
++#define CTL_REG_ERXSTH	 0x09
++#define CTL_REG_ERXNDL	 0x0A
++#define CTL_REG_ERXNDH	 0x0B
++#define CTL_REG_ERXRDPTL 0x0C
++#define CTL_REG_ERXRDPTH 0x0D
++#define CTL_REG_ERXWRPTL 0x0E
++#define CTL_REG_ERXWRPTH 0x0F
++#define CTL_REG_EDMASTL  0x10
++#define CTL_REG_EDMASTH  0x11
++#define CTL_REG_EDMANDL  0x12
++#define CTL_REG_EDMANDH  0x13
++#define CTL_REG_EDMADSTL 0x14
++#define CTL_REG_EDMADSTH 0x15
++#define CTL_REG_EDMACSL  0x16
++#define CTL_REG_EDMACSH  0x17
++/* these are common in all banks */
++#define CTL_REG_EIE	 0x1B
++#define CTL_REG_EIR	 0x1C
++#define CTL_REG_ESTAT	 0x1D
++#define CTL_REG_ECON2	 0x1E
++#define CTL_REG_ECON1	 0x1F
++
++/*
++ * Control Registers in Bank 1
++ */
++
++#define CTL_REG_EHT0	0x00
++#define CTL_REG_EHT1	0x01
++#define CTL_REG_EHT2	0x02
++#define CTL_REG_EHT3	0x03
++#define CTL_REG_EHT4	0x04
++#define CTL_REG_EHT5	0x05
++#define CTL_REG_EHT6	0x06
++#define CTL_REG_EHT7	0x07
++#define CTL_REG_EPMM0	0x08
++#define CTL_REG_EPMM1	0x09
++#define CTL_REG_EPMM2	0x0A
++#define CTL_REG_EPMM3	0x0B
++#define CTL_REG_EPMM4	0x0C
++#define CTL_REG_EPMM5	0x0D
++#define CTL_REG_EPMM6	0x0E
++#define CTL_REG_EPMM7	0x0F
++#define CTL_REG_EPMCSL	0x10
++#define CTL_REG_EPMCSH	0x11
++#define CTL_REG_EPMOL	0x14
++#define CTL_REG_EPMOH	0x15
++#define CTL_REG_EWOLIE	0x16
++#define CTL_REG_EWOLIR	0x17
++#define CTL_REG_ERXFCON 0x18
++#define CTL_REG_EPKTCNT 0x19
++
++/*
++ * Control Registers in Bank 2
++ */
++
++#define CTL_REG_MACON1	 0x00
++#define CTL_REG_MACON2	 0x01
++#define CTL_REG_MACON3	 0x02
++#define CTL_REG_MACON4	 0x03
++#define CTL_REG_MABBIPG  0x04
++#define CTL_REG_MAIPGL	 0x06
++#define CTL_REG_MAIPGH	 0x07
++#define CTL_REG_MACLCON1 0x08
++#define CTL_REG_MACLCON2 0x09
++#define CTL_REG_MAMXFLL  0x0A
++#define CTL_REG_MAMXFLH  0x0B
++#define CTL_REG_MAPHSUP  0x0D
++#define CTL_REG_MICON	 0x11
++#define CTL_REG_MICMD	 0x12
++#define CTL_REG_MIREGADR 0x14
++#define CTL_REG_MIWRL	 0x16
++#define CTL_REG_MIWRH	 0x17
++#define CTL_REG_MIRDL	 0x18
++#define CTL_REG_MIRDH	 0x19
++
++/*
++ * Control Registers in Bank 3
++ */
++
++#define CTL_REG_MAADR1	0x00
++#define CTL_REG_MAADR0	0x01
++#define CTL_REG_MAADR3	0x02
++#define CTL_REG_MAADR2	0x03
++#define CTL_REG_MAADR5	0x04
++#define CTL_REG_MAADR4	0x05
++#define CTL_REG_EBSTSD	0x06
++#define CTL_REG_EBSTCON 0x07
++#define CTL_REG_EBSTCSL 0x08
++#define CTL_REG_EBSTCSH 0x09
++#define CTL_REG_MISTAT	0x0A
++#define CTL_REG_EREVID	0x12
++#define CTL_REG_ECOCON	0x15
++#define CTL_REG_EFLOCON 0x17
++#define CTL_REG_EPAUSL	0x18
++#define CTL_REG_EPAUSH	0x19
++
++
++/*
++ * PHY Register
++ */
++
++#define PHY_REG_PHID1 0x02
++#define PHY_REG_PHID2 0x03
++/* taken from the Linux driver */
++#define PHY_REG_PHCON1 0x00
++#define PHY_REG_PHCON2 0x10
++#define PHY_REG_PHLCON 0x14
++
++/*
++ * Receive Filter Register (ERXFCON) bits
++ */
++
++#define ENC_RFR_UCEN  0x80
++#define ENC_RFR_ANDOR 0x40
++#define ENC_RFR_CRCEN 0x20
++#define ENC_RFR_PMEN  0x10
++#define ENC_RFR_MPEN  0x08
++#define ENC_RFR_HTEN  0x04
++#define ENC_RFR_MCEN  0x02
++#define ENC_RFR_BCEN  0x01
++
++/*
++ * ECON1 Register Bits
++ */
++
++#define ENC_ECON1_TXRST  0x80
++#define ENC_ECON1_RXRST  0x40
++#define ENC_ECON1_DMAST  0x20
++#define ENC_ECON1_CSUMEN 0x10
++#define ENC_ECON1_TXRTS  0x08
++#define ENC_ECON1_RXEN	 0x04
++#define ENC_ECON1_BSEL1  0x02
++#define ENC_ECON1_BSEL0  0x01
++
++/*
++ * ECON2 Register Bits
++ */
++#define ENC_ECON2_AUTOINC 0x80
++#define ENC_ECON2_PKTDEC  0x40
++#define ENC_ECON2_PWRSV   0x20
++#define ENC_ECON2_VRPS	  0x08
++
++/*
++ * EIR Register Bits
++ */
++#define ENC_EIR_PKTIF  0x40
++#define ENC_EIR_DMAIF  0x20
++#define ENC_EIR_LINKIF 0x10
++#define ENC_EIR_TXIF   0x08
++#define ENC_EIR_WOLIF  0x04
++#define ENC_EIR_TXERIF 0x02
++#define ENC_EIR_RXERIF 0x01
++
++/*
++ * ESTAT Register Bits
++ */
++
++#define ENC_ESTAT_INT	  0x80
++#define ENC_ESTAT_LATECOL 0x10
++#define ENC_ESTAT_RXBUSY  0x04
++#define ENC_ESTAT_TXABRT  0x02
++#define ENC_ESTAT_CLKRDY  0x01
++
++/*
++ * EIE Register Bits
++ */
++
++#define ENC_EIE_INTIE  0x80
++#define ENC_EIE_PKTIE  0x40
++#define ENC_EIE_DMAIE  0x20
++#define ENC_EIE_LINKIE 0x10
++#define ENC_EIE_TXIE   0x08
++#define ENC_EIE_WOLIE  0x04
++#define ENC_EIE_TXERIE 0x02
++#define ENC_EIE_RXERIE 0x01
++
++/*
++ * MACON1 Register Bits
++ */
++#define ENC_MACON1_LOOPBK  0x10
++#define ENC_MACON1_TXPAUS  0x08
++#define ENC_MACON1_RXPAUS  0x04
++#define ENC_MACON1_PASSALL 0x02
++#define ENC_MACON1_MARXEN  0x01
++
++
++/*
++ * MACON2 Register Bits
++ */
++#define ENC_MACON2_MARST   0x80
++#define ENC_MACON2_RNDRST  0x40
++#define ENC_MACON2_MARXRST 0x08
++#define ENC_MACON2_RFUNRST 0x04
++#define ENC_MACON2_MATXRST 0x02
++#define ENC_MACON2_TFUNRST 0x01
++
++/*
++ * MACON3 Register Bits
++ */
++#define ENC_MACON3_PADCFG2 0x80
++#define ENC_MACON3_PADCFG1 0x40
++#define ENC_MACON3_PADCFG0 0x20
++#define ENC_MACON3_TXCRCEN 0x10
++#define ENC_MACON3_PHDRLEN 0x08
++#define ENC_MACON3_HFRMEN  0x04
++#define ENC_MACON3_FRMLNEN 0x02
++#define ENC_MACON3_FULDPX  0x01
++
++/*
++ * MICMD Register Bits
++ */
++#define ENC_MICMD_MIISCAN 0x02
++#define ENC_MICMD_MIIRD   0x01
++
++/*
++ * MISTAT Register Bits
++ */
++#define ENC_MISTAT_NVALID 0x04
++#define ENC_MISTAT_SCAN   0x02
++#define ENC_MISTAT_BUSY   0x01
++
++/*
++ * PHID1 and PHID2 values
++ */
++#define ENC_PHID1_VALUE 0x0083
++#define ENC_PHID2_VALUE 0x1400
++#define ENC_PHID2_MASK	0xFC00
++
++#define FAILSAFE_VALUE 5000
++
++/*
++ * Controller memory layout:
++ *
++ * 0x0000 - 0x17ff  6k bytes receive buffer
++ * 0x1800 - 0x1fff  2k bytes transmit buffer
++ */
++/* Use the lower memory for receiver buffer. See errata pt. 5 */
++#define ENC_RX_BUF_START 0x0000
++#define ENC_TX_BUF_START 0x1800
++
++/* taken from the Linux driver */
++#define ENC_RX_BUF_END   0x17ff
++#define ENC_TX_BUF_END   0x1fff
++
++/* maximum frame length */
++#define ENC_MAX_FRM_LEN 1518
++
++static unsigned char encReadReg(unsigned char regNo);
++static void encWriteReg(unsigned char regNo, unsigned char data);
++static void encWriteRegRetry(unsigned char regNo, unsigned char data, int c);
++static void encReadBuff(unsigned short length, unsigned char *pBuff);
++static void encWriteBuff(unsigned short length, unsigned char *pBuff);
++static void encBitSet(unsigned char regNo, unsigned char data);
++static void encBitClr(unsigned char regNo, unsigned char data);
++static unsigned short encPhyRead(unsigned char addr);
++static void encPhyWrite(unsigned char, unsigned short);
++static void encReset(void);
++static void encInit(unsigned char *pEthAddr);
++static void encReceiverReset(void);
++static void encReceiverResetCallback(void);
++static void encPoll(void);
++static void encRx(void);
++
++#define m_nic_read(reg) encReadReg(reg)
++#define m_nic_write(reg, data) encWriteReg(reg, data)
++#define m_nic_write_retry(reg, data, count) encWriteRegRetry(reg, data, count)
++#define m_nic_read_data(len, buf) encReadBuff((len), (buf))
++#define m_nic_write_data(len, buf) encWriteBuff((len), (buf))
++/* bit field set */
++#define m_nic_bfs(reg, data) encBitSet(reg, data)
++/* bit field clear */
++#define m_nic_bfc(reg, data) encBitClr(reg, data)
++
++
++/* current bank in enc28j60 */
++static unsigned char next_pointer_lsb;
++static unsigned char next_pointer_msb;
++
++static unsigned char buffer[ENC_MAX_FRM_LEN];
++static int rxResetCounter;
++
++#define RX_RESET_COUNTER 1000;
++
++/******************************************************************************
++ *			U-boot network stack interfaces			      *
++ *****************************************************************************/
++
++/*
++ * Always returns 0
++ */
++int eth_init(bd_t *bis)
++{
++	unsigned char estatVal;
++
++	/* taken from the Linux driver - dangerous stuff here! */
++	/* Wait for CLKRDY to become set (i.e., check that we can
++	 * communicate with the ENC)
++	 */
++	do {
++		estatVal = m_nic_read(CTL_REG_ESTAT);
++	} while ((estatVal & 0x08) || (~estatVal & ENC_ESTAT_CLKRDY));
++
++	/* initialize controller */
++	encReset();
++	encInit(bis->bi_enetaddr);
++
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_RXEN);	/* enable receive */
++
++	return 0;
++}
++
++int eth_send(volatile void *packet, int length)
++{
++	/* check frame length, etc. */
++	/* TODO: */
++
++	/* switch to bank 0 */
++	m_nic_bfc(CTL_REG_ECON1, (ENC_ECON1_BSEL1 | ENC_ECON1_BSEL0));
++
++	/* set EWRPT */
++	m_nic_write(CTL_REG_EWRPTL, (ENC_TX_BUF_START & 0xff));
++	m_nic_write(CTL_REG_EWRPTH, (ENC_TX_BUF_START >> 8));
++
++	/* set ETXND */
++	m_nic_write(CTL_REG_ETXNDL, (length + ENC_TX_BUF_START) & 0xFF);
++	m_nic_write(CTL_REG_ETXNDH, (length + ENC_TX_BUF_START) >> 8);
++
++	/* set ETXST */
++	m_nic_write(CTL_REG_ETXSTL, ENC_TX_BUF_START & 0xFF);
++	m_nic_write(CTL_REG_ETXSTH, ENC_TX_BUF_START >> 8);
++
++	/* write packet */
++	m_nic_write_data(length, (unsigned char *) packet);
++
++	/* taken from the Linux driver */
++	/* Verify that the internal transmit logic has not been altered
++	 * by excessive collisions.  See Errata B4 12 and 14.
++	 */
++	if (m_nic_read(CTL_REG_EIR) & ENC_EIR_TXERIF) {
++		m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_TXRST);
++		m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_TXRST);
++	}
++	m_nic_bfc(CTL_REG_EIR, (ENC_EIR_TXERIF | ENC_EIR_TXIF));
++
++	/* set ECON1.TXRTS */
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_TXRTS);
++
++	return 0;
++}
++
++/*
++ * Check for received packets. Call NetReceive for each packet. The return
++ * value is ignored by the caller.
++ */
++int eth_rx(void)
++{
++	if (rxResetCounter > 0 && --rxResetCounter == 0)
++		encReceiverResetCallback();
++
++	encPoll();
++
++	return 0;
++}
++
++void eth_halt(void)
++{
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_RXEN);	/* disable receive */
++}
++
++/******************************************************************************
++ *			ENC28J60 interface				      *
++ *****************************************************************************/
++
++/*
++ * This function resets the receiver only. This function may be called from
++ * interrupt-context.
++ */
++static void encReceiverReset(void)
++{
++	unsigned char econ1;
++
++	econ1 = m_nic_read(CTL_REG_ECON1);
++	if ((econ1 & ENC_ECON1_RXRST) == 0) {
++		m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_RXRST);
++		rxResetCounter = RX_RESET_COUNTER;
++	}
++}
++
++/*
++ * receiver reset timer
++ */
++static void encReceiverResetCallback(void)
++{
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_RXRST);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_RXEN);	/* enable receive */
++}
++
++
++/*
++ * poll for events
++ */
++static void encPoll(void)
++{
++	unsigned char eir_reg;
++	volatile unsigned char estat_reg;
++	unsigned char pkt_cnt;
++
++#ifdef CONFIG_USE_IRQ
++	/* clear global interrupt enable bit in enc28j60 */
++	m_nic_bfc(CTL_REG_EIE, ENC_EIE_INTIE);
++#endif
++	estat_reg = m_nic_read(CTL_REG_ESTAT);
++
++	eir_reg = m_nic_read(CTL_REG_EIR);
++
++	if (eir_reg & ENC_EIR_TXIF) {
++		/* clear TXIF bit in EIR */
++		m_nic_bfc(CTL_REG_EIR, ENC_EIR_TXIF);
++	}
++
++	/* We have to use pktcnt and not pktif bit, see errata pt. 6 */
++
++	/* move to bank 1 */
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++
++	/* read pktcnt */
++	pkt_cnt = m_nic_read(CTL_REG_EPKTCNT);
++
++	if (pkt_cnt > 0) {
++		if ((eir_reg & ENC_EIR_PKTIF) == 0) {
++		/*printf("encPoll: pkt cnt > 0, but pktif not set\n"); */
++		}
++		encRx();
++		/* clear PKTIF bit in EIR, this should not need to be done
++		 * but it seems like we get problems if we do not */
++		m_nic_bfc(CTL_REG_EIR, ENC_EIR_PKTIF);
++	}
++
++	if (eir_reg & ENC_EIR_RXERIF) {
++		printf("encPoll: rx error\n");
++		m_nic_bfc(CTL_REG_EIR, ENC_EIR_RXERIF);
++	}
++	if (eir_reg & ENC_EIR_TXERIF) {
++		printf("encPoll: tx error\n");
++		m_nic_bfc(CTL_REG_EIR, ENC_EIR_TXERIF);
++	}
++
++#ifdef CONFIG_USE_IRQ
++	/* set global interrupt enable bit in enc28j60 */
++	m_nic_bfs(CTL_REG_EIE, ENC_EIE_INTIE);
++#endif
++}
++
++/*
++ * Receive packet
++ */
++static void encRx(void)
++{
++	unsigned short pkt_len;
++	unsigned short copy_len;
++	unsigned short status;
++	unsigned char eir_reg;
++	unsigned char pkt_cnt = 0;
++	unsigned short rxbuf_rdpt;
++
++	/* switch to bank 0 */
++	m_nic_bfc(CTL_REG_ECON1, (ENC_ECON1_BSEL1 | ENC_ECON1_BSEL0));
++
++	m_nic_write(CTL_REG_ERDPTL, next_pointer_lsb);
++	m_nic_write(CTL_REG_ERDPTH, next_pointer_msb);
++
++	do {
++		m_nic_read_data(6, buffer);
++		next_pointer_lsb = buffer[0];
++		next_pointer_msb = buffer[1];
++		pkt_len = buffer[2];
++		pkt_len |= (unsigned short) buffer[3] << 8;
++		status = buffer[4];
++		status |= (unsigned short) buffer[5] << 8;
++
++		if (pkt_len <= ENC_MAX_FRM_LEN)
++			copy_len = pkt_len;
++		else
++			copy_len = 0;
++
++		if ((status & (1L << 7)) == 0) /* check Received Ok bit */
++			copy_len = 0;
++
++		/* taken from the Linux driver */
++		/* check if next pointer is resonable */
++		if ((((unsigned int)next_pointer_msb << 8) |
++			(unsigned int)next_pointer_lsb) >= ENC_TX_BUF_START)
++			copy_len = 0;
++
++		if (copy_len > 0) {
++			m_nic_read_data(copy_len, buffer);
++		}
++
++		/* advance read pointer to next pointer */
++		m_nic_write(CTL_REG_ERDPTL, next_pointer_lsb);
++		m_nic_write(CTL_REG_ERDPTH, next_pointer_msb);
++
++		/* decrease packet counter */
++		m_nic_bfs(CTL_REG_ECON2, ENC_ECON2_PKTDEC);
++
++		/* taken from the Linux driver */
++		/* Only odd values should be written to ERXRDPTL,
++		 * see errata B4 pt.13
++		 */
++		rxbuf_rdpt = (next_pointer_msb << 8 | next_pointer_lsb) - 1;
++		if ((rxbuf_rdpt < (m_nic_read(CTL_REG_ERXSTH) << 8 |
++				m_nic_read(CTL_REG_ERXSTL))) || (rxbuf_rdpt >
++				(m_nic_read(CTL_REG_ERXNDH) << 8 |
++				m_nic_read(CTL_REG_ERXNDL)))) {
++			m_nic_write(CTL_REG_ERXRDPTL,
++				    m_nic_read(CTL_REG_ERXNDL));
++			m_nic_write(CTL_REG_ERXRDPTH,
++				    m_nic_read(CTL_REG_ERXNDH));
++		} else {
++			m_nic_write(CTL_REG_ERXRDPTL, rxbuf_rdpt & 0xFF);
++			m_nic_write(CTL_REG_ERXRDPTH, rxbuf_rdpt >> 8);
++		}
++
++		/* move to bank 1 */
++		m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++		m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++
++		/* read pktcnt */
++		pkt_cnt = m_nic_read(CTL_REG_EPKTCNT);
++
++		/* switch to bank 0 */
++		m_nic_bfc(CTL_REG_ECON1,
++			   (ENC_ECON1_BSEL1 | ENC_ECON1_BSEL0));
++
++		if (copy_len == 0) {
++			eir_reg = m_nic_read(CTL_REG_EIR);
++			encReceiverReset();
++			printf("eth_rx: copy_len=0\n");
++			continue;
++		}
++
++		NetReceive((unsigned char *) buffer, pkt_len);
++
++		eir_reg = m_nic_read(CTL_REG_EIR);
++	} while (pkt_cnt);
++	/* Use EPKTCNT not EIR.PKTIF flag, see errata pt. 6 */
++}
++
++static void encInit(unsigned char *pEthAddr)
++{
++	unsigned short phid1 = 0;
++	unsigned short phid2 = 0;
++
++	/* switch to bank 0 */
++	m_nic_bfc(CTL_REG_ECON1, (ENC_ECON1_BSEL1 | ENC_ECON1_BSEL0));
++
++	/*
++	 * Setup the buffer space. The reset values are valid for the
++	 * other pointers.
++	 */
++	/* We shall not write to ERXST, see errata pt. 5. Instead we
++	   have to make sure that ENC_RX_BUS_START is 0. */
++	m_nic_write_retry(CTL_REG_ERXSTL, (ENC_RX_BUF_START & 0xFF), 1);
++	m_nic_write_retry(CTL_REG_ERXSTH, (ENC_RX_BUF_START >> 8), 1);
++
++	/* taken from the Linux driver */
++	m_nic_write_retry(CTL_REG_ERXNDL, (ENC_RX_BUF_END & 0xFF), 1);
++	m_nic_write_retry(CTL_REG_ERXNDH, (ENC_RX_BUF_END >> 8), 1);
++
++	m_nic_write_retry(CTL_REG_ERDPTL, (ENC_RX_BUF_START & 0xFF), 1);
++	m_nic_write_retry(CTL_REG_ERDPTH, (ENC_RX_BUF_START >> 8), 1);
++
++	next_pointer_lsb = (ENC_RX_BUF_START & 0xFF);
++	next_pointer_msb = (ENC_RX_BUF_START >> 8);
++
++	/* verify identification */
++	phid1 = encPhyRead(PHY_REG_PHID1);
++	phid2 = encPhyRead(PHY_REG_PHID2);
++
++	if (phid1 != ENC_PHID1_VALUE
++	    || (phid2 & ENC_PHID2_MASK) != ENC_PHID2_VALUE) {
++		printf("ERROR: failed to identify controller\n");
++		printf("phid1 = %x, phid2 = %x\n",
++			phid1, (phid2 & ENC_PHID2_MASK));
++		printf("should be phid1 = %x, phid2 = %x\n",
++			ENC_PHID1_VALUE, ENC_PHID2_VALUE);
++	}
++
++	/*
++	 * --- MAC Initialization ---
++	 */
++
++	/* Pull MAC out of Reset */
++
++	/* switch to bank 2 */
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++
++	/* enable MAC to receive frames */
++	/* added some bits from the Linux driver */
++	m_nic_write_retry(CTL_REG_MACON1
++		, (ENC_MACON1_MARXEN | ENC_MACON1_TXPAUS | ENC_MACON1_RXPAUS)
++		, 10);
++
++	/* configure pad, tx-crc and duplex */
++	/* added a bit from the Linux driver */
++	m_nic_write_retry(CTL_REG_MACON3
++		, (ENC_MACON3_PADCFG0 | ENC_MACON3_TXCRCEN | ENC_MACON3_FRMLNEN)
++		, 10);
++
++	/* added 4 new lines from the Linux driver */
++	/* Allow infinite deferals if the medium is continously busy */
++	m_nic_write_retry(CTL_REG_MACON4, (1<<6) /*ENC_MACON4_DEFER*/, 10);
++
++	/* Late collisions occur beyond 63 bytes */
++	m_nic_write_retry(CTL_REG_MACLCON2, 63, 10);
++
++	/* Set (low byte) Non-Back-to_Back Inter-Packet Gap. Recommended 0x12 */
++	m_nic_write_retry(CTL_REG_MAIPGL, 0x12, 10);
++
++	/*
++	* Set (high byte) Non-Back-to_Back Inter-Packet Gap. Recommended
++	* 0x0c for half-duplex. Nothing for full-duplex
++	*/
++	m_nic_write_retry(CTL_REG_MAIPGH, 0x0C, 10);
++
++	/* set maximum frame length */
++	m_nic_write_retry(CTL_REG_MAMXFLL, (ENC_MAX_FRM_LEN & 0xff), 10);
++	m_nic_write_retry(CTL_REG_MAMXFLH, (ENC_MAX_FRM_LEN >> 8), 10);
++
++	/*
++	 * Set MAC back-to-back inter-packet gap. Recommended 0x12 for
++	 * half duplex and 0x15 for full duplex.
++	 */
++	m_nic_write_retry(CTL_REG_MABBIPG, 0x12, 10);
++
++	/* set MAC address */
++
++	/* switch to bank 3 */
++	m_nic_bfs(CTL_REG_ECON1, (ENC_ECON1_BSEL0 | ENC_ECON1_BSEL1));
++
++	m_nic_write_retry(CTL_REG_MAADR0, pEthAddr[5], 1);
++	m_nic_write_retry(CTL_REG_MAADR1, pEthAddr[4], 1);
++	m_nic_write_retry(CTL_REG_MAADR2, pEthAddr[3], 1);
++	m_nic_write_retry(CTL_REG_MAADR3, pEthAddr[2], 1);
++	m_nic_write_retry(CTL_REG_MAADR4, pEthAddr[1], 1);
++	m_nic_write_retry(CTL_REG_MAADR5, pEthAddr[0], 1);
++
++	/*
++	* PHY Initialization taken from the Linux driver
++	 */
++
++	/* Prevent automatic loopback of data beeing transmitted by setting
++	   ENC_PHCON2_HDLDIS */
++	encPhyWrite(PHY_REG_PHCON2, (1<<8));
++
++	/* LEDs configuration
++	 * LEDA: LACFG = 0100 -> display link status
++	 * LEDB: LBCFG = 0111 -> display TX & RX activity
++	 * STRCH = 1 -> LED pulses
++	 */
++	encPhyWrite(PHY_REG_PHLCON, 0x0472);
++
++	/* Reset PDPXMD-bit => half duplex */
++	encPhyWrite(PHY_REG_PHCON1, 0);
++
++	/*
++	 * Receive settings
++	 */
++
++#ifdef CONFIG_USE_IRQ
++	/* enable interrupts */
++	m_nic_bfs(CTL_REG_EIE, ENC_EIE_PKTIE);
++	m_nic_bfs(CTL_REG_EIE, ENC_EIE_TXIE);
++	m_nic_bfs(CTL_REG_EIE, ENC_EIE_RXERIE);
++	m_nic_bfs(CTL_REG_EIE, ENC_EIE_TXERIE);
++	m_nic_bfs(CTL_REG_EIE, ENC_EIE_INTIE);
++#endif
++}
++
++/*
++ *
++ * Description:
++ *    Read PHY registers.
++ *
++ *    NOTE! This function will change to Bank 2.
++ *
++ * Params:
++ *    [in] addr address of the register to read
++ *
++ * Returns:
++ *    The value in the register
++ */
++static unsigned short encPhyRead(unsigned char addr)
++{
++	unsigned short ret = 0;
++
++	/* move to bank 2 */
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++
++	/* write address to MIREGADR */
++	m_nic_write(CTL_REG_MIREGADR, addr);
++
++	/* set MICMD.MIIRD */
++	m_nic_write(CTL_REG_MICMD, ENC_MICMD_MIIRD);
++
++	/* taken from the Linux driver */
++	/* move to bank 3 */
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++
++	/* poll MISTAT.BUSY bit until operation is complete */
++	while ((m_nic_read(CTL_REG_MISTAT) & ENC_MISTAT_BUSY) != 0) {
++		static int cnt;
++
++		if (cnt++ >= 1000) {
++			/* GJ - this seems extremely dangerous! */
++			/* printf("#"); */
++			cnt = 0;
++		}
++	}
++
++	/* taken from the Linux driver */
++	/* move to bank 2 */
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++
++	/* clear MICMD.MIIRD */
++	m_nic_write(CTL_REG_MICMD, 0);
++
++	ret = (m_nic_read(CTL_REG_MIRDH) << 8);
++	ret |= (m_nic_read(CTL_REG_MIRDL) & 0xFF);
++
++	return ret;
++}
++
++/*
++ * Taken from the Linux driver.
++ * Description:
++ * Write PHY registers.
++ *
++ * NOTE! This function will change to Bank 3.
++ *
++ * Params:
++ * [in] addr address of the register to write to
++ * [in] data to be written
++ *
++ * Returns:
++ *    None
++ */
++static void encPhyWrite(unsigned char addr, unsigned short data)
++{
++	/* move to bank 2 */
++	m_nic_bfc(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++
++	/* write address to MIREGADR */
++	m_nic_write(CTL_REG_MIREGADR, addr);
++
++	m_nic_write(CTL_REG_MIWRL, data & 0xff);
++	m_nic_write(CTL_REG_MIWRH, data >> 8);
++
++	/* move to bank 3 */
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL0);
++	m_nic_bfs(CTL_REG_ECON1, ENC_ECON1_BSEL1);
++
++	/* poll MISTAT.BUSY bit until operation is complete */
++	while ((m_nic_read(CTL_REG_MISTAT) & ENC_MISTAT_BUSY) != 0) {
++		static int cnt;
++
++		if (cnt++ >= 1000) {
++			cnt = 0;
++		}
++	}
++}
++
++/******************************************************************************
++ *			ENC28J60 SPI layer				      *
++ *****************************************************************************/
++
++/* Phase = 0, Polarity = 0 */
++#define enc_cfg_spi()	\
++	spi_set_cfg(CONFIG_ENC28J60_ETH_SPI_BUS, CONFIG_ENC28J60_ETH_SPI_CS, 0)
++
++static void encWriteReg(unsigned char regNo, unsigned char data)
++{
++	char dout[2];
++	char din[1];
++
++	spi_lock();
++	enc_cfg_spi();
++
++	dout[0] = 0x40 | regNo;
++	dout[1] = data;
++	spi_txrx(dout, 2, 0, 0, SPI_START | SPI_STOP);
++
++	dout[0] = 0x1f;
++	spi_txrx(dout, 1, din, 1, SPI_START | SPI_STOP);
++
++	spi_unlock();
++}
++
++static void encWriteRegRetry(unsigned char regNo, unsigned char data, int c)
++{
++	unsigned char readback;
++	int i;
++
++	for (i = 0; i < c; i++) {
++		encWriteReg(regNo, data);
++		readback = encReadReg(regNo);
++		if (readback == data)
++			break;
++	}
++
++	if (i == c)
++		printf("enc28j60: write reg %d failed\n", regNo);
++}
++
++static unsigned char encReadReg(unsigned char regNo)
++{
++	char dout[1];
++	char din[2];
++	char rxByte;
++	unsigned char bank;
++
++	spi_lock();
++	enc_cfg_spi();
++
++	dout[0] = 0x1f;
++	spi_txrx(dout, 1, din, 1, SPI_START | SPI_STOP);
++	bank = din[0] & 0x3;
++
++	dout[0] = regNo;
++	spi_txrx(dout, 1, din, 2, SPI_START | SPI_STOP);
++	rxByte = din[0];
++
++	/* check if MAC or MII register */
++	if (((bank == 2) && (regNo <= 0x1a)) ||
++	    ((bank == 3) && (regNo <= 0x05 || regNo == 0x0a)))
++		/* ignore first byte and read another byte */
++		rxByte = din[0];
++	else
++		rxByte = din[1];
++
++	spi_unlock();
++
++	return rxByte;
++}
++
++static void encReadBuff(unsigned short length, unsigned char *pBuff)
++{
++	char dout[1];
++
++	spi_lock();
++	enc_cfg_spi();
++
++	dout[0] = 0x20 | 0x1a;
++	spi_txrx(dout, 1, pBuff, length, SPI_START | SPI_STOP);
++
++	spi_unlock();
++}
++
++static void encWriteBuff(unsigned short length, unsigned char *pBuff)
++{
++	char dout[2];
++
++	spi_lock();
++	enc_cfg_spi();
++
++	/* Sent command and control word, do not deasser CS */
++	dout[0] = 0x60 | 0x1a;
++	dout[1] = 0x0;
++	spi_txrx(dout, 2, 0, 0, SPI_START);
++
++	/* Send data and deassert CS */
++	spi_txrx(pBuff, length, 0, 0, SPI_STOP);
++
++	spi_unlock();
++}
++
++static void encBitSet(unsigned char regNo, unsigned char data)
++{
++	char dout[2];
++
++	spi_lock();
++	enc_cfg_spi();
++
++	dout[0] = 0x80 | regNo; /* Bit field set */
++	dout[1] = data;
++	spi_txrx(dout, 2, 0, 0, SPI_START | SPI_STOP);
++
++	spi_unlock();
++}
++
++static void encBitClr(unsigned char regNo, unsigned char data)
++{
++	char dout[2];
++
++	spi_lock();
++	enc_cfg_spi();
++
++	dout[0] = 0xa0 | regNo; /* Bit field clear */
++	dout[1] = data;
++	spi_txrx(dout, 2, 0, 0, SPI_START | SPI_STOP);
++
++	spi_unlock();
++}
++
++static void encReset(void)
++{
++	char dout[1];
++
++	spi_lock();
++	enc_cfg_spi();
++
++	dout[0] = 0xff;
++	spi_txrx(dout, 1, 0, 0, SPI_START | SPI_STOP);
++
++	spi_unlock();
++
++	/* sleep 1 ms. See errata pt. 2 */
++	udelay(1000);
++}
++
++#ifndef CONFIG_ETHADDR
++#include <asm/arch/ocotp.h>
++void enc_set_mac_addr(uchar *addr)
++{
++	if (NULL == getenv("ethaddr")) {
++
++		char reg[8];
++		char nid[20];
++		ulong *s;
++
++		/*set this bit to open the OTP banks for reading*/
++		REG_SET(OCOTP_BASE + OCOTP_CTRL, CTRL_RD_BANK_OPEN);
++
++		/*wait until OTP contents are readable*/
++		while (CTRL_BUSY & REG_RD(OCOTP_BASE + OCOTP_CTRL))
++			udelay(100);
++
++		s = (ulong *)reg;
++		/*read register HW_OCOTP_CUST0*/
++		*s = REG_RD(OCOTP_BASE + OCOTP_CUST0);
++		addr[3] = reg[0];
++		addr[2] = reg[1];
++		addr[1] = reg[2];
++		addr[0] = reg[3];
++
++		s = s + 1;
++		/*read register HW_OCOTP_CUST1*/
++		*s = REG_RD(OCOTP_BASE + OCOTP_CUST1);
++		addr[5] = reg[4];
++		addr[4] = reg[5];
++
++		/*clear this bit to avoid current drain*/
++		REG_CLR(OCOTP_BASE + OCOTP_CTRL, CTRL_RD_BANK_OPEN);
++
++		sprintf(nid, "%02X:%02X:%02X:%02X:%02X:%02X",
++		addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
++
++		setenv("ethaddr", nid);
++	}
++}
++#endif
++#endif /* CONFIG_ENC28J60_ETH */
+diff --git a/drivers/serial/Makefile b/drivers/serial/Makefile
+index 64882a2..ed56269 100644
+--- a/drivers/serial/Makefile
++++ b/drivers/serial/Makefile
+@@ -52,6 +52,8 @@ COBJS-$(CONFIG_S3C44B0_SERIAL) += serial_s3c44b0.o
+ COBJS-$(CONFIG_XILINX_UARTLITE) += serial_xuartlite.o
+ COBJS-$(CONFIG_SCIF_CONSOLE) += serial_sh.o
+ COBJS-$(CONFIG_USB_TTY) += usbtty.o
++COBJS-$(CONFIG_VCTH_SERIAL) += vcth.o
++COBJS-$(CONFIG_STMP3XXX_DBGUART) += stmp3xxx_dbguart.o
+ 
+ COBJS	:= $(sort $(COBJS-y))
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/serial/stmp3xxx_dbguart.c b/drivers/serial/stmp3xxx_dbguart.c
+new file mode 100644
+index 0000000..1d24da8
+--- /dev/null
++++ b/drivers/serial/stmp3xxx_dbguart.c
+@@ -0,0 +1,114 @@
++/*
++ * (c) 2007 Sascha Hauer <s.hauer@pengutronix.de>
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ */
++#include <common.h>
++
++#ifdef CONFIG_STMP3XXX_DBGUART
++
++#include "stmp3xxx_dbguart.h"
++
++DECLARE_GLOBAL_DATA_PTR;
++
++/*
++ * Set baud rate. The settings are always 8n1:
++ * 8 data bits, no parity, 1 stop bit
++ */
++void serial_setbrg(void)
++{
++	u32 cr, lcr_h;
++	u32 quot;
++
++	/* Disable everything */
++	cr = REG_RD(DBGUART_BASE + UARTDBGCR);
++	REG_WR(DBGUART_BASE + UARTDBGCR, 0);
++
++	/* Calculate and set baudrate */
++	quot = (CONFIG_DBGUART_CLK * 4)	/ gd->baudrate;
++	REG_WR(DBGUART_BASE + UARTDBGFBRD, quot & 0x3f);
++	REG_WR(DBGUART_BASE + UARTDBGIBRD, quot >> 6);
++
++	/* Set 8n1 mode, enable FIFOs */
++	lcr_h = WLEN8 | FEN;
++	REG_WR(DBGUART_BASE + UARTDBGLCR_H, lcr_h);
++
++	/* Enable Debug UART */
++	REG_WR(DBGUART_BASE + UARTDBGCR, cr);
++}
++
++int serial_init(void)
++{
++	u32 cr;
++
++	/* Disable UART */
++	REG_WR(DBGUART_BASE + UARTDBGCR, 0);
++
++	/* Mask interrupts */
++	REG_WR(DBGUART_BASE + UARTDBGIMSC, 0);
++
++	/* Set default baudrate */
++	serial_setbrg();
++
++	/* Enable UART */
++	cr = TXE | RXE | UARTEN;
++	REG_WR(DBGUART_BASE + UARTDBGCR, cr);
++
++	return 0;
++}
++
++/* Send a character */
++void serial_putc(const char c)
++{
++	/* Wait for room in TX FIFO */
++	while (REG_RD(DBGUART_BASE + UARTDBGFR) & TXFF)
++		;
++
++	/* Write the data byte */
++	REG_WR(DBGUART_BASE + UARTDBGDR, c);
++
++	if (c == '\n')
++		serial_putc('\r');
++}
++
++void serial_puts(const char *s)
++{
++	while (*s) {
++		serial_putc(*s++);
++	}
++}
++
++/* Test whether a character is in TX buffer */
++int serial_tstc(void)
++{
++	/* Check if RX FIFO is not empty */
++	return !(REG_RD(DBGUART_BASE + UARTDBGFR) & RXFE);
++}
++
++/* Receive character */
++int serial_getc(void)
++{
++	/* Wait while TX FIFO is empty */
++	while (REG_RD(DBGUART_BASE + UARTDBGFR) & RXFE)
++		;
++
++	/* Read data byte */
++	return REG_RD(DBGUART_BASE + UARTDBGDR) & 0xff;
++}
++
++#endif /* CONFIG_STMP378X_DBGUART */
+diff --git a/drivers/serial/stmp3xxx_dbguart.h b/drivers/serial/stmp3xxx_dbguart.h
+new file mode 100644
+index 0000000..5ad4a85
+--- /dev/null
++++ b/drivers/serial/stmp3xxx_dbguart.h
+@@ -0,0 +1,61 @@
++/*
++ * Debug UART register definitions
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ */
++
++#ifndef STMP3XXX_DBGUART_H
++#define STMP3XXX_DBGUART_H
++
++#include <asm/arch/dbguart.h>
++
++#define UARTDBGDR	0x00
++#define UARTDBGRSR_ECR	0x04
++#define UARTDBGFR	0x18
++#define UARTDBGILPR	0x20
++#define UARTDBGIBRD	0x24
++#define UARTDBGFBRD	0x28
++#define UARTDBGLCR_H	0x2c
++#define UARTDBGCR	0x30
++#define UARTDBGIFLS	0x34
++#define UARTDBGIMSC	0x38
++#define UARTDBGRIS	0x3c
++#define UARTDBGMIS	0x40
++#define UARTDBGICR	0x44
++#define UARTDBGDMACR	0x48
++
++/* UARTDBGFR - Flag Register bits */
++#define CTS	0x0001
++#define DSR	0x0002
++#define DCD	0x0004
++#define BUSY	0x0008
++#define RXFE	0x0010
++#define TXFF	0x0020
++#define RXFF	0x0040
++#define TXFE	0x0080
++#define RI	0x0100
++
++/* UARTDBGLCR_H - Line Control Register bits */
++#define BRK	0x0001
++#define PEN	0x0002
++#define EPS	0x0004
++#define STP2	0x0008
++#define FEN	0x0010
++#define WLEN5	0x0000
++#define WLEN6	0x0020
++#define WLEN7	0x0040
++#define WLEN8	0x0060
++#define SPS	0x0080
++
++/* UARTDBGCR - Control Register bits */
++#define UARTEN	0x0001
++#define LBE	0x0080
++#define TXE	0x0100
++#define RXE	0x0200
++#define DTR	0x0400
++#define RTS	0x0800
++#define OUT1	0x1000
++#define OUT2	0x2000
++#define RTSEN	0x4000
++#define CTSEN	0x8000
++
++#endif /* STMP3XXX_DBGUART_H */
+diff --git a/include/asm-arm/arch-stmp378x/clkctrl.h b/include/asm-arm/arch-stmp378x/clkctrl.h
+new file mode 100644
+index 0000000..4960707
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/clkctrl.h
+@@ -0,0 +1,64 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Clock control register descriptions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef CLKCTRL_H
++#define CLKCTRL_H
++
++#include <asm/arch/stmp378x.h>
++
++#define CLKCTRL_BASE	(STMP378X_REGS_BASE + 0x40000)
++
++#define	CLKCTRL_PLLCTRL0	0x000
++#define	CLKCTRL_PLLCTRL1	0x010
++#define	CLKCTRL_CPU		0x020
++#define CLKCTRL_HBUS		0x030
++#define	CLKCTRL_XBUS		0x040
++#define	CLKCTRL_XTAL		0x050
++#define CLKCTRL_PIX		0x060
++#define	CLKCTRL_SSP		0x070
++#define	CLKCTRL_GPMI		0x080
++#define CLKCTRL_SPDIF		0x090
++#define	CLKCTRL_EMI		0x0a0
++#define	CLKCTRL_IR		0x0b0
++#define CLKCTRL_SAIF		0x0c0
++#define	CLKCTRL_TV		0x0d0
++#define	CLKCTRL_ETM		0x0e0
++#define	CLKCTRL_FRAC		0x0f0
++#define	CLKCTRL_FRAC1		0x100
++#define CLKCTRL_CLKSEQ		0x110
++#define	CLKCTRL_RESET		0x120
++#define	CLKCTRL_STATUS		0x130
++#define CLKCTRL_VERSION		0x140
++
++/* CLKCTRL_SSP register bits, bit fields and values */
++#define	SSP_CLKGATE	(1 << 31)
++#define	SSP_BUSY	(1 << 29)
++#define	SSP_DIV_FRAC_EN	(1 << 9)
++#define SSP_DIV		0
++
++/* CLKCTRL_FRAC register bits, bit fields and values */
++#define	FRAC_CLKGATEIO	(1 << 31)
++#define FRAC_IOFRAC	24
++
++/* CLKCTRL_FRAC register bits, bit fields and values */
++#define CLKSEQ_BYPASS_SSP	(1 << 5)
++
++#endif /* CLKCTRL_H */
+diff --git a/include/asm-arm/arch-stmp378x/dbguart.h b/include/asm-arm/arch-stmp378x/dbguart.h
+new file mode 100644
+index 0000000..fc5d658
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/dbguart.h
+@@ -0,0 +1,30 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Debug UART register definitions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#ifndef DBGUART_H
++#define DBGUART_H
++
++#include <asm/arch/stmp378x.h>
++
++#define DBGUART_BASE	(STMP378X_REGS_BASE + 0x00070000)
++
++#endif /* DBGUART_H */
+diff --git a/include/asm-arm/arch-stmp378x/ocotp.h b/include/asm-arm/arch-stmp378x/ocotp.h
+new file mode 100644
+index 0000000..b2b4062
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/ocotp.h
+@@ -0,0 +1,69 @@
++/* Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * On-Chip OTP register descriptions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef OCOTP_H
++#define OCOTP_H
++
++#include <asm/arch/stmp378x.h>
++
++#define OCOTP_BASE	(STMP378X_REGS_BASE + 0x2c000)
++
++#define	OCOTP_CTRL		0x000
++#define	OCOTP_CTRL_SET		0x004
++#define	OCOTP_CTRL_CLR		0x008
++#define	OCOTP_CTRL_TOG		0x00c
++#define	OCOTP_DATA		0x010
++#define	OCOTP_CUST0		0x020
++#define	OCOTP_CUST1		0x030
++#define	OCOTP_CUST2		0x040
++#define	OCOTP_CUST3		0x050
++#define	OCOTP_CRYPTO1		0x070
++#define	OCOTP_CRYPTO2		0x080
++#define	OCOTP_CRYPTO3		0x090
++#define	OCOTP_HWCAP0		0x0a0
++#define	OCOTP_HWCAP1		0x0b0
++#define	OCOTP_HWCAP2		0x0c0
++#define	OCOTP_HWCAP3		0x0d0
++#define	OCOTP_HWCAP4		0x0e0
++#define	OCOTP_HWCAP5		0x0f0
++#define	OCOTP_SWCAP		0x100
++#define	OCOTP_CUSTCAP		0x110
++#define	OCOTP_LOCK		0x120
++#define	OCOTP_OPS0		0x130
++#define	OCOTP_OPS1		0x140
++#define	OCOTP_OPS2		0x150
++#define	OCOTP_OPS3		0x160
++#define	OCOTP_UN0		0x170
++#define	OCOTP_UN1		0x180
++#define	OCOTP_UN2		0x190
++#define	OCOTP_ROM0		0x1a0
++#define	OCOTP_ROM1		0x1b0
++#define	OCOTP_ROM2		0x1c0
++#define	OCOTP_ROM3		0x1d0
++#define	OCOTP_ROM4		0x1e0
++#define	OCOTP_ROM5		0x1f0
++#define	OCOTP_ROM6		0x200
++#define	OCOTP_ROM7		0x210
++#define	OCOTP_VERSION		0x220
++
++
++/* OCOTP_CTRL register bits, bit fields and values */
++#define CTRL_RD_BANK_OPEN	(1 << 12)
++#define CTRL_BUSY		(8 << 12)
++
++#endif /* OCOTP_H */
+diff --git a/include/asm-arm/arch-stmp378x/pinmux.h b/include/asm-arm/arch-stmp378x/pinmux.h
+new file mode 100644
+index 0000000..3364bcb
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/pinmux.h
+@@ -0,0 +1,42 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Clock control register descriptions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef PINMUX_H
++#define PINMUX_H
++
++#include <asm/arch/stmp378x.h>
++
++#define	PINCTRL_BASE	(STMP378X_REGS_BASE + 0x18000)
++
++#define PINCTRL_CTRL		0x000
++#define	PINCTRL_MUXSEL(n)	(0x100 + 0x10*(n))
++#define PINCTRL_DRIVE(n)	(0x200 + 0x10*(n))
++#define PINCTRL_PULL(n)		(0x400 + 0x10*(n))
++#define PINCTRL_DOUT(n)		(0x500 + 0x10*(n))
++#define PINCTRL_DIN(n)		(0x600 + 0x10*(n))
++#define PINCTRL_DOE(n)		(0x700 + 0x10*(n))
++#define PINCTRL_PIN2IRQ(n)	(0x800 + 0x10*(n))
++#define PINCTRL_IRQEN(n)	(0x900 + 0x10*(n))
++#define PINCTRL_IRQLEVEL(n)	(0xa00 + 0x10*(n))
++#define PINCTRL_IRQPOL(n)	(0xb00 + 0x10*(n))
++#define PINCTRL_IRQSTAT(n)	(0xc00 + 0x10*(n))
++
++#endif /* PINMUX_H */
+diff --git a/include/asm-arm/arch-stmp378x/spi.h b/include/asm-arm/arch-stmp378x/spi.h
+new file mode 100644
+index 0000000..afd3245
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/spi.h
+@@ -0,0 +1,69 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * SSP/SPI driver
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef SPI_H
++#define SPI_H
++
++#include <config.h>
++#include <common.h>
++#include <asm/arch/ssp.h>
++
++/*
++ * Flags to set SPI mode
++ */
++#define SPI_PHASE	0x1 /* Set phase to 1 */
++#define SPI_POLARITY	0x2 /* Set polarity to 1 */
++
++/* Various flags to control SPI transfers */
++#define SPI_START	0x1	/* Lock CS signal */
++#define SPI_STOP	0x2	/* Unlock CS signal */
++
++/*
++ * Init SSPx interface, must be called first
++ */
++void spi_init(void);
++
++/*
++ * Set phase, polarity and CS number (SS0, SS1, SS2)
++ */
++void spi_set_cfg(unsigned int bus, unsigned int cs, unsigned long mode);
++
++
++/*
++ * Send @rx_len bytes from @dout, then receive @rx_len bytes
++ * saving them to @din
++ */
++void spi_txrx(const char *dout, unsigned int tx_len, char *din,
++	       unsigned int rx_len, unsigned long flags);
++
++
++/* Lock/unlock SPI bus */
++static inline void spi_lock(void)
++{
++	disable_interrupts();
++}
++
++static inline void spi_unlock(void)
++{
++	enable_interrupts();
++}
++
++#endif /* SPI_H */
+diff --git a/include/asm-arm/arch-stmp378x/ssp.h b/include/asm-arm/arch-stmp378x/ssp.h
+new file mode 100644
+index 0000000..0cd58cb
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/ssp.h
+@@ -0,0 +1,100 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * SSP register definitions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef SSP_H
++#define SSP_H
++
++#include <asm/arch/stmp378x.h>
++
++#define SSP1_BASE	(STMP378X_REGS_BASE + 0x10000)
++#define SSP2_BASE	(STMP378X_REGS_BASE + 0x34000)
++
++#define SSP_CTRL0	0x000
++#define SSP_CMD0	0x010
++#define SSP_CMD1	0x020
++#define SSP_COMPREF	0x030
++#define SSP_COMPMASK	0x040
++#define SSP_TIMING	0x050
++#define SSP_CTRL1	0x060
++#define SSP_DATA	0x070
++#define SSP_SDRESP0	0x080
++#define SSP_SDRESP1	0x090
++#define SSP_SDRESP2	0x0a0
++#define SSP_SDRESP3	0x0b0
++#define SSP_STATUS	0x0c0
++#define SSP_DEBUG	0x100
++#define SSP_VERSION	0x110
++
++/* CTRL0 bits, bit fields and values */
++#define CTRL0_SFTRST		(0x1 << 31)
++#define CTRL0_CLKGATE		(0x1 << 30)
++#define	CTRL0_RUN		(0x1 << 29)
++#define CTRL0_LOCK_CS		(0x1 << 27)
++#define CTRL0_IGNORE_CRC	(0x1 << 26)
++#define CTRL0_DATA_XFER		(0x1 << 24)
++#define CTRL0_READ		(0x1 << 25)
++#define CTRL0_BUS_WIDTH		22
++#define CTRL0_WAIT_FOR_IRQ	(0x1 << 21)
++#define CTRL0_WAIT_FOR_CMD	(0x1 << 20)
++#define CTRL0_XFER_COUNT	0
++
++#define BUS_WIDTH_SPI1	(0x0 << CTRL0_BUS_WIDTH)
++#define BUS_WIDTH_SPI4	(0x1 << CTRL0_BUS_WIDTH)
++#define BUS_WIDTH_SPI8	(0x2 << CTRL0_BUS_WIDTH)
++
++#define SPI_CS0		0x0
++#define SPI_CS1		CTRL0_WAIT_FOR_CMD
++#define SPI_CS2		CTRL0_WAIT_FOR_IRQ
++#define SPI_CS_CLR_MASK	(CTRL0_WAIT_FOR_CMD | CTRL0_WAIT_FOR_IRQ)
++
++/* CMD0 bits, bit fields and values */
++#define CMD0_BLOCK_SIZE		16
++#define CMD0_BLOCK_COUNT	12
++#define CMD0_CMD		0
++
++/* TIMING bits, bit fields and values */
++#define TIMING_TIMEOUT		16
++#define TIMING_CLOCK_DIVIDE	8
++#define TIMING_CLOCK_RATE	0
++
++/* CTRL1 bits, bit fields and values */
++#define CTRL1_DMA_ENABLE	(0x1 << 13)
++#define CTRL1_PHASE		(0x1 << 10)
++#define CTRL1_POLARITY		(0x1 << 9)
++#define CTRL1_SLAVE_MODE	(0x1 << 8)
++#define CTRL1_WORD_LENGTH	4
++#define CTRL1_SSP_MODE		0
++
++#define WORD_LENGTH4	(0x3 << CTRL1_WORD_LENGTH)
++#define WORD_LENGTH8	(0x7 << CTRL1_WORD_LENGTH)
++#define WORD_LENGTH16	(0xF << CTRL1_WORD_LENGTH)
++
++#define SSP_MODE_SPI	(0x0 << CTRL1_SSP_MODE)
++#define SSP_MODE_SSI	(0x1 << CTRL1_SSP_MODE)
++#define SSP_MODE_SD_MMC	(0x3 << CTRL1_SSP_MODE)
++#define SSP_MODE_MS	(0x4 << CTRL1_SSP_MODE)
++#define SSP_MODE_ATA	(0x7 << CTRL1_SSP_MODE)
++
++/* CTRL1 bits, bit fields and values */
++#define STATUS_FIFO_EMPTY	(1 << 5)
++#define STATUS_FIFO_FULL	(1 << 8)
++
++#endif /* SSP_H */
+diff --git a/include/asm-arm/arch-stmp378x/stmp378x.h b/include/asm-arm/arch-stmp378x/stmp378x.h
+new file mode 100644
+index 0000000..f425185
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/stmp378x.h
+@@ -0,0 +1,40 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef STMP378X_H
++#define STMP378X_H
++
++/*
++ * Most of 378x SoC registers are associated with four addresses
++ * used for different operations - read/write, set, clear and toggle bits.
++ *
++ * Some of registers do not implement such feature and, thus, should be
++ * accessed/manipulated via single address in common way.
++ */
++#define REG_RD(x)	(*(volatile unsigned int *)(x))
++#define REG_WR(x, v)	((*(volatile unsigned int *)(x)) = (v))
++#define REG_SET(x, v)	((*(volatile unsigned int *)((x) + 0x04)) = (v))
++#define REG_CLR(x, v)	((*(volatile unsigned int *)((x) + 0x08)) = (v))
++#define REG_TOG(x, v)	((*(volatile unsigned int *)((x) + 0x0c)) = (v))
++
++#define STMP378X_OCRAM_BASE	0x00000000
++#define STMP378X_SDRAM_BASE	0x40000000
++#define STMP378X_REGS_BASE	0x80000000
++
++#endif /* STMP378X_H */
+diff --git a/include/asm-arm/arch-stmp378x/timrot.h b/include/asm-arm/arch-stmp378x/timrot.h
+new file mode 100644
+index 0000000..c8c5e33
+--- /dev/null
++++ b/include/asm-arm/arch-stmp378x/timrot.h
+@@ -0,0 +1,63 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * Timers and rotary encoder register definitions
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++#ifndef TIMROT_H
++#define TIMROT_H
++
++#include <asm/arch/stmp378x.h>
++
++#define TIMROT_BASE	(STMP378X_REGS_BASE + 0x00068000)
++
++/* Timer and rotary encoder register offsets */
++#define ROTCTRL		0x0
++#define ROTCOUNT	0x10
++#define TIMCTRL0	0x20
++#define TIMCOUNT0	0x30
++#define TIMCTRL1	0x40
++#define TIMCOUNT1	0x50
++#define TIMCTRL2	0x60
++#define TIMCOUNT2	0x70
++#define TIMCTRL3	0x80
++#define TIMCTRL3	0x90
++
++/* TIMCTRL bits, bit fields and values */
++#define TIMCTRL_SELECT		0
++#define TIMCTRL_PRESCALE	4
++#define TIMCTRL_RELOAD		(1 << 6)
++#define TIMCTRL_UPDATE		(1 << 7)
++#define TIMCTRL_POLARITY	(1 << 8)
++#define TIMCTRL_IRQEN		(1 << 14)
++#define TIMCTRL_IRQ		(1 << 15)
++
++#define TIMCTRL_SELECT_PWM0	(0x1 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM1	(0x2 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM2	(0x3 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM3	(0x4 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_PWM4	(0x5 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_ROTARYA	(0x6 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_ROTARYB	(0x7 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_32KHZ	(0x8 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_8KHZ	(0x9 << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_4KHZ	(0xa << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_1KHZ	(0xb << TIMCTRL_SELECT)
++#define TIMCTRL_SELECT_ALWAYS	(0xc << TIMCTRL_SELECT)
++
++#endif /* TIMROT_H */
+diff --git a/include/configs/stmp378x_dev.h b/include/configs/stmp378x_dev.h
+new file mode 100644
+index 0000000..c0368c3
+--- /dev/null
++++ b/include/configs/stmp378x_dev.h
+@@ -0,0 +1,151 @@
++/*
++ * Copyright (C) 2008 Embedded Alley Solutions, Inc.
++ *
++ * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++#include <asm/sizes.h>
++
++/*
++ * Define this to make U-Boot skip low level initialization when loaded
++ * by initial bootloader. Not required by NAND U-Boot version but IS
++ * required for a NOR version used to burn the real NOR U-Boot into
++ * NOR Flash. NAND and NOR support for DaVinci chips is mutually exclusive
++ * so it is NOT possible to build a U-Boot with both NAND and NOR routines.
++ * NOR U-Boot is loaded directly from Flash so it must perform all the
++ * low level initialization itself. NAND version is loaded by an initial
++ * bootloader (UBL in TI-ese) that performs such an initialization so it's
++ * skipped in NAND version. The third DaVinci boot mode loads a bootloader
++ * via UART0 and that bootloader in turn loads and runs U-Boot (or whatever)
++ * performing low level init prior to loading. All that means we can NOT use
++ * NAND version to put U-Boot into NOR because it doesn't have NOR support and
++ * we can NOT use NOR version because it performs low level initialization
++ * effectively destroying itself in DDR memory. That's why a separate NOR
++ * version with this define is needed. It is loaded via UART, then one uses
++ * it to somehow download a proper NOR version built WITHOUT this define to
++ * RAM (tftp?) and burn it to NOR Flash. I would be probably able to squeeze
++ * NOR support into the initial bootloader so it won't be needed but DaVinci
++ * static RAM might be too small for this (I have something like 2Kbytes left
++ * as of now, without NOR support) so this might've not happened...
++ *
++ */
++
++/*===================*/
++/* SoC Configuration */
++/*===================*/
++#define CONFIG_ARM926EJS			/* arm926ejs CPU core */
++#define CONFIG_STMP378X				/* STMP378x SoC */
++#define CONFIG_STMP378X_DEV			/* STMP378x Development board */
++#define CONFIG_SYS_CLK_FREQ	120000000	/* Arm Clock frequency */
++#define CONFIG_USE_TIMER0			/* use timer 0 */
++#define CONFIG_SYS_HZ		1000		/* Ticks per second */
++/*=============*/
++/* Memory Info */
++/*=============*/
++#define CONFIG_SYS_MALLOC_LEN	(0x10000 + 128*1024)	/* malloc() len */
++#define CONFIG_SYS_GBL_DATA_SIZE 128		/* reserved for initial data */
++#define CONFIG_SYS_MEMTEST_START 0x40000000	/* memtest start address */
++#define CONFIG_SYS_MEMTEST_END	 0x41000000	/* 16MB RAM test */
++#define CONFIG_NR_DRAM_BANKS	1		/* we have 1 bank of DRAM */
++#define CONFIG_STACKSIZE	(256*1024)	/* regular stack */
++#define PHYS_SDRAM_1		0x40000000	/* mDDR Start */
++#define PHYS_SDRAM_1_SIZE	0x02000000	/* mDDR size 32MB */
++
++/*====================*/
++/* Serial Driver info */
++/*====================*/
++#define CONFIG_STMP3XXX_DBGUART			/* 378x debug UART */
++#define CONFIG_DBGUART_CLK	24000000
++#define CONFIG_BAUDRATE		115200		/* Default baud rate */
++#define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++/*====================*/
++/* SPI Driver info */
++/*====================*/
++#define CONFIG_SSP_CLK		48000000
++#define CONFIG_SPI_CLK		3000000
++#define CONFIG_SPI_SSP1
++#undef CONFIG_SPI_SSP2
++
++/*=====================*/
++/* Flash & Environment */
++/*=====================*/
++#define CONFIG_SYS_NO_FLASH			/* Flash is not supported */
++#define CONFIG_ENV_IS_NOWHERE		/* Store ENV in memory only */
++#define CONFIG_ENV_SIZE		0x20000
++
++/*==============================*/
++/* U-Boot general configuration */
++/*==============================*/
++#undef	CONFIG_USE_IRQ				/* No IRQ/FIQ in U-Boot */
++#define CONFIG_MISC_INIT_R
++#define CONFIG_NETMASK		255.255.255.0
++#define CONFIG_IPADDR		192.167.10.2
++#define CONFIG_SERVERIP		192.167.10.1
++#define CONFIG_BOOTDELAY	2
++#define CONFIG_BOOTFILE		"uImage"	/* Boot file name */
++#define CONFIG_SYS_PROMPT	"stmp378x U-Boot > "
++						/* Monitor Command Prompt */
++#define CONFIG_SYS_CBSIZE	1024		/* Console I/O Buffer Size  */
++#define CONFIG_SYS_PBSIZE	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++						/* Print buffer sz */
++#define CONFIG_SYS_MAXARGS	16		/* max number of command args */
++#define CONFIG_SYS_BARGSIZE	CONFIG_SYS_CBSIZE
++						/* Boot Argument Buffer Size */
++#define CONFIG_SYS_LOAD_ADDR	0x40400000
++				/* default Linux kernel load address */
++#define CONFIG_VERSION_VARIABLE
++#define CONFIG_AUTO_COMPLETE	/* Won't work with hush so far, may be later */
++#define CFG_HUSH_PARSER
++#define CFG_PROMPT_HUSH_PS2	"> "
++#define CONFIG_CMDLINE_EDITING
++#define CFG_LONGHELP
++#define CONFIG_CRC32_VERIFY
++#define CONFIG_MX_CYCLIC
++
++/*===================*/
++/* Linux Information */
++/*===================*/
++#define LINUX_BOOT_PARAM_ADDR	0x40000100
++#define CONFIG_CMDLINE_TAG
++#define CONFIG_SETUP_MEMORY_TAGS
++#define CONFIG_BOOTARGS		"console=ttyAM0,115200n8 "\
++			"root=/dev/mtdblock1 rootfstype=jffs2 lcd_panel=lms350"
++#define CONFIG_BOOTCOMMAND	"tftpboot ; bootm"
++
++/*=================*/
++/* U-Boot commands */
++/*=================*/
++#include <config_cmd_default.h>
++#define CONFIG_CMD_ASKENV
++#define CONFIG_CMD_DHCP
++#undef CONFIG_CMD_DIAG
++#define CONFIG_CMD_MII
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_NET
++#define CONFIG_CMD_SAVES
++#undef CONFIG_CMD_IMLS
++
++/* Ethernet chip - select an alternative driver */
++#define CONFIG_ENC28J60_ETH
++#define CONFIG_ENC28J60_ETH_SPI_BUS	0
++#define CONFIG_ENC28J60_ETH_SPI_CS	0
++
++#endif /* __CONFIG_H */
+diff --git a/lib_arm/board.c b/lib_arm/board.c
+index a44d308..552ea5f 100644
+--- a/lib_arm/board.c
++++ b/lib_arm/board.c
+@@ -437,6 +437,11 @@ extern void davinci_eth_set_mac_addr (const u_int8_t *addr);
+ 	}
+ #endif /* CONFIG_DRIVER_SMC91111 || CONFIG_DRIVER_LAN91C96 */
+ 
++#if defined(CONFIG_ENC28J60_ETH) && !defined(CONFIG_ETHADDR)
++	extern void enc_set_mac_addr (uchar *addr);
++	enc_set_mac_addr (gd->bd->bi_enetaddr);
++#endif /* CONFIG_ENC28J60_ETH && !CONFIG_ETHADDR*/
++
+ 	/* Initialize from environment */
+ 	if ((s = getenv ("loadaddr")) != NULL) {
+ 		load_addr = simple_strtoul (s, NULL, 16);
+-- 
+1.5.4.4
+

@@ -1,0 +1,113 @@
+From 49a21d7f47204d19848b72db93483177160f5522 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 1 Nov 2010 10:12:52 +0800
+Subject: [PATCH] ENGR00133178-1 NAND : add set_parent()/set_rate() for GPMI
+
+The ONFI nand need the PLL1 clock, so add the two function
+to change the bypass clock.
+
+add some comments for GPMI clocks too.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |   48 ++++++++++++++++++++++++++++++++++++---
+ arch/arm/mach-mx5/crm_regs.h   |    2 +
+ 2 files changed, 46 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index f06231a..d33a42e 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -2448,16 +2448,56 @@ static void bch_clk_disable(struct clk *clk)
+ 	_clk_disable(clk);
+ }
+ 
++static int gpmi_set_parent(struct clk *clk, struct clk *parent)
++{
++	/* Setting for ONFI nand which need PLL1(800MHZ) */
++	if (parent == &pll1_main_clk) {
++		u32 reg = __raw_readl(MXC_CCM_CLKSEQ_BYPASS);
++
++		reg = (reg & ~MXC_CCM_CLKSEQ_BYPASS_BYPASS_GPMI_CLK_SEL_MASK) |
++		   (0x2 << MXC_CCM_CLKSEQ_BYPASS_BYPASS_GPMI_CLK_SEL_OFFSET);
++
++		__raw_writel(reg, MXC_CCM_CLKSEQ_BYPASS);
++
++		/* change to the new Parent */
++		clk->parent = parent;
++	} else
++		printk(KERN_WARNING "You should not call the %s\n", __func__);
++	return 0;
++}
++
++static int gpmi_set_rate(struct clk *clk, unsigned long rate)
++{
++	/* Setting for ONFI nand which in different mode */
++	if (clk->parent == &pll1_main_clk) {
++		u32 value;
++		u32 reg;
++
++		value = clk_get_rate(clk->parent);
++		value /= rate;
++		value /= 2; /* HW_GPMI_CTRL1's GPMI_CLK_DIV2_EN will be set */
++
++		reg = __raw_readl(MXC_CCM_GPMI);
++		reg = (reg & ~MXC_CCM_GPMI_CLK_DIV_MASK) | value;
++
++		__raw_writel(reg, MXC_CCM_GPMI);
++	} else
++		printk(KERN_WARNING "You should not call the %s\n", __func__);
++	return 0;
++}
++
+ static struct clk gpmi_nfc_clk[] = {
+-	{
++	{	/* gpmi_io_clk */
+ 	.parent = &osc_clk,
+ 	.secondary = &gpmi_nfc_clk[1],
++	.set_parent = gpmi_set_parent,
++	.set_rate   = gpmi_set_rate,
+ 	.enable = gpmi_clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR7,
+ 	.enable_shift = MXC_CCM_CCGRx_CG9_OFFSET,
+ 	.disable = gpmi_clk_disable,
+ 	},
+-	{
++	{	/* gpmi_apb_clk */
+ 	.parent = &ahb_clk,
+ 	.secondary = &gpmi_nfc_clk[2],
+ 	.enable = _clk_enable,
+@@ -2465,7 +2505,7 @@ static struct clk gpmi_nfc_clk[] = {
+ 	.enable_shift = MXC_CCM_CCGRx_CG8_OFFSET,
+ 	.disable = _clk_disable,
+ 	},
+-	{
++	{	/* bch_clk */
+ 	.parent = &osc_clk,
+ 	.secondary = &gpmi_nfc_clk[3],
+ 	.enable = bch_clk_enable,
+@@ -2473,7 +2513,7 @@ static struct clk gpmi_nfc_clk[] = {
+ 	.enable_shift = MXC_CCM_CCGRx_CG0_OFFSET,
+ 	.disable = bch_clk_disable,
+ 	},
+-	{
++	{	/* bch_apb_clk */
+ 	.parent = &ahb_clk,
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR7,
+diff --git a/arch/arm/mach-mx5/crm_regs.h b/arch/arm/mach-mx5/crm_regs.h
+index 16adf5f..73c4e22 100644
+--- a/arch/arm/mach-mx5/crm_regs.h
++++ b/arch/arm/mach-mx5/crm_regs.h
+@@ -681,6 +681,8 @@
+ #define MXC_CCM_CLKSEQ_BYPASS_BYPASS_ELCDIF_PIX_CLK_SEL_MASK	(0x3 << 14)
+ #define MXC_CCM_CLKSEQ_BYPASS_BYPASS_EPDC_PIX_CLK_SEL_OFFSET	12
+ #define MXC_CCM_CLKSEQ_BYPASS_BYPASS_EPDC_PIX_CLK_SEL_MASK	(0x3 << 12)
++#define MXC_CCM_CLKSEQ_BYPASS_BYPASS_GPMI_CLK_SEL_OFFSET	6
++#define MXC_CCM_CLKSEQ_BYPASS_BYPASS_GPMI_CLK_SEL_MASK		(0x3 << 6)
+ #define MXC_CCM_CLKSEQ_BYPASS_BYPASS_EPDC_AXI_CLK_SEL_OFFSET	4
+ #define MXC_CCM_CLKSEQ_BYPASS_BYPASS_EPDC_AXI_CLK_SEL_MASK	(0x3 << 4)
+ #define MXC_CCM_CLKSEQ_BYPASS_BYPASS_DISPLAY_AXI_CLK_SEL_OFFSET	2
+-- 
+1.5.4.4
+

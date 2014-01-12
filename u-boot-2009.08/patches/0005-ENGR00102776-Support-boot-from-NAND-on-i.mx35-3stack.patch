@@ -1,0 +1,486 @@
+From 4a9ee8a22327ddbd4f2c296a834fcc90fc2d1d14 Mon Sep 17 00:00:00 2001
+From: Fred Fan <r01011@freescale.com>
+Date: Mon, 23 Feb 2009 13:54:46 +0800
+Subject: [PATCH] ENGR00102776 Support boot from NAND on i.mx35 3stack TO1
+
+1. Support boot from NAND
+Changes link script to separate initial code to multiple sections.
+2. One binary support boot from NOR and NAND
+Changes common file start.S to support multiple sections.
+
+Signed-off-by: Fred Fan <r01011@freescale.com>
+---
+ board/freescale/mx35_3stack/lowlevel_init.S |   12 ++-
+ board/freescale/mx35_3stack/u-boot.lds      |    7 +-
+ cpu/arm1136/mx35/Makefile                   |    1 +
+ cpu/arm1136/mx35/mxc_nand_load.S            |  261 +++++++++++++++++++++++++++
+ cpu/arm1136/start.S                         |   36 ++--
+ include/asm-arm/arch-mx35/mx35.h            |   39 ++++
+ 6 files changed, 334 insertions(+), 22 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/lowlevel_init.S b/board/freescale/mx35_3stack/lowlevel_init.S
+index 84614fc..40792f1 100644
+--- a/board/freescale/mx35_3stack/lowlevel_init.S
++++ b/board/freescale/mx35_3stack/lowlevel_init.S
+@@ -241,6 +241,8 @@
+         str r3, [r0, #0x30]
+ .endm /* setup_sdram */
+ 
++.section ".text.init", "x"
++
+ .globl lowlevel_init
+ lowlevel_init:
+ 	/* Platform CHIP level init*/
+@@ -306,7 +308,15 @@ init_clock_start:
+ 	/*init_sdram*/
+ 	setup_sdram
+ skip_sdram_setup:
+-	mov	pc, lr
++	mov r0, #NFC_BASE_ADDR
++	add r1, r0, #NFC_BUF_SIZE
++	cmp pc, r0
++	movlo pc, lr
++	cmp pc, r1
++	movhi pc, lr
++	/* return from mxc_nand_load */
++	/* r12 saved upper lr*/
++	b mxc_nand_load
+ 
+ /*
+  * r0: ESDCTL control base, r1: sdram slot base
+diff --git a/board/freescale/mx35_3stack/u-boot.lds b/board/freescale/mx35_3stack/u-boot.lds
+index 8a565e7..1b343be 100644
+--- a/board/freescale/mx35_3stack/u-boot.lds
++++ b/board/freescale/mx35_3stack/u-boot.lds
+@@ -38,8 +38,11 @@ SECTIONS
+ 	{
+ 	  /* WARNING - the following is hand-optimized to fit within	*/
+ 	  /* the sector layout of our flash chips!	XXX FIXME XXX	*/
+-
+-	  cpu/arm1136/start.o		(.text)
++	  *(.text.head)		/*arm startup code*/
++	  *(.text.init)		/*platform lowlevel initial code*/
++	  *(.text.load)		/*load bootloader*/
++	  *(.text.setup)	/*platform post lowlevel initial code*/
++	  *(.text.vect)	/*platform post lowlevel initial code*/
+ 	  board/freescale/mx35_3stack/libmx35_3stack.a	(.text)
+ 	  lib_arm/libarm.a		(.text)
+ 	  net/libnet.a			(.text)
+diff --git a/cpu/arm1136/mx35/Makefile b/cpu/arm1136/mx35/Makefile
+index e83cbf7..afcf771 100644
+--- a/cpu/arm1136/mx35/Makefile
++++ b/cpu/arm1136/mx35/Makefile
+@@ -28,6 +28,7 @@ include $(TOPDIR)/config.mk
+ LIB	= $(obj)lib$(SOC).a
+ 
+ COBJS	= interrupts.o serial.o generic.o iomux.o
++SOBJS = mxc_nand_load.o
+ 
+ SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
+ OBJS	:= $(addprefix $(obj),$(SOBJS) $(COBJS))
+diff --git a/cpu/arm1136/mx35/mxc_nand_load.S b/cpu/arm1136/mx35/mxc_nand_load.S
+new file mode 100644
+index 0000000..2ff223d
+--- /dev/null
++++ b/cpu/arm1136/mx35/mxc_nand_load.S
+@@ -0,0 +1,261 @@
++/*
++ * (C) Copyright 2008 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/mx35.h>
++
++.macro nfc_cmd_input
++	strh r3, [r12, #NAND_FLASH_CMD_REG_OFF]
++	mov r3, #NAND_FLASH_CONFIG2_FCMD_EN;
++	strh r3, [r12, #NAND_FLASH_CONFIG2_REG_OFF]
++	bl do_wait_op_done
++.endm   // nfc_cmd_input
++
++.macro do_addr_input
++	and r3, r3, #0xFF
++	strh r3, [r12, #NAND_FLASH_ADD_REG_OFF]
++	mov r3, #NAND_FLASH_CONFIG2_FADD_EN
++	strh r3, [r12, #NAND_FLASH_CONFIG2_REG_OFF]
++	bl do_wait_op_done
++.endm   // do_addr_input
++
++.section ".text.load", "x"
++.globl mxc_nand_load
++mxc_nand_load:
++	ldr r2, U_BOOT_NAND_START
++1:	ldmia r0!, {r3-r10}
++	stmia r2!, {r3-r10}
++	cmp r0, r1
++	blo 1b
++
++	ldr r1, CONST_0X0FFF
++	ldr r2, U_BOOT_NAND_START
++	and lr, lr, r1
++	add lr, lr, r2
++	and r12, r12, r1
++	add r12, r12, r2
++	add r2, r2, #0x8
++	and r0, pc, r1
++	add pc, r0, r2
++	nop
++	nop
++	nop
++	nop
++	nop
++	adr r0, SAVE_REGS
++	str r12, [r0]
++	str lr, [r0, #4]
++Copy_Main:
++	mov r0, #NFC_BASE_ADDR
++	add r12, r0, #0x1E00
++	ldrh r3, [r12, #NAND_FLASH_CONFIG1_REG_OFF]
++	orr r3, r3, #1
++
++	/* Setting NFC */
++	ldr r7, =CCM_BASE_ADDR
++	ldr r1, [r7, #CLKCTL_RCSR]
++	/*BUS WIDTH setting*/
++	tst r1, #0x20000000
++	orrne r1, r1, #0x4000
++	biceq r1, r1, #0x4000
++
++	/*4K PAGE*/
++	tst r1, #0x10000000
++	orrne r1, r1, #0x200
++	bne  1f
++    	/*2K PAGE*/
++	bic r1, r1, #0x200
++	tst r1, #0x08000000
++	orrne r1, r1, #0x100 /*2KB page size*/
++	biceq r1, r1, #0x100 /*512B page size*/
++	movne r2, #32 /*64 bytes*/
++	moveq r2, #8  /*16 bytes*/
++	b NAND_setup
++1:
++	tst r1, #0x08000000
++	bicne r3, r3, #1   /*Enable 8bit ECC mode*/
++	movne r2, #109 /*218 bytes*/
++	moveq r2, #64  /*128 bytes*/
++NAND_setup:
++	str r1, [r7, #CLKCTL_RCSR]
++	strh r2, [r12, #ECC_RSLT_SPARE_AREA_REG_OFF]
++	strh r3, [r12, #NAND_FLASH_CONFIG1_REG_OFF]
++
++    	//unlock internal buffer
++	mov r3, #0x2
++	strh r3, [r12, #NFC_CONFIGURATION_REG_OFF]
++    	//unlock nand device
++	mov r3, #0
++	strh r3, [r12, #UNLOCK_START_BLK_ADD_REG_OFF]
++	sub r3, r3, #1
++	strh r3, [r12, #UNLOCK_END_BLK_ADD_REG_OFF]
++	mov r3, #4
++	strh r3, [r12, #NF_WR_PROT_REG_OFF]
++
++	/* r0: NFC base address. RAM buffer base address. [constantly]
++	 * r1: starting flash address to be copied. [constantly]
++	 * r2: page size. [Doesn't change]
++	 * r3: used as argument.
++	 * r11: starting SDRAM address for copying. [Updated constantly].
++	 * r12: NFC register base address. [constantly].
++	 * r13: end of SDRAM address for copying. [Doesn't change].
++	 */
++
++	mov r1, #0x1000
++	ldr r3, [r7, #CLKCTL_RCSR]
++	tst r3, #0x200
++	movne r2, #0x1000
++	bne 1f
++	tst r3, #0x100
++	mov r1, #0x800  /*Strange Why is not 4K offset*/
++	movne r2, #0x800
++	moveq r2, #0x200
++1: /*Update the indicator of copy area */
++	ldr r11, U_BOOT_NAND_START
++	add r13, r11, #0x00088000; /*512K + 32K*/
++	add r11, r11, r1
++
++Nfc_Read_Page:
++	mov r3, #0x0
++	nfc_cmd_input
++
++	cmp r2, #0x800
++	bhi nfc_addr_ops_4kb
++	beq nfc_addr_ops_2kb
++
++	mov r3, r1
++	do_addr_input       //1st addr cycle
++	mov r3, r1, lsr #9
++	do_addr_input       //2nd addr cycle
++	mov r3, r1, lsr #17
++	do_addr_input       //3rd addr cycle
++	mov r3, r1, lsr #25
++	do_addr_input       //4th addr cycle
++	b end_of_nfc_addr_ops
++
++nfc_addr_ops_2kb:
++	mov r3, #0
++	do_addr_input       //1st addr cycle
++	mov r3, #0
++	do_addr_input       //2nd addr cycle
++	mov r3, r1, lsr #11
++	do_addr_input       //3rd addr cycle
++	mov r3, r1, lsr #19
++	do_addr_input       //4th addr cycle
++	mov r3, r1, lsr #27
++	do_addr_input       //5th addr cycle
++
++	mov r3, #0x30
++	nfc_cmd_input
++	b end_of_nfc_addr_ops
++
++nfc_addr_ops_4kb:
++	mov r3, #0
++	do_addr_input       //1st addr cycle
++	mov r3, #0
++	do_addr_input       //2nd addr cycle
++	mov r3, r1, lsr #12
++	do_addr_input       //3rd addr cycle
++	mov r3, r1, lsr #20
++	do_addr_input       //4th addr cycle
++	mov r3, r1, lsr #27
++	do_addr_input       //5th addr cycle
++
++	mov r3, #0x30
++	nfc_cmd_input
++
++end_of_nfc_addr_ops:
++	mov r8, #0
++	bl nfc_data_output
++	bl do_wait_op_done
++	// Check if x16/2kb page
++	cmp r2, #0x800
++	bhi nfc_addr_data_output_done_4k
++	beq nfc_addr_data_output_done_2k
++	beq nfc_addr_data_output_done_512
++
++	// check for bad block
++	//    mov r3, r1, lsl #(32-17)    // get rid of block number
++	//    cmp r3, #(0x800 << (32-17)) // check if not page 0 or 1
++	b nfc_addr_data_output_done
++
++nfc_addr_data_output_done_4k:
++//TODO
++	b nfc_addr_data_output_done
++
++nfc_addr_data_output_done_2k:
++	// end of 4th
++	// check for bad block
++	//TODO    mov r3, r1, lsl #(32-17)    // get rid of block number
++	//    cmp r3, #(0x800 << (32-17)) // check if not page 0 or 1
++	b nfc_addr_data_output_done
++
++nfc_addr_data_output_done_512:
++    	// check for bad block
++	// TODO   mov r3, r1, lsl #(32-5-9)    // get rid of block number
++	// TODO   cmp r3, #(512 << (32-5-9))   // check if not page 0 or 1
++
++nfc_addr_data_output_done:
++Copy_Good_Blk:
++    //copying page
++	add r2, r2, #NFC_BASE_ADDR
++1:	ldmia r0!, {r3-r10}
++	stmia r11!, {r3-r10}
++	cmp r0, r2
++	blo 1b
++	sub r2, r2, #NFC_BASE_ADDR
++
++	cmp r11, r13
++	bge NAND_Copy_Main_done
++	// Check if x16/2kb page
++	add r1, r1, r2
++	mov r0, #NFC_BASE_ADDR
++	b Nfc_Read_Page
++
++NAND_Copy_Main_done:
++	adr r0, SAVE_REGS
++	ldr r12, [r0]
++	ldr lr, [r0, #4]
++	mov pc, lr
++
++do_wait_op_done:
++1:
++	ldrh r3, [r12, #NAND_FLASH_CONFIG2_REG_OFF]
++	ands r3, r3, #NAND_FLASH_CONFIG2_INT_DONE
++	beq 1b
++	bx lr     // do
++
++nfc_data_output:
++	ldrh r3, [r12, #NAND_FLASH_CONFIG1_REG_OFF]
++	orr r3, r3, #(NAND_FLASH_CONFIG1_INT_MSK | NAND_FLASH_CONFIG1_ECC_EN)
++	strh r3, [r12, #NAND_FLASH_CONFIG1_REG_OFF]
++
++	strh r8, [r12, #RAM_BUFFER_ADDRESS_REG_OFF]
++
++	mov r3, #FDO_PAGE_SPARE_VAL
++	strh r3, [r12, #NAND_FLASH_CONFIG2_REG_OFF]
++	bx lr
++
++U_BOOT_NAND_START: .word TEXT_BASE
++CONST_0X0FFF:	.word 0x0FFF
++SAVE_REGS:	.word 0x0
++		.word 0x0
+diff --git a/cpu/arm1136/start.S b/cpu/arm1136/start.S
+index a957ccc..57f13ef 100644
+--- a/cpu/arm1136/start.S
++++ b/cpu/arm1136/start.S
+@@ -30,9 +30,15 @@
+ 
+ #include <config.h>
+ #include <version.h>
++
++.section ".text.head", "ax"
+ .globl _start
+-_start: b	reset
++_start:
++.section ".text.vect", "ax"
++.global _start_vect
++_start_vect:
+ #ifdef CONFIG_PRELOADER
++	b	reset
+ 	ldr	pc, _hang
+ 	ldr	pc, _hang
+ 	ldr	pc, _hang
+@@ -89,10 +95,7 @@ _end_vect:
+  * the actual reset code
+  */
+ 
+-#ifdef CONFIG_NAND_BOOT
+-.section ".text.head", "x"
+-#endif
+-
++.section ".text.head", "ax"
+ .globl reset
+ reset:
+ 	/*
+@@ -106,7 +109,7 @@ reset:
+ #ifdef CONFIG_OMAP2420H4
+        /* Copy vectors to mask ROM indirect addr */
+ 	adr	r0, _start		/* r0 <- current position of code   */
+-		add     r0, r0, #4				/* skip reset vector			*/
++ 	add     r0, r0, #4	/* skip reset vector			*/
+ 	mov	r2, #64			/* r2 <- size to copy  */
+ 	add	r2, r0, r2		/* r2 <- source end address	    */
+ 	mov	r1, #SRAM_OFFSET0	  /* build vect addr */
+@@ -165,21 +168,15 @@ cpu_init_crit:
+ 	mov	pc, lr		/* back to my caller */
+ 
+ 
+-#ifdef CONFIG_NAND_BOOT
+-.section ".text.setup"
+-#endif
++.section ".text.setup", "ax"
+ 
+-.globl _TEST_BASE
++.globl _TEXT_BASE
+ _TEXT_BASE:
+ 	.word	TEXT_BASE
+ 
+ .globl _armboot_start
+ _armboot_start:
+-#ifndef CONFIG_NAND_BOOT
+ 	.word _start
+-#else
+-	.word reset
+-#endif
+ 
+ /*
+  * These are defined in the board-specific linker script.
+@@ -208,13 +205,14 @@ setup_env:
+ 
+ #ifndef CONFIG_SKIP_RELOCATE_UBOOT
+ relocate:				/* relocate U-Boot to RAM	    */
+-	adr	r0, _start		/* r0 <- current position of code   */
+-	ldr	r1, _TEXT_BASE		/* test if we run from flash or RAM */
++	adr	r0, _armboot_start
++	ldr	r1, =_armboot_start
+ 	cmp	r0, r1			/* don't reloc during debug	    */
+-#ifndef CONFIG_PRELOADER
+ 	beq	stack_setup
+-#endif	/* CONFIG_PRELOADER */
+-
++	ldr 	r2, _TEXT_BASE
++	sub	r0, r1, r0
++	sub	r0, r2, r0
++	ldr	r1, _TEXT_BASE
+ 	ldr	r2, _armboot_start
+ 	ldr	r3, _bss_start
+ 	sub	r2, r3, r2		/* r2 <- size of armboot	    */
+diff --git a/include/asm-arm/arch-mx35/mx35.h b/include/asm-arm/arch-mx35/mx35.h
+index ba30597..b430c83 100644
+--- a/include/asm-arm/arch-mx35/mx35.h
++++ b/include/asm-arm/arch-mx35/mx35.h
+@@ -179,6 +179,45 @@
+ #define GPIO_PORT_NUM	3
+ #define GPIO_NUM_PIN	32
+ 
++#define NFC_BUF_SIZE   0x1000
++#define NFC_BUFSIZE_REG_OFF             (0 + 0x00)
++#define RAM_BUFFER_ADDRESS_REG_OFF      (0 + 0x04)
++#define NAND_FLASH_ADD_REG_OFF          (0 + 0x06)
++#define NAND_FLASH_CMD_REG_OFF          (0 + 0x08)
++#define NFC_CONFIGURATION_REG_OFF       (0 + 0x0A)
++#define ECC_STATUS_RESULT_REG_OFF       (0 + 0x0C)
++#define ECC_RSLT_MAIN_AREA_REG_OFF      (0 + 0x0E)
++#define ECC_RSLT_SPARE_AREA_REG_OFF     (0 + 0x10)
++#define NF_WR_PROT_REG_OFF              (0 + 0x12)
++#define NAND_FLASH_WR_PR_ST_REG_OFF     (0 + 0x18)
++#define NAND_FLASH_CONFIG1_REG_OFF      (0 + 0x1A)
++#define NAND_FLASH_CONFIG2_REG_OFF      (0 + 0x1C)
++#define UNLOCK_START_BLK_ADD_REG_OFF    (0 + 0x20)
++#define UNLOCK_END_BLK_ADD_REG_OFF      (0 + 0x22)
++#define RAM_BUFFER_ADDRESS_RBA_3        0x3
++#define NFC_BUFSIZE_1KB                 0x0
++#define NFC_BUFSIZE_2KB                 0x1
++#define NFC_CONFIGURATION_UNLOCKED      0x2
++#define ECC_STATUS_RESULT_NO_ERR        0x0
++#define ECC_STATUS_RESULT_1BIT_ERR      0x1
++#define ECC_STATUS_RESULT_2BIT_ERR      0x2
++#define NF_WR_PROT_UNLOCK               0x4
++#define NAND_FLASH_CONFIG1_FORCE_CE     (1 << 7)
++#define NAND_FLASH_CONFIG1_RST          (1 << 6)
++#define NAND_FLASH_CONFIG1_BIG          (1 << 5)
++#define NAND_FLASH_CONFIG1_INT_MSK      (1 << 4)
++#define NAND_FLASH_CONFIG1_ECC_EN       (1 << 3)
++#define NAND_FLASH_CONFIG1_SP_EN        (1 << 2)
++#define NAND_FLASH_CONFIG2_INT_DONE     (1 << 15)
++#define NAND_FLASH_CONFIG2_FDO_PAGE     (0 << 3)
++#define NAND_FLASH_CONFIG2_FDO_ID       (2 << 3)
++#define NAND_FLASH_CONFIG2_FDO_STATUS   (4 << 3)
++#define NAND_FLASH_CONFIG2_FDI_EN       (1 << 2)
++#define NAND_FLASH_CONFIG2_FADD_EN      (1 << 1)
++#define NAND_FLASH_CONFIG2_FCMD_EN      (1 << 0)
++#define FDO_PAGE_SPARE_VAL              0x8
++#define NAND_BUF_NUM    8
++
+ #ifndef __ASSEMBLER__
+ 
+ enum mxc_clock {
+-- 
+1.5.4.4
+

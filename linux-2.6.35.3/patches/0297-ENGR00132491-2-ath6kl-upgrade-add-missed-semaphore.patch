@@ -1,0 +1,32 @@
+From 072ccd783c149b68f32e1035ece4822a01f8f6ba Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 27 Sep 2010 21:11:50 +0800
+Subject: [PATCH] ENGR00132491-2 ath6kl upgrade: add missed semaphore.h headfile
+
+Add missed headfile or the compiling will fail.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ .../hif/sdio/linux_sdio/include/hif_internal.h     |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/wireless/ath6kl/hif/sdio/linux_sdio/include/hif_internal.h b/drivers/net/wireless/ath6kl/hif/sdio/linux_sdio/include/hif_internal.h
+index e0155a5..efdfd0d 100644
+--- a/drivers/net/wireless/ath6kl/hif/sdio/linux_sdio/include/hif_internal.h
++++ b/drivers/net/wireless/ath6kl/hif/sdio/linux_sdio/include/hif_internal.h
+@@ -32,6 +32,12 @@
+ #define HIF_LINUX_MMC_SCATTER_SUPPORT
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
++#include <asm/semaphore.h>
++#else
++#include <linux/semaphore.h>
++#endif
++
+ #define BUS_REQUEST_MAX_NUM                64
+ 
+ #define SDIO_CLOCK_FREQUENCY_DEFAULT       25000000
+-- 
+1.5.4.4
+

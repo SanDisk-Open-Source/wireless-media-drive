@@ -1,0 +1,29 @@
+From 647141b8883a63eada32c26a5d8bf17a2d7fde70 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 8 Sep 2010 13:45:05 +0800
+Subject: [PATCH] ENGR00127265-6 sdhc: Correct error check for clk get failed
+
+Need adjust the check conditon to IS_ERR(p) when using clkdev
+by 2.6.35 kernel.
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mmc/host/mx_sdhci.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/host/mx_sdhci.c b/drivers/mmc/host/mx_sdhci.c
+index b5e4f18..d92463d 100644
+--- a/drivers/mmc/host/mx_sdhci.c
++++ b/drivers/mmc/host/mx_sdhci.c
+@@ -1876,7 +1876,7 @@ static int __devinit sdhci_probe_slot(struct platform_device
+ 
+ 	/* Get the SDHC clock from clock system APIs */
+ 	host->clk = clk_get(&pdev->dev, mmc_plat->clock_mmc);
+-	if (NULL == host->clk)
++	if (IS_ERR(host->clk))
+ 		printk(KERN_ERR "MXC MMC can't get clock.\n");
+ 	DBG("SDHC:%d clock:%lu\n", pdev->id, clk_get_rate(host->clk));
+ 
+-- 
+1.5.4.4
+

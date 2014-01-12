@@ -1,0 +1,94 @@
+This guide is for experienced UNIX/Liunx/BSD users who just want to quickly
+try out MaraDNS
+
+       MaraDNS acts as both a recursive and an authoritative DNS server. In
+       other words, MaraDNS can both be used to speed up the internet, and/or
+       serve domains that you may have.
+
+       To try out MaraDNS as a recursive nameserver is easy:
+
+       * Compile MaraDNS. Type in './configure; make' in the top-level MaraDNS
+         directory.  Note: No need to compile if you downloaded a binary RPM
+         or Debian package.
+
+       * Take the file server/maradns and place it in /usr/local/sbin
+
+       * Take the file tools/duende and place it in /usr/local/sbin
+
+       * Create an empty directory called /etc/maradns
+
+       * Create a mararc file. This file only needs to be three lines long on
+         systems with a /dev/urandom file, and four lines long on older
+         operating systems without /dev/urandom
+
+       Here is a sample mararc file:
+
+            ipv4_bind_addresses = "127.0.0.1"
+            chroot_dir = "/etc/maradns"
+            recursive_acl = "127.0.0.1"
+
+       This mararc file says that MaraDNS will have the ip "127.0.0.1" (this
+       is the bind_address), run from the directory /etc/maradns (the
+       chroot_dir value), and only allow the ip "127.0.0.1" to make recursive
+       queries (the recursive_acl value).
+
+       * Place the mararc file in the location /etc/mararc on your system.
+
+       * Run MaraDNS as a non-daemon:
+
+              /usr/local/sbin/maradns
+
+         Since MaraDNS needs to bind to a privileged port (port 53), it needs
+         to start up running as root. MaraDNS is designed with security in
+         mind, and will drop root privileges before being visible to the
+         public internet.
+
+       * Test MaraDNS in another window or virtual terminal
+
+              dig @127.0.0.1 www.yahoo.com
+
+       * In order to make the duende daemonizing tool usable, create a
+         directory named /etc/maradns/logger/
+
+              mkdir /etc/maradns/logger
+
+       * If this works, make MaraDNS run as a daemon:
+
+              /usr/local/sbin/duende /usr/local/sbin/maradns
+
+         duende is a tool that daemonizes maradns; the daemonizer is a
+         separate program.
+
+       * If this all works, install MaraDNS:
+
+              make install
+       It is also possible to set up MaraDNS as both an authoritative and
+       recursive name server with the same IP:
+
+       * Here is the MaraRC file:
+
+              ipv4_bind_addresses = "127.0.0.1"
+              chroot_dir = "/etc/maradns"
+              recursive_acl = "127.0.0.1"
+              csv2 = {}
+              csv2["example.com."] = "db.example.com"
+
+       * Have a zone file named db.example.com in the chroot_dir (/etc/maradns
+         above) that looks like this:
+
+         example.com. 10.1.2.3
+
+         (Yes, experienced DNS admins, you can have SOA, NS, MX, SRV, and any
+         other kind of DNS data stored in a csv2 zone file. Read the csv2 man
+         page for details)
+
+       * Recurisve queries will be resolved normally
+
+       * Queries for example.com will resolve to 10.1.2.3
+
+       * Any other name.example.com query will return a "this host does not
+         exist" DNS reply.
+
+       Look in doc (in particular, the tutorial), or read the relevant man
+       pages for more information on how to set up MaraDNS.
+                                                                            

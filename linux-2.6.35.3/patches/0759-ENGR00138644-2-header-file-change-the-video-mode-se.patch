@@ -1,0 +1,63 @@
+From b66d4db8f21afc5657e0a23a63b25aa13f62aa20 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Sat, 12 Feb 2011 10:57:52 +0800
+Subject: [PATCH] ENGR00138644-2 header file: change the video mode setting method
+
+Header files change for changing the video mode setting method.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ include/linux/ipu.h   |    7 -------
+ include/linux/mxcfb.h |   11 +++++++++++
+ 2 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/include/linux/ipu.h b/include/linux/ipu.h
+index 1034de8..2e2b3ce 100644
+--- a/include/linux/ipu.h
++++ b/include/linux/ipu.h
+@@ -972,13 +972,6 @@ int ipu_init_async_panel(int disp, int type, uint32_t cycle_time,
+ void ipu_disp_direct_write(ipu_channel_t channel, u32 value, u32 offset);
+ void ipu_reset_disp_panel(void);
+ 
+-void ipu_set_vga_delayed_hsync_vsync(uint32_t width, uint32_t height,
+-		uint32_t h_start_width, uint32_t h_sync_width,
+-		uint32_t h_end_width, uint32_t v_start_width,
+-		uint32_t v_sync_width, uint32_t v_end_width,
+-		uint32_t hsync_delay, uint32_t vsync_delay,
+-		uint32_t hsync_polarity, uint32_t vsync_polarity);
+-
+ /* ADC API */
+ int32_t ipu_adc_write_template(display_port_t disp, uint32_t *pCmd,
+ 			       bool write);
+diff --git a/include/linux/mxcfb.h b/include/linux/mxcfb.h
+index cbdce95..58158ee 100644
+--- a/include/linux/mxcfb.h
++++ b/include/linux/mxcfb.h
+@@ -148,6 +148,11 @@ extern struct fb_videomode mxcfb_modedb[];
+ extern int mxcfb_modedb_sz;
+ 
+ enum {
++	MXC_DISP_SPEC_DEV = 0,
++	MXC_DISP_DDC_DEV = 1,
++};
++
++enum {
+ 	MXCFB_REFRESH_OFF,
+ 	MXCFB_REFRESH_AUTO,
+ 	MXCFB_REFRESH_PARTIAL,
+@@ -155,6 +160,12 @@ enum {
+ 
+ int mxcfb_set_refresh_mode(struct fb_info *fbi, int mode,
+ 			   struct mxcfb_rect *update_region);
++void mxcfb_register_mode(int disp_port,
++		const struct fb_videomode *modedb,
++		int num_modes, int dev_mode);
++
++void mxcfb_register_presetup(int disp_port,
++		int (*pre_setup)(struct fb_info *info));
+ 
+ int mxc_elcdif_frame_addr_setup(dma_addr_t phys);
+ #endif				/* __KERNEL__ */
+-- 
+1.5.4.4
+

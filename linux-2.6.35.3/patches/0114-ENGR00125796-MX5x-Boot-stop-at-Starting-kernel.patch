@@ -1,0 +1,57 @@
+From d5b7ef0407a5393ae3f022e13dce0548e5a018b1 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Tue, 10 Aug 2010 10:44:00 +0800
+Subject: [PATCH] ENGR00125796 MX5x: Boot stop at "Starting kernel ..."
+
+System sometime stop at "Starting kernel ...". After connect with
+ICE, we found that system enter abort mode. The abort sometimes is
+data abort and sometimes prefetch abort.This issue may caused by that
+we config the PLL1 while CPU clock is runing on it.In fact, we don't
+need do PLL1 enable operation if it already run up and which will
+bring side-effect for the impact of cpu clock.
+
+Signed-off-by:Jason Liu <r64343@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c      |    7 ++++++-
+ arch/arm/mach-mx5/clock_mx50.c |    7 ++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 2d6f666..2726c78 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -424,7 +424,12 @@ static int _clk_pll_enable(struct clk *clk)
+ 	struct timespec curtime;
+ 
+ 	pllbase = _get_pll_base(clk);
+-	reg = __raw_readl(pllbase + MXC_PLL_DP_CTL) | MXC_PLL_DP_CTL_UPEN;
++	reg = __raw_readl(pllbase + MXC_PLL_DP_CTL);
++
++	if (reg & MXC_PLL_DP_CTL_UPEN)
++		return 0;
++
++	reg |=  MXC_PLL_DP_CTL_UPEN;
+ 	__raw_writel(reg, pllbase + MXC_PLL_DP_CTL);
+ 
+ 	/* Wait for lock */
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 7db4b88..a39d0fc 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -617,7 +617,12 @@ static int _clk_pll_enable(struct clk *clk)
+ 	void __iomem *pllbase;
+ 
+ 	pllbase = _get_pll_base(clk);
+-	reg = __raw_readl(pllbase + MXC_PLL_DP_CTL) | MXC_PLL_DP_CTL_UPEN;
++	reg = __raw_readl(pllbase + MXC_PLL_DP_CTL);
++
++	if (reg & MXC_PLL_DP_CTL_UPEN)
++		return 0;
++
++	reg |=  MXC_PLL_DP_CTL_UPEN;
+ 	__raw_writel(reg, pllbase + MXC_PLL_DP_CTL);
+ 
+ 	/* Wait for lock */
+-- 
+1.5.4.4
+

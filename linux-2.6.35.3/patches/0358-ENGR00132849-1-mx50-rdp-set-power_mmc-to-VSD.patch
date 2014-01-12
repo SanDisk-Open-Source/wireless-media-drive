@@ -1,0 +1,28 @@
+From 51eb6d2533b6c326ca415212615850a835558269 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Thu, 21 Oct 2010 19:11:36 +0800
+Subject: [PATCH] ENGR00132849-1 mx50 rdp: set power_mmc to VSD
+
+Since VSD voltage is not always on, we need to pass the correct
+regulator to esdhc driver to dynamically enable it.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index c12fa10..83c8db6 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -946,6 +946,7 @@ static struct mxc_mmc_platform_data mmc2_data = {
+ 	.status = sdhc_get_card_det_status,
+ 	.wp_status = sdhc_write_protect,
+ 	.clock_mmc = "esdhc_clk",
++	.power_mmc = "VSD",
+ };
+ 
+ static struct mxc_mmc_platform_data mmc3_data = {
+-- 
+1.5.4.4
+

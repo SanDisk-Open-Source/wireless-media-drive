@@ -1,0 +1,33 @@
+From 09b371942aac57ce46f0f54b90435e5981ee7911 Mon Sep 17 00:00:00 2001
+From: Dennis Wenzel <b21659@freescale.com>
+Date: Wed, 29 Sep 2010 10:42:06 -0500
+Subject: [PATCH] ENGR00132066-2: X-accel hangs on startup using 2.6.35 kernel
+
+Changed libz160 to only use AMD CSI and no longer have FSL CSI option.
+Update warning messages when gpu2d driver loaded.
+
+Acked-by: Rob Herring <r.herring@freescale.com>
+Signed-off-by: Dennis Wenzel <b21659@freescale.com>
+---
+ drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c b/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
+index bef8684..b83706f 100644
+--- a/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
++++ b/drivers/mxc/amd-gpu/platform/hal/linux/gsl_kmod.c
+@@ -815,9 +815,10 @@ static int gpu_probe(struct platform_device *pdev)
+     if (gpu_2d_irq > 0)
+     {
+ 	if (request_irq(gpu_2d_irq, z160_irq_handler, 0, "g12", NULL) < 0) {
+-	    printk(KERN_ERR "2D Acceleration Enabled, OpenVG Disabled!\n");
++	    printk(KERN_ERR "DO NOT use uio_pdrv_genirq kernel module for X acceleration!\n");
+ 	    gpu_2d_irq = 0;
+ 	}
++        printk(KERN_ERR "Do NOT run OpenVG apps while also running imx-drv X device driver!\n");
+     }
+ 
+     if (kgsl_driver_init() != GSL_SUCCESS) {
+-- 
+1.5.4.4
+

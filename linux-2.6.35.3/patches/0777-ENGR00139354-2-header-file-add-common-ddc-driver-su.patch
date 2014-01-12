@@ -1,0 +1,31 @@
+From ad433c6968a60634fb9cf233202991df6f153318 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Thu, 17 Feb 2011 16:03:44 +0800
+Subject: [PATCH] ENGR00139354-2 header file: add common ddc driver support
+
+Add common DDC driver support.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ include/linux/fsl_devices.h |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index bed78cd..8c247c5 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -309,6 +309,11 @@ struct mxc_lcd_platform_data {
+ 	void (*reset) (void);
+ };
+ 
++struct mxc_ddc_platform_data {
++	u32 di;
++	void (*init) (void);
++	int (*update) (void);
++};
+ 
+ struct mxc_tsc_platform_data {
+ 	char *vdd_reg;
+-- 
+1.5.4.4
+

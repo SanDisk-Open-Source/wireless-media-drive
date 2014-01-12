@@ -1,0 +1,61 @@
+From d3ad344c3d9098a029f09214d66103bdfd17d9f0 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Thu, 9 Sep 2010 13:15:11 +0800
+Subject: [PATCH] ENGR00127105 DMA:remove mutex when enable/disable DMA channel
+
+These two functions can be called in IRQ context, but mutex may
+cause the schedule. So remove the mutex lock, the spinlock of each
+channel is enough.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/plat-mxs/dmaengine.c |   12 ++++++++----
+ 1 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/dmaengine.c b/arch/arm/plat-mxs/dmaengine.c
+index 52330d3..0c2485b 100644
+--- a/arch/arm/plat-mxs/dmaengine.c
++++ b/arch/arm/plat-mxs/dmaengine.c
+@@ -127,14 +127,16 @@ int mxs_dma_enable(int channel)
+ 	if (!(pchan->flags & MXS_DMA_FLAGS_ALLOCATED))
+ 		return -EINVAL;
+ 
++	/*
++	 *  neednot mutex lock, this function will be called in irq context.
++	 *  The mutex may cause process schedule.
++	 */
+ 	pdma = pchan->dma;
+-	mutex_lock(&mxs_dma_mutex);
+ 	spin_lock_irqsave(&pchan->lock, flags);
+ 	if (pchan->pending_num && pdma->enable)
+ 		ret = pdma->enable(pchan, channel - pdma->chan_base);
+ 	pchan->flags |= MXS_DMA_FLAGS_BUSY;
+ 	spin_unlock_irqrestore(&pchan->lock, flags);
+-	mutex_unlock(&mxs_dma_mutex);
+ 	return ret;
+ }
+ EXPORT_SYMBOL(mxs_dma_enable);
+@@ -151,8 +153,11 @@ void mxs_dma_disable(int channel)
+ 		return;
+ 	if (!(pchan->flags & MXS_DMA_FLAGS_BUSY))
+ 		return;
++	/*
++	 *  neednot mutex lock, this function will be called in irq context.
++	 *  The mutex may cause process schedule.
++	 */
+ 	pdma = pchan->dma;
+-	mutex_lock(&mxs_dma_mutex);
+ 	spin_lock_irqsave(&pchan->lock, flags);
+ 	if (pdma->disable)
+ 		pdma->disable(pchan, channel - pdma->chan_base);
+@@ -161,7 +166,6 @@ void mxs_dma_disable(int channel)
+ 	pchan->pending_num = 0;
+ 	list_splice_init(&pchan->active, &pchan->done);
+ 	spin_unlock_irqrestore(&pchan->lock, flags);
+-	mutex_unlock(&mxs_dma_mutex);
+ }
+ EXPORT_SYMBOL(mxs_dma_disable);
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,251 @@
+From d6bdab7e5220d908e54a7b4b8c09c37f66340dc5 Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Thu, 13 Jan 2011 11:10:02 +0800
+Subject: [PATCH] ENGR00137894-3 IPU driver enhancement
+
+1) Remove MX51 related comments in ipu drivers.
+2) Add di clocks.
+3) Support pixel clock being deprived from external clock.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ drivers/video/ipu_common.c |   42 +++++++++++++++++++++++++++++++-----------
+ drivers/video/ipu_disp.c   |   30 ++++++++++++++++--------------
+ drivers/video/ipu_regs.h   |    4 ++--
+ include/configs/mx51_bbg.h |    4 +++-
+ include/ipu.h              |   12 +++++++++---
+ 5 files changed, 61 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/video/ipu_common.c b/drivers/video/ipu_common.c
+index 0a47117..798f7d0 100644
+--- a/drivers/video/ipu_common.c
++++ b/drivers/video/ipu_common.c
+@@ -4,9 +4,9 @@
+  * (C) Copyright 2010
+  * Stefano Babic, DENX Software Engineering, sbabic@denx.de
+  *
+- * Linux IPU driver for MX51:
++ * Linux IPU driver
+  *
+- * (C) Copyright 2005-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2005-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -34,7 +34,6 @@
+ #include <linux/err.h>
+ #include <asm/io.h>
+ #include <asm/errno.h>
+-#include <asm/arch/mx51.h>
+ #include "ipu_regs.h"
+ 
+ extern struct mxc_ccm_reg *mxc_ccm;
+@@ -172,7 +171,9 @@ static void clk_ipu_disable(struct clk *clk)
+ 
+ static struct clk ipu_clk = {
+ 	.name = "ipu_clk",
+-	.rate = 133000000,
++#if defined(CONFIG_IPU_CLKRATE)
++	.rate = CONFIG_IPU_CLKRATE,
++#endif
+ 	.enable = clk_ipu_enable,
+ 	.disable = clk_ipu_disable,
+ 	.usecount = 0,
+@@ -337,6 +338,17 @@ static struct clk pixel_clk[] = {
+ 	},
+ };
+ 
++static struct clk di_clk[] = {
++	{
++	.name = "ipu_di_clk",
++	.id = 0,
++	},
++	{
++	.name = "ipu_di_clk",
++	.id = 1,
++	},
++};
++
+ /*
+  * This function resets IPU
+  */
+@@ -360,11 +372,12 @@ void ipu_reset(void)
+  *
+  * @return      Returns 0 on success or negative error code on error
+  */
+-int ipu_probe(void)
++int ipu_probe(int di, ipu_di_clk_parent_t di_clk_parent, int di_clk_val)
+ {
+ 	unsigned long ipu_base;
+-	u32 temp;
+ 
++#if defined(CONFIG_MXC_HSC)
++	u32 temp;
+ 	u32 *reg_hsc_mcd = (u32 *)MIPI_HSC_BASE_ADDR;
+ 	u32 *reg_hsc_mxt_conf = (u32 *)(MIPI_HSC_BASE_ADDR + 0x800);
+ 
+@@ -376,6 +389,7 @@ int ipu_probe(void)
+ 
+ 	temp = __raw_readl(reg_hsc_mxt_conf);
+ 	__raw_writel(temp | 0x10000, reg_hsc_mxt_conf);
++#endif
+ 
+ 	ipu_base = IPU_CTRL_BASE_ADDR;
+ 	ipu_cpmem_base = (u32 *)(ipu_base + IPU_CPMEM_REG_BASE);
+@@ -384,17 +398,23 @@ int ipu_probe(void)
+ 	g_pixel_clk[0] = &pixel_clk[0];
+ 	g_pixel_clk[1] = &pixel_clk[1];
+ 
++	g_di_clk[0] = &di_clk[0];
++	g_di_clk[1] = &di_clk[1];
++	g_di_clk[di]->rate = di_clk_val;
++
+ 	g_ipu_clk = &ipu_clk;
+ 	debug("ipu_clk = %u\n", clk_get_rate(g_ipu_clk));
+ 
+ 	ipu_reset();
+ 
+-	clk_set_parent(g_pixel_clk[0], g_ipu_clk);
+-	clk_set_parent(g_pixel_clk[1], g_ipu_clk);
+-	clk_enable(g_ipu_clk);
++	if (di_clk_parent == DI_PCLK_LDB) {
++		clk_set_parent(g_pixel_clk[di], g_di_clk[di]);
++	} else {
++		clk_set_parent(g_pixel_clk[0], g_ipu_clk);
++		clk_set_parent(g_pixel_clk[1], g_ipu_clk);
++	}
+ 
+-	g_di_clk[0] = NULL;
+-	g_di_clk[1] = NULL;
++	clk_enable(g_ipu_clk);
+ 
+ 	__raw_writel(0x807FFFFF, IPU_MEM_RST);
+ 	while (__raw_readl(IPU_MEM_RST) & 0x80000000)
+diff --git a/drivers/video/ipu_disp.c b/drivers/video/ipu_disp.c
+index 8ea12f8..8f9c583 100644
+--- a/drivers/video/ipu_disp.c
++++ b/drivers/video/ipu_disp.c
+@@ -4,9 +4,9 @@
+  * (C) Copyright 2010
+  * Stefano Babic, DENX Software Engineering, sbabic@denx.de
+  *
+- * Linux IPU driver for MX51:
++ * Linux IPU driver
+  *
+- * (C) Copyright 2005-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2005-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -928,18 +928,20 @@ int32_t ipu_init_sync_panel(int disp, uint32_t pixel_clk,
+ 				rounded_pixel_clk =
+ 					clk_round_rate(g_pixel_clk[disp],
+ 						pixel_clk);
+-				div  = clk_get_rate(di_parent) /
+-					rounded_pixel_clk;
+-				if (div % 2)
+-					div++;
+-				if (clk_get_rate(di_parent) != div *
+-					rounded_pixel_clk)
+-					clk_set_rate(di_parent,
+-						div * rounded_pixel_clk);
+-				udelay(10000);
+-				clk_set_rate(g_di_clk[disp],
+-					2 * rounded_pixel_clk);
+-				udelay(10000);
++				if (di_parent != NULL) {
++					div  = clk_get_rate(di_parent) /
++						rounded_pixel_clk;
++					if (div % 2)
++						div++;
++					if (clk_get_rate(di_parent) != div *
++						rounded_pixel_clk)
++						clk_set_rate(di_parent,
++							div * rounded_pixel_clk);
++					udelay(10000);
++					clk_set_rate(g_di_clk[disp],
++						2 * rounded_pixel_clk);
++					udelay(10000);
++				}
+ 			}
+ 		}
+ 		clk_set_parent(g_pixel_clk[disp], g_di_clk[disp]);
+diff --git a/drivers/video/ipu_regs.h b/drivers/video/ipu_regs.h
+index 762f804..bfa10f5 100644
+--- a/drivers/video/ipu_regs.h
++++ b/drivers/video/ipu_regs.h
+@@ -4,9 +4,9 @@
+  * (C) Copyright 2010
+  * Stefano Babic, DENX Software Engineering, sbabic@denx.de
+  *
+- * Linux IPU driver for MX51:
++ * Linux IPU driver:
+  *
+- * (C) Copyright 2005-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2005-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index ff4406a..46ff011 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -1,7 +1,7 @@
+ /*
+  * Copyright (C) 2007, Guennadi Liakhovetski <lg@denx.de>
+  *
+- * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX51-3Stack Freescale board.
+  *
+@@ -281,6 +281,8 @@
+ 	 */
+ 	#define CONFIG_LCD
+ 	#define CONFIG_VIDEO_MX5
++	#define CONFIG_MXC_HSC
++	#define CONFIG_IPU_CLKRATE	133000000
+ 	#define CONFIG_SYS_CONSOLE_ENV_OVERWRITE
+ 	#define CONFIG_SYS_CONSOLE_OVERWRITE_ROUTINE
+ 	#define CONFIG_SYS_CONSOLE_IS_IN_ENV
+diff --git a/include/ipu.h b/include/ipu.h
+index 204897c..94e551f 100644
+--- a/include/ipu.h
++++ b/include/ipu.h
+@@ -4,9 +4,9 @@
+  * (C) Copyright 2010
+  * Stefano Babic, DENX Software Engineering, sbabic@denx.de
+  *
+- * Linux IPU driver for MX51:
++ * Linux IPU driver:
+  *
+- * (C) Copyright 2005-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2005-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -258,6 +258,12 @@ typedef enum {
+ 	YUV
+ } ipu_color_space_t;
+ 
++typedef enum {
++	DI_PCLK_PLL3,
++	DI_PCLK_LDB,
++	DI_PCLK_TVE
++} ipu_di_clk_parent_t;
++
+ /* Common IPU API */
+ int32_t ipu_init_channel(ipu_channel_t channel, ipu_channel_params_t *params);
+ void ipu_uninit_channel(ipu_channel_t channel);
+@@ -304,7 +310,7 @@ int clk_get_usecount(struct clk *clk);
+ struct clk *clk_get_parent(struct clk *clk);
+ 
+ void ipu_dump_registers(void);
+-int ipu_probe(void);
++int ipu_probe(int di, ipu_di_clk_parent_t di_clk_parent, int di_clk_val);
+ 
+ void ipu_dmfc_init(int dmfc_type, int first);
+ void ipu_init_dc_mappings(void);
+-- 
+1.5.4.4
+

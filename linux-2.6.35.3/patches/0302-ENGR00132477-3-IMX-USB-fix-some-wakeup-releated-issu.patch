@@ -1,0 +1,203 @@
+From b083bdc50fa42eaf639f8a121b7359dfcc98adce Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Tue, 12 Oct 2010 14:09:47 +0800
+Subject: [PATCH] ENGR00132477-3 IMX USB:fix some wakeup releated issues
+
+Driver Part
+1. add pm_mutex lock/unlock in the device/host switch function.
+2. use private workqueue instead of the system default workqueue
+3. fix the issue: gadget class driver must be loaded when wakeup
+   function is enabled
+4. in udc_resume, use mdelay(3) instead of mdelay(1) after put phy
+   out of low power mode, because of the debounce for some status
+   bit of the otgsc register
+5. in fsl_ep_queue, we must make sure that the ep->desc is not NULL,
+   as the ep_index will use the ep->desc
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |   32 +++++++++++++++++++++++---------
+ drivers/usb/otg/fsl_otg.c       |   22 +++++++++++++++++-----
+ 2 files changed, 40 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index a31c956..90edc55 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -1072,16 +1072,16 @@ fsl_ep_queue(struct usb_ep *_ep, struct usb_request *_req, gfp_t gfp_flags)
+ 	unsigned long flags;
+ 	int is_iso = 0;
+ 
++	if (!_ep || (!ep->desc && ep_index(ep))) {
++		VDBG("%s, bad ep\n", __func__);
++		return -EINVAL;
++	}
+ 	/* catch various bogus parameters */
+ 	if (!_req || !req->req.buf || (ep_index(ep)
+ 				      && !list_empty(&req->queue))) {
+ 		VDBG("%s, bad params\n", __func__);
+ 		return -EINVAL;
+ 	}
+-	if (!_ep || (!ep->desc && ep_index(ep))) {
+-		VDBG("%s, bad ep\n", __func__);
+-		return -EINVAL;
+-	}
+ 	if (ep->desc->bmAttributes == USB_ENDPOINT_XFER_ISOC) {
+ 		if (req->req.length > ep->ep.maxpacket)
+ 			return -EMSGSIZE;
+@@ -2036,7 +2036,13 @@ static void suspend_irq(struct fsl_udc *udc)
+ 	/* if the ID=0, let arc host process the wakeup */
+ 	if (fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) {
+ 		dr_wake_up_enable(udc_controller, false);
+-		dr_phy_low_power_mode(udc, false);
++#ifdef CONFIG_USB_OTG
++		/* if no gadget register in this driver, we need clear the wakeup event */
++		if (udc->transceiver->gadget == NULL)
++			dr_wake_up_enable(udc_controller, true);
++		else
++#endif
++			dr_phy_low_power_mode(udc, false);
+ 		pr_debug("at %s: device wake up event\n", __func__);
+ 		return true;
+ 	} else {/* wakeup is vbus wake event, but not for device so we need to clear b session */
+@@ -2164,7 +2170,7 @@ bool try_wake_up_udc(struct fsl_udc *udc)
+ static irqreturn_t fsl_udc_irq(int irq, void *_udc)
+ {
+ 	struct fsl_udc *udc = _udc;
+-	u32 irq_src;
++	u32 irq_src, clr_remain_irq = 0;
+ 	irqreturn_t status = IRQ_NONE;
+ 	unsigned long flags;
+ 
+@@ -2173,19 +2179,21 @@ static irqreturn_t fsl_udc_irq(int irq, void *_udc)
+ 		dr_clk_gate(true);
+ 
+ 	if (try_wake_up_udc(udc) == false) {
++		clr_remain_irq = 1;
+ 		goto irq_end;
+ 	}
+ #ifdef CONFIG_USB_OTG
+ 	/* if no gadget register in this driver, we need do noting */
+ 	if (udc->transceiver->gadget == NULL)
++		clr_remain_irq = 1;
+ 		goto irq_end;
+ 
+ 	/* only handle device interrupt event */
+ 	if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
++		clr_remain_irq = 1;
+ 		goto irq_end;
+ 	}
+ #endif
+-
+ 	irq_src = fsl_readl(&dr_regs->usbsts) & fsl_readl(&dr_regs->usbintr);
+ 	/* Clear notification bits */
+ 	fsl_writel(irq_src, &dr_regs->usbsts);
+@@ -2245,6 +2253,13 @@ static irqreturn_t fsl_udc_irq(int irq, void *_udc)
+ 	}
+ 
+ irq_end:
++	/* clear the unprocessed events(mainly PCD bit).
++	 * this isr is the last on the shared irq
++	 * chain, so we can clear the remained events */
++	if (clr_remain_irq) {
++		irq_src = fsl_readl(&dr_regs->usbsts);
++		fsl_writel(irq_src, &dr_regs->usbsts);
++	}
+ 	if (udc->stopped) {
+ 		dr_clk_gate(false);
+ 	}
+@@ -3195,8 +3210,7 @@ static int fsl_udc_resume(struct platform_device *pdev)
+ 		}
+ 		dr_wake_up_enable(udc_controller, false);
+ 		dr_phy_low_power_mode(udc_controller, false);
+-		mdelay(1);
+-
++		mdelay(3);/* IC have the debounce for ID\vbus status in otgsc */
+ 		dr_controller_setup(udc_controller);
+ 		dr_controller_run(udc_controller);
+ 	}
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+index 2395a63..9eb729e 100644
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -47,7 +47,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/irq.h>
+ #include <linux/gpio.h>
+-
++#include <linux/suspend.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
+ #include <asm/system.h>
+@@ -99,6 +99,12 @@ static struct fsl_otg_config fsl_otg_initdata = {
+ static unsigned long last_busy;
+ static bool clk_stopped;
+ static struct timer_list monitor_timer;
++static struct workqueue_struct *otg_queue;
++
++static void schedule_otg_work(struct delayed_work *dwork, unsigned long delay)
++{
++	queue_delayed_work(otg_queue, dwork, delay);
++}
+ 
+ int write_ulpi(u8 addr, u8 data)
+ {
+@@ -582,7 +588,7 @@ static int fsl_otg_set_host(struct otg_transceiver *otg_p, struct usb_bus *host)
+ 		 * so suspend the host after a short delay.
+ 		 */
+ 		otg_dev->host_working = 1;
+-		schedule_delayed_work(&otg_dev->otg_event, 100);
++		schedule_otg_work(&otg_dev->otg_event, 100);
+ 		return 0;
+ 	} else {		/* host driver going away */
+ 
+@@ -693,6 +699,7 @@ static void fsl_otg_event(struct work_struct *work)
+ 	struct otg_fsm *fsm = &og->fsm;
+ 	struct otg_transceiver *otg = &og->otg;
+ 
++	mutex_lock(&pm_mutex);
+ 	otg->default_a = (fsm->id == 0);
+ 	/* clear conn information */
+ 	if (fsm->id)
+@@ -714,6 +721,7 @@ static void fsl_otg_event(struct work_struct *work)
+ 		otg_drv_vbus(fsm, 1);
+ 		fsl_otg_start_host(fsm, 1);
+ 	}
++	mutex_unlock(&pm_mutex);
+ }
+ 
+ /* B-device start SRP */
+@@ -776,7 +784,7 @@ irqreturn_t fsl_otg_isr_gpio(int irq, void *dev_id)
+ 	f_otg->fsm.id = value;
+ 
+ 	cancel_delayed_work(&f_otg->otg_event);
+-	schedule_delayed_work(&f_otg->otg_event, msecs_to_jiffies(10));
++	schedule_otg_work(&f_otg->otg_event, msecs_to_jiffies(10));
+ 	/* if host mode, we should clear B_SESSION_VLD event and disable
+ 	 * B_SESSION_VLD irq
+ 	 */
+@@ -827,7 +835,7 @@ irqreturn_t fsl_otg_isr(int irq, void *dev_id)
+ 			printk(KERN_DEBUG "ID int (ID is %d)\n", fotg->fsm.id);
+ 
+ 			cancel_delayed_work(&fotg->otg_event);
+-			schedule_delayed_work(&fotg->otg_event, msecs_to_jiffies(10));
++			schedule_otg_work(&fotg->otg_event, msecs_to_jiffies(10));
+ 			/* if host mode, we should clear B_SESSION_VLD event and disable
+ 			 * B_SESSION_VLD irq
+ 			 */
+@@ -891,7 +899,11 @@ static int fsl_otg_conf(struct platform_device *pdev)
+ 	fsl_otg_tc = kzalloc(sizeof(struct fsl_otg), GFP_KERNEL);
+ 	if (!fsl_otg_tc)
+ 		return -ENODEV;
+-
++	otg_queue = create_workqueue("otg_switch");
++	if (otg_queue == NULL) {
++		printk(KERN_ERR "Coulndn't create work queue\n");
++		return -ENOMEM;
++	}
+ 	INIT_DELAYED_WORK(&fsl_otg_tc->otg_event, fsl_otg_event);
+ 
+ 	INIT_LIST_HEAD(&active_timers);
+-- 
+1.5.4.4
+

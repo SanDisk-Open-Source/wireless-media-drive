@@ -1,0 +1,237 @@
+From eecea786655b5cc48f8dc6bf2e40c5678946ee3a Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Fri, 12 Nov 2010 19:22:27 +0800
+Subject: [PATCH] ENGR00133658 PTP: Improvement and supplemental check for i.MX28 1588
+
+1. Improved the 1588 frequency drift compensation for MX28.
+2. Added the sender port ID value check.
+
+Signed-off-by: Xie Xiaobo <R63061@freescale.com>
+---
+ drivers/net/fec_1588.c |   92 ++++++++++++++++++++++++++++--------------------
+ drivers/net/fec_1588.h |    3 +-
+ 2 files changed, 56 insertions(+), 39 deletions(-)
+
+diff --git a/drivers/net/fec_1588.c b/drivers/net/fec_1588.c
+index 6375036..e4c4bf3 100644
+--- a/drivers/net/fec_1588.c
++++ b/drivers/net/fec_1588.c
+@@ -100,6 +100,7 @@ static int fec_ptp_insert(struct circ_buf *ptp_buf,
+ 	tmp = (struct fec_ptp_data_t *)(ptp_buf->buf) + ptp_buf->tail;
+ 
+ 	tmp->key = data->key;
++	memcpy(tmp->spid, data->spid, 10);
+ 	tmp->ts_time.sec = data->ts_time.sec;
+ 	tmp->ts_time.nsec = data->ts_time.nsec;
+ 
+@@ -111,7 +112,6 @@ static int fec_ptp_insert(struct circ_buf *ptp_buf,
+ }
+ 
+ static int fec_ptp_find_and_remove(struct circ_buf *ptp_buf,
+-				   int key,
+ 				   struct fec_ptp_data_t *data,
+ 				   struct fec_ptp_private *priv)
+ {
+@@ -127,7 +127,8 @@ static int fec_ptp_find_and_remove(struct circ_buf *ptp_buf,
+ 	i = ptp_buf->head;
+ 	while (i != end) {
+ 		tmp = (struct fec_ptp_data_t *)(ptp_buf->buf) + i;
+-		if (tmp->key == key)
++		if (tmp->key == data->key &&
++				!memcmp(tmp->spid, data->spid, 10))
+ 			break;
+ 		i = fec_ptp_calc_index(size, i, 1);
+ 	}
+@@ -247,6 +248,8 @@ void fec_ptp_store_rxstamp(struct fec_ptp_private *priv,
+ 	struct fec_ptp_private *fpp = priv;
+ 	struct iphdr *iph;
+ 	struct udphdr *udph;
++	unsigned char *sp_id;
++	unsigned short portnum;
+ 
+ 	/* Check for UDP, and Check if port is 319 for PTP Event */
+ 	iph = (struct iphdr *)(skb->data + FEC_PTP_IP_OFFS);
+@@ -259,8 +262,12 @@ void fec_ptp_store_rxstamp(struct fec_ptp_private *priv,
+ 
+ 	seq_id = *((u16 *)(skb->data + FEC_PTP_SEQ_ID_OFFS));
+ 	control = *((u8 *)(skb->data + FEC_PTP_CTRL_OFFS));
++	sp_id = skb->data + FEC_PTP_SPORT_ID_OFFS;
++	portnum = ntohs(*((unsigned short *)(sp_id + 8)));
+ 
+ 	tmp_rx_time.key = ntohs(seq_id);
++	memcpy(tmp_rx_time.spid, sp_id, 8);
++	memcpy(tmp_rx_time.spid + 8, (unsigned char *)&portnum, 2);
+ 	tmp_rx_time.ts_time.sec = fpp->prtc;
+ 	tmp_rx_time.ts_time.nsec = bdp->ts;
+ 
+@@ -310,28 +317,29 @@ static uint8_t fec_get_rx_time(struct fec_ptp_private *priv,
+ 			       struct ptp_time *rx_time)
+ {
+ 	struct fec_ptp_data_t tmp;
+-	int key, flag;
++	int flag;
+ 	u8 mode;
+ 
+-	key = pts->seq_id;
++	tmp.key = pts->seq_id;
++	memcpy(tmp.spid, pts->spid, 10);
+ 	mode = pts->message_type;
+ 	switch (mode) {
+ 	case PTP_MSG_SYNC:
+ 		flag = fec_ptp_find_and_remove(&(priv->rx_time_sync),
+-						key, &tmp, priv);
++						&tmp, priv);
+ 		break;
+ 	case PTP_MSG_DEL_REQ:
+ 		flag = fec_ptp_find_and_remove(&(priv->rx_time_del_req),
+-						key, &tmp, priv);
++						&tmp, priv);
+ 		break;
+ 
+ 	case PTP_MSG_P_DEL_REQ:
+ 		flag = fec_ptp_find_and_remove(&(priv->rx_time_pdel_req),
+-						key, &tmp, priv);
++						&tmp, priv);
+ 		break;
+ 	case PTP_MSG_P_DEL_RESP:
+ 		flag = fec_ptp_find_and_remove(&(priv->rx_time_pdel_resp),
+-						key, &tmp, priv);
++						&tmp, priv);
+ 		break;
+ 
+ 	default:
+@@ -351,19 +359,19 @@ static uint8_t fec_get_rx_time(struct fec_ptp_private *priv,
+ 		switch (mode) {
+ 		case PTP_MSG_SYNC:
+ 			flag = fec_ptp_find_and_remove(&(priv->rx_time_sync),
+-				key, &tmp, priv);
++				&tmp, priv);
+ 			break;
+ 		case PTP_MSG_DEL_REQ:
+ 			flag = fec_ptp_find_and_remove(
+-				&(priv->rx_time_del_req), key, &tmp, priv);
++				&(priv->rx_time_del_req), &tmp, priv);
+ 			break;
+ 		case PTP_MSG_P_DEL_REQ:
+ 			flag = fec_ptp_find_and_remove(
+-				&(priv->rx_time_pdel_req), key, &tmp, priv);
++				&(priv->rx_time_pdel_req), &tmp, priv);
+ 			break;
+ 		case PTP_MSG_P_DEL_RESP:
+ 			flag = fec_ptp_find_and_remove(
+-				&(priv->rx_time_pdel_resp), key, &tmp, priv);
++				&(priv->rx_time_pdel_resp), &tmp, priv);
+ 			break;
+ 		}
+ 
+@@ -382,45 +390,52 @@ static void fec_handle_ptpdrift(struct ptp_set_comp *comp,
+ {
+ 	u32 ndrift;
+ 	u32 i;
+-	u32 tmp, tmp_ns, tmp_prid;
+-	u32 min_ns, min_prid, miss_ns;
++	u32 tmp_current, tmp_winner;
+ 
+ 	ndrift = comp->drift;
++
+ 	if (ndrift == 0) {
+ 		ptc->corr_inc = 0;
+ 		ptc->corr_period = 0;
+ 		return;
+-	}
+-
+-	if (ndrift >= FEC_ATIME_40MHZ) {
++	} else if (ndrift >= FEC_ATIME_40MHZ) {
+ 		ptc->corr_inc = (u32)(ndrift / FEC_ATIME_40MHZ);
+ 		ptc->corr_period = 1;
+ 		return;
+-	}
+-
+-	min_ns = 1;
+-	tmp = FEC_ATIME_40MHZ % ndrift;
+-	tmp_prid = (u32)(FEC_ATIME_40MHZ / ndrift);
+-	min_prid = tmp_prid;
+-	miss_ns = tmp / tmp_prid;
+-	for (i = 2; i <= FEC_T_INC_40MHZ; i++) {
+-		tmp = (FEC_ATIME_40MHZ * i) % ndrift;
+-		tmp_prid = (FEC_ATIME_40MHZ * i) / ndrift;
+-		tmp_ns = tmp / tmp_prid;
+-		if (tmp_ns <= 10) {
+-			min_ns = i;
+-			min_prid = tmp_prid;
+-			break;
++	} else if ((ndrift < FEC_ATIME_40MHZ) && (comp->o_ops == 0)) {
++		tmp_winner = 0xFFFFFFFF;
++		for (i = 1; i < 25; i++) {
++			tmp_current = (FEC_ATIME_40MHZ * i) % ndrift;
++			if (tmp_current == 0) {
++				ptc->corr_inc = i;
++				ptc->corr_period = (u32)((FEC_ATIME_40MHZ * i)
++								/ ndrift);
++				break;
++			} else if (tmp_current < tmp_winner) {
++				ptc->corr_inc = i;
++				ptc->corr_period = (u32)((FEC_ATIME_40MHZ * i)
++								/ ndrift);
++				tmp_winner = tmp_current;
++			}
+ 		}
+-		if (tmp_ns < miss_ns) {
+-			min_ns = i;
+-			min_prid = tmp_prid;
+-			miss_ns = tmp_ns;
++	} else if ((ndrift < FEC_ATIME_40MHZ) && (comp->o_ops == 1)) {
++		tmp_winner = 0xFFFFFFFF;
++		for (i = 1; i < 100; i++) {
++			tmp_current = (FEC_ATIME_40MHZ * i) % ndrift;
++			if (tmp_current == 0) {
++				ptc->corr_inc = i;
++				ptc->corr_period = (u32)((FEC_ATIME_40MHZ * i)
++								/ ndrift);
++				break;
++			} else if (tmp_current < tmp_winner) {
++				ptc->corr_inc = i;
++				ptc->corr_period = (u32)((FEC_ATIME_40MHZ * i)
++								/ ndrift);
++				tmp_winner = tmp_current;
++			}
+ 		}
+ 	}
+ 
+-	ptc->corr_inc = min_ns;
+-	ptc->corr_period = min_prid;
+ }
+ 
+ static void fec_set_drift(struct fec_ptp_private *priv,
+@@ -430,6 +445,7 @@ static void fec_set_drift(struct fec_ptp_private *priv,
+ 	struct fec_ptp_private *fpp = priv;
+ 	u32 tmp, corr_ns;
+ 
++	memset(&tc, 0, sizeof(struct ptp_time_correct));
+ 	fec_handle_ptpdrift(comp, &tc);
+ 	if (tc.corr_inc == 0)
+ 		return;
+diff --git a/drivers/net/fec_1588.h b/drivers/net/fec_1588.h
+index 9ba246e..1bbc8c4 100644
+--- a/drivers/net/fec_1588.h
++++ b/drivers/net/fec_1588.h
+@@ -75,7 +75,7 @@
+ #define FEC_PTP_IP_OFFS			0xE
+ #define FEC_PTP_UDP_OFFS		0x22
+ #define FEC_PTP_MSG_TYPE_OFFS		0x2A
+-#define FEC_PTP_SPORT_ID_OFFS		0x46
++#define FEC_PTP_SPORT_ID_OFFS		0x3E
+ #define FEC_PTP_SEQ_ID_OFFS		0x48
+ #define FEC_PTP_CTRL_OFFS		0x4A
+ #define FEC_PACKET_TYPE_UDP		0x11
+@@ -90,6 +90,7 @@ struct ptp_time{
+ 
+ /* Structure for PTP Time Stamp */
+ struct fec_ptp_data_t {
++	u8		spid[10];
+ 	int		key;
+ 	struct ptp_time	ts_time;
+ };
+-- 
+1.5.4.4
+

@@ -1,0 +1,84 @@
+From f89ac0af8d6fbc1de406c44107b0c851ad729755 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Wed, 29 Sep 2010 14:00:30 +0800
+Subject: [PATCH] ENGR00132073-1 usb: wakeup capability should be controlled by user
+
+MSL part
+
+The usb wakeup system capability should be controlled by user,
+For example, the users don't expect wakeup system at below situations:
+1. When they plug in Micro B line, maybe the users just want to charge
+from PC
+2. Plug in a usb device, such as usb camera or usb 3G moden
+The wakeup capability can be controlled by sys interface
+1. At otg mode:
+echo enabled > /sys/devices/platform/fsl-usb2-otg/power/wakeup
+2. At non-otg mode:
+device mode:
+echo enabled > /sys/devices/platform/fsl-usb2-otg/power/wakeup
+host mode
+echo enabled > /sys/devices/platform/fsl-ehci.x/power/wakeup
+x is the usb port num (from 0 to n-1)
+NOTE: The user must load one gadget module if he wants to usb otg wakeup
+function.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ arch/arm/mach-mx5/usb_dr.c     |    7 ++++---
+ arch/arm/plat-mxc/usb_common.c |    1 -
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/usb_dr.c b/arch/arm/mach-mx5/usb_dr.c
+index 6373f54..94ed6c0 100644
+--- a/arch/arm/mach-mx5/usb_dr.c
++++ b/arch/arm/mach-mx5/usb_dr.c
+@@ -20,7 +20,6 @@
+ #include <mach/hardware.h>
+ #include <asm/delay.h>
+ #include "usb.h"
+-
+ static int usbotg_init_ext(struct platform_device *pdev);
+ static void usbotg_uninit_ext(struct fsl_usb2_platform_data *pdata);
+ static void usbotg_clock_gate(bool on);
+@@ -88,7 +87,7 @@ static void __wakeup_irq_enable(bool on, int source)
+ 	 * all enable the wakeup irq, we can enable the OWIE bit
+ 	 */
+ 	if (on) {
+-#ifdef CONFIG_MXC_OTG
++#ifdef CONFIG_USB_OTG
+ 		wakeup_irq_enable_src |= source;
+ 		if (wakeup_irq_enable_src == (ENABLED_BY_HOST | ENABLED_BY_DEVICE)) {
+ 			USBCTRL |= UCTRL_OWIE;
+@@ -146,7 +145,7 @@ static void __phy_lowpower_suspend(bool enable, int source)
+ {
+ 	if (enable) {
+ 		low_power_enable_src |= source;
+-#ifdef CONFIG_MXC_OTG
++#ifdef CONFIG_USB_OTG
+ 		if (low_power_enable_src == (ENABLED_BY_HOST | ENABLED_BY_DEVICE)) {
+ 			pr_debug("phy lowpower enabled\n");
+ 			UOG_PORTSC1 |= PORTSC_PHCD;
+@@ -215,6 +214,8 @@ void mx5_set_otghost_vbus_func(driver_vbus_func driver_vbus)
+ void __init mx5_usb_dr_init(void)
+ {
+ #ifdef CONFIG_USB_OTG
++	/* wake_up_enalbe is useless, just for usb_register_remote_wakeup execution*/
++	dr_utmi_config.wake_up_enable = _device_wakeup_enable;
+ 	dr_utmi_config.operating_mode = FSL_USB2_DR_OTG;
+ 	platform_device_add_data(&mxc_usbdr_otg_device, &dr_utmi_config, sizeof(dr_utmi_config));
+ 	platform_device_register(&mxc_usbdr_otg_device);
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+index 0d17ff6..db55a42 100644
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -449,7 +449,6 @@ static int usb_register_remote_wakeup(struct platform_device *pdev)
+ 	}
+ 	irq = res->start;
+ 	pdev->dev.power.can_wakeup = 1;
+-	device_set_wakeup_enable(&(pdev->dev), 1);
+ 	enable_irq_wake(irq);
+ 
+ 	return 0;
+-- 
+1.5.4.4
+

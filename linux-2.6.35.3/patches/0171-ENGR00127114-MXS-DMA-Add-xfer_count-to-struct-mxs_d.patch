@@ -1,0 +1,43 @@
+From b546d96a624e6f638069aedc95ac9832fce6c72b Mon Sep 17 00:00:00 2001
+From: Lionel Xu <Lionel.Xu@freescale.com>
+Date: Fri, 3 Sep 2010 17:55:28 +0800
+Subject: [PATCH] ENGR00127114 MXS DMA: Add xfer_count to struct mxs_dma_info
+
+Add a new member xfer_count to struct mxs_dma_info, which will
+be used later.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ arch/arm/plat-mxs/dma-apbx.c               |    3 +++
+ arch/arm/plat-mxs/include/mach/dmaengine.h |    1 +
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxs/dma-apbx.c b/arch/arm/plat-mxs/dma-apbx.c
+index c27414f..6d77a69 100644
+--- a/arch/arm/plat-mxs/dma-apbx.c
++++ b/arch/arm/plat-mxs/dma-apbx.c
+@@ -99,6 +99,9 @@ static void mxs_dma_apbx_info(struct mxs_dma_device *pdev,
+ 	reg = __raw_readl(pdev->base + HW_APBX_CTRL2);
+ 	info->status = reg >> chan;
+ 	info->buf_addr = __raw_readl(pdev->base + HW_APBX_CHn_BAR(chan));
++	reg = __raw_readl(pdev->base + HW_APBX_CHn_CMD(chan));
++	info->xfer_count = (reg & BM_APBX_CHn_CMD_XFER_COUNT) >> \
++		BP_APBX_CHn_CMD_XFER_COUNT;
+ }
+ 
+ static int
+diff --git a/arch/arm/plat-mxs/include/mach/dmaengine.h b/arch/arm/plat-mxs/include/mach/dmaengine.h
+index eecd260..cdf6b1e 100644
+--- a/arch/arm/plat-mxs/include/mach/dmaengine.h
++++ b/arch/arm/plat-mxs/include/mach/dmaengine.h
+@@ -106,6 +106,7 @@ struct mxs_dma_info {
+ #define MXS_DMA_INFO_ERR       0x00000001
+ #define MXS_DMA_INFO_ERR_STAT  0x00010000
+ 	unsigned int buf_addr;
++	unsigned int xfer_count;
+ };
+ 
+ /**
+-- 
+1.5.4.4
+

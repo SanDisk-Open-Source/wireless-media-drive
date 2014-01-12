@@ -1,0 +1,149 @@
+From 4846985ab13bdc09a01a1a7d828de879c0ff1008 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Wed, 26 Jan 2011 16:16:31 +0800
+Subject: [PATCH] ENGR00138528 MX53 loco&smd:preset suspend voltage in the latest stage
+
+MX53 loco&smd:preset suspend voltage in the latest stage because
+Da9053 use the same register for preset and normal mode
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_loco_pmic_da9053.c |    3 ++
+ arch/arm/mach-mx5/mx53_smd_pmic_da9053.c  |    4 ++-
+ arch/arm/mach-mx5/pm.c                    |   11 --------
+ arch/arm/mach-mx5/pm_da9053.c             |   40 +++++++++++++++++++++++++++++
+ 4 files changed, 46 insertions(+), 12 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c b/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
+index 1a833d8..e11243b 100644
+--- a/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
++++ b/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
+@@ -54,6 +54,9 @@
+ 	},\
+ }
+ 
++/* currently the suspend_mv here takes no effects for DA9053
++preset-voltage have to be done in the latest stage during
++suspend*/
+ static struct regulator_init_data da9052_regulators_init[] = {
+ 	DA9052_LDO(DA9052_LDO1_VOLT_UPPER,
+ 		DA9052_LDO1_VOLT_LOWER, "DA9052_LDO1", 1300),
+diff --git a/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c b/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
+index 6179e8e..e6cf9e3 100644
+--- a/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
++++ b/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
+@@ -56,6 +56,9 @@
+ 	},\
+ }
+ 
++/* currently the suspend_mv field here takes no effects for DA9053
++preset-voltage have to be done in the latest stage during
++suspend*/
+ static struct regulator_init_data da9052_regulators_init[] = {
+ 	DA9052_LDO(DA9052_LDO1_VOLT_UPPER,
+ 		DA9052_LDO1_VOLT_LOWER, "DA9052_LDO1", 1300),
+@@ -268,7 +271,6 @@ static int __init smd_da9052_init(struct da9052 *da9052)
+ 
+ 	da9052_init_ssc_cache(da9052);
+ 	ret = platform_device_register(&wifi_bt_reg_device);
+-	pr_info("%s ret=%d\n", __func__);
+ 
+ 	return 0;
+ }
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index 0542d83..f07681b 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -144,16 +144,6 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 	return 0;
+ }
+ 
+-static int mx5_suspend_begin(suspend_state_t state)
+-{
+-	if (machine_is_mx53_loco() ||
+-		machine_is_mx53_smd()) {
+-		if (PM_SUSPEND_MEM == state)
+-			regulator_suspend_prepare(
+-				PM_SUSPEND_MEM);
+-	}
+-	return 0;
+-}
+ 
+ /*
+  * Called after processes are frozen, but before we shut down devices.
+@@ -226,7 +216,6 @@ static int mx5_pm_valid(suspend_state_t state)
+ 
+ struct platform_suspend_ops mx5_suspend_ops = {
+ 	.valid = mx5_pm_valid,
+-	.begin = mx5_suspend_begin,
+ 	.prepare = mx5_suspend_prepare,
+ 	.enter = mx5_suspend_enter,
+ 	.finish = mx5_suspend_finish,
+diff --git a/arch/arm/mach-mx5/pm_da9053.c b/arch/arm/mach-mx5/pm_da9053.c
+index 3190135..6e24fb2 100644
+--- a/arch/arm/mach-mx5/pm_da9053.c
++++ b/arch/arm/mach-mx5/pm_da9053.c
+@@ -290,6 +290,35 @@ void pm_da9053_write_reg(u8 reg, u8 value)
+ 	pm_i2c_imx_xfer(i2cmsg, 1);
+ }
+ 
++/* have to hard-code the preset voltage here for they share the register
++as the normal setting on Da9053 */
++/* preset buck core to 850 mv */
++#define BUCKCORE_SUSPEND_PRESET 0xCE
++/* preset buck core to 950 mv */
++#define BUCKPRO_SUSPEND_PRESET 0xD2
++/* preset ldo6 to 1200 mv */
++#define LDO6_SUSPEND_PRESET 0xC0
++/* preset ldo10 to 1200 mv */
++#define iLDO10_SUSPEND_PRESET 0xC0
++#define CONF_BIT 0x80
++
++static u8 volt_settings[DA9052_LDO10_REG - DA9052_BUCKCORE_REG + 1];
++static void pm_da9053_preset_voltage(void)
++{
++	u8 reg, data;
++	for (reg = DA9052_BUCKCORE_REG;
++		reg <= DA9052_LDO10_REG; reg++) {
++		pm_da9053_read_reg(reg, &data);
++		volt_settings[reg - DA9052_BUCKCORE_REG] = data;
++		data |= CONF_BIT;
++		pm_da9053_write_reg(reg, data);
++	}
++	pm_da9053_write_reg(DA9052_BUCKCORE_REG, BUCKCORE_SUSPEND_PRESET);
++	pm_da9053_write_reg(DA9052_BUCKPRO_REG, BUCKPRO_SUSPEND_PRESET);
++	pm_da9053_write_reg(DA9052_LDO6_REG, LDO6_SUSPEND_PRESET);
++	pm_da9053_write_reg(DA9052_LDO10_REG, iLDO10_SUSPEND_PRESET);
++}
++
+ #define DA9053_SLEEP_DELAY 0x1f
+ int da9053_suspend_cmd(void)
+ {
+@@ -305,6 +334,8 @@ int da9053_suspend_cmd(void)
+ 	}
+ 	clk_enable(i2c_clk);
+ 
++	pm_da9053_preset_voltage();
++
+ 	pm_da9053_read_reg(DA9052_ID01_REG, &data);
+ 	data &= ~(DA9052_ID01_DEFSUPPLY | DA9052_ID01_nRESMODE);
+ 	pm_da9053_write_reg(DA9052_ID01_REG, data);
+@@ -320,6 +351,15 @@ int da9053_suspend_cmd(void)
+ 	return 0;
+ }
+ 
++void da9053_restore_volt_settings(void)
++{
++	u8 reg;
++	for (reg = DA9052_BUCKCORE_REG;
++		reg <= DA9052_LDO10_REG; reg++)
++		pm_da9053_write_reg(reg,
++			volt_settings[reg - DA9052_BUCKCORE_REG]);
++}
++
+ int da9053_poweroff_cmd(void)
+ {
+ 	unsigned char buf[2] = {0, 0};
+-- 
+1.5.4.4
+

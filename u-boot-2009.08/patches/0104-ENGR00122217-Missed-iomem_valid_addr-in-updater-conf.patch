@@ -1,0 +1,48 @@
+From b40dc845fc1c09d79471482e74d6158d23cf9a23 Mon Sep 17 00:00:00 2001
+From: Wallace Wang <r59996@freescale.com>
+Date: Fri, 2 Apr 2010 15:07:35 +0800
+Subject: [PATCH] ENGR00122217 Missed iomem_valid_addr in updater configration
+
+1. Add definition for iomem_valid_addr
+2. Add definition for CONFIG_ENV_IS_IN_FLASH
+
+Signed-off-by: Wallace Wang <r59996@freescale.com>
+---
+ include/configs/mx35_3stack_mfg.h |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/mx35_3stack_mfg.h b/include/configs/mx35_3stack_mfg.h
+index 42b5909..98f37c0 100644
+--- a/include/configs/mx35_3stack_mfg.h
++++ b/include/configs/mx35_3stack_mfg.h
+@@ -190,6 +190,8 @@
+ #define CONFIG_NR_DRAM_BANKS	1
+ #define PHYS_SDRAM_1		CSD0_BASE_ADDR
+ #define PHYS_SDRAM_1_SIZE	(128 * 1024 * 1024)
++#define iomem_valid_addr(addr, size) \
++	(addr >= PHYS_SDRAM_1 && addr <= (PHYS_SDRAM_1 + PHYS_SDRAM_1_SIZE))
+ 
+ /*-----------------------------------------------------------------------
+  * FLASH and environment organization
+@@ -218,6 +220,18 @@
+  */
+ #define CONFIG_ENV_ADDR		(CONFIG_SYS_MONITOR_BASE + CONFIG_ENV_SECT_SIZE)
+ 
++#if defined(CONFIG_CMD_NAND)
++	#define CONFIG_FSL_ENV_IN_NAND
++#else
++	#define CONFIG_ENV_IS_IN_FLASH  1
++#endif
++
++#if defined(CONFIG_FSL_ENV_IN_NAND)
++	#define CONFIG_ENV_IS_IN_NAND 1
++	#define CONFIG_ENV_OFFSET       (1024 * 1024)
++#elif defined(CONFIG_FSL_ENV_IS_IN_FLASH)
++	#define CONFIG_ENV_IS_IN_FLASH  1
++#endif
+ 
+ /*-----------------------------------------------------------------------
+  * CFI FLASH driver setup
+-- 
+1.5.4.4
+

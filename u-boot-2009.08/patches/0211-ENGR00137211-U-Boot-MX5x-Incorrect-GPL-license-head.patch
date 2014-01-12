@@ -1,0 +1,74 @@
+From d0309988aa96ca12dd2ae1855a52449415a46466 Mon Sep 17 00:00:00 2001
+From: Xinyu Chen <xinyu.chen@freescale.com>
+Date: Wed, 22 Dec 2010 15:51:47 +0800
+Subject: [PATCH] ENGR00137211 U-Boot MX5x: Incorrect GPL license header on files
+
+Correct the GPL license
+
+Signed-off-by: Xinyu Chen <xinyu.chen@freescale.com>
+---
+ board/freescale/common/recovery.c |   18 ++++++++++++++----
+ board/freescale/common/recovery.h |   17 ++++++++++++++---
+ 2 files changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/board/freescale/common/recovery.c b/board/freescale/common/recovery.c
+index 90b76c5..16e0be4 100644
+--- a/board/freescale/common/recovery.c
++++ b/board/freescale/common/recovery.c
+@@ -1,11 +1,21 @@
+ /*
+  * Freescale Android Recovery mode checking routing
+-
++ *
+  * Copyright (C) 2010 Freescale Semiconductor, Inc.
+  *
+- * This software may be used and distributed according to the
+- * terms of the GNU Public License, Version 2, incorporated
+- * herein by reference.
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+  *
+  */
+ #include <common.h>
+diff --git a/board/freescale/common/recovery.h b/board/freescale/common/recovery.h
+index 9958330..f3a47b8 100644
+--- a/board/freescale/common/recovery.h
++++ b/board/freescale/common/recovery.h
+@@ -3,9 +3,20 @@
+  *
+  * Copyright (C) 2010 Freescale Semiconductor.
+  *
+- * This software may be used and distributed according to the
+- * terms of the GNU Public License, Version 2, incorporated
+- * herein by reference.
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
+  */
+ 
+ #ifndef __RECOVERY_H_
+-- 
+1.5.4.4
+

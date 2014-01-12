@@ -1,0 +1,29 @@
+From e755cbbe1e0fe1c007af21a1b92e4992ee622029 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 23 Sep 2010 10:36:56 -0500
+Subject: [PATCH] ENGR00131874-4 - EPDC 2.6.35 kernel upgrade - hang in PxP during transfer setup
+
+The tx_list member in pxp_tx_desc (which is new to 2.6.35 kernel) is not being
+initialized, which causes a hang when it is accessed in pxp_preip_slave_sg().
+Fix is to initialize it properly in pxp_desc_alloc().
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index 39e119e..b57ec0f 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -780,6 +780,7 @@ static int pxp_desc_alloc(struct pxp_channel *pxp_chan, int n)
+ 		struct dma_async_tx_descriptor *txd = &desc->txd;
+ 
+ 		memset(txd, 0, sizeof(*txd));
++		INIT_LIST_HEAD(&desc->tx_list);
+ 		dma_async_tx_descriptor_init(txd, &pxp_chan->dma_chan);
+ 		txd->tx_submit = pxp_tx_submit;
+ 
+-- 
+1.5.4.4
+

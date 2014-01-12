@@ -1,0 +1,47 @@
+From b23468da828e3cbbe73c26af081c98c7595240b5 Mon Sep 17 00:00:00 2001
+From: Rob Herring <r.herring@freescale.com>
+Date: Tue, 15 Sep 2009 22:21:26 -0500
+Subject: [PATCH] smsc911x: Add phy suspend and resume
+
+Most of the smsc9xxx power consumption is in the phy, so
+we need to suspend the phy.
+
+Signed-off-by: Rob Herring <r.herring@freescale.com>
+---
+ drivers/net/smsc911x.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/smsc911x.c b/drivers/net/smsc911x.c
+index 7a7b01a..e7e8f9f 100644
+--- a/drivers/net/smsc911x.c
++++ b/drivers/net/smsc911x.c
+@@ -2120,6 +2120,9 @@ static int smsc911x_suspend(struct device *dev)
+ {
+ 	struct net_device *ndev = dev_get_drvdata(dev);
+ 	struct smsc911x_data *pdata = netdev_priv(ndev);
++	struct phy_device *phy_dev = pdata->phy_dev;
++
++	smsc911x_mii_write(phy_dev->bus, phy_dev->addr, MII_BMCR, BMCR_PDOWN);
+ 
+ 	/* enable wake on LAN, energy detection and the external PME
+ 	 * signal. */
+@@ -2134,6 +2137,7 @@ static int smsc911x_resume(struct device *dev)
+ {
+ 	struct net_device *ndev = dev_get_drvdata(dev);
+ 	struct smsc911x_data *pdata = netdev_priv(ndev);
++	struct phy_device *phy_dev = pdata->phy_dev;
+ 	unsigned int to = 100;
+ 
+ 	/* Note 3.11 from the datasheet:
+@@ -2148,6 +2152,8 @@ static int smsc911x_resume(struct device *dev)
+ 	while (!(smsc911x_reg_read(pdata, PMT_CTRL) & PMT_CTRL_READY_) && --to)
+ 		udelay(1000);
+ 
++	smsc911x_mii_write(phy_dev->bus, phy_dev->addr, MII_BMCR, BMCR_ANENABLE | BMCR_ANRESTART);
++
+ 	return (to == 0) ? -EIO : 0;
+ }
+ 
+-- 
+1.5.4.4
+

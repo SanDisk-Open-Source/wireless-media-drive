@@ -1,0 +1,53 @@
+From dea12995240540761450c517c49939e74ae3e03d Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.li@freescale.com>
+Date: Wed, 10 Mar 2010 15:20:22 +0800
+Subject: [PATCH] ENGR00121497-1 MX28 USB 100mA current draw
+
+Add USB 100mA limitation feature for mx28 to mach usb 2.0 current requirment
+
+Signed-off-by: Frank Li <Frank.li@freescale.com>
+---
+ drivers/usb/gadget/file_storage.c |   11 +++++++++--
+ 1 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/file_storage.c b/drivers/usb/gadget/file_storage.c
+index b49d86e..1686b64 100644
+--- a/drivers/usb/gadget/file_storage.c
++++ b/drivers/usb/gadget/file_storage.c
+@@ -324,7 +324,11 @@ static struct {
+ } mod_data = {					// Default values
+ 	.transport_parm		= "BBB",
+ 	.protocol_parm		= "SCSI",
++#ifdef CONFIG_MXS_VBUS_CURRENT_DRAW
++	.removable		= 1,
++#else
+ 	.removable		= 0,
++#endif
+ 	.can_stall		= 1,
+ 	.cdrom			= 0,
+ 	.vendor			= FSG_VENDOR_ID,
+@@ -3579,7 +3583,6 @@ static int __init fsg_init(void)
+ {
+ 	int		rc;
+ 	struct fsg_dev	*fsg;
+-
+ 	if ((rc = fsg_alloc()) != 0)
+ 		return rc;
+ 	fsg = the_fsg;
+@@ -3587,8 +3590,12 @@ static int __init fsg_init(void)
+ 		kref_put(&fsg->ref, fsg_release);
+ 	return rc;
+ }
+-module_init(fsg_init);
+ 
++#ifdef CONFIG_MXS_VBUS_CURRENT_DRAW
++	fs_initcall(fsg_init);
++#else
++	module_init(fsg_init);
++#endif
+ 
+ static void __exit fsg_cleanup(void)
+ {
+-- 
+1.5.4.4
+

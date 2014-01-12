@@ -1,0 +1,249 @@
+From de51265112ce748d35d38d85acd9be6078a8fb83 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Thu, 14 Oct 2010 13:50:25 -0500
+Subject: [PATCH] ENGR00132634: MX50: Reduce STOP mode power consumption
+
+Improve STOP mode power consumption in MX50 by doing the following:
+1. Disable regulators that are not being used.
+2. Set as many regulators as possible into STANDBY mode.
+3. Set EIM, FEC IOMUX settings for minimum power leakage.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c                |   30 ++++++++++++++
+ arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c   |   12 ++----
+ arch/arm/mach-mx5/pm.c                      |   26 ++++++++++++-
+ arch/arm/plat-mxc/include/mach/iomux-mx50.h |   57 +++++++++++++--------------
+ 4 files changed, 87 insertions(+), 38 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 8732c04..a4ca237 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -283,6 +283,31 @@ static struct pad_desc  mx50_rdp[] = {
+ 	MX50_PAD_EIM_DA6__KEY_COL7,
+ 	MX50_PAD_EIM_DA7__KEY_ROW7,
+ 
++	/*EIM pads */
++	MX50_PAD_EIM_DA0__GPIO_1_0,
++	MX50_PAD_EIM_DA1__GPIO_1_1,
++	MX50_PAD_EIM_DA2__GPIO_1_2,
++	MX50_PAD_EIM_DA3__GPIO_1_3,
++	MX50_PAD_EIM_DA4__GPIO_1_4,
++	MX50_PAD_EIM_DA5__GPIO_1_5,
++	MX50_PAD_EIM_DA7__GPIO_1_7,
++	MX50_PAD_EIM_DA8__GPIO_1_8,
++	MX50_PAD_EIM_DA9__GPIO_1_9,
++	MX50_PAD_EIM_DA10__GPIO_1_10,
++	MX50_PAD_EIM_DA11__GPIO_1_11,
++	MX50_PAD_EIM_DA12__GPIO_1_12,
++	MX50_PAD_EIM_DA13__GPIO_1_13,
++	MX50_PAD_EIM_DA14__GPIO_1_14,
++	MX50_PAD_EIM_DA15__GPIO_1_15,
++	MX50_PAD_EIM_CS2__GPIO_1_16,
++	MX50_PAD_EIM_CS1__GPIO_1_17,
++	MX50_PAD_EIM_CS0__GPIO_1_18,
++	MX50_PAD_EIM_EB0__GPIO_1_19,
++	MX50_PAD_EIM_EB1__GPIO_1_20,
++	MX50_PAD_EIM_WAIT__GPIO_1_21,
++	MX50_PAD_EIM_BCLK__GPIO_1_22,
++	MX50_PAD_EIM_RDY__GPIO_1_23,
++	MX50_PAD_EIM_OE__GPIO_1_24,
+ };
+ 
+ static struct pad_desc  mx50_gpmi_nand[] = {
+@@ -1079,6 +1104,8 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
+ 
+ static void __init mx50_rdp_io_init(void)
+ {
++	struct pad_desc cspi_keeper = MX50_PAD_ECSPI1_SCLK__GPIO_4_12;
++
+ 	mxc_iomux_v3_setup_multiple_pads(mx50_rdp, \
+ 			ARRAY_SIZE(mx50_rdp));
+ 
+@@ -1139,6 +1166,9 @@ static void __init mx50_rdp_io_init(void)
+ 	gpio_request(USB_OTG_PWR, "usb otg power");
+ 	gpio_direction_output(USB_OTG_PWR, 1);
+ 	gpio_set_value(USB_OTG_PWR, 0);
++
++	cspi_keeper.pad_ctrl = 0x0; /* Disable all keepers */
++	mxc_iomux_v3_setup_pad(&cspi_keeper);
+ }
+ 
+ /*!
+diff --git a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+index b72e987..8ad3a4a 100644
+--- a/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
++++ b/arch/arm/mach-mx5/mx50_rdp_pmic_mc13892.c
+@@ -74,9 +74,11 @@
+ #define AUDIO_STBY_MASK		(1 << 16)
+ #define SD_STBY_MASK		(1 << 19)
+ 
+-#define REG_MODE_0_ALL_MASK	(DIG_STBY_MASK | GEN1_STBY_MASK)
++#define REG_MODE_0_ALL_MASK	(DIG_STBY_MASK | GEN1_STBY_MASK\
++					| USB2_STBY_MASK | PLL_STBY_MASK\
++					| IOHI_STBY_MASK)
+ #define REG_MODE_1_ALL_MASK	(CAM_STBY_MASK | VIDEO_STBY_MASK |\
+-				AUDIO_STBY_MASK | SD_STBY_MASK)
++				AUDIO_STBY_MASK | SD_STBY_MASK | GEN3_STBY_MASK)
+ 
+ /* switch mode setting */
+ #define	SW1MODE_LSB	0
+@@ -259,7 +261,6 @@ static struct regulator_init_data vsd_init = {
+ 		.min_uV = mV_to_uV(1800),
+ 		.max_uV = mV_to_uV(3150),
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+-		.always_on = 1,
+ 	}
+ };
+ 
+@@ -271,7 +272,6 @@ static struct regulator_init_data vcam_init = {
+ 		.valid_ops_mask =
+ 			REGULATOR_CHANGE_VOLTAGE | REGULATOR_CHANGE_MODE,
+ 		.valid_modes_mask = REGULATOR_MODE_FAST | REGULATOR_MODE_NORMAL,
+-		.always_on = 1,
+ 	}
+ };
+ 
+@@ -281,10 +281,7 @@ static struct regulator_init_data vgen1_init = {
+ 		.min_uV = mV_to_uV(3000),
+ 		.max_uV = mV_to_uV(3000),
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+-		.always_on = 1,
+ 	},
+-	.num_consumer_supplies = ARRAY_SIZE(vgen1_consumers),
+-	.consumer_supplies = vgen1_consumers,
+ };
+ 
+ static struct regulator_init_data vgen2_init = {
+@@ -303,7 +300,6 @@ static struct regulator_init_data vgen3_init = {
+ 		.min_uV = mV_to_uV(1800),
+ 		.max_uV = mV_to_uV(2900),
+ 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
+-		.always_on = 1,
+ 	}
+ };
+ 
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index 4ce3df5..5636242 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -25,6 +25,10 @@
+ #include <asm/tlb.h>
+ #include <asm/mach/map.h>
+ #include <mach/hardware.h>
++#include <mach/gpio.h>
++#ifdef CONFIG_ARCH_MX50
++#include <mach/iomux-mx50.h>
++#endif
+ 
+ #define MXC_SRPG_EMPGC0_SRPGCR	(IO_ADDRESS(GPC_BASE_ADDR) + 0x2C0)
+ #define MXC_SRPG_EMPGC1_SRPGCR	(IO_ADDRESS(GPC_BASE_ADDR) + 0x2D0)
+@@ -55,6 +59,8 @@ void *suspend_iram_base;
+ void (*suspend_in_iram)(void *sdclk_iomux_addr) = NULL;
+ void __iomem *suspend_param1;
+ 
++#define FEC_EN (5*32 + 23) /*GPIO_6_23*/
++
+ static int mx5_suspend_enter(suspend_state_t state)
+ {
+ 	if (gpc_dvfs_clk == NULL)
+@@ -86,8 +92,26 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 			/*clear the EMPGC0/1 bits */
+ 			__raw_writel(0, MXC_SRPG_EMPGC0_SRPGCR);
+ 			__raw_writel(0, MXC_SRPG_EMPGC1_SRPGCR);
+-		} else
++		} else {
++			/* Setup GPIO/IOMUX settings to lower power. */
++			struct pad_desc cspi_keeper1 =
++					MX50_PAD_I2C3_SDA__GPIO_6_23;
++			/* Disable the Pull/keeper */
++			cspi_keeper1.pad_ctrl = 0xE;
++			mxc_iomux_v3_setup_pad(&cspi_keeper1);
++
++			gpio_request(FEC_EN, "fec-en");
++			gpio_direction_input(FEC_EN);
++
++			/* Suspend now. */
+ 			suspend_in_iram(databahn_base);
++
++			/* Enable the Pull/keeper */
++			cspi_keeper1.pad_ctrl = 0x8e;
++			mxc_iomux_v3_setup_pad(&cspi_keeper1);
++
++			gpio_direction_output(FEC_EN, 0);
++		}
+ 	} else {
+ 			cpu_do_idle();
+ 	}
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx50.h b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+index 9fd073d..2e48220 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx50.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx50.h
+@@ -238,35 +238,34 @@ typedef enum iomux_config {
+ #define MX50_PAD_EPDC_SDCE3__GPIO_4_28	IOMUX_PAD(0x5EC, 0x250, 1, 0x0, 0, NO_PAD_CTRL)
+ #define MX50_PAD_EPDC_SDCE4__GPIO_4_29	IOMUX_PAD(0x5F0, 0x254, 1, 0x0, 0, NO_PAD_CTRL)
+ #define MX50_PAD_EPDC_SDCE5__GPIO_4_30	IOMUX_PAD(0x5F4, 0x258, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA0__GPIO_1_0	IOMUX_PAD(0x5F8, 0x25C, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA1__GPIO_1_1	IOMUX_PAD(0x5FC, 0x260, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA2__GPIO_1_2	IOMUX_PAD(0x600, 0x264, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA3__GPIO_1_3	IOMUX_PAD(0x604, 0x268, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA4__GPIO_1_4	IOMUX_PAD(0x608, 0x26C, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA5__GPIO_1_5	IOMUX_PAD(0x60C, 0x270, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA6__GPIO_1_6	IOMUX_PAD(0x610, 0x274, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA7__GPIO_1_7	IOMUX_PAD(0x614, 0x278, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA8__GPIO_1_8	IOMUX_PAD(0x618, 0x27C, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA9__GPIO_1_9	IOMUX_PAD(0x61C, 0x280, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA10__GPIO_1_10	IOMUX_PAD(0x620, 0x284, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA11__GPIO_1_11	IOMUX_PAD(0x624, 0x288, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA12__GPIO_1_12	IOMUX_PAD(0x628, 0x28C, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA13__GPIO_1_13	IOMUX_PAD(0x62C, 0x290, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA14__GPIO_1_14	IOMUX_PAD(0x630, 0x294, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_DA15__GPIO_1_15	IOMUX_PAD(0x634, 0x298, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_CS2__GPIO_1_16	IOMUX_PAD(0x638, 0x29C, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_CS1__GPIO_1_17	IOMUX_PAD(0x63C, 0x2A0, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_CS0__GPIO_1_18	IOMUX_PAD(0x640, 0x2A4, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_EB0__GPIO_1_19	IOMUX_PAD(0x644, 0x2A8, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_EB1__GPIO_1_20	IOMUX_PAD(0x648, 0x2AC, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_WAIT__GPIO_1_21	IOMUX_PAD(0x64C, 0x2B0, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_BCLK__GPIO_1_22	IOMUX_PAD(0x650, 0x2B4, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_RDY__GPIO_1_23	IOMUX_PAD(0x654, 0x2B8, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_OE__GPIO_1_24	IOMUX_PAD(0x658, 0x2BC, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_RW__GPIO_1_25	IOMUX_PAD(0x65C, 0x2C0, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_LBA__GPIO_1_26	IOMUX_PAD(0x660, 0x2C4, 1, 0x0, 0, NO_PAD_CTRL)
+-#define MX50_PAD_EIM_CRE__GPIO_1_27	IOMUX_PAD(0x664, 0x2C8, 1, 0x0, 0, NO_PAD_CTRL)
+-
++#define MX50_PAD_EIM_DA0__GPIO_1_0	IOMUX_PAD(0x5F8, 0x25C, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA1__GPIO_1_1	IOMUX_PAD(0x5FC, 0x260, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA2__GPIO_1_2	IOMUX_PAD(0x600, 0x264, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA3__GPIO_1_3	IOMUX_PAD(0x604, 0x268, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA4__GPIO_1_4	IOMUX_PAD(0x608, 0x26C, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA5__GPIO_1_5	IOMUX_PAD(0x60C, 0x270, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA6__GPIO_1_6	IOMUX_PAD(0x610, 0x274, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA7__GPIO_1_7	IOMUX_PAD(0x614, 0x278, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA8__GPIO_1_8	IOMUX_PAD(0x618, 0x27C, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA9__GPIO_1_9	IOMUX_PAD(0x61C, 0x280, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA10__GPIO_1_10	IOMUX_PAD(0x620, 0x284, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA11__GPIO_1_11	IOMUX_PAD(0x624, 0x288, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA12__GPIO_1_12	IOMUX_PAD(0x628, 0x28C, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA13__GPIO_1_13	IOMUX_PAD(0x62C, 0x290, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA14__GPIO_1_14	IOMUX_PAD(0x630, 0x294, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_DA15__GPIO_1_15	IOMUX_PAD(0x634, 0x298, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_CS2__GPIO_1_16	IOMUX_PAD(0x638, 0x29C, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_CS1__GPIO_1_17	IOMUX_PAD(0x63C, 0x2A0, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_CS0__GPIO_1_18	IOMUX_PAD(0x640, 0x2A4, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_EB0__GPIO_1_19	IOMUX_PAD(0x644, 0x2A8, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_EB1__GPIO_1_20	IOMUX_PAD(0x648, 0x2AC, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_WAIT__GPIO_1_21	IOMUX_PAD(0x64C, 0x2B0, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_BCLK__GPIO_1_22	IOMUX_PAD(0x650, 0x2B4, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_RDY__GPIO_1_23	IOMUX_PAD(0x654, 0x2B8, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_OE__GPIO_1_24	IOMUX_PAD(0x658, 0x2BC, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_RW__GPIO_1_25	IOMUX_PAD(0x65C, 0x2C0, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_LBA__GPIO_1_26	IOMUX_PAD(0x660, 0x2C4, 1, 0x0, 0, 0)
++#define MX50_PAD_EIM_CRE__GPIO_1_27	IOMUX_PAD(0x664, 0x2C8, 1, 0x0, 0, 0)
+ 
+ /* SD1 */
+ #define MX50_PAD_SD1_CMD__SD1_CMD	IOMUX_PAD(0x394, 0xE8, \
+-- 
+1.5.4.4
+

@@ -1,0 +1,142 @@
+From 7a047737bdd06e9fb44b055ecd8a4cdb27e72711 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Fri, 26 Nov 2010 22:40:18 +0800
+Subject: [PATCH] ENGR00134098-2 MX53: Add fastboot support for android.
+
+Add fastboot support for mx53 EVK android.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ cpu/arm_cortexa8/mx53/generic.c    |   51 ++++++++++++++++++++++++++++++++++++
+ drivers/usb/gadget/Makefile        |    1 +
+ include/asm-arm/arch-mx53/mx53.h   |    5 +++-
+ include/configs/mx53_evk_android.h |   19 +++++++++++++
+ 4 files changed, 75 insertions(+), 1 deletions(-)
+
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 6df3820..3d0772d 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -1017,3 +1017,54 @@ int arch_cpu_init(void)
+ }
+ #endif
+ 
++void set_usboh3_clk(void)
++{
++	unsigned int reg;
++
++	reg = readl(MXC_CCM_CSCMR1) &
++		 ~MXC_CCM_CSCMR1_USBOH3_CLK_SEL_MASK;
++	reg |= 1 << MXC_CCM_CSCMR1_USBOH3_CLK_SEL_OFFSET;
++	writel(reg, MXC_CCM_CSCMR1);
++
++	reg = readl(MXC_CCM_CSCDR1);
++	reg &= ~MXC_CCM_CSCDR1_USBOH3_CLK_PODF_MASK;
++	reg &= ~MXC_CCM_CSCDR1_USBOH3_CLK_PRED_MASK;
++	reg |= 4 << MXC_CCM_CSCDR1_USBOH3_CLK_PRED_OFFSET;
++	reg |= 1 << MXC_CCM_CSCDR1_USBOH3_CLK_PODF_OFFSET;
++
++	writel(reg, MXC_CCM_CSCDR1);
++}
++
++void set_usb_phy1_clk(void)
++{
++	unsigned int reg;
++
++	reg = readl(MXC_CCM_CSCMR1);
++	reg &= ~MXC_CCM_CSCMR1_USB_PHY_CLK_SEL;
++	writel(reg, MXC_CCM_CSCMR1);
++}
++
++void enable_usboh3_clk(unsigned char enable)
++{
++	unsigned int reg;
++
++	reg = readl(MXC_CCM_CCGR2);
++	if (enable)
++		reg |= 1 << MXC_CCM_CCGR2_CG14_OFFSET;
++	else
++		reg &= ~(1 << MXC_CCM_CCGR2_CG14_OFFSET);
++	writel(reg, MXC_CCM_CCGR2);
++}
++
++void enable_usb_phy1_clk(unsigned char enable)
++{
++	unsigned int reg;
++
++	reg = readl(MXC_CCM_CCGR4);
++	if (enable)
++		reg |= 1 << MXC_CCM_CCGR4_CG5_OFFSET;
++	else
++		reg &= ~(1 << MXC_CCM_CCGR4_CG5_OFFSET);
++	writel(reg, MXC_CCM_CCGR4);
++}
++
+diff --git a/drivers/usb/gadget/Makefile b/drivers/usb/gadget/Makefile
+index 15daa68..51f1f3c 100644
+--- a/drivers/usb/gadget/Makefile
++++ b/drivers/usb/gadget/Makefile
+@@ -29,6 +29,7 @@ ifdef CONFIG_USB_DEVICE
+ COBJS-y += core.o
+ COBJS-y += ep0.o
+ COBJS-$(CONFIG_MX51_BBG) += imx_udc.o
++COBJS-$(CONFIG_MX53_EVK) += imx_udc.o
+ COBJS-$(CONFIG_OMAP1510) += omap1510_udc.o
+ COBJS-$(CONFIG_OMAP1610) += omap1510_udc.o
+ COBJS-$(CONFIG_MPC885_FAMILY) += mpc8xx_udc.o
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index 5e1eedb..d574841 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -445,7 +445,10 @@ extern unsigned int mxc_get_clock(enum mxc_clock clk);
+ extern unsigned int get_board_rev(void);
+ extern int is_soc_rev(int rev);
+ extern enum boot_device get_boot_device(void);
+-
++extern void set_usboh3_clk(void);
++extern void set_usb_phy1_clk(void);
++extern void enable_usboh3_clk(unsigned char enable);
++extern void enable_usb_phy1_clk(unsigned char enable);
+ #endif /* __ASSEMBLER__*/
+ 
+ #endif				/*  __ASM_ARCH_MXC_MX53_H__ */
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index acaa655..91d8b82 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -73,6 +73,22 @@
+  * Android support Configs
+  */
+ 
++/* Android fastboot configs */
++#define CONFIG_USB_DEVICE
++#define CONFIG_FASTBOOT                1
++#define CONFIG_FASTBOOT_STORAGE_EMMC
++#define CONFIG_FASTBOOT_VENDOR_ID      0xbb4
++#define CONFIG_FASTBOOT_PRODUCT_ID     0xc01
++#define CONFIG_FASTBOOT_BCD_DEVICE     0x311
++#define CONFIG_FASTBOOT_MANUFACTURER_STR  "Freescale"
++#define CONFIG_FASTBOOT_PRODUCT_NAME_STR "i.mx53 evk"
++#define CONFIG_FASTBOOT_CONFIGURATION_STR  "Android fastboot"
++#define CONFIG_FASTBOOT_INTERFACE_STR    "Android fastboot"
++#define CONFIG_FASTBOOT_SERIAL_NUM      "12345"
++#define CONFIG_FASTBOOT_MMC_NO          0
++#define CONFIG_FASTBOOT_TRANSFER_BUF    0x80000000
++#define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x8000000 /* 128M byte */
++
+ #define CONFIG_ANDROID_RECOVERY
+ 
+ #define CONFIG_MTD_DEVICE
+@@ -84,6 +100,9 @@
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+ 	"run bootargs_base bootargs_android_recovery;mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
++
++#define CONFIG_ANDROID_SYSTEM_PARTITION_MMC 2
++#define CONFIG_ANDROID_RECOVERY_PARTITION_MMC 4
+ #define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
+ 
+ /* allow to overwrite serial and ethaddr */
+-- 
+1.5.4.4
+

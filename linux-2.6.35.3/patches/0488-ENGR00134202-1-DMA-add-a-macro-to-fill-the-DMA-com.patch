@@ -1,0 +1,83 @@
+From 472dc27b55246b476214525473968d56717ba2d5 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Wed, 1 Dec 2010 14:57:53 +0800
+Subject: [PATCH] ENGR00134202-1 DMA : add a macro to fill the DMA command word1
+
+add a macro to fill the DMA command word one for IMX23,IMX28 and
+IMX50.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/dmaengine.h |   22 ++++++++++++++++++++++
+ arch/arm/plat-mxs/include/mach/dmaengine.h |   22 ++++++++++++++++++++++
+ 2 files changed, 44 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/dmaengine.h b/arch/arm/plat-mxc/include/mach/dmaengine.h
+index 1b28fb3..8f7c840 100644
+--- a/arch/arm/plat-mxc/include/mach/dmaengine.h
++++ b/arch/arm/plat-mxc/include/mach/dmaengine.h
+@@ -54,6 +54,28 @@ struct mxs_dma_cmd_bits {
+ 	unsigned int bytes:16;
+ };
+ 
++/* fill the word 1 of the DMA channel command structure */
++#define fill_dma_word1(cmdp, _cmd, _chain, _irq, _lock, _wait_ready, _dec_sem,\
++		_wait4end, _halt_on_term, _term_flush, _pio_words, _bytes)\
++	do {							\
++		struct mxs_dma_cmd_bits *bits = &(cmdp)->bits;	\
++								\
++		/* reset all the fields first */		\
++		(cmdp)->data		= 0;			\
++								\
++		bits->command		= _cmd;			\
++		bits->chain		= _chain;		\
++		bits->irq		= _irq;			\
++		bits->nand_lock		= _lock;		\
++		bits->nand_wait_4_ready	= _wait_ready;	\
++		bits->dec_sem		= _dec_sem;		\
++		bits->wait4end		= _wait4end;		\
++		bits->halt_on_terminate	= _halt_on_term;	\
++		bits->terminate_flush	= _term_flush;		\
++		bits->pio_words		= _pio_words;		\
++		bits->bytes		= _bytes;		\
++	} while (0)
++
+ /**
+  * struct mxs_dma_cmd - MXS DMA hardware command.
+  *
+diff --git a/arch/arm/plat-mxs/include/mach/dmaengine.h b/arch/arm/plat-mxs/include/mach/dmaengine.h
+index cdf6b1e..1600d97 100644
+--- a/arch/arm/plat-mxs/include/mach/dmaengine.h
++++ b/arch/arm/plat-mxs/include/mach/dmaengine.h
+@@ -54,6 +54,28 @@ struct mxs_dma_cmd_bits {
+ 	unsigned int bytes:16;
+ };
+ 
++/* fill the word 1 of the DMA channel command structure */
++#define fill_dma_word1(cmdp, _cmd, _chain, _irq, _lock, _wait_ready, _dec_sem,\
++		_wait4end, _halt_on_term, _term_flush, _pio_words, _bytes)\
++	do {							\
++		struct mxs_dma_cmd_bits *bits = &(cmdp)->bits;	\
++								\
++		/* reset all the fields first */		\
++		(cmdp)->data		= 0;			\
++								\
++		bits->command		= _cmd;			\
++		bits->chain		= _chain;		\
++		bits->irq		= _irq;			\
++		bits->nand_lock		= _lock;		\
++		bits->nand_wait_4_ready	= _wait_ready;		\
++		bits->dec_sem		= _dec_sem;		\
++		bits->wait4end		= _wait4end;		\
++		bits->halt_on_terminate	= _halt_on_term;	\
++		bits->terminate_flush	= _term_flush;		\
++		bits->pio_words		= _pio_words;		\
++		bits->bytes		= _bytes;		\
++	} while (0)
++
+ /**
+  * struct mxs_dma_cmd - MXS DMA hardware command.
+  *
+-- 
+1.5.4.4
+

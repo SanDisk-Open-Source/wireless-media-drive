@@ -1,0 +1,392 @@
+From 9021fba6e46ff6c22e8802cabffd9334b25d4f99 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Lothar=20Wa=C3=9Fmann?= <LW@KARO-electronics.de>
+Date: Tue, 26 Oct 2010 14:28:31 +0200
+Subject: [PATCH] ARM: i.MX IOMUX-V3 replace struct pad_desc with bitmapped cookie
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+The following patch is a first step to convert the 'struct pad_desc'
+to a bitmapped cookie to facilitate adding platform specific pullup or
+drive strength definitions to existing pad definitions without need to
+rewrite the complete pad def.
+
+The patch wraps 'struct pad_desc' in an opaque data type and
+introduces macros to access the individual members.
+This patch does not constitute any functional change!
+
+Signed-off-by: Lothar Waßmann <LW@KARO-electronics.de>
+Signed-off-by: Sascha Hauer <s.hauer@pengutronix.de>
+---
+ arch/arm/mach-mx3/mach-mx35_3ds.c         |   74 ++++++++++++++--------------
+ arch/arm/mach-mx3/mach-pcm043.c           |   16 +++---
+ arch/arm/mach-mx5/board-mx51_babbage.c    |    9 ++--
+ arch/arm/plat-mxc/include/mach/iomux-v3.h |   45 ++++++++++++++----
+ arch/arm/plat-mxc/iomux-v3.c              |   69 +++++++--------------------
+ 5 files changed, 103 insertions(+), 110 deletions(-)
+
+diff --git a/arch/arm/mach-mx3/mach-mx35_3ds.c b/arch/arm/mach-mx3/mach-mx35_3ds.c
+index 7bd140f..d4bbfea 100755
+--- a/arch/arm/mach-mx3/mach-mx35_3ds.c
++++ b/arch/arm/mach-mx3/mach-mx35_3ds.c
+@@ -323,50 +323,50 @@ static struct platform_device *devices[] __initdata = {
+ 	&mxc_dma_device,
+ };
+ 
+-static struct pad_cfg mx35pdk_pads[] = {
++static iomux_v3_cfg_t mx35pdk_pads[] = {
+ 	/* UART1 */
+-	{MX35_PAD_CTS1__UART1_CTS,             },
+-	{MX35_PAD_RTS1__UART1_RTS,             },
+-	{MX35_PAD_TXD1__UART1_TXD_MUX,         },
+-	{MX35_PAD_RXD1__UART1_RXD_MUX,         },
++	MX35_PAD_CTS1__UART1_CTS,
++	MX35_PAD_RTS1__UART1_RTS, 
++	MX35_PAD_TXD1__UART1_TXD_MUX,
++	MX35_PAD_RXD1__UART1_RXD_MUX,
+ 	/* FEC */
+-	{MX35_PAD_FEC_TX_CLK__FEC_TX_CLK,      },
+-	{MX35_PAD_FEC_RX_CLK__FEC_RX_CLK,      },
+-	{MX35_PAD_FEC_RX_DV__FEC_RX_DV,        },
+-	{MX35_PAD_FEC_COL__FEC_COL,},
+-	{MX35_PAD_FEC_RDATA0__FEC_RDATA_0,     },
+-	{MX35_PAD_FEC_TDATA0__FEC_TDATA_0,     },
+-	{MX35_PAD_FEC_TX_EN__FEC_TX_EN,        },
+-	{MX35_PAD_FEC_MDC__FEC_MDC,            },
+-	{MX35_PAD_FEC_MDIO__FEC_MDIO,          },
+-	{MX35_PAD_FEC_TX_ERR__FEC_TX_ERR,      },
+-	{MX35_PAD_FEC_RX_ERR__FEC_RX_ERR,      },
+-	{MX35_PAD_FEC_CRS__FEC_CRS,            },
+-	{MX35_PAD_FEC_RDATA1__FEC_RDATA_1,     },
+-	{MX35_PAD_FEC_TDATA1__FEC_TDATA_1,     },
+-	{MX35_PAD_FEC_RDATA2__FEC_RDATA_2,     },
+-	{MX35_PAD_FEC_TDATA2__FEC_TDATA_2,     },
+-	{MX35_PAD_FEC_RDATA3__FEC_RDATA_3,     },
+-	{MX35_PAD_FEC_TDATA3__FEC_TDATA_3,     },
++	MX35_PAD_FEC_TX_CLK__FEC_TX_CLK,
++	MX35_PAD_FEC_RX_CLK__FEC_RX_CLK,
++	MX35_PAD_FEC_RX_DV__FEC_RX_DV,
++	MX35_PAD_FEC_COL__FEC_COL,
++	MX35_PAD_FEC_RDATA0__FEC_RDATA_0,
++	MX35_PAD_FEC_TDATA0__FEC_TDATA_0,
++	MX35_PAD_FEC_TX_EN__FEC_TX_EN,
++	MX35_PAD_FEC_MDC__FEC_MDC,
++	MX35_PAD_FEC_MDIO__FEC_MDIO, 
++	MX35_PAD_FEC_TX_ERR__FEC_TX_ERR,
++	MX35_PAD_FEC_RX_ERR__FEC_RX_ERR,
++	MX35_PAD_FEC_CRS__FEC_CRS,
++	MX35_PAD_FEC_RDATA1__FEC_RDATA_1,
++	MX35_PAD_FEC_TDATA1__FEC_TDATA_1,
++	MX35_PAD_FEC_RDATA2__FEC_RDATA_2,
++	MX35_PAD_FEC_TDATA2__FEC_TDATA_2,
++	MX35_PAD_FEC_RDATA3__FEC_RDATA_3,
++	MX35_PAD_FEC_TDATA3__FEC_TDATA_3,
+ 	/* USBOTG */
+-	{MX35_PAD_USBOTG_PWR__USB_TOP_USBOTG_PWR,},
+-	{MX35_PAD_USBOTG_OC__USB_TOP_USBOTG_OC,  },
++	MX35_PAD_USBOTG_PWR__USB_TOP_USBOTG_PWR,
++	MX35_PAD_USBOTG_OC__USB_TOP_USBOTG_OC,
+ 
+ 	/* SD/MMC-SDHC1 */
+-	{MX35_PAD_SD1_CMD__ESDHC1_CMD, MX35_ESDHC1_CMD__PAD_CFG},
+-	{MX35_PAD_SD1_CLK__ESDHC1_CLK, MX35_ESDHC1_CLK__PAD_CFG},
+-	{MX35_PAD_SD1_DATA0__ESDHC1_DAT0, MX35_ESDHC1_DATA__PAD_CFG},
+-	{MX35_PAD_SD1_DATA1__ESDHC1_DAT1, MX35_ESDHC1_DATA__PAD_CFG},
+-	{MX35_PAD_SD1_DATA2__ESDHC1_DAT2, MX35_ESDHC1_DATA__PAD_CFG},
+-	{MX35_PAD_SD1_DATA3__ESDHC1_DAT3, MX35_ESDHC1_DATA__PAD_CFG},
++	MX35_PAD_SD1_CMD__ESDHC1_CMD, MX35_ESDHC1_CMD__PAD_CFG,
++	MX35_PAD_SD1_CLK__ESDHC1_CLK, MX35_ESDHC1_CLK__PAD_CFG,
++	MX35_PAD_SD1_DATA0__ESDHC1_DAT0, MX35_ESDHC1_DATA__PAD_CFG,
++	MX35_PAD_SD1_DATA1__ESDHC1_DAT1, MX35_ESDHC1_DATA__PAD_CFG,
++	MX35_PAD_SD1_DATA2__ESDHC1_DAT2, MX35_ESDHC1_DATA__PAD_CFG,
++	MX35_PAD_SD1_DATA3__ESDHC1_DAT3, MX35_ESDHC1_DATA__PAD_CFG,
+ #if !defined(CONFIG_SDIO_UNIFI_FS) && !defined(CONFIG_SDIO_UNIFI_FS_MODULE)
+-	{MX35_PAD_SD2_CMD__ESDHC1_DAT4, MX35_ESDHC1_DATA__PAD_CFG},
+-	{MX35_PAD_SD2_CLK__ESDHC1_DAT5, MX35_ESDHC1_DATA__PAD_CFG},
+-	{MX35_PAD_SD2_DATA0__ESDHC1_DAT6, MX35_ESDHC1_DATA__PAD_CFG},
+-	{MX35_PAD_SD2_DATA1__ESDHC1_DAT7, MX35_ESDHC1_DATA__PAD_CFG},
++	MX35_PAD_SD2_CMD__ESDHC1_DAT4, MX35_ESDHC1_DATA__PAD_CFG,
++	MX35_PAD_SD2_CLK__ESDHC1_DAT5, MX35_ESDHC1_DATA__PAD_CFG,
++	MX35_PAD_SD2_DATA0__ESDHC1_DAT6, MX35_ESDHC1_DATA__PAD_CFG,
++	MX35_PAD_SD2_DATA1__ESDHC1_DAT7, MX35_ESDHC1_DATA__PAD_CFG,
+ #endif
+ 	/* Capature */
+-	{MX35_PAD_CAPTURE__GPIO1_4,},
++	MX35_PAD_CAPTURE__GPIO1_4,
+ };
+ 
+ /* OTG config */
+@@ -380,7 +380,7 @@ static struct fsl_usb2_platform_data usb_pdata = {
+  */
+ static void __init mxc_board_init(void)
+ {
+-	mxc_iomux_v3_setup_multiple_pads_ext(mx35pdk_pads,
++	mxc_iomux_v3_setup_multiple_pads(mx35pdk_pads,
+ 						ARRAY_SIZE(mx35pdk_pads));
+ 
+ 	platform_add_devices(devices, ARRAY_SIZE(devices));
+diff --git a/arch/arm/mach-mx3/mach-pcm043.c b/arch/arm/mach-mx3/mach-pcm043.c
+index 78d9185..e38073c 100644
+--- a/arch/arm/mach-mx3/mach-pcm043.c
++++ b/arch/arm/mach-mx3/mach-pcm043.c
+@@ -153,7 +153,7 @@ static struct platform_device *devices[] __initdata = {
+ 	&imx_wdt_device0,
+ };
+ 
+-static struct pad_desc pcm043_pads[] = {
++static iomux_v3_cfg_t pcm043_pads[] = {
+ 	/* UART1 */
+ 	MX35_PAD_CTS1__UART1_CTS,
+ 	MX35_PAD_RTS1__UART1_RTS,
+@@ -230,8 +230,8 @@ static struct pad_desc pcm043_pads[] = {
+ 
+ static void pcm043_ac97_warm_reset(struct snd_ac97 *ac97)
+ {
+-	struct pad_desc txfs_gpio = MX35_PAD_STXFS4__GPIO2_31;
+-	struct pad_desc txfs = MX35_PAD_STXFS4__AUDMUX_AUD4_TXFS;
++	iomux_v3_cfg_t txfs_gpio = MX35_PAD_STXFS4__GPIO2_31;
++	iomux_v3_cfg_t txfs = MX35_PAD_STXFS4__AUDMUX_AUD4_TXFS;
+ 	int ret;
+ 
+ 	ret = gpio_request(AC97_GPIO_TXFS, "SSI");
+@@ -253,11 +253,11 @@ static void pcm043_ac97_warm_reset(struct snd_ac97 *ac97)
+ 
+ static void pcm043_ac97_cold_reset(struct snd_ac97 *ac97)
+ {
+-	struct pad_desc txfs_gpio = MX35_PAD_STXFS4__GPIO2_31;
+-	struct pad_desc txfs = MX35_PAD_STXFS4__AUDMUX_AUD4_TXFS;
+-	struct pad_desc txd_gpio = MX35_PAD_STXD4__GPIO2_28;
+-	struct pad_desc txd = MX35_PAD_STXD4__AUDMUX_AUD4_TXD;
+-	struct pad_desc reset_gpio = MX35_PAD_SD2_CMD__GPIO2_0;
++	iomux_v3_cfg_t txfs_gpio = MX35_PAD_STXFS4__GPIO2_31;
++	iomux_v3_cfg_t txfs = MX35_PAD_STXFS4__AUDMUX_AUD4_TXFS;
++	iomux_v3_cfg_t txd_gpio = MX35_PAD_STXD4__GPIO2_28;
++	iomux_v3_cfg_t txd = MX35_PAD_STXD4__AUDMUX_AUD4_TXD;
++	iomux_v3_cfg_t reset_gpio = MX35_PAD_SD2_CMD__GPIO2_0;
+ 	int ret;
+ 
+ 	ret = gpio_request(AC97_GPIO_TXFS, "SSI");
+diff --git a/arch/arm/mach-mx5/board-mx51_babbage.c b/arch/arm/mach-mx5/board-mx51_babbage.c
+index 9968164..d25e150 100644
+--- a/arch/arm/mach-mx5/board-mx51_babbage.c
++++ b/arch/arm/mach-mx5/board-mx51_babbage.c
+@@ -47,7 +47,7 @@ static struct platform_device *devices[] __initdata = {
+ 	&mxc_fec_device,
+ };
+ 
+-static struct pad_desc mx51babbage_pads[] = {
++static iomux_v3_cfg_t mx51babbage_pads[] = {
+ 	/* UART1 */
+ 	MX51_PAD_UART1_RXD__UART1_RXD,
+ 	MX51_PAD_UART1_TXD__UART1_TXD,
+@@ -101,8 +101,8 @@ static inline void mxc_init_imx_uart(void)
+ 
+ static int gpio_usbh1_active(void)
+ {
+-	struct pad_desc usbh1stp_gpio = MX51_PAD_USBH1_STP__GPIO_1_27;
+-	struct pad_desc phyreset_gpio = MX51_PAD_EIM_D21__GPIO_2_5;
++	iomux_v3_cfg_t usbh1stp_gpio = MX51_PAD_USBH1_STP__GPIO_1_27;
++	iomux_v3_cfg_t phyreset_gpio = MX51_PAD_EIM_D21__GPIO_2_5;
+ 	int ret;
+ 
+ 	/* Set USBH1_STP to GPIO and toggle it */
+@@ -223,7 +223,8 @@ __setup("otg_mode=", babbage_otg_mode);
+  */
+ static void __init mxc_board_init(void)
+ {
+-	struct pad_desc usbh1stp = MX51_PAD_USBH1_STP__USBH1_STP;
++	iomux_v3_cfg_t usbh1stp = MX51_PAD_USBH1_STP__USBH1_STP;
++	iomux_v3_cfg_t power_key = MX51_PAD_EIM_A27__GPIO_2_21;
+ 
+ 	mxc_iomux_v3_setup_multiple_pads(mx51babbage_pads,
+ 					ARRAY_SIZE(mx51babbage_pads));
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-v3.h b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+index 02e06dd..99cf0ed 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-v3.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+@@ -45,7 +45,7 @@
+  *
+  */
+ 
+-struct pad_desc {
++typedef struct deprecated_pad_desc {
+ 	unsigned mux_ctrl_ofs:12; /* IOMUXC_SW_MUX_CTL_PAD offset */
+ 	unsigned mux_mode:8;
+ 	unsigned pad_ctrl_ofs:12; /* IOMUXC_SW_PAD_CTRL offset */
+@@ -53,7 +53,37 @@ struct pad_desc {
+ 	unsigned pad_ctrl:17;
+ 	unsigned select_input_ofs:12; /* IOMUXC_SELECT_INPUT offset */
+ 	unsigned select_input:3;
+-};
++} iomux_v3_cfg_t;
++
++static inline unsigned int MUX_CTRL_OFS(iomux_v3_cfg_t *pad)
++{
++	return pad->mux_ctrl_ofs;
++}
++
++static inline unsigned int MUX_MODE(iomux_v3_cfg_t *pad)
++{
++	return pad->mux_mode;
++}
++
++static inline unsigned int MUX_SELECT_INPUT_OFS(iomux_v3_cfg_t *pad)
++{
++	return pad->select_input_ofs;
++}
++
++static inline unsigned int MUX_SELECT_INPUT(iomux_v3_cfg_t *pad)
++{
++	return pad->select_input;
++}
++
++static inline unsigned int MUX_PAD_CTRL_OFS(iomux_v3_cfg_t *pad)
++{
++	return pad->pad_ctrl_ofs;
++}
++
++static inline unsigned int MUX_PAD_CTRL(iomux_v3_cfg_t *pad)
++{
++	return pad->pad_ctrl;
++}
+ 
+ struct pad_cfg {
+ 	struct pad_desc pd;
+@@ -100,18 +130,15 @@ struct pad_cfg {
+ /*
+  * read/write a single pad in the iomuxer
+  */
+-int mxc_iomux_v3_get_pad(struct pad_desc *pad);
+-int mxc_iomux_v3_setup_pad(struct pad_desc *pad);
+-int mxc_iomux_v3_setup_pad_ext(struct pad_cfg *pad);
++int mxc_iomux_v3_get_pad(iomux_v3_cfg_t *pad);
++int mxc_iomux_v3_setup_pad(iomux_v3_cfg_t *pad);
+ 
+ /*
+  * read/write mutliple pads
+  * convenient way to call the above function with tables
+  */
+-int mxc_iomux_v3_get_multiple_pads(struct pad_desc *pad_list, unsigned count);
+-int mxc_iomux_v3_setup_multiple_pads(struct pad_desc *pad_list, unsigned count);
+-int mxc_iomux_v3_setup_multiple_pads_ext(struct pad_cfg *pad_list,
+-								unsigned count);
++int mxc_iomux_v3_get_multiple_pads(iomux_v3_cfg_t *pad_list, unsigned count);
++int mxc_iomux_v3_setup_multiple_pads(iomux_v3_cfg_t *pad_list, unsigned count);
+ 
+ /*
+  * Initialise the iomux controller
+diff --git a/arch/arm/plat-mxc/iomux-v3.c b/arch/arm/plat-mxc/iomux-v3.c
+index 8734103..25c3a2b 100644
+--- a/arch/arm/plat-mxc/iomux-v3.c
++++ b/arch/arm/plat-mxc/iomux-v3.c
+@@ -34,11 +34,11 @@ static void __iomem *base;
+ /*
+  * Read a single pad in the iomuxer
+  */
+-int mxc_iomux_v3_get_pad(struct pad_desc *pad)
++int mxc_iomux_v3_get_pad(iomux_v3_cfg_t *pad)
+ {
+-	pad->mux_mode = __raw_readl(base + pad->mux_ctrl_ofs) & 0xFF;
+-	pad->pad_ctrl = __raw_readl(base + pad->pad_ctrl_ofs) & 0x1FFFF;
+-	pad->select_input = __raw_readl(base + pad->select_input_ofs) & 0x7;
++	pad->mux_mode = __raw_readl(base + MUX_CTRL_OFS(pad)) & 0xFF;
++	pad->pad_ctrl = __raw_readl(base + MUX_PAD_CTRL_OFS(pad)) & 0x1FFFF;
++	pad->select_input = __raw_readl(base + MUX_SELECT_INPUT(pad)) & 0x7;
+ 
+ 	return 0;
+ }
+@@ -47,7 +47,7 @@ EXPORT_SYMBOL(mxc_iomux_v3_get_pad);
+ /*
+  * Read multiple pads in the iomuxer
+  */
+-int mxc_iomux_v3_get_multiple_pads(struct pad_desc *pad_list, unsigned count)
++int mxc_iomux_v3_get_multiple_pads(iomux_v3_cfg_t *pad_list, unsigned count)
+ {
+ 	struct pad_desc *p = pad_list;
+ 	int i;
+@@ -60,27 +60,28 @@ int mxc_iomux_v3_get_multiple_pads(struct pad_desc *pad_list, unsigned count)
+ 	return 0;
+ }
+ EXPORT_SYMBOL(mxc_iomux_v3_get_multiple_pads);
++
+ /*
+- * setups a single pad in the iomuxer
++ * configures a single pad in the iomuxer
+  */
+-int mxc_iomux_v3_setup_pad(struct pad_desc *pad)
++int mxc_iomux_v3_setup_pad(iomux_v3_cfg_t *pad)
+ {
+-	if (pad->mux_ctrl_ofs)
+-		__raw_writel(pad->mux_mode, base + pad->mux_ctrl_ofs);
++	if (MUX_CTRL_OFS(pad))
++		__raw_writel(MUX_MODE(pad), base + MUX_CTRL_OFS(pad));
+ 
+-	if (pad->select_input_ofs)
+-		__raw_writel(pad->select_input,
+-				base + pad->select_input_ofs);
++	if (MUX_SELECT_INPUT_OFS(pad))
++		__raw_writel(MUX_SELECT_INPUT(pad),
++			base + MUX_SELECT_INPUT(pad));
+ 
+-	if (!(pad->pad_ctrl & NO_PAD_CTRL) && pad->pad_ctrl_ofs)
+-		__raw_writel(pad->pad_ctrl, base + pad->pad_ctrl_ofs);
++	if (!(MUX_PAD_CTRL(pad) & NO_PAD_CTRL) && MUX_PAD_CTRL_OFS(pad))
++		__raw_writel(MUX_PAD_CTRL(pad), base + MUX_PAD_CTRL_OFS(pad));
+ 	return 0;
+ }
+ EXPORT_SYMBOL(mxc_iomux_v3_setup_pad);
+ 
+-int mxc_iomux_v3_setup_multiple_pads(struct pad_desc *pad_list, unsigned count)
++int mxc_iomux_v3_setup_multiple_pads(iomux_v3_cfg_t *pad_list, unsigned count)
+ {
+-	struct pad_desc *p = pad_list;
++	iomux_v3_cfg_t *p = pad_list;
+ 	int i;
+ 	int ret;
+ 
+@@ -94,42 +95,6 @@ int mxc_iomux_v3_setup_multiple_pads(struct pad_desc *pad_list, unsigned count)
+ }
+ EXPORT_SYMBOL(mxc_iomux_v3_setup_multiple_pads);
+ 
+-int mxc_iomux_v3_setup_pad_ext(struct pad_cfg *pd)
+-{
+-	struct pad_desc *pad = &(pd->pd);
+-
+-	if (pad->mux_ctrl_ofs)
+-		__raw_writel(pad->mux_mode, base + pad->mux_ctrl_ofs);
+-
+-	if (pad->select_input_ofs)
+-		__raw_writel(pad->select_input,
+-				base + pad->select_input_ofs);
+-
+-	if (pd->pad_ctrl && pad->pad_ctrl_ofs)
+-		__raw_writel(pd->pad_ctrl, base + pad->pad_ctrl_ofs);
+-	else if (!(pad->pad_ctrl & NO_PAD_CTRL) && pad->pad_ctrl_ofs)
+-		__raw_writel(pad->pad_ctrl, base + pad->pad_ctrl_ofs);
+-	return 0;
+-}
+-EXPORT_SYMBOL(mxc_iomux_v3_setup_pad_ext);
+-
+-int mxc_iomux_v3_setup_multiple_pads_ext(struct pad_cfg *pad_list,
+-						unsigned count)
+-{
+-	struct pad_cfg *p = pad_list;
+-	int i;
+-	int ret;
+-
+-	for (i = 0; i < count; i++) {
+-		ret = mxc_iomux_v3_setup_pad_ext(p);
+-		if (ret)
+-			return ret;
+-		p++;
+-	}
+-	return 0;
+-}
+-EXPORT_SYMBOL(mxc_iomux_v3_setup_multiple_pads_ext);
+-
+ void mxc_iomux_v3_init(void __iomem *iomux_v3_base)
+ {
+ 	base = iomux_v3_base;
+-- 
+1.5.4.4
+

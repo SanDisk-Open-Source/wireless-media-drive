@@ -1,0 +1,35 @@
+From 1b8b9b35de1176eb833a4688d1d7722e4fb89e5c Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Wed, 8 Dec 2010 20:24:04 +0800
+Subject: [PATCH] ENGR00137669-3 MX53_SMD: workaround for UART have problem when DMA enable.
+
+There is a clock issue when UART3 enable DMA, so disable this.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/mach-mx5/serial.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/serial.h b/arch/arm/mach-mx5/serial.h
+index d7a4337..9fbb0b3 100644
+--- a/arch/arm/mach-mx5/serial.h
++++ b/arch/arm/mach-mx5/serial.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -51,7 +51,7 @@
+ #define UART2_UFCR_TXTL         16
+ /* UART 3 configuration */
+ #define UART3_UCR4_CTSTL        16
+-#define UART3_DMA_ENABLE	1
++#define UART3_DMA_ENABLE	0
+ #define UART3_DMA_RXBUFSIZE     1024
+ #define UART3_UFCR_RXTL         16
+ #define UART3_UFCR_TXTL         16
+-- 
+1.5.4.4
+

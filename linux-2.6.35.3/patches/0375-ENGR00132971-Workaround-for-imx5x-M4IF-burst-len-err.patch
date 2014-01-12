@@ -1,0 +1,43 @@
+From 1e48145ed446105dea8b615cf4c4c77d60f4b988 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@shlinux2.ap.freescale.net>
+Date: Tue, 26 Oct 2010 16:52:17 +0800
+Subject: [PATCH] ENGR00132971 Workaround for imx5x M4IF burst len errata for armv7 neon
+
+Workaround for imx5x M4IF burst len errata when armv7 neon enabled, use
+pgprot_writecombine instead of pgprot_noncached, to avoid burst len > 8.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ drivers/media/video/mxc/capture/mxc_v4l2_capture.c |    2 +-
+ drivers/mxc/vpu/mxc_vpu.c                          |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+index 308f949..8616cfe 100644
+--- a/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
++++ b/drivers/media/video/mxc/capture/mxc_v4l2_capture.c
+@@ -2181,7 +2181,7 @@ static int mxc_mmap(struct file *file, struct vm_area_struct *vma)
+ 		return -EINTR;
+ 
+ 	size = vma->vm_end - vma->vm_start;
+-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+ 
+ 	if (remap_pfn_range(vma, vma->vm_start,
+ 			    vma->vm_pgoff, size, vma->vm_page_prot)) {
+diff --git a/drivers/mxc/vpu/mxc_vpu.c b/drivers/mxc/vpu/mxc_vpu.c
+index d51f3f0..2be6fa6 100644
+--- a/drivers/mxc/vpu/mxc_vpu.c
++++ b/drivers/mxc/vpu/mxc_vpu.c
+@@ -540,7 +540,7 @@ static int vpu_map_mem(struct file *fp, struct vm_area_struct *vm)
+ 		 request_size);
+ 
+ 	vm->vm_flags |= VM_IO | VM_RESERVED;
+-	vm->vm_page_prot = pgprot_noncached(vm->vm_page_prot);
++	vm->vm_page_prot = pgprot_writecombine(vm->vm_page_prot);
+ 
+ 	return remap_pfn_range(vm, vm->vm_start, vm->vm_pgoff,
+ 			       request_size, vm->vm_page_prot) ? -EAGAIN : 0;
+-- 
+1.5.4.4
+

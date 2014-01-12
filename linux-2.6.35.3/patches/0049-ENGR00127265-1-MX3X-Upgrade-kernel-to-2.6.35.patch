@@ -1,0 +1,1245 @@
+From 939185c19bb27574229921e3fc6b3934eae2fe6d Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Wed, 8 Sep 2010 10:24:45 +0800
+Subject: [PATCH] ENGR00127265-1 MX3X: Upgrade kernel to 2.6.35
+
+This patch contains changes to plat-mxc files.
+Contains all checkpatch and copyright fixes.
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ arch/arm/plat-mxc/3ds_debugboard.c              |  205 +++++++++++++++++++++++
+ arch/arm/plat-mxc/Kconfig                       |   13 ++
+ arch/arm/plat-mxc/Makefile                      |    3 +
+ arch/arm/plat-mxc/devices.c                     |   33 ++++
+ arch/arm/plat-mxc/devices/Kconfig               |   18 ++
+ arch/arm/plat-mxc/devices/Makefile              |    9 +
+ arch/arm/plat-mxc/devices/platform-flexcan.c    |   31 ++++
+ arch/arm/plat-mxc/devices/platform-imx-i2c.c    |   30 ++++
+ arch/arm/plat-mxc/devices/platform-imx-mmc.c    |   44 +++++
+ arch/arm/plat-mxc/devices/platform-imx-uart.c   |   61 +++++++
+ arch/arm/plat-mxc/devices/platform-mxc_nand.c   |   45 +++++
+ arch/arm/plat-mxc/devices/platform-spi_imx.c    |   31 ++++
+ arch/arm/plat-mxc/include/mach/3ds_debugboard.h |   18 ++
+ arch/arm/plat-mxc/include/mach/board-mx35_3ds.h |   55 ++++++
+ arch/arm/plat-mxc/include/mach/board-mx35pdk.h  |   48 ------
+ arch/arm/plat-mxc/include/mach/devices-common.h |   66 ++++++++
+ arch/arm/plat-mxc/include/mach/iomux-mx35.h     |    6 +
+ arch/arm/plat-mxc/include/mach/iomux-v3.h       |    8 +
+ arch/arm/plat-mxc/include/mach/mx31.h           |   19 ++
+ arch/arm/plat-mxc/include/mach/mx35.h           |   60 +++++++-
+ arch/arm/plat-mxc/include/mach/mx3x.h           |   54 ++++---
+ arch/arm/plat-mxc/include/mach/mxc.h            |    4 +-
+ arch/arm/plat-mxc/iomux-v3.c                    |   38 ++++-
+ 23 files changed, 824 insertions(+), 75 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/3ds_debugboard.c b/arch/arm/plat-mxc/3ds_debugboard.c
+new file mode 100644
+index 0000000..9770493
+--- /dev/null
++++ b/arch/arm/plat-mxc/3ds_debugboard.c
+@@ -0,0 +1,205 @@
++/*
++ * Copyright 2008-2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010 Jason Wang <jason77.wang@gmail.com>
++ *
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/interrupt.h>
++#include <linux/irq.h>
++#include <linux/io.h>
++#include <linux/platform_device.h>
++#include <linux/gpio.h>
++#include <linux/smsc911x.h>
++
++#include <mach/hardware.h>
++
++/* LAN9217 ethernet base address */
++#define LAN9217_BASE_ADDR(n)	(n + 0x0)
++/* External UART */
++#define UARTA_BASE_ADDR(n)	(n + 0x8000)
++#define UARTB_BASE_ADDR(n)	(n + 0x10000)
++
++#define BOARD_IO_ADDR(n)	(n + 0x20000)
++/* LED switchs */
++#define LED_SWITCH_REG		0x00
++/* buttons */
++#define SWITCH_BUTTONS_REG	0x08
++/* status, interrupt */
++#define INTR_STATUS_REG	0x10
++#define INTR_MASK_REG		0x38
++#define INTR_RESET_REG		0x20
++/* magic word for debug CPLD */
++#define MAGIC_NUMBER1_REG	0x40
++#define MAGIC_NUMBER2_REG	0x48
++/* CPLD code version */
++#define CPLD_CODE_VER_REG	0x50
++/* magic word for debug CPLD */
++#define MAGIC_NUMBER3_REG	0x58
++/* module reset register*/
++#define MODULE_RESET_REG	0x60
++/* CPU ID and Personality ID */
++#define MCU_BOARD_ID_REG	0x68
++
++#define MXC_IRQ_TO_EXPIO(irq)   ((irq) - MXC_BOARD_IRQ_START)
++#define MXC_IRQ_TO_GPIO(irq)	((irq) - MXC_INTERNAL_IRQS)
++
++#define MXC_EXP_IO_BASE		(MXC_BOARD_IRQ_START)
++#define MXC_MAX_EXP_IO_LINES	16
++
++/* interrupts like external uart , external ethernet etc*/
++#define EXPIO_INT_ENET		(MXC_BOARD_IRQ_START + 0)
++#define EXPIO_INT_XUART_A	(MXC_BOARD_IRQ_START + 1)
++#define EXPIO_INT_XUART_B	(MXC_BOARD_IRQ_START + 2)
++#define EXPIO_INT_BUTTON_A	(MXC_BOARD_IRQ_START + 3)
++#define EXPIO_INT_BUTTON_B	(MXC_BOARD_IRQ_START + 4)
++
++static void __iomem *brd_io;
++static void expio_ack_irq(u32 irq);
++
++static struct resource smsc911x_resources[] = {
++	{
++		.flags = IORESOURCE_MEM,
++	} , {
++		.start = EXPIO_INT_ENET,
++		.end = EXPIO_INT_ENET,
++		.flags = IORESOURCE_IRQ,
++	},
++};
++
++static struct smsc911x_platform_config smsc911x_config = {
++	.irq_polarity = SMSC911X_IRQ_POLARITY_ACTIVE_LOW,
++	.flags = SMSC911X_USE_32BIT | SMSC911X_FORCE_INTERNAL_PHY,
++};
++
++static struct platform_device smsc_lan9217_device = {
++	.name = "smsc911x",
++	.id = 0,
++	.dev = {
++		.platform_data = &smsc911x_config,
++	},
++	.num_resources = ARRAY_SIZE(smsc911x_resources),
++	.resource = smsc911x_resources,
++};
++
++static void mxc_expio_irq_handler(u32 irq, struct irq_desc *desc)
++{
++	u32 imr_val;
++	u32 int_valid;
++	u32 expio_irq;
++
++	desc->chip->mask(irq);	/* irq = gpio irq number */
++
++	imr_val = __raw_readw(brd_io + INTR_MASK_REG);
++	int_valid = __raw_readw(brd_io + INTR_STATUS_REG) & ~imr_val;
++
++	expio_irq = MXC_BOARD_IRQ_START;
++	for (; int_valid != 0; int_valid >>= 1, expio_irq++) {
++		struct irq_desc *d;
++		if ((int_valid & 1) == 0)
++			continue;
++		d = irq_desc + expio_irq;
++		if (unlikely(!(d->handle_irq)))
++			pr_err("\nEXPIO irq: %d unhandled\n", expio_irq);
++		else
++			d->handle_irq(expio_irq, d);
++	}
++
++	desc->chip->ack(irq);
++	desc->chip->unmask(irq);
++}
++
++/*
++ * Disable an expio pin's interrupt by setting the bit in the imr.
++ * Irq is an expio virtual irq number
++ */
++static void expio_mask_irq(u32 irq)
++{
++	u16 reg;
++	u32 expio = MXC_IRQ_TO_EXPIO(irq);
++
++	reg = __raw_readw(brd_io + INTR_MASK_REG);
++	reg |= (1 << expio);
++	__raw_writew(reg, brd_io + INTR_MASK_REG);
++}
++
++static void expio_ack_irq(u32 irq)
++{
++	u32 expio = MXC_IRQ_TO_EXPIO(irq);
++
++	__raw_writew(1 << expio, brd_io + INTR_RESET_REG);
++	__raw_writew(0, brd_io + INTR_RESET_REG);
++	expio_mask_irq(irq);
++}
++
++static void expio_unmask_irq(u32 irq)
++{
++	u16 reg;
++	u32 expio = MXC_IRQ_TO_EXPIO(irq);
++
++	reg = __raw_readw(brd_io + INTR_MASK_REG);
++	reg &= ~(1 << expio);
++	__raw_writew(reg, brd_io + INTR_MASK_REG);
++}
++
++static struct irq_chip expio_irq_chip = {
++	.ack = expio_ack_irq,
++	.mask = expio_mask_irq,
++	.unmask = expio_unmask_irq,
++};
++
++int __init mxc_expio_init(u32 base, u32 p_irq)
++{
++	int i;
++
++	brd_io = ioremap(BOARD_IO_ADDR(base), SZ_4K);
++	if (brd_io == NULL)
++		return -ENOMEM;
++
++	if ((__raw_readw(brd_io + MAGIC_NUMBER1_REG) != 0xAAAA) ||
++	    (__raw_readw(brd_io + MAGIC_NUMBER2_REG) != 0x5555) ||
++	    (__raw_readw(brd_io + MAGIC_NUMBER3_REG) != 0xCAFE)) {
++		pr_info("3-Stack Debug board not detected\n");
++		iounmap(brd_io);
++		brd_io = NULL;
++		return -ENODEV;
++	}
++
++	pr_info("3-Stack Debug board detected, rev = 0x%04X\n",
++		readw(brd_io + CPLD_CODE_VER_REG));
++
++	/*
++	 * Configure INT line as GPIO input
++	 */
++	gpio_request(MXC_IRQ_TO_GPIO(p_irq), "expio_pirq");
++	gpio_direction_input(MXC_IRQ_TO_GPIO(p_irq));
++
++	/* disable the interrupt and clear the status */
++	__raw_writew(0, brd_io + INTR_MASK_REG);
++	__raw_writew(0xFFFF, brd_io + INTR_RESET_REG);
++	__raw_writew(0, brd_io + INTR_RESET_REG);
++	__raw_writew(0x1F, brd_io + INTR_MASK_REG);
++	for (i = MXC_EXP_IO_BASE;
++	     i < (MXC_EXP_IO_BASE + MXC_MAX_EXP_IO_LINES); i++) {
++		set_irq_chip(i, &expio_irq_chip);
++		set_irq_handler(i, handle_level_irq);
++		set_irq_flags(i, IRQF_VALID);
++	}
++	set_irq_type(p_irq, IRQF_TRIGGER_LOW);
++	set_irq_chained_handler(p_irq, mxc_expio_irq_handler);
++
++	/* Register Lan device on the debugboard */
++	smsc911x_resources[0].start = LAN9217_BASE_ADDR(base);
++	smsc911x_resources[0].end = LAN9217_BASE_ADDR(base) + 0x100 - 1;
++#ifdef CONFIG_FEC
++	smsc_lan9217_device.id = 1;
++#endif
++	platform_device_register(&smsc_lan9217_device);
++
++	return 0;
++}
+diff --git a/arch/arm/plat-mxc/Kconfig b/arch/arm/plat-mxc/Kconfig
+index 53fa511..27e8dd0 100644
+--- a/arch/arm/plat-mxc/Kconfig
++++ b/arch/arm/plat-mxc/Kconfig
+@@ -1,5 +1,7 @@
+ if ARCH_MXC
+ 
++source "arch/arm/plat-mxc/devices/Kconfig"
++
+ menu "Freescale MXC Implementations"
+ 
+ choice
+@@ -166,6 +168,17 @@ config MXC_PWM
+ 	help
+ 	  Enable support for the i.MX PWM controller(s).
+ 
++config MXC_DEBUG_BOARD
++	bool "Enable MXC debug board(for 3-stack)"
++	help
++	  The debug board is an integral part of the MXC 3-stack(PDK)
++	  platforms, it can be attached or removed from the peripheral
++	  board. On debug board, several debug devices(ethernet, UART,
++	  buttons, LEDs and JTAG) are implemented. Between the MCU and
++	  these devices, a CPLD is added as a bridge which performs
++	  data/address de-multiplexing and decode, signal level shift,
++	  interrupt control and various board functions.
++
+ config MXC_ULPI
+ 	bool
+ 
+diff --git a/arch/arm/plat-mxc/Makefile b/arch/arm/plat-mxc/Makefile
+index 0266184..2395f78 100644
+--- a/arch/arm/plat-mxc/Makefile
++++ b/arch/arm/plat-mxc/Makefile
+@@ -23,6 +23,7 @@ obj-$(CONFIG_USB_EHCI_MXC) += ehci.o
+ obj-$(CONFIG_MXC_ULPI) += ulpi.o
+ obj-$(CONFIG_ARCH_MXC_AUDMUX_V1) += audmux-v1.o
+ obj-$(CONFIG_ARCH_MXC_AUDMUX_V2) += audmux-v2.o
++obj-$(CONFIG_MXC_DEBUG_BOARD) += 3ds_debugboard.o
+ ifdef CONFIG_SND_IMX_SOC
+ obj-y += ssi-fiq.o
+ obj-y += ssi-fiq-ksym.o
+@@ -49,3 +50,5 @@ obj-$(CONFIG_MC13783_MXC) += mc13783_xc.o
+ obj-$(CONFIG_UTMI_MXC) += utmixc.o
+ obj-$(CONFIG_USB) += serialxc.o
+ endif
++
++obj-y += devices/
+diff --git a/arch/arm/plat-mxc/devices.c b/arch/arm/plat-mxc/devices.c
+index 56f2fb5..735776d 100644
+--- a/arch/arm/plat-mxc/devices.c
++++ b/arch/arm/plat-mxc/devices.c
+@@ -18,6 +18,7 @@
+ 
+ #include <linux/kernel.h>
+ #include <linux/init.h>
++#include <linux/err.h>
+ #include <linux/platform_device.h>
+ #include <mach/common.h>
+ 
+@@ -35,3 +36,35 @@ int __init mxc_register_device(struct platform_device *pdev, void *data)
+ 	return ret;
+ }
+ 
++struct platform_device *__init imx_add_platform_device(const char *name, int id,
++		const struct resource *res, unsigned int num_resources,
++		const void *data, size_t size_data)
++{
++	int ret = -ENOMEM;
++	struct platform_device *pdev;
++
++	pdev = platform_device_alloc(name, id);
++	if (!pdev)
++		goto err;
++
++	if (res) {
++		ret = platform_device_add_resources(pdev, res, num_resources);
++		if (ret)
++			goto err;
++	}
++
++	if (data) {
++		ret = platform_device_add_data(pdev, data, size_data);
++		if (ret)
++			goto err;
++	}
++
++	ret = platform_device_add(pdev);
++	if (ret) {
++err:
++		platform_device_put(pdev);
++		return ERR_PTR(ret);
++	}
++
++	return pdev;
++}
+diff --git a/arch/arm/plat-mxc/devices/Kconfig b/arch/arm/plat-mxc/devices/Kconfig
+new file mode 100644
+index 0000000..15ac08e
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/Kconfig
+@@ -0,0 +1,18 @@
++config IMX_HAVE_PLATFORM_FLEXCAN
++	select HAVE_CAN_FLEXCAN
++	bool
++
++config IMX_HAVE_PLATFORM_IMX_I2C
++	bool
++
++config IMX_HAVE_PLATFORM_IMX_UART
++	bool
++
++config IMX_HAVE_PLATFORM_MXC_NAND
++	bool
++
++config IMX_HAVE_PLATFORM_SPI_IMX
++	bool
++
++config IMX_HAVE_PLATFORM_IMX_MMC
++	bool
+diff --git a/arch/arm/plat-mxc/devices/Makefile b/arch/arm/plat-mxc/devices/Makefile
+new file mode 100755
+index 0000000..e2aa419
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/Makefile
+@@ -0,0 +1,9 @@
++ifdef CONFIG_CAN_FLEXCAN
++# the ifdef can be removed once the flexcan driver has been merged
++obj-$(CONFIG_IMX_HAVE_PLATFORM_FLEXCAN) +=  platform-flexcan.o
++endif
++obj-$(CONFIG_IMX_HAVE_PLATFORM_IMX_I2C) += platform-imx-i2c.o
++obj-$(CONFIG_IMX_HAVE_PLATFORM_IMX_UART) += platform-imx-uart.o
++obj-$(CONFIG_IMX_HAVE_PLATFORM_MXC_NAND) += platform-mxc_nand.o
++obj-$(CONFIG_IMX_HAVE_PLATFORM_SPI_IMX) +=  platform-spi_imx.o
++obj-$(CONFIG_IMX_HAVE_PLATFORM_IMX_MMC) +=  platform-imx-mmc.o
+diff --git a/arch/arm/plat-mxc/devices/platform-flexcan.c b/arch/arm/plat-mxc/devices/platform-flexcan.c
+new file mode 100644
+index 0000000..f1260b3
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/platform-flexcan.c
+@@ -0,0 +1,31 @@
++/*
++ * Copyright (C) 2010 Pengutronix, Marc Kleine-Budde <kernel@pengutronix.de>
++ * Copyright (C) 2010 Freescale Semiconductor
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++
++#include <mach/devices-common.h>
++
++struct platform_device *__init imx_add_flexcan(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irq,
++		const struct flexcan_platform_data *pdata)
++{
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irq,
++			.end = irq,
++			.flags = IORESOURCE_IRQ,
++		},
++	};
++
++	return imx_add_platform_device("flexcan", id, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
+diff --git a/arch/arm/plat-mxc/devices/platform-imx-i2c.c b/arch/arm/plat-mxc/devices/platform-imx-i2c.c
+new file mode 100644
+index 0000000..aa3419f
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/platform-imx-i2c.c
+@@ -0,0 +1,30 @@
++/*
++ * Copyright (C) 2009-2010 Pengutronix
++ * Copyright (C) 2010 Freescale Semiconductor
++ * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++#include <mach/devices-common.h>
++
++struct platform_device *__init imx_add_imx_i2c(int id,
++		resource_size_t iobase, resource_size_t iosize, int irq,
++		const struct imxi2c_platform_data *pdata)
++{
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irq,
++			.end = irq,
++			.flags = IORESOURCE_IRQ,
++		},
++	};
++
++	return imx_add_platform_device("imx-i2c", id, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
+diff --git a/arch/arm/plat-mxc/devices/platform-imx-mmc.c b/arch/arm/plat-mxc/devices/platform-imx-mmc.c
+new file mode 100755
+index 0000000..29fc873
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/platform-imx-mmc.c
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (C) 2009-2010 Pengutronix
++ * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++#include <asm/sizes.h>
++#include <mach/devices-common.h>
++
++struct platform_device *__init imx_add_imx_mmc(int id,
++		resource_size_t iobase, resource_size_t iosize, int irq1,
++		int irq2, const struct mxc_mmc_platform_data *pdata)
++{
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irq1,
++			.end = irq1,
++			.flags = IORESOURCE_IRQ,
++		}, {
++			.start = irq2,
++			.end = irq2,
++			.flags = IORESOURCE_IRQ,
++		}
++	};
++
++	return imx_add_platform_device("mxsdhci", id, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
+diff --git a/arch/arm/plat-mxc/devices/platform-imx-uart.c b/arch/arm/plat-mxc/devices/platform-imx-uart.c
+new file mode 100644
+index 0000000..dad64f2
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/platform-imx-uart.c
+@@ -0,0 +1,61 @@
++/*
++ * Copyright (C) 2009-2010 Pengutronix
++ * Copyright (C) 2010 Freescale Semiconductor
++ * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++#include <mach/devices-common.h>
++
++struct platform_device *__init imx_add_imx_uart_3irq(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irqrx, resource_size_t irqtx,
++		resource_size_t irqrts,
++		const struct imxuart_platform_data *pdata)
++{
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irqrx,
++			.end = irqrx,
++			.flags = IORESOURCE_IRQ,
++		}, {
++			.start = irqtx,
++			.end = irqtx,
++			.flags = IORESOURCE_IRQ,
++		}, {
++			.start = irqrts,
++			.end = irqrx,
++			.flags = IORESOURCE_IRQ,
++		},
++	};
++
++	return imx_add_platform_device("imx-uart", id, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
++
++struct platform_device *__init imx_add_imx_uart_1irq(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irq,
++		const struct imxuart_platform_data *pdata)
++{
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irq,
++			.end = irq,
++			.flags = IORESOURCE_IRQ,
++		},
++	};
++
++	return imx_add_platform_device("imx-uart", id, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
+diff --git a/arch/arm/plat-mxc/devices/platform-mxc_nand.c b/arch/arm/plat-mxc/devices/platform-mxc_nand.c
+new file mode 100755
+index 0000000..f3fd5b6
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/platform-mxc_nand.c
+@@ -0,0 +1,45 @@
++/*
++ * Copyright (C) 2009-2010 Pengutronix
++ * Copyright (C) 2010 Freescale Semiconductor
++ * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++#include <asm/sizes.h>
++#include <mach/devices-common.h>
++
++static struct platform_device *__init imx_add_mxc_nand(resource_size_t iobase,
++		int irq, const struct mxc_nand_platform_data *pdata,
++		resource_size_t iosize)
++{
++	static int id;
++
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irq,
++			.end = irq,
++			.flags = IORESOURCE_IRQ,
++		},
++	};
++
++	return imx_add_platform_device("mxc_nand", id++, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
++
++struct platform_device *__init imx_add_mxc_nand_v1(resource_size_t iobase,
++		int irq, const struct mxc_nand_platform_data *pdata)
++{
++	return imx_add_mxc_nand(iobase, irq, pdata, SZ_4K);
++}
++
++struct platform_device *__init imx_add_mxc_nand_v21(resource_size_t iobase,
++		int irq, const struct mxc_nand_platform_data *pdata)
++{
++	return imx_add_mxc_nand(iobase, irq, pdata, SZ_8K);
++}
+diff --git a/arch/arm/plat-mxc/devices/platform-spi_imx.c b/arch/arm/plat-mxc/devices/platform-spi_imx.c
+new file mode 100644
+index 0000000..a72eac3
+--- /dev/null
++++ b/arch/arm/plat-mxc/devices/platform-spi_imx.c
+@@ -0,0 +1,31 @@
++/*
++ * Copyright (C) 2009-2010 Pengutronix
++ * Copyright (C) 2010 Freescale Semiconductor
++ * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++#include <asm/sizes.h>
++#include <mach/devices-common.h>
++
++struct platform_device *__init imx_add_spi_imx(int id,
++		resource_size_t iobase, resource_size_t iosize, int irq,
++		const struct spi_imx_master *pdata)
++{
++	struct resource res[] = {
++		{
++			.start = iobase,
++			.end = iobase + iosize - 1,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.start = irq,
++			.end = irq,
++			.flags = IORESOURCE_IRQ,
++		},
++	};
++
++	return imx_add_platform_device("spi_imx", id, res, ARRAY_SIZE(res),
++			pdata, sizeof(*pdata));
++}
+diff --git a/arch/arm/plat-mxc/include/mach/3ds_debugboard.h b/arch/arm/plat-mxc/include/mach/3ds_debugboard.h
+new file mode 100644
+index 0000000..b6494e5
+--- /dev/null
++++ b/arch/arm/plat-mxc/include/mach/3ds_debugboard.h
+@@ -0,0 +1,18 @@
++/*
++ * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ *
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#ifndef __ASM_ARCH_MXC_3DS_DB_H__
++#define __ASM_ARCH_MXC_3DS_DB_H__
++
++extern int __init mxc_expio_init(u32 base, u32 p_irq);
++
++#endif /* __ASM_ARCH_MXC_3DS_DB_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/board-mx35_3ds.h b/arch/arm/plat-mxc/include/mach/board-mx35_3ds.h
+new file mode 100644
+index 0000000..2bcf9db
+--- /dev/null
++++ b/arch/arm/plat-mxc/include/mach/board-mx35_3ds.h
+@@ -0,0 +1,55 @@
++/*
++ *  Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#ifndef __ASM_ARCH_MXC_BOARD_MX35PDK_H__
++#define __ASM_ARCH_MXC_BOARD_MX35PDK_H__
++
++#include <mach/irqs.h>
++
++#define MXC_PSEUDO_PARENT	MXC_INT_FORCE
++#define EXPIO_PARENT_INT        IOMUX_TO_IRQ(MX35_GPIO1_1)
++
++enum {
++	MCU_INT_HEADPHONE = 0,
++	MCU_INT_GPS,
++	MCU_INT_SD1_CD,
++	MCU_INT_SD1_WP,
++	MCU_INT_SD2_CD,
++	MCU_INT_SD2_WP,
++	MCU_INT_POWER_KEY,
++	MCU_INT_RTC,
++	MCU_INT_TS_ADC,
++	MCU_INT_KEYPAD,
++};
++
++#define MXC_PSEUDO_IRQ_HEADPHONE	(MXC_PSEUDO_IO_BASE + MCU_INT_HEADPHONE)
++#define MXC_PSEUDO_IRQ_GPS		(MXC_PSEUDO_IO_BASE + MCU_INT_GPS)
++#define MXC_PSEUDO_IRQ_SD1_CD		(MXC_PSEUDO_IO_BASE + MCU_INT_SD1_CD)
++#define MXC_PSEUDO_IRQ_SD1_WP		(MXC_PSEUDO_IO_BASE + MCU_INT_SD1_WP)
++#define MXC_PSEUDO_IRQ_SD2_CD		(MXC_PSEUDO_IO_BASE + MCU_INT_SD2_CD)
++#define MXC_PSEUDO_IRQ_SD2_WP		(MXC_PSEUDO_IO_BASE + MCU_INT_SD2_WP)
++#define MXC_PSEUDO_IRQ_POWER_KEY	(MXC_PSEUDO_IO_BASE + MCU_INT_POWER_KEY)
++#define MXC_PSEUDO_IRQ_KEYPAD		(MXC_PSEUDO_IO_BASE + MCU_INT_KEYPAD)
++#define MXC_PSEUDO_IRQ_RTC		(MXC_PSEUDO_IO_BASE + MCU_INT_RTC)
++#define MXC_PSEUDO_IRQ_TS_ADC		(MXC_PSEUDO_IO_BASE + MCU_INT_TS_ADC)
++
++extern int is_suspend_ops_started(void);
++extern int __init mx35_3stack_init_mc13892(void);
++extern int __init mx35_3stack_init_mc9s08dz60(void);
++
++#endif /* __ASM_ARCH_MXC_BOARD_MX35PDK_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/board-mx35pdk.h b/arch/arm/plat-mxc/include/mach/board-mx35pdk.h
+deleted file mode 100644
+index a6cbddc..0000000
+--- a/arch/arm/plat-mxc/include/mach/board-mx35pdk.h
++++ /dev/null
+@@ -1,48 +0,0 @@
+-/*
+- *  Copyright 2009-2010 Freescale Semiconductor, Inc. All Rights Reserved
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+- */
+-
+-#ifndef __ASM_ARCH_MXC_BOARD_MX35PDK_H__
+-#define __ASM_ARCH_MXC_BOARD_MX35PDK_H__
+-
+-#define MXC_PSEUDO_PARENT	MXC_INT_FORCE
+-
+-enum {
+-	MCU_INT_HEADPHONE = 0,
+-	MCU_INT_GPS,
+-	MCU_INT_SD1_CD,
+-	MCU_INT_SD1_WP,
+-	MCU_INT_SD2_CD,
+-	MCU_INT_SD2_WP,
+-	MCU_INT_POWER_KEY,
+-	MCU_INT_RTC,
+-	MCU_INT_TS_ADC,
+-	MCU_INT_KEYPAD,
+-};
+-
+-#define MXC_PSEUDO_IRQ_HEADPHONE	(MXC_PSEUDO_IO_BASE + MCU_INT_HEADPHONE)
+-#define MXC_PSEUDO_IRQ_GPS		(MXC_PSEUDO_IO_BASE + MCU_INT_GPS)
+-#define MXC_PSEUDO_IRQ_SD1_CD		(MXC_PSEUDO_IO_BASE + MCU_INT_SD1_CD)
+-#define MXC_PSEUDO_IRQ_SD1_WP		(MXC_PSEUDO_IO_BASE + MCU_INT_SD1_WP)
+-#define MXC_PSEUDO_IRQ_SD2_CD		(MXC_PSEUDO_IO_BASE + MCU_INT_SD2_CD)
+-#define MXC_PSEUDO_IRQ_SD2_WP		(MXC_PSEUDO_IO_BASE + MCU_INT_SD2_WP)
+-#define MXC_PSEUDO_IRQ_POWER_KEY	(MXC_PSEUDO_IO_BASE + MCU_INT_POWER_KEY)
+-#define MXC_PSEUDO_IRQ_KEYPAD		(MXC_PSEUDO_IO_BASE + MCU_INT_KEYPAD)
+-#define MXC_PSEUDO_IRQ_RTC		(MXC_PSEUDO_IO_BASE + MCU_INT_RTC)
+-#define MXC_PSEUDO_IRQ_TS_ADC		(MXC_PSEUDO_IO_BASE + MCU_INT_TS_ADC)
+-
+-#endif /* __ASM_ARCH_MXC_BOARD_MX35PDK_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/devices-common.h b/arch/arm/plat-mxc/include/mach/devices-common.h
+new file mode 100755
+index 0000000..5120007
+--- /dev/null
++++ b/arch/arm/plat-mxc/include/mach/devices-common.h
+@@ -0,0 +1,66 @@
++/*
++ * Copyright (C) 2009-2010 Pengutronix
++ * Copyright (C) 2010 Freescale Semiconductor
++ * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
++ *
++ * This program is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU General Public License version 2 as published by the
++ * Free Software Foundation.
++ */
++#include <linux/kernel.h>
++#include <linux/platform_device.h>
++#include <linux/init.h>
++
++struct platform_device *imx_add_platform_device(const char *name, int id,
++		const struct resource *res, unsigned int num_resources,
++		const void *data, size_t size_data);
++
++#if defined(CONFIG_CAN_FLEXCAN) || defined(CONFIG_CAN_FLEXCAN_MODULE)
++#include <linux/can/platform/flexcan.h>
++struct platform_device *__init imx_add_flexcan(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irq,
++		const struct flexcan_platform_data *pdata);
++#else
++/* the ifdef can be removed once the flexcan driver has been merged */
++struct flexcan_platform_data;
++static inline struct platform_device *__init imx_add_flexcan(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irq,
++		const struct flexcan_platform_data *pdata)
++{
++	return NULL;
++}
++#endif
++
++#include <mach/i2c.h>
++struct platform_device *__init imx_add_imx_i2c(int id,
++		resource_size_t iobase, resource_size_t iosize, int irq,
++		const struct imxi2c_platform_data *pdata);
++
++#include <mach/imx-uart.h>
++struct platform_device *__init imx_add_imx_uart_3irq(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irqrx, resource_size_t irqtx,
++		resource_size_t irqrts,
++		const struct imxuart_platform_data *pdata);
++struct platform_device *__init imx_add_imx_uart_1irq(int id,
++		resource_size_t iobase, resource_size_t iosize,
++		resource_size_t irq,
++		const struct imxuart_platform_data *pdata);
++
++#include <mach/mxc_nand.h>
++struct platform_device *__init imx_add_mxc_nand_v1(resource_size_t iobase,
++		int irq, const struct mxc_nand_platform_data *pdata);
++struct platform_device *__init imx_add_mxc_nand_v21(resource_size_t iobase,
++		int irq, const struct mxc_nand_platform_data *pdata);
++
++#include <mach/spi.h>
++struct platform_device *__init imx_add_spi_imx(int id,
++		resource_size_t iobase, resource_size_t iosize, int irq,
++		const struct spi_imx_master *pdata);
++
++#include <mach/mmc.h>
++struct platform_device *__init imx_add_imx_mmc(int id,
++		resource_size_t iobase, resource_size_t iosize, int irq1,
++		int irq2, const struct mxc_mmc_platform_data *pdata);
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-mx35.h b/arch/arm/plat-mxc/include/mach/iomux-mx35.h
+index 2a24bae..0399685 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-mx35.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-mx35.h
+@@ -20,6 +20,7 @@
+ #define __MACH_IOMUX_MX35_H__
+ 
+ #include <mach/iomux-v3.h>
++#include <mach/irqs.h>
+ 
+ /*
+  * The naming convention for the pad modes is MX35_PAD_<padname>__<padmode>
+@@ -1263,5 +1264,10 @@
+ 
+ #define MX35_PAD_TEST_MODE__TCU_TEST_MODE			IOMUX_PAD(0x790, 0x0,   0, 0x0,   0, NO_PAD_CTRL)
+ 
++#define MX35_GPIO1_1		(0 * 32 + 1)
++#define MX35_GPIO1_4		(0 * 32 + 4)
++#define MX35_GPIO2_0		(1 * 32 + 0)
++
++#define IOMUX_TO_IRQ(pin)	(MXC_GPIO_IRQ_START + pin)
+ 
+ #endif /* __MACH_IOMUX_MX35_H__ */
+diff --git a/arch/arm/plat-mxc/include/mach/iomux-v3.h b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+index 6beaf8c..c18e69b 100644
+--- a/arch/arm/plat-mxc/include/mach/iomux-v3.h
++++ b/arch/arm/plat-mxc/include/mach/iomux-v3.h
+@@ -54,6 +54,11 @@ struct pad_desc {
+ 	unsigned select_input:3;
+ };
+ 
++struct pad_cfg {
++	struct pad_desc pd;
++	int    pad_ctrl;
++};
++
+ #define IOMUX_PAD(_pad_ctrl_ofs, _mux_ctrl_ofs, _mux_mode, _select_input_ofs, \
+ 		_select_input, _pad_ctrl)				\
+ 		{							\
+@@ -95,12 +100,15 @@ struct pad_desc {
+  * setups a single pad in the iomuxer
+  */
+ int mxc_iomux_v3_setup_pad(struct pad_desc *pad);
++int mxc_iomux_v3_setup_pad_ext(struct pad_cfg *pad);
+ 
+ /*
+  * setups mutliple pads
+  * convenient way to call the above function with tables
+  */
+ int mxc_iomux_v3_setup_multiple_pads(struct pad_desc *pad_list, unsigned count);
++int mxc_iomux_v3_setup_multiple_pads_ext(struct pad_cfg *pad_list,
++								unsigned count);
+ 
+ /*
+  * Initialise the iomux controller
+diff --git a/arch/arm/plat-mxc/include/mach/mx31.h b/arch/arm/plat-mxc/include/mach/mx31.h
+index fb90e11..352eec0 100644
+--- a/arch/arm/plat-mxc/include/mach/mx31.h
++++ b/arch/arm/plat-mxc/include/mach/mx31.h
+@@ -138,6 +138,23 @@ static inline void mx31_setup_weimcs(size_t cs,
+ }
+ #endif
+ 
++/*
++ * DMA request assignments
++ */
++#define MX31_DMA_REQ_SDHC2      21
++#define MX31_DMA_REQ_SDHC1      20
++#define MX31_DMA_REQ_FIRI_TX    17
++#define MX31_DMA_REQ_FIRI_RX    16
++#define MX31_DMA_REQ_UART4_TX   13
++#define MX31_DMA_REQ_UART4_RX   12
++#define MX31_DMA_REQ_CSPI3_TX   11
++#define MX31_DMA_REQ_CSPI3_RX   10
++#define MX31_DMA_REQ_UART5_TX   11
++#define MX31_DMA_REQ_UART5_RX   10
++#define MX31_DMA_REQ_UART3_TX   9
++#define MX31_DMA_REQ_UART3_RX   8
++#define MX31_DMA_REQ_SIM        5
++
+ #define MX31_INT_I2C3		3
+ #define MX31_INT_I2C2		4
+ #define MX31_INT_MPEG4_ENCODER	5
+@@ -197,6 +214,8 @@ static inline void mx31_setup_weimcs(size_t cs,
+ #define MX31_INT_EXT_WDOG	62
+ #define MX31_INT_EXT_TV		63
+ 
++#define ARM11_PMU_IRQ		MXC_INT_EVTMON
++
+ #define MX31_PROD_SIGNATURE		0x1	/* For MX31 */
+ 
+ /* silicon revisions specific to i.MX31 */
+diff --git a/arch/arm/plat-mxc/include/mach/mx35.h b/arch/arm/plat-mxc/include/mach/mx35.h
+index 526a558..20d342a 100644
+--- a/arch/arm/plat-mxc/include/mach/mx35.h
++++ b/arch/arm/plat-mxc/include/mach/mx35.h
+@@ -1,11 +1,25 @@
+ #ifndef __MACH_MX35_H__
+ #define __MACH_MX35_H__
++
++/*!
++ * Define this option to specify we are using the newer SDMA module.
++ */
++#define MXC_SDMA_V2
++
+ /*
+  * IRAM
+  */
+ #define MX35_IRAM_BASE_ADDR		0x10000000	/* internal ram */
+ #define MX35_IRAM_SIZE			SZ_128K
+ 
++#ifdef CONFIG_SND_MXC_SOC_IRAM
++#define SND_RAM_SIZE 0x10000
++#else
++#define SND_RAM_SIZE 0
++#endif
++
++#define VPU_IRAM_SIZE 0
++
+ #define MX35_L2CC_BASE_ADDR		0x30000000
+ #define MX35_L2CC_SIZE			SZ_1M
+ 
+@@ -18,7 +32,7 @@
+ #define MX35_ETB_SLOT4_BASE_ADDR		(MX35_AIPS1_BASE_ADDR + 0x10000)
+ #define MX35_ETB_SLOT5_BASE_ADDR		(MX35_AIPS1_BASE_ADDR + 0x14000)
+ #define MX35_ECT_CTIO_BASE_ADDR			(MX35_AIPS1_BASE_ADDR + 0x18000)
+-#define MX35_I2C_BASE_ADDR			(MX35_AIPS1_BASE_ADDR + 0x80000)
++#define MX35_I2C1_BASE_ADDR			(MX35_AIPS1_BASE_ADDR + 0x80000)
+ #define MX35_I2C3_BASE_ADDR			(MX35_AIPS1_BASE_ADDR + 0x84000)
+ #define MX35_UART1_BASE_ADDR			(MX35_AIPS1_BASE_ADDR + 0x90000)
+ #define MX35_UART2_BASE_ADDR			(MX35_AIPS1_BASE_ADDR + 0x94000)
+@@ -39,6 +53,10 @@
+ #define MX35_SSI2_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x14000)
+ #define MX35_ATA_DMA_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x20000)
+ #define MX35_MSHC1_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x24000)
++#define MX35_SPDIF_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x28000)
++#define MX35_ATA_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x20000)
++#define MX35_ASRC_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x2C000)
++#define MX35_ESAI_BASE_ADDR			(MX35_SPBA0_BASE_ADDR + 0x34000)
+ #define MX35_FEC_BASE_ADDR		0x50038000
+ #define MX35_SPBA_CTRL_BASE_ADDR		(MX35_SPBA0_BASE_ADDR + 0x3c000)
+ 
+@@ -52,6 +70,14 @@
+ #define MX35_GPIO3_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xa4000)
+ #define MX35_SCC_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xac000)
+ #define MX35_RNGA_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xb0000)
++#define MX35_MMC_SDHC1_BASE_ADDR 		(MX35_AIPS2_BASE_ADDR + 0xB4000)
++#define MX35_MMC_SDHC2_BASE_ADDR 		(MX35_AIPS2_BASE_ADDR + 0xB8000)
++#define MX35_MMC_SDHC3_BASE_ADDR 		(MX35_AIPS2_BASE_ADDR + 0xBC000)
++#define MX35_CAN1_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xE4000)
++#define MX35_CAN2_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xE8000)
++#define MX35_IIM_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xF0000)
++#define MX35_OTG_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xF4000)
++#define MX35_MLB_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xF8000)
+ #define MX35_IPU_CTRL_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xc0000)
+ #define MX35_AUDMUX_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xc4000)
+ #define MX35_GPIO1_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xcc000)
+@@ -61,7 +87,6 @@
+ #define MX35_WDOG_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xdc000)
+ #define MX35_PWM_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xe0000)
+ #define MX35_RTIC_BASE_ADDR			(MX35_AIPS2_BASE_ADDR + 0xec000)
+-#define MX35_OTG_BASE_ADDR		0x53ff4000
+ 
+ #define MX35_ROMP_BASE_ADDR		0x60000000
+ #define MX35_ROMP_BASE_ADDR_VIRT	0xfc500000
+@@ -123,7 +148,7 @@
+ #define MX35_INT_MMC_SDHC1	7
+ #define MX35_INT_MMC_SDHC2	8
+ #define MX35_INT_MMC_SDHC3	9
+-#define MX35_INT_I2C		10
++#define MX35_INT_I2C1		10
+ #define MX35_INT_SSI1		11
+ #define MX35_INT_SSI2		12
+ #define MX35_INT_CSPI2		13
+@@ -189,6 +214,35 @@
+ #define MX35_SYSTEM_REV_MIN		MX35_CHIP_REV_1_0
+ #define MX35_SYSTEM_REV_NUM		3
+ 
++#define MX35_DMA_REQ_ASRC_DMA6  41
++#define MX35_DMA_REQ_ASRC_DMA5  40
++#define MX35_DMA_REQ_ASRC_DMA4  39
++#define MX35_DMA_REQ_ASRC_DMA3  38
++#define MX35_DMA_REQ_ASRC_DMA2  37
++#define MX35_DMA_REQ_ASRC_DMA1  36
++#define MX35_DMA_REQ_RSVD3      35
++#define MX35_DMA_REQ_RSVD2      34
++#define MX35_DMA_REQ_ESAI_TX    33
++#define MX35_DMA_REQ_ESAI_RX    32
++#define MX35_DMA_REQ_IPU        21
++#define MX35_DMA_REQ_RSVD1      20
++#define MX35_DMA_REQ_SPDIF_TX   13
++#define MX35_DMA_REQ_SPDIF_RX   12
++#define MX35_DMA_REQ_UART3_TX   11
++#define MX35_DMA_REQ_UART3_RX   10
++#define MX35_DMA_REQ_MSHC       5
++#define MX35_DMA_REQ_DPTC	   1
++#define MX35_DMA_REQ_DVFS  	   1
++
++/*!
++ * NFMS bit in RCSR register for pagesize of nandflash
++ */
++#define NFMS  \
++	(*((volatile u32 *)MX35_IO_ADDRESS(MX35_CCM_BASE_ADDR+0x18)))
++#define NFMS_BIT                8
++#define NFMS_NF_DWIDTH          14
++#define NFMS_NF_PG_SZ           8
++
+ #ifdef IMX_NEEDS_DEPRECATED_SYMBOLS
+ /* these should go away */
+ #define MXC_FEC_BASE_ADDR MX35_FEC_BASE_ADDR
+diff --git a/arch/arm/plat-mxc/include/mach/mx3x.h b/arch/arm/plat-mxc/include/mach/mx3x.h
+index 7a356de..d5953f1 100644
+--- a/arch/arm/plat-mxc/include/mach/mx3x.h
++++ b/arch/arm/plat-mxc/include/mach/mx3x.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2007 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -152,16 +152,7 @@
+  * and returning the virtual address. If the physical address is not mapped,
+  * it returns 0xDEADBEEF
+  */
+-#define IO_ADDRESS(x)   \
+-	(void __force __iomem *) \
+-	(((x >= AIPS1_BASE_ADDR) && (x < (AIPS1_BASE_ADDR + AIPS1_SIZE))) ? AIPS1_IO_ADDRESS(x):\
+-	((x >= SPBA0_BASE_ADDR) && (x < (SPBA0_BASE_ADDR + SPBA0_SIZE))) ? SPBA0_IO_ADDRESS(x):\
+-	((x >= AIPS2_BASE_ADDR) && (x < (AIPS2_BASE_ADDR + AIPS2_SIZE))) ? AIPS2_IO_ADDRESS(x):\
+-	((x >= ROMP_BASE_ADDR) && (x < (ROMP_BASE_ADDR + ROMP_SIZE))) ? ROMP_IO_ADDRESS(x):\
+-	((x >= AVIC_BASE_ADDR) && (x < (AVIC_BASE_ADDR + AVIC_SIZE))) ? AVIC_IO_ADDRESS(x):\
+-	((x >= CS4_BASE_ADDR) && (x < (CS4_BASE_ADDR + CS4_SIZE))) ? CS4_IO_ADDRESS(x):\
+-	((x >= X_MEMC_BASE_ADDR) && (x < (X_MEMC_BASE_ADDR + X_MEMC_SIZE))) ? X_MEMC_IO_ADDRESS(x):\
+-	0xDEADBEEF)
++#define IO_ADDRESS MX31_IO_ADDRESS
+ 
+ /*
+  * define the address mapping macros: in physical address order
+@@ -197,6 +188,35 @@
+ 	(((x) - X_MEMC_BASE_ADDR) + X_MEMC_BASE_ADDR_VIRT)
+ 
+ /*
++ * DMA request assignments
++ */
++#define MX3x_DMA_REQ_ECT        31
++#define MX3x_DMA_REQ_NFC        30
++#define MX3x_DMA_REQ_SSI1_TX1   29
++#define MX3x_DMA_REQ_SSI1_RX1   28
++#define MX3x_DMA_REQ_SSI1_TX2   27
++#define MX3x_DMA_REQ_SSI1_RX2   26
++#define MX3x_DMA_REQ_SSI2_TX1   25
++#define MX3x_DMA_REQ_SSI2_RX1   24
++#define MX3x_DMA_REQ_SSI2_TX2   23
++#define MX3x_DMA_REQ_SSI2_RX2   22
++#define MX3x_DMA_REQ_UART1_TX   19
++#define MX3x_DMA_REQ_UART1_RX   18
++#define MX3x_DMA_REQ_UART2_TX   17
++#define MX3x_DMA_REQ_UART2_RX   16
++#define MX3x_DMA_REQ_EXTREQ1    15
++#define MX3x_DMA_REQ_EXTREQ2    14
++#define MX3x_DMA_REQ_CSPI1_TX   9
++#define MX3x_DMA_REQ_CSPI1_RX   8
++#define MX3x_DMA_REQ_CSPI2_TX   7
++#define MX3x_DMA_REQ_CSPI2_RX   6
++#define MX3x_DMA_REQ_ATA_RX     4
++#define MX3x_DMA_REQ_ATA_TX     3
++#define MX3x_DMA_REQ_ATA_TX_END 2
++#define MX3x_DMA_REQ_CCM        1
++#define MX3x_DMA_REQ_EXTREQ0    0
++
++/*
+  * Interrupt numbers
+  */
+ #define MX3x_INT_I2C3		3
+@@ -217,6 +237,7 @@
+ #define MX3x_INT_EPIT1		28
+ #define MX3x_INT_GPT		29
+ #define MX3x_INT_POWER_FAIL	30
++#define MX3x_INT_DVFS		31
+ #define MX3x_INT_UART2		32
+ #define MX3x_INT_NANDFC		33
+ #define MX3x_INT_SDMA		34
+@@ -389,17 +410,6 @@ static inline int mx31_revision(void)
+ #define MXC_INT_EXT_WDOG MX3x_INT_EXT_WDOG
+ #define MXC_INT_EXT_TV MX3x_INT_EXT_TV
+ #define PROD_SIGNATURE MX3x_PROD_SIGNATURE
+-#define CHIP_REV_1_0 MX3x_CHIP_REV_1_0
+-#define CHIP_REV_1_1 MX3x_CHIP_REV_1_1
+-#define CHIP_REV_1_2 MX3x_CHIP_REV_1_2
+-#define CHIP_REV_1_3 MX3x_CHIP_REV_1_3
+-#define CHIP_REV_2_0 MX3x_CHIP_REV_2_0
+-#define CHIP_REV_2_1 MX3x_CHIP_REV_2_1
+-#define CHIP_REV_2_2 MX3x_CHIP_REV_2_2
+-#define CHIP_REV_2_3 MX3x_CHIP_REV_2_3
+-#define CHIP_REV_3_0 MX3x_CHIP_REV_3_0
+-#define CHIP_REV_3_1 MX3x_CHIP_REV_3_1
+-#define CHIP_REV_3_2 MX3x_CHIP_REV_3_2
+ #define SYSTEM_REV_MIN MX3x_SYSTEM_REV_MIN
+ #define SYSTEM_REV_NUM MX3x_SYSTEM_REV_NUM
+ #endif
+diff --git a/arch/arm/plat-mxc/include/mach/mxc.h b/arch/arm/plat-mxc/include/mach/mxc.h
+index 08b22e1..1b274a0 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc.h
++++ b/arch/arm/plat-mxc/include/mach/mxc.h
+@@ -235,9 +235,11 @@ struct mxc_unifi_platform_data *get_unifi_plat_data(void);
+ 
+ #define MUX_IO_P		29
+ #define MUX_IO_I		24
++
++#ifdef CONFIG_ARCH_MX5
+ #define IOMUX_TO_GPIO(pin) 	((((unsigned int)pin >> MUX_IO_P) * 32) + ((pin >> MUX_IO_I) & ((1 << (MUX_IO_P - MUX_IO_I)) - 1)))
+ #define IOMUX_TO_IRQ(pin)	(MXC_GPIO_IRQ_START + IOMUX_TO_GPIO(pin))
+-
++#endif
+ 
+ #ifndef __ASSEMBLY__
+ 
+diff --git a/arch/arm/plat-mxc/iomux-v3.c b/arch/arm/plat-mxc/iomux-v3.c
+index b318c6a..6196321 100644
+--- a/arch/arm/plat-mxc/iomux-v3.c
++++ b/arch/arm/plat-mxc/iomux-v3.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2004-2010 Freescale Semiconductor, Inc.
+  * Copyright (C) 2008 by Sascha Hauer <kernel@pengutronix.de>
+  * Copyright (C) 2009 by Jan Weitzel Phytec Messtechnik GmbH,
+  *                       <armlinux@phytec.de>
+@@ -65,6 +65,42 @@ int mxc_iomux_v3_setup_multiple_pads(struct pad_desc *pad_list, unsigned count)
+ }
+ EXPORT_SYMBOL(mxc_iomux_v3_setup_multiple_pads);
+ 
++int mxc_iomux_v3_setup_pad_ext(struct pad_cfg *pd)
++{
++	struct pad_desc *pad = &(pd->pd);
++
++	if (pad->mux_ctrl_ofs)
++		__raw_writel(pad->mux_mode, base + pad->mux_ctrl_ofs);
++
++	if (pad->select_input_ofs)
++		__raw_writel(pad->select_input,
++				base + pad->select_input_ofs);
++
++	if (pd->pad_ctrl && pad->pad_ctrl_ofs)
++		__raw_writel(pd->pad_ctrl, base + pad->pad_ctrl_ofs);
++	else if (!(pad->pad_ctrl & NO_PAD_CTRL) && pad->pad_ctrl_ofs)
++		__raw_writel(pad->pad_ctrl, base + pad->pad_ctrl_ofs);
++	return 0;
++}
++EXPORT_SYMBOL(mxc_iomux_v3_setup_pad_ext);
++
++int mxc_iomux_v3_setup_multiple_pads_ext(struct pad_cfg *pad_list,
++						unsigned count)
++{
++	struct pad_cfg *p = pad_list;
++	int i;
++	int ret;
++
++	for (i = 0; i < count; i++) {
++		ret = mxc_iomux_v3_setup_pad_ext(p);
++		if (ret)
++			return ret;
++		p++;
++	}
++	return 0;
++}
++EXPORT_SYMBOL(mxc_iomux_v3_setup_multiple_pads_ext);
++
+ void mxc_iomux_v3_init(void __iomem *iomux_v3_base)
+ {
+ 	base = iomux_v3_base;
+-- 
+1.5.4.4
+

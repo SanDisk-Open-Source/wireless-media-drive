@@ -1,0 +1,77 @@
+From 6592ed3f9b416a7e17255b4a7a73b0cf5297dd8a Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 15 Feb 2011 15:32:10 +0800
+Subject: [PATCH] ENGR00139196 MX53 ARD: add VGA support
+
+The VGA pins in MX53 ARD share the same PINs with WEIM.
+So when the VGA is used, the ethernet and NOR via WEIM can
+not be used. To run VGA on MX53 ARD, please do as the following:
+- add boot option "ard-vga" in kernel launch command line.
+- Flash the images on SD or NAND and avoid to use Ethernet.
+- HW configuration: Short PIN 1, 2 for J11 and J12 in CPU board.
+Please note: If using the ethernet, Short PIN 2, 3 for J11 and
+J12.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c |   23 +++++++++++++++++++++++
+ 1 files changed, 23 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 4d4d05b..ec04d80 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -540,6 +540,10 @@ static struct ldb_platform_data ldb_data = {
+ 	.ext_ref = 1,
+ };
+ 
++static struct tve_platform_data tve_data = {
++	.dac_reg = "LDO4",
++};
++
+ static void mxc_iim_enable_fuse(void)
+ {
+ 	u32 reg;
+@@ -1046,6 +1050,15 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
+ 	}
+ }
+ 
++static int __initdata enable_ard_vga = { 0 };
++static int __init ard_vga_setup(char *__unused)
++{
++	enable_ard_vga = 1;
++	printk(KERN_INFO "Enable MX53 ARD VGA\n");
++	return cpu_is_mx53();
++}
++__setup("ard-vga", ard_vga_setup);
++
+ static void __init mx53_ard_io_init(void)
+ {
+ 	/* MX53 ARD board */
+@@ -1053,6 +1066,15 @@ static void __init mx53_ard_io_init(void)
+ 	mxc_iomux_v3_setup_multiple_pads(mx53ard_pads,
+ 				ARRAY_SIZE(mx53ard_pads));
+ 
++	/* setup VGA PINs */
++	if (enable_ard_vga) {
++		iomux_v3_cfg_t vga;
++		vga = MX53_PAD_EIM_OE__IPU_DI1_PIN7;
++		mxc_iomux_v3_setup_pad(vga);
++		vga = MX53_PAD_EIM_RW__IPU_DI1_PIN8;
++		mxc_iomux_v3_setup_pad(vga);
++	}
++
+ 	/* USBOTG_OC */
+ 	gpio_request(ARD_USBOTG_OC, "otg-oc");
+ 	gpio_direction_input(ARD_USBOTG_OC);
+@@ -1219,6 +1241,7 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_rtc_device, NULL);
+ 	mxc_register_device(&mxc_ipu_device, &mxc_ipu_data);
+ 	mxc_register_device(&mxc_ldb_device, &ldb_data);
++	mxc_register_device(&mxc_tve_device, &tve_data);
+ 	mxc_register_device(&mxcvpu_device, &mxc_vpu_data);
+ 	mxc_register_device(&gpu_device, &z160_revision);
+ 	mxc_register_device(&mxcscc_device, NULL);
+-- 
+1.5.4.4
+

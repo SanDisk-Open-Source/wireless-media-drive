@@ -1,0 +1,47 @@
+From d04e8cb8366abba0d3cbdc936c21f85a6515bbe6 Mon Sep 17 00:00:00 2001
+From: Richard Zhao <richard.zhao@freescale.com>
+Date: Tue, 12 Oct 2010 15:06:10 +0800
+Subject: [PATCH] ENGR00132489 GPU: make g12 context id unique
+
+Add a unique context ID member variable to the gsl_z1xx_t structure to keep
+track of a true unique context ID.  This is simply an unsigned int counter that
+should provide a large enough pool of unique IDs.
+
+Signed-off-by: Richard Zhao <richard.zhao@freescale.com>
+---
+ drivers/mxc/amd-gpu/common/gsl_g12.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/amd-gpu/common/gsl_g12.c b/drivers/mxc/amd-gpu/common/gsl_g12.c
+index 637e27c..c8c22a9 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_g12.c
++++ b/drivers/mxc/amd-gpu/common/gsl_g12.c
+@@ -90,6 +90,7 @@ typedef struct
+   gsl_timestamp_t   timestamp[GSL_HAL_NUMCMDBUFFERS];
+ 
+   unsigned int      numcontext;
++  unsigned int      nextUniqueContextID;
+ }gsl_z1xx_t;
+ 
+ static gsl_z1xx_t   g_z1xx      = {0}; 
+@@ -828,6 +829,7 @@ kgsl_g12_context_create(gsl_device_t* device, gsl_context_type_t type, unsigned
+     
+     if (g_z1xx.numcontext==0)
+     {
++	g_z1xx.nextUniqueContextID = 0;
+          /* todo: move this to device create or start. Error checking!! */ 
+         for (i=0;i<GSL_HAL_NUMCMDBUFFERS;i++)
+         {
+@@ -874,7 +876,8 @@ kgsl_g12_context_create(gsl_device_t* device, gsl_context_type_t type, unsigned
+     if(g_z1xx.numcontext < GSL_CONTEXT_MAX)
+     {
+         g_z1xx.numcontext++;
+-        *drawctxt_id=g_z1xx.numcontext;
++	g_z1xx.nextUniqueContextID++;
++	*drawctxt_id=g_z1xx.nextUniqueContextID;
+         status = GSL_SUCCESS;
+     }
+     else
+-- 
+1.5.4.4
+

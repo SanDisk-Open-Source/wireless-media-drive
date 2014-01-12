@@ -1,0 +1,53 @@
+From 0afc6102ba79fc4423fd6c7ddaef200bf46270d3 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Wed, 10 Nov 2010 17:23:01 +0800
+Subject: [PATCH] ENGR00132712-2 Add ZQ calib in defconfig
+
+and do the following for debugging purpose,
+1. changed the running interval from 5 minute to 10 seconds
+2. printed out the pu/pd value when it runs.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    1 +
+ arch/arm/plat-mxc/zq_calib.c    |    5 +++--
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 0a3e1a6..1e17e86 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -272,6 +272,7 @@ CONFIG_MXC_PWM=y
+ CONFIG_ARCH_HAS_RNGC=y
+ CONFIG_ARCH_MXC_IOMUX_V3=y
+ CONFIG_MXC_DVFS_PER=y
++CONFIG_MXC_ZQ_CALIBRATION=y
+ 
+ #
+ # Processor Type
+diff --git a/arch/arm/plat-mxc/zq_calib.c b/arch/arm/plat-mxc/zq_calib.c
+index 3f7f19f..aac5097 100644
+--- a/arch/arm/plat-mxc/zq_calib.c
++++ b/arch/arm/plat-mxc/zq_calib.c
+@@ -28,8 +28,8 @@
+ 
+ #include <mach/hardware.h>
+ 
+-/* 5 mins */
+-#define ZQ_INTERVAL	(5 * 60 * 1000)
++/* 10 secs, shall support changing this value in use-space later  */
++#define ZQ_INTERVAL	(10 * 1000)
+ 
+ static void mxc_zq_main(void);
+ 
+@@ -251,6 +251,7 @@ static void mxc_zq_main(void)
+ 	pu = mxc_zq_pu_calib(0);
+ 	/* Search pd value start from 0 */
+ 	pd = mxc_zq_pd_calib(0, pu);
++	printk("pu = %d, pd = %d\n", pu, pd);
+ 	mxc_zq_hw_load(pu, pd);
+ 	/* or do software load alternatively */
+ 	/* zq_sw_load(pu, pd); */
+-- 
+1.5.4.4
+

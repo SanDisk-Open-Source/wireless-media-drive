@@ -1,0 +1,49 @@
+From 021d31454b7cebff5645702f88bb1834e0441c5a Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Mon, 18 Oct 2010 11:45:19 +0800
+Subject: [PATCH] ENGR00132536 usb-host: Clock should be opened before calling ehci_shutdown
+
+When trigger "reboot" command, the driver will call xxx_shutdown.
+For usb-host, it will write registers. So, it needs to open
+clock before ehci_shutdown if the usb is in low power mode.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/host/ehci-arc.c |   14 +++++++++++++-
+ 1 files changed, 13 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index 60e11b9..3ee0dc4 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -439,6 +439,18 @@ static int ehci_fsl_bus_resume(struct usb_hcd *hcd)
+ 	return ret;
+ }
+ 
++static void ehci_fsl_shutdown(struct usb_hcd *hcd)
++{
++	if (!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		set_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, true);
++	}
++	ehci_shutdown(hcd);
++	if (test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)) {
++		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
++		fsl_usb_clk_gate(hcd->self.controller->platform_data, false);
++	}
++}
+ 
+ /* called during probe() after chip reset completes */
+ static int ehci_fsl_setup(struct usb_hcd *hcd)
+@@ -492,7 +504,7 @@ static const struct hc_driver ehci_fsl_hc_driver = {
+ 	.reset = ehci_fsl_setup,
+ 	.start = ehci_run,
+ 	.stop = ehci_stop,
+-	.shutdown = ehci_shutdown,
++	.shutdown = ehci_fsl_shutdown,
+ 
+ 	/*
+ 	 * managing i/o requests and associated device resources
+-- 
+1.5.4.4
+

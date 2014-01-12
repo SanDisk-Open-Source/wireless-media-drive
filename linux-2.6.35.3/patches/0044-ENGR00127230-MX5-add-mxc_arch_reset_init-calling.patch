@@ -1,0 +1,28 @@
+From 89f19e7bfa191fd82ffeff3307abfeeb27a34656 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 7 Sep 2010 21:06:19 +0800
+Subject: [PATCH] ENGR00127230 MX5: add mxc_arch_reset_init calling
+
+In 35 kernel, system.c under plat-mxc exports the interface
+"mxc_arch_reset_init" to set watchdog base address. So calling
+mxc_arch_reset_init in mm.c to fix watchdog reset failure
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ arch/arm/mach-mx5/mm.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mm.c b/arch/arm/mach-mx5/mm.c
+index 5a8768e..a17ae5a 100644
+--- a/arch/arm/mach-mx5/mm.c
++++ b/arch/arm/mach-mx5/mm.c
+@@ -59,5 +59,6 @@ void __init mx5_map_io(void)
+ 	}
+ 
+ 	iotable_init(mx5_io_desc, ARRAY_SIZE(mx5_io_desc));
++	mxc_arch_reset_init(IO_ADDRESS(WDOG1_BASE_ADDR));
+ }
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,694 @@
+﻿@charset "utf-8";
+/* CSS Document */
+
+body{ margin:0; padding:0; font-size:13px; line-height:20px;font-family: Helvetica, Arial, Sans-Serif, Gotham;overflow:hidden; }/*更換英文字型*/
+#container{ margin:0;   }
+#navigator{ width:145px; background: url(../images/navi/bg.png) ; border-right:1px solid  #d2d1d1; width:220px; padding-top:10px;}
+
+/*#content{ width:855px;  padding-bottom:230px;}*/
+#content{ width:855px;position:relative;padding-bottom:100px; margin-left:220px;}
+#contentBg{ height:265px;}
+#searchContainer{ min-width:530px; }
+#searchContainer .top{background:url(../images/searchContainer/bg.png);height:51px; min-width:400px; overflow:hidden;}
+#searchContainer a.logo{ background: url(../images/searchContainer/logo.png) no-repeat; width:119px; height:23px; text-indent:-9999px; display:block; float:left; margin:15px 0 0 34px; }
+#searchArea{ padding-top:12px; float:right; margin-right:8px;  }
+#searchArea input{ width:355px; height:23px; border:#cccccc 1px solid; float:right;}
+#searchArea .searchBtn{ background:url(../images/icons/buleSearch.png) no-repeat; width:31px; height:25px; float:right; margin-left:8px; text-indent:-9999px; display:block; margin-right:28px; margin-top: 2px;}
+
+#searchContainer .bottom{ margin:0; padding:0;  border-bottom:1px solid #d2d1d1;height:51px; text-align:right; background:#FFF; min-width:1100px; overflow:hidden;}/*調整右上角的四個按鈕可以在寬度小時隱藏*/
+#searchContainer .bottom .floatLeft{ float:left; padding-left:220px;}
+#searchContainer .bottom .floatLeft input{ min-width:75px; text-align:center;}/*調整music 中間button的寬度*/
+#searchContainer .bottom .flaotRight{ float:right; margin-right: 42px;}
+
+#searchContainer .bottom input{ margin:0;  border:1px solid #a7a9ac;  color: #5f5e5e; cursor:pointer; height:22px; margin-right: -5px; text-align:left; margin-top: 15px; font-size:12px; }
+#music-tabs input{ background: #e7e7e8; }
+
+#btnUpload{ background:url(../images/icons/gray_upload.png) #e7e7e8  6px center no-repeat; padding-left:25px;  min-width:99px;}/*調整小圖和字的間距*/
+#btnDownload{ background:url(../images/icons/gray_download.png)  6px center no-repeat #e7e7e8; padding-left:25px;  min-width:99px;}
+#btnNew{ background:url(../images/icons/gray_new.png) #e7e7e8  6px center no-repeat; padding-left:30px;  min-width:99px;}
+#btnDel{ background:url(../images/icons/gray_delete.png) #e7e7e8 6px center no-repeat; padding-left:25px;  min-width:99px;}
+
+#btnUpload:hover{ ;background:url(../images/icons/gray_upload.png)  #c6c6c6 6px center no-repeat;}/*調整hover的顏色*/
+#btnDownload:hover{background:url(../images/icons/gray_download.png) #c6c6c6 6px center no-repeat;}/*調整hover的顏色*/
+#btnNew:hover{ background:url(../images/icons/gray_new.png) #c6c6c6 6px center no-repeat; }/*調整hover的顏色*/
+#btnDel:hover{ background:url(../images/icons/gray_delete.png) #c6c6c6 6px center no-repeat;}/*調整hover的顏色*/
+
+#floatingbar{ overflow: hidden; width:100% ;height:70px;color: #000; background: url(../images/musicFloatBar/bg.png) #e6e6e6;position:relative; min-width:980px;} 
+#floatingbar ul {list-style-type:none;}
+#floatingbar ul li{float:left; padding:14px;color:#666; margin-top:-3px;}
+#floatingbar ul li a{text-decoration:none;color:#fff; padding: 10px;font-size:12px;  font-weight:normal;font-family:Arial;}
+#floatingbar ul li a:hover { color:#000033;}
+
+#floatingbar .musicBarContol01{   height:55px;  position:absolute; left:40px; top:15px;}/*調整music bar 上下居中*/
+#floatingbar .musicBarInfo{   width:480px; height:60px; background: url(../images/musicFloatBar/musicInfoBg.png) center no-repeat; padding:18px 0px 0px 25px; margin:-3px auto 0 auto;}/*調整music bar 上下居中*/
+#floatingbar .musicBarContol02{ position:absolute;   height:55px;  right:35px; top:14px;}/*調整music bar 上下居中*/
+
+a.musicPrev{ background: url(../images/icons/whitePrev.png) center no-repeat; width:50px; height:40px; display:block; float:left; margin-right:30px; }
+a:hover.musicPrev{background: url(../images/icons/lightBluePrev.png) center no-repeat;}
+a.musicPrevPress{background: url(../images/icons/bluePrev.png) center no-repeat;}
+a.musicPrevDisable{background: url(../images/icons/grayPrev.png)center no-repeat;}
+
+a.musicPlay{background: url(../images/icons/whitePlay.png) center no-repeat; width:40px; height:40px; display:block; float:left; margin-right:30px; }
+a:hover.musicPlay{background: url(../images/icons/lightBluePlay.png) center no-repeat;}
+a.musicPlayPress{background: url(../images/icons/bluePlay.png) center no-repeat;}
+a.musicPlayDisable{background: url(../images/icons/grayPlay.png) center no-repeat;}
+
+a.musicPause{background: url(../images/icons/whitePause.png)  center no-repeat; width:40px; height:40px; display:block; float:left; margin-right:30px; }
+a:hover.musicPause{background: url(../images/icons/lightBluePause.png) center no-repeat;}
+a.musicPausePress{background: url(../images/icons/bluePause.png) center no-repeat;}
+a.musicPauseDisable{background: url(../images/icons/grayPause.png) center no-repeat;}
+
+a.musicNext{background:url(../images/icons/whiteNext.png) center no-repeat; width:50px; height:40px;  display:block; float:left; margin-right:15px;}
+a:hover.musicNext{background: url(../images/icons/lightBlueNext.png) center no-repeat;}
+a.musicNextPress{background: url(../images/icons/blueNext.png) center no-repeat;}
+a.musicNextDisable{background: url(../images/icons/grayNext.png) center no-repeat;}
+
+a.musicStop{background: url(../images/icons/whiteStop.png) center no-repeat; width:40px; height:40px;  display:block; float:left; margin-right:15px;  }
+a:hover.musicStop{background: url(../images/icons/lightBlueStop.png) center no-repeat;}
+a.musicStopPress{background: url(../images/icons/blueStop.png) center no-repeat;}
+a.musicStopDisable{background: url(../images/icons/grayStop.png) center no-repeat;}
+
+.musicBarInfo {position:relative;}
+#floatingbar .musicBarInfo img{ float:left; margin-right:15px;}
+#floatingbar .musicBarInfo h4{ margin:0; padding:0; font-size:12px; line-height:15px; color:#6f6f73; font-weight:400;}
+#floatingbar .musicBarInfo p{margin:0; padding:0; font-size:10px; line-height:15px; color:#979393; font-weight:400;}
+
+a.musicLoop{ background:  url(../images/icons/whiteLoop.png) center no-repeat; width:40px; height:45px;  display:block; float:left; margin-right:30px; }
+a:hover.musicLoop{ background: url(../images/icons/lightBlueLoop.png) center no-repeat;}
+a.musicLoopPressOne{ background: url(../images/icons/blueLoop.png) center no-repeat;}
+a.musicLoopPressTwice{ background: url(../images/icons/blueLoopOneTime.png) center no-repeat;}
+
+a.musicShuffle{ background: url(../images/icons/whiteShuffle.png) center no-repeat; width:45px; height:45px;  display:block; float:left; margin-right:35px; }
+a:hover.musicShuffle{ background: url(../images/icons/lightBlueShuffle.png) center no-repeat;}
+a.musicShufflePress{ background: url(../images/icons/blueShuffle.png) center no-repeat;}
+
+a.musicVolume{ background: url(../images/icons/whiteVolume.png) center no-repeat; width:50px; height:45px;  display:block; float:left;}
+a:hover.musicVolume{ background:url(../images/icons/lightBlueVolume.png) center no-repeat;}
+a.musicVolumePress{ background:url(../images/icons/blueVolume.png) center no-repeat;}
+
+#volumeProgressBar{ position:relative; }
+#volumeProgressBar div{ position:absolute;   top:-322px;  background: url(../images/musicFloatBar/volumeBarBg.png) #e6e6e6 no-repeat 28px 20px; width:66px; height:252px;  }
+#volumeProgressBar .volumeProgressBarBtn{ background: url(../images/musicFloatBar/volumeBarBtn.png) no-repeat; width:10px; height:10px; display:block; position:absolute; left:28px; top:110px; cursor:pointer;}
+#volumeProgressBar .volumeProgressRate{ background: url(../images/musicFloatBar/volumeBarProgressRate.png)  no-repeat; width:10px; height:95px; display:block; position:absolute; left:28px; top:20px; }
+
+
+.separateLine01{ height:1px; background:#b8b7b7; margin: 10px 0 10px 25px; width: 170px;}
+.separateLine02{ background:#a7a9ac; height:2px; margin:10px 0;}
+.navi01{ margin:50px 0 0 24px; padding:0; list-style:none;   }
+.navi01 a{ color:#5f5e5e; text-decoration:none; width: 127px; height:22px; display:block; padding-left:43px;  font-size:13px; padding-top:8px;}
+.navi01 a:hover{ text-decoration:underline; background:#e9e9e9; color:#5f5e5e;  text-decoration:none;}
+.navi01 a.folders{ background:url(../images/icons/gray_folders.png) 11px 5px no-repeat;}
+.navi01 a.photos{ background:url(../images/icons/gray_photos.png) 11px 7px no-repeat;}
+.navi01 a.videos{ background:url(../images/icons/gray_videos.png) 12px 8px no-repeat;}
+.navi01 a.music{ background:url(../images/icons/gray_music.png) 10px 6px no-repeat;}
+.navi01 a:hover.folders{ background:url(../images/icons/gray_folders.png) #e9e9e9 11px 5px no-repeat;}
+.navi01 a:hover.photos{ background:url(../images/icons/gray_photos.png) #e9e9e9  11px 7px no-repeat;}
+.navi01 a:hover.videos{ background:url(../images/icons/gray_videos.png) #e9e9e9  12px 8px no-repeat;}
+.navi01 a:hover.music{ background:url(../images/icons/gray_music.png) #e9e9e9  10px 6px no-repeat;}
+
+
+.menuSelected {  background:#33b5e5; color: #ffffff; text-decoration:none; }
+
+.navi02{margin:20px 0 0 24px; padding:0; list-style:none;}
+.navi02 li{ height:30px;}
+.navi02 li a{ color:#5f5e5e; text-decoration:none;  padding-left:43px; display:block; width:127px; font-size:13px;  padding-top:8px; height:22px; }
+.navi02 li a:hover{ text-decoration:underline;   text-decoration:none;width:127px; color:#5f5e5e;}
+.navi02 a.btn_settings{ background: url(../images/icons/graySetting.png?t=5) 13px 6px no-repeat;}
+.navi02 a.btn_help{ background: url(../images/icons/grayHelp.png)  12px 5px no-repeat;}
+
+.navi02 a:hover.btn_settings{ background:url(../images/icons/graySetting.png?t=5) 13px 6px no-repeat #e9e9e9; color:#5f5e5e;}
+.navi02 a:hover.btn_help{ background:url(../images/icons/grayHelp.png) 12px 5px no-repeat #e9e9e9; color:#5f5e5e;}
+
+
+#help_tip ul{ margin:0; padding:0; list-style:none; visibility: visible; }
+
+#help_tip ul li a{  color: #5f5e5e; text-decoration: none; min-width:107px; height:20px; display:block; padding:2px 5px; line-height:18px;  }
+#help_tip ul li a:hover{ background:#33b5e5; color:#ffffff; }
+.photoTitle{ margin:0 0 15px 35px;  font-size:12px;}
+.photoTitle h3{ margin:0;  margin-bottom:5px; color:#5f5e5e; font-size:16px; height:27px;}
+.photoTitle h4{ margin:0; margin-bottom:0px; color:#5f5e5e; font-size:14px; line-height:16px;}
+.photoTitle p{ margin:0; padding:0; color:#5f5e5e; font-size:12px; line-height:14px;}
+.photoListItems{ margin:0; padding:0; list-style:none; margin-left:0px;}
+.photoListItems li{ float:left; width:258px; margin-bottom:0px; position:relative; height:228px; }
+.photoListItems li img{ width:217px; height:165px; border:none ; }
+.photoListAddWhiteBorder{ background:white; width:219px; height:165px; display: block; padding:1px;}
+#divPhotoViewerAlbum  .photoTitle{ margin:0 0 15px 0;}
+/*.photoListItems li a{ border:2px solid rgba(51, 181, 229, 0); display:block; width:160px;}*/
+.photoListItems li a{ border:none; display:block;}
+/*.photoListItems li a:hover{border:2px solid rgba(51, 181, 229, 1);}*/
+.photoListItems li input[type="checkbox"]{clip: rect(1px,1px,1px,1px);  margin:10px 0 0 0;  }
+.photoListItems li label{background:url(../images/icons/icon_grayCheckBox.png) no-repeat 3px 0px ; width:30px; height:30px; float:left; margin-top:10px; }
+.photoListItems li label:hover{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat 3px 0px ;}
+.photoListItemHadAblueBorder{width:168px; height:128px;border:2px solid #33b5e5; position:absolute; left:-2px; top:-130px;}
+.photoListItems li  .photoview-checkbox{  width:227px; word-break:break-all;word-wrap: break-word; }
+.photoListItemsDiv{ width:221px; height:167px;  padding:2px; background:#FFF; }
+.hoverShowBuleBorder{ padding:2px; margin:-2px 0 0 -2px;}
+.hoverShowBuleBorder:hover{background:#33B5E5;width:225px; height:172px; }
+.photoAlbumsListItems{ margin:0; padding:0; list-style:none; margin-left:35px;}
+.photoAlbumsListItems li{ float:left; width:192px; height:240px; color:#464545; line-height:14px; padding:15px 40px 0 15px; *display:block; background:url(../images/photoViewGrayBg.png) left top no-repeat; font-size:12px; }/*改photo list 字的顏色*/
+.photoAlbumsListItems li div{ position:relative;}
+.photoAlbumsListItems li .rotate01 { position:absolute; top:-10px; left:-15px; z-index:3; border:1px solid rgba(51, 181, 229, 0); }
+.photoAlbumsListItems li .rotate01:hover { border:2px #33B5E5 solid;}
+.photoAlbumsListItems li .rotate02 { position:absolute; top:2px; left:2px; z-index:2; display:none;}
+.photoAlbumsListItems li .rotate03{ position:absolute; top:11px; left:15px; z-index:1; display:none;}
+.photoAlbumsListItems li  img{ }
+.photoAlbumsListItems li a{ border:2px #FFF solid ; display:block; width:153px; height:118px; margin-bottom:25px;}
+.photoAlbumsListItems li .showBorder{ border:2px #535051 solid; padding:0px; display:block; width:147px; height:112px; text-align:center; vertical-align: bottom;}
+.photoAlbumsListItems li .noBorder{  padding:2px; display:block; width:144px; height:110px; text-align:center; vertical-align: bottom;}
+.photoAlbumsListItems li label{ font-size:12px; color:#464545; font-weight:400;}
+.photoAlbumsListItems li p{padding:0; width:200px; font-size: 11px;  color: #5f5e5e; line-height:20px;}
+.photoAlbumsListItems li input[type="checkbox"]{clip: rect(1px,1px,1px,1px); vertical-align:top; margin-top:0; margin-right:6px;}
+.photoAlbumsListItems li label{ background:#FFF url(../images/icons/icon_grayCheckBox.png) no-repeat left top ; margin:10px 0 0 10px; padding:0 0 0 15px; display:block;}
+.photoAlbumsListItems li label:hover{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat left top ;}
+
+.albumPhotoHover:hover {border: 2px solid #33B5E5; cursor: pointer;}
+.albumPhotoHover { display: block; position: absolute; width: 145px; height: 111px; left: 0px; top: 0px; z-index: 9999; cursor: pointer;}
+
+.photoAlbumsListItemsChecked{background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat left top ;}
+
+.photoSelector { border:2px solid #33b5e5;}
+.addWhiteBorder{ border:1px solid #FFF; display:block;width:145px; height:110px; }
+
+.videoTitle{ margin:0 0 15px 35px;}
+.videoTitle h3{ margin:0;  margin-bottom:5px; color:#5f5e5e; font-size:16px;}
+.videoTitle h4{ margin:0; margin-bottom:0px; color:#5f5e5e; font-size:14px; line-height:16px;}
+.videoTitle p{ margin:0; padding:0; color:#5f5e5e; font-size:12px; line-height:14px;}
+.videoListItems{ margin:0; padding:0; list-style:none; margin-left:35px;}
+.videoListItems li{  width:245px; margin-bottom:0px; background:url(../images/videoBg.png) no-repeat; display: -moz-inline-box; /* mozilla only */ display: inline-block; /* for browsers that support display:inline-block*/  vertical-align: top; height: 200px; color:#464545;}/*改video list 字的顏色*/
+/* Show only to IE7 */
+*:first-child + html .videoListItems li { display: inline;}
+/* Show only to IE6 */
+* html.videoListItems li {display: inline;}	
+.videoListItems li img{ width:145px; height:110px; margin:5px 0 0 18px;}
+.videoListItems li a{ border:2px #FFF solid ; display:block; width:178px; height:120px;}
+.videoListItems li a:hover{ border:2px solid #33b5e5;}
+.videoListItems li input[type="checkbox"]{clip: rect(1px,1px,1px,1px);  }
+.videoListItems li .title { no-repeat 3px 3px ; width:160px; height:85px; margin-top:10px;  padding:0 0 0 12px; display:block; font-size:12px; line-height:15px;  word-wrap: break-word;  word-break: break-all; }
+.videoListItems li .title input{ margin-right:6px; vertical-align:top; margin-top:0px;}
+.videoListItems li .title:hover{}
+.videoListItems li .title p{ font-size:11px; color:#5f5e5e; padding:0; line-height:20px; }
+
+.musicTitle{ margin:0 0 0 35px;}
+.musicTitle h3{ margin:0; color:#5f5e5e; font-size:16px; height:30px;}
+.musicTitle h4{ margin:0; margin-bottom:0px; color:#5f5e5e; font-size:14px; line-height:16px;}
+.musicTitle p{ margin:0; padding:0; color:#5f5e5e; font-size:12px; line-height:14px;}
+
+.musicListInfo{margin:0 0 15px 35px; height:150px;}
+.musicListInfo img{ float:left; width: 145px; height: 145px;}
+.musicListInfo div{ float:left; margin-left:15px; }
+.musicListInfo h3{ margin:0; padding:0; font-size:18px; color:#464545; list-style:24px; padding-top:40px;}
+.musicListInfo p{margin:0; padding:0;font-size:18px; color:#5f5e5e; list-style:22px; }
+
+.musicList, .musicListTitleHead{margin:0 0 15px 35px; font-size:12px; color:#464545;}
+.musicList table tr.musicListTitle{ height:27px; font-weight:800;}
+.musicList table tr.musicListTitle td{ }
+/**.musicList table{border-collpase:collpase;  border-spacing:7px;}**/
+.musicList table tr{ height:58px;}
+.musicList tr:hover{ cursor:pointer; }
+.musicList table tr td{ text-align:left; vertical-align: middle; }
+.musicList table tr td input[type="checkbox"]{clip: rect(1px,1px,1px,1px);  }
+.musicList table tr td label{ background: url(../images/icons/icon_grayCheckBox.png) no-repeat 5px 9px ; margin:0px; padding:0px; display:block; width:30px; height:30px;}
+.musicList table tr td label:hover{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat 5px 9px  ;}
+.musicListItemsChecked{background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat 5px 9px  ;}
+.musicList input{ margin-left:12px;}
+
+.musicAlbumsListItems{ margin:0; padding:0; list-style:none; margin-left:35px;}
+.musicAlbumsListItems li{ float:left; width:209px; height:236px; color:#5f5e5e; line-height:14px; padding:0 0 0 0; }
+.musicAlbumsListItems li img{ width:144px; height:144px; border:none;}
+.musicAlbumsListItems li a{position: relative;  display:block; width:146px;height:146px; margin-bottom:25px; padding:2px 0 0 2px; border:2px solid rgba(0,0,0,0);}
+.musicAlbumsListItems li a:hover{  border:2px solid #33b5e5; padding:0px 0 0 0px;}
+.musicAlbumsListItems li .title{ font-size:12px; color:#464545; font-weight:400;}
+.musicAlbumsListItems li p{  margin:0; padding:0;}
+.musicAlbumsListItems li input[type="checkbox"]{clip: rect(1px,1px,1px,1px);  }
+.musicAlbumsListItems li label{ background:#FFF url(../images/icons/icon_grayCheckBox.png) no-repeat left top ; margin:8px 0 0 0; padding:0 0 0 0; display:block;width:115px;}
+.musicAlbumsListItems li label:hover{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat left top ; }
+.musicAlbumsListItemsChecked{background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat left top ;}
+.musicAlbumsListItems li  div{ position:relative; height:175px;}
+.musicAlbumsListItems li span{ display:block;}
+.musicAlbumsListItems li .pos1{ position:absolute; left:20px; top:20px; z-index:1; }
+.musicAlbumsListItems li .pos2{ position:absolute; left:10px; top:10px; z-index:2; }
+.musicAlbumsListItems li .pos3{ position:absolute; left:0px; top:0px; z-index:3; }
+.musicAlbumsListItems li .rotateMusic01{ position:absolute; top:2px; left:2px; z-index:3;}
+.musicAlbumsListItems li .rotateMusic02{ position:absolute; top:-10px; left:-15px; z-index:2;}
+.musicAlbumsListItems li .rotateMusic03{ position:absolute; top:11px; left:15px; z-index:1;}
+.musicAlbumsListItems li .thumbnailShowRighClickArrow{ background:url(../images/icons/grayArrowForRightClick01.png) center  60% no-repeat; cursor:pointer; margin: -28px 38px 0 0;   bottom:0; width:35px; height:25px;display:block;  *display: inline-block; float:right;  }
+.controlAlbum{ margin:0 0 0 -1px;}
+.settingDiv{  border-bottom:1px solid #d2d1d1; height:42px; margin:0 35px; padding-top:17px; font-size:13px; color:#464545;}
+.settingTrHover:hover{ background:#33b5e5; color:#FFF;}
+.settingDiv label{ min-width:210px; float:left; padding-left:20px;  padding-top:5px; font-size:14px;}
+.settingDiv label.labW{width:235px;}
+.settingDiv input[type="text"]{ width:300px; height:23px; border:1px solid #cccccc;}
+.settingDiv input:hover[type="text"]{ border:1px solid #33b5e5;}
+.settingDiv input[type="password"]{ width:150px; height:23px; border:1px solid #cccccc;}
+.settingDiv input:hover[type="password"]{border:1px solid #33b5e5;}
+.settingDiv input[type="radio"]{position: absolute !important;clip: rect(1px,1px,1px,1px); float:left;}
+.settingDiv b{ background: url(../images/icons/whiteRadioBtn.png) no-repeat left top ; margin:0px; padding:0px; display:block; float:left; padding:5px 26px 0 26px; height:30px; font-weight:normal; cursor:pointer;}
+.settingDiv b:hover{ background: url(../images/icons/blueRadioBtn.png) no-repeat left top ;}
+.settingDiv b.blue{background: url(../images/icons/grayRadioBtn.png?t=20130928) no-repeat left top ; margin:0px; padding:0px; display:block; float:left; padding:5px 26px 0 26px; height:30px; font-size:13px;}
+.settingDiv a{ float:left; padding:5px 0 0 0; font-weight:800; display:block; color:#464545; text-decoration:none;}
+.settingDiv a:hover{ color:#33b5e5;}
+.settingDiv span{ font-weight: 400;}
+.batteryProgressBar{ background: url(../images/batteryProgressBg.png) no-repeat; width:204px; height:28px; float:left; margin-top:4px; }
+.batteryProgressBar div{position:relative; }
+.batteryProgressBarBtn{ background: url(../images/batteryProgressBtn.png) no-repeat; display:block; width:18px; height:18px; position:absolute; top:0px; left:50px; cursor: pointer; clear:both;}
+.batteryProgressRate{ background: url(../images/batteryProgressRate.png) no-repeat; width:60%; height:28px; display:block;}
+
+.dropBoxDiv{margin:0 35px; font-size:12px; color:#464545;}
+.dropBoxDiv input[type="checkbox"]{clip: rect(1px,1px,1px,1px);  }
+.dropBoxDiv label{background:url(../images/icons/icon_grayCheckBox.png) no-repeat 10px 25px ; width:30px; height:50px; float:left; padding-left:10px; }
+.dropBoxDiv label:hover{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat 10px 25px ;}
+.dropBoxDiv a.folder{ background:url(../images/icons/grayFolder.png) left center no-repeat; height:37px; padding-left:67px; color:#464545; display:block; float:left; text-decoration:none; padding-top:23px; font-weight:400;}
+.dropBoxDiv a:hover.folder{ background:url(../images/icons/grayFolder.png) left center no-repeat;}
+.dropBoxDiv a.doc{ background: url(../images/icons/file_doc.png) no-repeat; height:38px; padding-left:60px; color:#464545; display:block; float:left; text-decoration:none; font-weight:400; margin: 6px 0 -10px 8px; padding: 18px 0 8px 0px; }
+.dropBoxDiv a:hover.doc{ background: url(../images/icons/file_doc.png) no-repeat; }
+.dropBoxDiv a.xls{ background: url(../images/icons/file_xls.png) no-repeat; height:38px; padding-left:60px; color:#464545; display:block; float:left; text-decoration:none; font-weight:400; margin: 6px 0 -10px 8px; padding: 18px 0 8px 0px; }
+.dropBoxDiv a:hover.xls{ background: url(../images/icons/file_xls.png) no-repeat; }
+.dropBoxDiv a.txt{ background: url(../images/icons/file_txt.png) no-repeat; height:38px; padding-left:60px; color:#464545; display:block; float:left; text-decoration:none; font-weight:400; margin: 6px 0 -10px 8px; padding: 18px 0 8px 0px; }
+.dropBoxDiv a:hover.txt{ background: url(../images/icons/file_txt.png) no-repeat; }
+.dropBoxDiv a.ppt{ background: url(../images/icons/file_ppt.png) no-repeat; height:38px; padding-left:60px; color:#464545; display:block; float:left; text-decoration:none; font-weight:400; margin: 6px 0 -10px 8px; padding: 18px 0 8px 0px; }
+.dropBoxDiv a:hover.ppt{ background: url(../images/icons/file_ppt.png) no-repeat; }
+.dropBoxDiv a.pdf{ background: url(../images/icons/file_pdf.png) no-repeat; height:38px; padding-left:60px; color:#464545; display:block; float:left; text-decoration:none; font-weight:400; margin: 6px 0 -10px 8px; padding: 18px 0 8px 0px; }
+.dropBoxDiv a:hover.pdf{ background: url(../images/icons/file_pdf.png) no-repeat; }
+.dropBoxDiv a.file{ background: url(../images/icons/file_blank.png) no-repeat; height:38px; padding-left:60px; color:#464545; display:block; float:left; text-decoration:none; font-weight:400; margin: 6px 0 -10px 8px; padding: 18px 0 8px 0px; }
+.dropBoxDiv a:hover.file{ background: url(../images/icons/file_blank.png) no-repeat; }
+.dropBoxDiv a.none {height:15px; margin-left:6px; color:#464545; display: inline-block; text-decoration:none; font-weight:400;outline:none; padding-bottom:24px; vertical-align:middle;}
+.dropBoxDiv table tr{border-bottom:#d2d1d1 1px solid; height:40px; }
+.dropBoxDiv table tr:last-child{border-bottom:none;}
+.dropBoxDiv table tr td{ font-weight:400; padding-left:12px; vertical-align:middle;}
+.dropBoxDiv a.sort{ background:url(../images/icons/grayArrowDown.png) no-repeat 0px 5px; float:right; display:block; width:12px; height:9px; padding:5px; margin-top:5px;}
+.dropBoxDiv p{float:left;margin:8px 0 0 0; padding:0;font-weight: bold;}
+.dropBoxDiv .rightLine{ background:url(../images/icons/grayLine.png) top right no-repeat;}
+.dropBoxDiv .imgContainer {width:60px; height:61px;display:inline-block;}
+.dropBoxDiv .imgDivContainer {width:60px; height:61px;display:inline-block;}
+.dropBoxDiv .photoLinkContainer {width:300px; display:inline-block;}
+.clear{ clear:both;}
+.marginLR01{ margin:0px 60px;}
+.topMarginSpace{margin-top:103px;}
+.bottomSpace{height:75px}
+.musicProgressBar{ background: url(../images/musicFloatBar/musicInfoGrayBar.png) no-repeat; width:335px; height:5px; position:relative; left:41px; top:5px; float:left;}/*調整music 時間軸*/
+.musicInfoContainer .timer01{ position:absolute; left:0px; top:31px; font-size:11px; color:#979393;}
+.musicInfoContainer .timer02{ position:absolute; left:382px; top:31px; font-size:11px; color:#979393;}/*調整x位置*/
+.noMusicInfo{ position:absolute; left: 30px; top: 30px; width: 440px; text-align: center; color:#5f5e5e;  }
+.musicProgressBarBtn{ background: url(../images/musicFloatBar/grayCircle.png)  no-repeat; display:block; width:15px; height:15px; position:absolute; top:-5px; left:50px; cursor: pointer;}
+.musicProgressRate{ background: url(../images/musicFloatBar/musicInfoBlueBar.png) no-repeat; width:50px; height:5px; display:block;}
+.musicInfoTouch {cursor:pointer}
+
+.detail{padding-top:15px; margin-top:0px;}
+.path{ font-size:12px; color:#5f5e5e; padding-left:35px; padding-top:16px; margin-left:50px;}
+.path a{ font-size:12px; color:#5f5e5e; text-decoration:none;}
+.path a:hover{ color:#33b5e5;}
+.alignR{ text-align:right;}
+.alignCenter{ text-align:center;}
+.floatR{ float:right;}
+.floatL{ float:left;}
+.trBorderBottomLine td{ border-bottom:1px solid #a9afb1;}
+.folderInfoDiv{ margin-left:33px; color:#464545; font-size:12px; line-height:18px;}
+
+.popupDiv{ width:523px; margin:0 auto; padding:0; font-size:13px; line-height:20px; color:#454545; *float:none; *margin:0; text-align: left;}
+.popupTop{ background: url(../images/whitePopupTopBg.png) no-repeat; width:523px; height:15px;}
+.popupMiddle{ background: #FFF; padding:0px 28px;*overflow:hidden;}
+.popupMiddle h3{ margin:0 0 20px 0; padding:0; border-bottom:1px solid #d2d1d1; font-size:15px; line-height:20px; height:37px;text-align: left; font-weight:400;}
+.popupMiddle p{margin:0; padding:0; text-align:left;}
+.popupBottom{ background: url(../images/whitePopupBottomBg.png) no-repeat; width:523px; height:18px;}
+.popupMiddle .btnBlue{ min-width:90px; *width:90px; height:32px; background:#33b5e5; color:#FFF; border:none; cursor:pointer; font-size:14px;}
+.popupMiddle .btnBlue:hover{ outline:2px auto -webkit-focus-ring-color;}/*按鈕可以hilight*/
+.popupMiddle .btnGray{  min-width:90px; *width:90px;  height:32px; background:#a9afb1; color:#FFF; border:none; cursor:pointer; font-size:14px; text-align:center;}
+.popupMiddle .btnGray:hover{ outline:2px auto -webkit-focus-ring-color;}/*按鈕可以hilight*/
+.popupMiddle ul{ margin:20px 0 0 0; padding:0; list-style:none;}
+.popupMiddle ul li{ display: inline-table; padding-bottom:10px; }
+.popupMiddle ul li div{margin:0;   float:left; }
+.popupMiddle ul li div span{background:url(../images/icons/icon_grayCheckBox.png) no-repeat 0px 8px ; height:25px; float:left; padding-left:20px; font-size:12px; padding-top:5px; margin-top:7px;}
+.popupMiddle ul li div span:hover{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat 0px 8px ;}
+.popupMiddle ul.popupList{ margin:0; padding-top:10px; }
+.popupMiddle ul.popupList{ margin:0; padding-top:10px; text-align:left; }
+.popupMiddle ul.popupList li{ margin-bottom:10px; clear:both;}
+.popupMiddle ul.popupList li div{ margin-left:125px; font-size:10px;}
+.popupMiddle ul.popupList label{ width:125px; float:left; padding-top:8x;}
+.popupMiddle input[type="text"]{ border:1px solid #cccccc; width:207px; height:23px; float:left; margin:0; padding:0;}
+.popupMiddle input:hover[type="text"]{ color:blue; border:1px solid #33b5e5;}
+.popupMiddle input:hover[type="password"]{ color:blue; border:1px solid #33b5e5;}
+.popupMiddle input[type="checkbox"]{clip: rect(1px,1px,1px,1px); display: none}
+.popupMiddle input[type="radio"]{position: absolute !important;clip: rect(1px,1px,1px,1px);}
+.popupMiddle input[type="password"]{ border:1px solid #cccccc; width:207px; height:23px; float:left; margin:0; padding:0;}
+.popupMiddle input:hover[type="password"]{ color:blue; border:1px solid #33b5e5;}
+.popupMiddle span{background:url(../images/icons/icon_grayCheckBox.png) no-repeat 5px 5px ; height:25px; float:left; padding-left:20px; font-size:12px;}
+.popupMiddle .checked{ background:url(../images/icons/icon_grayCheckBoxChecked.png) no-repeat 5px 5px ;}
+.formatCheck {cursor: pointer}
+.hideHint {cursor: pointer}
+.popupMiddle table{ font-size:12px;}
+.popupMiddle table tr{ height:30px;}
+.popupMiddle table label{ background:url(../images/icons/grayRadioBtn02.png) no-repeat 10px 5px; width:30px; height:30px; display:block;}
+.popupMiddle table label:hover{ background:url(../images/icons/blueRadioBtn02.png) no-repeat 10px 5px;}
+.popupMiddle a {color:#454545; }
+
+.popupMiddle ul.popupList02{margin:0; padding-top:10px;}
+.popupMiddle ul.popupList02 label{ background:url(../images/icons/whiteRadioBtn.png) no-repeat; padding:2px 0 0 35px; height:50px; display:block;}
+.popupMiddle ul.popupList02 label:hover{ background:url(../images/icons/blueRadioBtn.png) no-repeat; cursor:pointer;}
+.popupMiddle ul.popupList02 label.blue{ background:url(../images/icons/grayRadioBtn.png?t=20130928) no-repeat;}
+
+.popupMiddle ul.popupList03{margin:0 0 0 25px; padding-top:10px;}
+.popupMiddle ul.popupList03 label{ width:230px; float:left; }
+.popupMiddle .wifi{ border-top:1px solid #a9afb1; padding:10px 0 10px 0;}
+.popupMiddle .wifi div{ height:30px;}
+.popupMiddle .wifi a.where{ float:left; width:310px; display:block; padding-left:25px; color:#464545; text-decoration:none; text-align: left;}
+.popupMiddle .wifi .locked{ background:url(../images/icons/grayLock.png) no-repeat; width:30px; height:25px; float:right; margin-right:10px;}
+.popupMiddle .wifi .sign{ background:url(../images/icons/blueWifi.png) no-repeat; width:30px; height:25px; float:right; margin-right:10px;}
+.popupMiddle .wifi .sign2{ background:url(../images/icons/blueWifi2.png) no-repeat; width:30px; height:25px; float:right; margin-right:10px;}
+.popupMiddle .wifi .sign3{ background:url(../images/icons/blueWifi3.png) no-repeat; width:30px; height:25px; float:right; margin-right:10px;}
+
+.popupMiddle .wifi a.more{ background:url(../images/icons/blueCircleArrow.png) no-repeat; width:30px; height:25px; float:right; }
+.ap_list_check {background:url(../images/icons/blueCheck.png) no-repeat;}
+.language_check {background:url(../images/icons/blueCheck.png) no-repeat;}
+.popupMiddle .wifi .viewport { height: 200px; overflow-x: hidden; overflow-y: scroll; position: relative; }
+.popupMiddle .wifi .overview {
+	list-style: none;
+	position: absolute;
+	left: 3px;
+	top: -7px;
+	padding: 0;
+	margin: 0;
+	width:430px;
+}
+.popupMiddle .wifi .scrollbar{ background: transparent url(../images/bg-scrollbar-track-y.png) no-repeat 0 0; position: relative; background-position: 0 0; float: right; width: 15px; }
+.popupMiddle .wifi .track { background: transparent url(../images/bg-scrollbar-trackend-y.png) no-repeat 0 100%; height: 100%; width:13px; position: relative; padding: 0 1px; }
+.popupMiddle .wifi .thumb { background: transparent url(../images/bg-scrollbar-thumb-y.png) no-repeat 50% 100%; height: 20px; width: 25px; cursor: pointer; overflow: hidden; position: absolute; top: 0; left: -5px; }
+.popupMiddle .wifi .thumb .end { background: transparent url(../images/bg-scrollbar-thumb-y.png) no-repeat 50% 0; overflow: hidden; height: 5px; width: 25px; }
+.popupMiddle .wifi .disable { display: none; }
+
+
+
+.selectDropdown{ margin:0; z-index:9999; position:relative; text-align:left; height:30px; cursor:pointer;}
+.selectDropdownFixPosition{*position:absolute; left:-125px; top:-15px; *top:0px;}
+.popupMiddle ul.popupList .selectDropdownLiFixpadding li{ margin-bottom:3px; padding-bottom:0px; margin-left:0px;}
+.selectDropdown div{width:207px; height:23px; background: url(../images/icons/grayArrowDown.png) 185px 7px  no-repeat  #FFF;  border:1px solid #cccccc; }
+.selectDropdown h4{ font-size:14px; line-height:18px; color:#535353;  font-weight:400; margin:4px 0 5px 12px; padding:0;}
+.selectDropdown ul{ margin:0; padding:5px 0 0 0;display:none; background:#FFF; width:207px; border:1px solid #cccccc; border-top:none; position:relative; left:-1px; top:-3px;}
+.selectDropdown li{display:block;width:200px;  height:20px;  font-size:14px; line-height:20px; color:#535353; text-decoration:none; padding-left:12px;}
+.selectDropdown li:hover{ color:#f00000; cursor:pointer;}
+.dropdownSelected{color:#f00000; }
+
+
+.popupUpgradeProgressBar{ background: url(../images/firmwareUpgradeProgressBg.png) no-repeat; width:381px; height:18px; margin-top:20px; }
+.popupUpgradeProgressBar div{position:relative; }
+.popupUpgradeProgressBarBtn{ background: url(../images/firmwareUpgradeProgressBtn.png) no-repeat; display:block; width:18px; height:18px; position:absolute; top:0px; left:50px; cursor: pointer; clear:both;}
+.popupUpgradeProgressRate{ background: url(../images/firmwareUpgradeProgressRate.png) no-repeat; width:50px; height:18px; display:block;}
+
+.popupBlackDiv{ background:#000;}
+
+.popupMiddle ul.popupList02 li{ display:block}
+.absolutePostion01{position:absolute; left:200px; top:0px;} 
+.fixLabelPos{width:150px; float:left; }
+
+.rightMenu{ position:relative; height:1px;}
+.rightMenu ul{ position:absolute; left:0px; top:0px; list-style:none; border:1px solid #939598;}
+.rightMenu  ul li{ border-bottom:1px solid #c9cacc; display:block;}
+
+.scrollDiv{overflow-x:hidden;　overflow-y:auto; width:98%; height:150px; overflow:auto; position:fixed; *position:relative;}
+.scrollDiv tr:hover{ cursor:pointer;}
+.addGrayArrow{ }
+.addGrayArrow b{ padding-left:15px;}
+
+.addGrayArrow02{ background:url(../images/icons/grayArrowRight.png) center no-repeat; width: 10px;height: 25px;display: block;}
+
+.nowPlaying{ background:#33b5e5; }
+
+.popupDiv2{ width:306px; margin:0 auto; padding:0; font-size:13px; line-height:20px; color:#454545; *float:none; *margin:0; text-align: left;}
+.popupTop2{ background: url(../images/msgTop.png) no-repeat; width:306px; height:10px;}
+.popupMiddle2{ background: #FFF; padding:0px 3px;*overflow:hidden;}
+.popupMiddle2 h3{ margin:0 0 11px 0; padding:0 0 0 36px; border-bottom:1px solid #d2d1d1; font-size:15px; line-height:13px; height:25px;text-align: left; font-weight:400;}
+.popupMiddle2 p{margin:0; padding:0; text-align:left;}
+.popupBottom2{ background: url(../images/msgBottom.png) no-repeat; width:306px; height:8px;}
+.popupMiddle2 .btnGray2{ min-width:80px; *width:80px; height:26px; background:#a9afb1; color:#FFF; border:none; cursor:pointer; font-size:14px; margin:0 15px 0 0;}
+.popupMiddle2 .btnGray2:hover{ outline:2px auto -webkit-focus-ring-color;}/*按鈕可以hilight*/
+.popupTop2 .loading{ width:22px; height:22px; float:left;padding:6px 0 0 9px}
+
+.popupDiv3{ background: url(../images/msgShortBackground.png) no-repeat; width:312px; height:35px;}
+.popupDiv3 h3{ padding:10px 0 0 40px; font-size:15px; text-align: left; font-weight:400;}
+.popupDiv3 .btnGray2{ min-width:80px; *width:80px; height:26px; background:#a9afb1; color:#FFF; border:none; cursor:pointer; font-size:14px; margin:-20px 15px 0 0;text-align:center;}
+.popupDiv3 .btnGray2:hover{ outline:2px auto -webkit-focus-ring-color;}/*按鈕可以hilight*/
+.popupDiv3 .loading{ width:22px; height:22px; float:left;padding:6px 0 0 11px}
+
+/*!
+ * jQuery UI Progressbar 1.8.21
+ *
+ * Copyright 2012, AUTHORS.txt (http://jqueryui.com/about)
+ * Dual licensed under the MIT or GPL Version 2 licenses.
+ * http://jquery.org/license
+ *
+ * http://docs.jquery.com/UI/Progressbar#theming
+ */ 
+
+.ui-widget-content { border: 0px solid #dddddd; background: #ffffff ; color: #333333; }
+.ui-widget-content a { color: #333333; }
+.ui-widget-header {  color: #ffffff; font-weight: bold; }
+.ui-widget-header a { color: #ffffff; }
+
+.ui-progressbar { height:1em; text-align: left; overflow: hidden; }
+.ui-progressbar .ui-progressbar-value {margin: -1px; height:100%; }
+
+.addNewBlueBorder{position:absolute; border:2px solid #33B5E5; width:179px; height:121px; left:0px; top:-115px;}
+.albumSelected { position:absolute; border:2px solid #33B5E5; width:149px; height:114px; left:-15px; top:-11px;z-index:9999; }
+
+.disable{ color:#CCC;}
+.disable:hover{ color:#CCC; background:white;}
+.disable  b{ background: url(../images/icons/whiteRadioBtn.png) no-repeat left top ; margin:0px; padding:0px; display:block; float:left; padding:5px 26px 0 26px; height:30px; font-size:13px; font-weight:400;}/*調整字型*/
+.disable  b:hover{ background: url(../images/icons/whiteRadioBtn.png) no-repeat left top ; cursor:default;}
+.disable a{color:#CCC; cursor:default;}
+.disable a:hover{color:#CCC;}
+
+.back{ margin:20px 0 0 24px; padding:0; list-style:none; background: url(../images/icons/grayBack.png) no-repeat left center; padding:10px 0px 10px 20px; color:#5f5e5e; font-size:14px; text-decoration:none;}
+.back:hover{ color:#33b5e5; background: url(../images/icons/blueBack.png) no-repeat left center;}
+.backDisable{margin:20px 0 0 24px; padding:0; list-style:none;  padding:10px 0px 10px 20px;   font-size:14px; text-decoration:none; color:#d1d1d1;background: url(../images/icons/lightGrayBack.png) no-repeat left center; cursor:default;}
+
+.hidden { display: none !important }
+.fl { float: left }
+.rl { float: right }
+.clearfix { clear: both }
+.textAlignLeft{ text-align:left;}
+.transparent { 
+ 
+    /* works for IE 5+. */ 
+    filter:alpha(opacity=0);  
+ 
+    /* works for IE 8. */ 
+    -ms-filter:"progid:DXImageTransform.Microsoft.Alpha(Opacity=0)"; 
+ 
+    /* works for old school versions of the Mozilla browsers like Netscape Navigator. */ 
+    -moz-opacity:0;  
+ 
+    /* This is for old versions of Safari (1.x) with KHTML rendering engine */ 
+    -khtml-opacity: 0;  
+ 
+    /* This is the "most important" one because it's the current standard in CSS. This will work in most versions of Firefox, Safari, and Opera. */   
+    opacity: 0;  
+} 
+
+.listShowRighClickArrow{ background:url(../images/icons/grayArrowForRightClick01.png) right  bottom no-repeat; cursor:pointer; padding:5px 15px;*display:inline-block;}
+.listShowRighClickArrow:hover{ background:url(../images/icons/whiteArrowForRightClick01.png) right  bottom no-repeat; cursor:pointer; padding:5px 15px;*display:inline-block;}
+.thumbnailShowRighClickArrow{ background:url(../images/icons/grayArrowForRightClick01.png) center  60% no-repeat; cursor:pointer;    right:-4px; bottom:-16px; width:35px; height:25px;display:block;  *display: inline-block; float:right;  position:relative; }
+.thumbnailShowRighClickArrow:hover{background:url(../images/icons/whiteArrowForRightClick01.png) center  60% no-repeat;}
+.jagged {
+    *display: inline; /* combined with zoom = inline-block for IE6/7 */
+    display: inline-block;
+    color: #fff;
+    padding: 7px 12px 7px 15px;
+    font-weight: bold;
+    text-decoration: none;
+    border: 1px solid #a40518;
+
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border-radius: 5px;
+
+    -webkit-transform: rotate(6deg); /* Safari + Chrome */
+    -moz-transform: rotate(6deg); /* Mozilla Firefox */
+    -o-transform: rotate(6deg); /* Opera */
+    transform: rotate(6deg) /* W3C */
+
+    /* Standard linear gradient setup */
+    background: #dd001a; /* Old browsers */
+    background: -moz-linear-gradient(top, #dd001a 0%, #a40518 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#dd001a), color-stop(100%,#a40518)); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top, #dd001a 0%,#a40518 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top, #dd001a 0%,#a40518 100%); /* Opera11.10+ */
+    background: -ms-linear-gradient(top, #dd001a 0%,#a40518 100%); /* IE10+ */
+    background: linear-gradient(top, #dd001a 0%,#a40518 100%); /* W3C */
+
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#dd001a', endColorstr='#a40518',GradientType=0), 
+            progid:DXImageTransform.Microsoft.Matrix(
+            M11=0.9945218953682733, 
+            M12=-0.10452846326765346, 
+            M21=0.10452846326765346, 
+            M22=0.9945218953682733, sizingMethod='auto expand'); /* IE6-9 */
+    zoom: 1;
+}
+
+.smooth {
+    *display: inline;
+    display: inline-block;
+    color: #fff;
+    padding: 7px 12px 7px 15px;
+    font-weight: bold;
+    text-decoration: none;
+    text-shadow: 0 0 1px rgba(255,255,255,0.5);
+    border: 1px solid #a40518;
+
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border-radius: 5px;
+
+    -webkit-transform: translate3d(0,0,0) rotate(6deg); /* Safari w/ HW-Accelleration */
+    -moz-transform: rotate(6deg); /* Mozilla Firefox */
+    -o-transform: rotate(6deg); /* Opera */
+    -ms-transform: rotate(6deg); /* Microsoft */
+    transform: rotate(6deg); /* W3C */
+
+    /* now comes the linear gradient replacement */
+    background: #a40518; /* lower color and old browsers */
+    /* box-shadow: inset 0 [element's height] [element's height] [element's height]*-0.5 [upper color] */    
+    -webkit-box-shadow: inset 0 34px 34px -17px #dd001a;
+    -moz-box-shadow: inset 0 34px 34px -17px #dd001a;
+    -o-box-shadow: inset 0 34px 34px -17px #dd001a;
+    box-shadow: inset 0 34px 34px -17px #dd001a;
+
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#dd001a', endColorstr='#a40518',GradientType=0), 
+            progid:DXImageTransform.Microsoft.Matrix(
+            M11=0.9945218953682733, 
+            M12=-0.10452846326765346, 
+            M21=0.10452846326765346, 
+            M22=0.9945218953682733, sizingMethod='auto expand'); /* IE6-9 */
+    zoom: 1;
+}
+
+.smooth:nth-of-type(1n) {
+    filter: none; /* Disable all filters for IE9 */
+}
+
+.jaggedimg {
+    -webkit-transform: rotate(3deg); /* Safari + Chrome */
+    -moz-transform: rotate(3deg); /* Mozilla Firefox */
+    -o-transform: rotate(3deg); /* Opera */
+    -ms-transform: rotate(3deg); /* Opera */
+    transform: rotate(3deg); /* W3C */
+
+    filter: progid:DXImageTransform.Microsoft.Matrix(
+            M11=0.9945218953682733, 
+            M12=-0.10452846326765346, 
+            M21=0.10452846326765346, 
+            M22=0.9945218953682733, sizingMethod='auto expand'); /* IE6-9 */
+    zoom: 1;
+}
+
+.jaggedimg:nth-of-type(1n) {
+    filter: none; /* Disable all filters for IE9 */
+}
+
+.smoothimg {
+    *display: inline; /* combined with zoom = inline-block for IE6/7 */
+    display: inline-block; /* inline would not rotate */
+    -webkit-transform: rotate(3deg); /* Safari + Chrome */
+    -moz-transform: rotate(3deg); /* Mozilla Firefox */
+    -o-transform: rotate(3deg); /* Opera */
+    -ms-transform: rotate(3deg); /* IE9+ */
+    transform: rotate(3deg); /* W3C */
+
+    filter: progid:DXImageTransform.Microsoft.Matrix(
+            M11=0.9945218953682733, 
+            M12=-0.10452846326765346, 
+            M21=0.10452846326765346, 
+            M22=0.9945218953682733, sizingMethod='auto expand'); /* IE6-9 */
+    zoom: 1;
+
+    //borsder: 1px solid rgba(0,0,0,0.0);
+}
+
+.smoothimg:nth-of-type(1n) {
+    filter: none; /* Disable all filters for IE9 */
+}
+
+#divBackButton{ margin-left:34px;}
+#searchContainer .bottom input.goBack{ background:url(../images/icons/gray_back.png) #e7e7e8 5px center no-repeat;   color:#5f5e5e; padding-left:35px; min-width:75px; margin-right:20px;} 
+#searchContainer .bottom input.goBack:hover{ background:url(../images/icons/gray_back.png) #c6c6c6 5px center no-repeat;}
+
+.size_38x47{ width:39px !important; height:47px!important;}
+.size_145x110{ width:166px !important; height:116px !important;}
+.size_144x144{ width:144px !important; height:144px !important;}
+.size_39x39{ width:39px !important; height:39px !important;}
+.size_160x120{ width:160px !important; height:120px !important;}
+.folderThumbnailGeneratorMargin{margin:8px 0 0 0px; position:relative; height:35px;   color:#464545; float:left }
+.folderThumbnailGeneratorMargin .name{  float:left; margin:10px 0 0 60px; }
+.videoThumbnailGeneratorMargin{margin:5px 0 0 18px; position:relative; height:120px;}
+.musicThumbnailGeneratorMargin{margin:0px; position:relative; height:120px;}
+.photoThumbnailGeneratorMargin{margin:0px; position:relative; height:120px;}
+/*.photoThumbnailGeneratorMargin2{position:relative; height:50px; float: left; margin-right: 15px;}*/
+.photoThumbnailGeneratorMargin2{position:absolute; height:50px; left:20px; top:20px;   }
+.musicInfoContainer{position:absolute; height:50px; left:70px; top:18px;}
+
+.thumbnailGenerator_background01{position:absolute !important; left:0px; top:0px; }
+.thumbnailGenerator_background02{position:absolute !important; left:0px; top:0px; }
+.thumbnailGenerator_background03{position:absolute !important; left:0px; top:0px; }
+.thumbnailGenerator_background04{position:absolute !important; left:0px; top:0px; }
+.thumbnailGenerator_background05{position:absolute !important; left:0px; top:0px; }
+.thumbnailGenerator_background06{position:absolute !important; left:0px; top:0px; }
+
+.thumbnailGenerator_front01{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front02{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front03{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front04{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front05{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front06{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front07{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.thumbnailGenerator_front08{filter:alpha(Opacity=50, Style=0);	-moz-opacity:0.5; opacity: 0.5; position:absolute !important; left:0px; top:0px;}
+.musicListTitle > div {float: left}
+
+a.tt { position: relative; z-index: 24; font-weight: bold; }
+a.tt span { display: none; }
+a.tt:hover { z-index: 25; background:;}
+a.tt:hover span.tooltip {	display: block; position: absolute;	top: 0px; left: 0px; padding: 2px; color: #993300; text-align: center; border: solid 1px #000; background-color: #f7c899;}
+a.tt:hover span.middle {display:block; padding: 0 8px; }
+.gettingStarted{ background:url(../guideline/eng.png) no-repeat 1px top; height:6188px;}
+.gettingStartedIta{ background:url(../guideline/ita.png) no-repeat 1px top; height:6880px;}
+.gettingStartedDeu{ background:url(../guideline/deu.png) no-repeat 1px top; height:7099px;}
+.gettingStartedFra{ background:url(../guideline/fra.png) no-repeat 1px top; height:7536px;}
+.gettingStartedEsp{ background:url(../guideline/esp.png) no-repeat 1px top; height:7099px;}
+
+#getting-battery-level{*padding-left:55px;}
+#settinf-subscribe-popup-form{*float:left; }
+#settinf-subscribe-popup-form div{*margin-left:-210px; *margin-top:22px;}
+#jquerySliderContainer{ position:relative;}
+#jquerySlider{ background:#e6e6e6;   width:66px; height:232px; padding-top:20px; margin-bottom:80px; top:-320px; position: absolute; }
+.settingsTitle{ border-bottom:#d2d1d1 3px solid; margin: 0 35px; height:22px; padding-top:12px; font-size:16px; font-weight:bold;}
+.settingsTitle02{ border-bottom:#d2d1d1 3px solid; margin: 0 35px; height:22px; padding-top:55px; font-size:16px; font-weight:bold;}
+
+#cboxTitle{ display: none;}
+.addDynamicLoading{ background:#ffffff center url(../images/dynamic_loading.gif) no-repeat; min-height:450px;}
+.addDynamicLoading2{ background:#ffffff center url(../images/dynamic_loading.gif) no-repeat; min-height:150px;}
+
+#div-no-records-found-file {background:left url(../images/search.png) no-repeat; height: 31px; width: 250px; padding:0 0 0 39px; font-size: 14px; text-align: center; margin: 60px auto;}
+#div-no-records-found-file p{ font-weight: normal;}
+#div-no-records-found-photo {background:left url(../images/search.png) no-repeat; height: 31px; width: 250px; padding:0 0 0 39px; font-size: 14px; text-align: center; margin: 60px auto; font-weight: normal;}
+#div-no-records-found-photo p{ float:left; margin:8px 0 0 0;}
+#div-no-records-found-video {background:left url(../images/search.png) no-repeat; height: 31px; width: 250px; padding:0 0 0 39px; font-size: 14px; text-align: center; margin: 28px auto; font-weight: normal;}
+#div-no-records-found-video p{ float:left; margin:8px 0 0 0;}
+#div-no-records-found-music {background:left url(../images/search.png) no-repeat; height: 31px; width: 250px; padding:0 0 0 39px; font-size: 14px; text-align: center; margin: 60px auto;}
+#div-no-records-found-music p{ float:left; margin:8px 0 0 0;}
+
+#divBatteryLevel {float:left; margin: 7px 0 0 4px;}
+#setting-check-firmware-upgrade {float:left; padding:8px 0 0 0;}
+#page-setting {margin-top:-20px;}
+.shortInfor {overflow: hidden; -o-text-overflow: ellipsis; text-overflow: ellipsis; white-space: nowrap; display: inline-block;}
+#div-ios-msg { width:100%; text-align:center; position:fixed; left:0; right: 0}
+#div-ios-msg div {width:100%; border: 1px solid #d2d1d1; height:100px;background: white;}
+#div-ios-msg a{ color: #5f5e5e; text-decoration:none; height: 50px; display:block; font-size: 18px; padding: 42px 20px 0 80px; float: left;}
+#btnMediaDrive  {background:url(../images/icons/app_icon.png) 11px 25px no-repeat; text-decoration:none; }
+#btnAppStore  {background:url(../images/icons/app_store.png) 11px 25px no-repeat; text-decoration:none;}
+
+/* Connect to internet wifi on/off */
+#wifi-switch {height: 50px;}
+#wifi-switch  label {float:left;padding: 0 0 0 30px;width: 230px;}
+#wifi-switch b{ background: url(../images/icons/whiteRadioBtn.png) no-repeat left top ; margin:0px; padding:0px; display:block; float:right; padding:2px 0 0 26px; height:30px; font-weight:normal; cursor:pointer;}
+#wifi-switch b:hover{ background: url(../images/icons/blueRadioBtn.png) no-repeat left top ;}
+#wifi-switch b.blue{background: url(../images/icons/grayRadioBtn.png?t=20130928) no-repeat left top ; margin:0px; padding:0px; display:block; float:right; padding:2px 26px 0 26px; height:30px; font-size:13px;}	
+
+#div-language-dialog .language-list div {height:30px;}
+#div-language-dialog .language-list a {float:left; width:310px; display:block; padding-left:25px; color:#464545; text-decoration:none; text-align: left; color:#454545; }

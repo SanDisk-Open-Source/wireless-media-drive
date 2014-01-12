@@ -1,0 +1,245 @@
+From bb24c00fe03c58f9695b0f68e51f35c6c5982746 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 7 Dec 2010 17:15:07 +0800
+Subject: [PATCH] ENGR00136038: Remove config CONFIG_EMMC_DDR_MODE
+
+1. As we can check DDR dynamically,
+remove CONFIG_EMMC_DDR_MODE in mmc.c.
+2. Add config CONFIG_EMMC_DDR_PORT_DETECT
+config for some boards that only some board support DDR.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx53_rd/mx53_rd.c |    8 +++++++-
+ common/cmd_mmc.c                  |    5 ++---
+ drivers/mmc/imx_esdhc.c           |    8 +++++++-
+ drivers/mmc/mmc.c                 |   26 ++++++--------------------
+ include/configs/mx53_arm2.h       |    3 ++-
+ include/configs/mx53_arm2_ddr3.h  |    3 ++-
+ 6 files changed, 26 insertions(+), 27 deletions(-)
+
+diff --git a/board/freescale/mx53_rd/mx53_rd.c b/board/freescale/mx53_rd/mx53_rd.c
+index cb440d9..5baa5d0 100644
+--- a/board/freescale/mx53_rd/mx53_rd.c
++++ b/board/freescale/mx53_rd/mx53_rd.c
+@@ -931,10 +931,16 @@ struct fsl_esdhc_cfg esdhc_cfg[2] = {
+ int get_mmc_env_devno()
+ {
+ 	uint soc_sbmr = readl(SRC_BASE_ADDR + 0x4);
+-	return (soc_sbmr & 0x00300000)  ? 1 : 0;
++	return (soc_sbmr & 0x00300000) ? 1 : 0;
+ }
+ #endif
+ 
++#ifdef CONFIG_EMMC_DDR_PORT_DETECT
++int detect_mmc_emmc_ddr_port(struct fsl_esdhc_cfg *cfg)
++{
++	return (MMC_SDHC3_BASE_ADDR == cfg->esdhc_base) ? 1 : 0;
++}
++#endif
+ 
+ int esdhc_gpio_init(bd_t *bis)
+ {
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index dab4109..0769cf6 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -141,13 +141,12 @@ static void print_mmcinfo(struct mmc *mmc)
+ 	printf("High Capacity: %s\n", mmc->high_capacity ? "Yes" : "No");
+ 	printf("Capacity: %lld\n", mmc->capacity);
+ 
+-#ifdef CONFIG_EMMC_DDR_MODE
+ 	if (mmc->bus_width == EMMC_MODE_4BIT_DDR ||
+ 		mmc->bus_width == EMMC_MODE_8BIT_DDR)
+ 		printf("Bus Width: %d-bit DDR\n", (mmc->bus_width >> 8));
+ 	else
+-#endif
+-	printf("Bus Width: %d-bit\n", mmc->bus_width);
++		printf("Bus Width: %d-bit\n", mmc->bus_width);
++
+ #ifdef CONFIG_BOOT_PARTITION_ACCESS
+ 	if (mmc->boot_size_mult == 0) {
+ 		printf("Boot Partition Size: %s\n", "No boot partition available");
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index f9a3ad6..c0eaa97 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -340,7 +340,8 @@ static void esdhc_dll_setup(struct mmc *mmc)
+ 	uint dll_control;
+ 
+ 	/* For i.MX50 TO1, need to force slave override mode */
+-	if (get_board_rev() == (0x50000 | CHIP_REV_1_0)) {
++	if (get_board_rev() == (0x50000 | CHIP_REV_1_0) ||
++			get_board_rev() == 0x53000) {
+ 		dll_control = readl(&regs->dllctrl);
+ 
+ 		dll_control &= ~(ESDHC_DLLCTRL_SLV_OVERRIDE_VAL_MASK |
+@@ -491,6 +492,11 @@ int fsl_esdhc_initialize(bd_t *bis, struct fsl_esdhc_cfg *cfg)
+ 		>> ESDHC_HOSTVER_VVN_SHIFT) >= ESDHC_HOSTVER_DDR_SUPPORT)
+ 		mmc->host_caps |= EMMC_MODE_4BIT_DDR;
+ 
++#ifdef CONFIG_EMMC_DDR_PORT_DETECT
++	if (detect_mmc_emmc_ddr_port(cfg))
++		mmc->host_caps |= EMMC_MODE_4BIT_DDR;
++#endif
++
+ 	mmc->f_min = 400000;
+ 	mmc->f_max = MIN(mxc_get_clock(MXC_ESDHC_CLK), 50000000);
+ 
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 9f915cd..6299635 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -91,14 +91,12 @@ mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void*src)
+ 
+ 	blklen = mmc->write_bl_len;
+ 
+-#ifdef CONFIG_EMMC_DDR_MODE
+ 	if (mmc->bus_width == EMMC_MODE_4BIT_DDR ||
+ 		mmc->bus_width == EMMC_MODE_8BIT_DDR) {
+ 		err = 0;
+ 		blklen = 512;
+ 	} else
+-#endif
+-	err = mmc_set_blocklen(mmc, mmc->write_bl_len);
++		err = mmc_set_blocklen(mmc, mmc->write_bl_len);
+ 
+ 	if (err) {
+ 		puts("set write bl len failed\n\r");
+@@ -180,11 +178,9 @@ int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size)
+ 	int endblock = lldiv(src + size - 1, mmc->read_bl_len);
+ 	int err = 0;
+ 
+-#ifdef CONFIG_EMMC_DDR_MODE
+ 	if (mmc->bus_width == EMMC_MODE_4BIT_DDR ||
+ 		mmc->bus_width == EMMC_MODE_8BIT_DDR)
+ 		blklen = 512;
+-#endif
+ 
+ 	/* Make a buffer big enough to hold all the blocks we might read */
+ 	buffer = malloc(blklen);
+@@ -194,14 +190,13 @@ int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size)
+ 		return -1;
+ 	}
+ 
+-#ifdef CONFIG_EMMC_DDR_MODE
+ 	if (mmc->bus_width == EMMC_MODE_4BIT_DDR ||
+ 		mmc->bus_width == EMMC_MODE_8BIT_DDR)
+ 		err = 0;
+-	else
+-#endif
+-	/* We always do full block reads from the card */
+-	err = mmc_set_blocklen(mmc, mmc->read_bl_len);
++	else {
++		/* We always do full block reads from the card */
++		err = mmc_set_blocklen(mmc, mmc->read_bl_len);
++	}
+ 
+ 	if (err)
+ 		goto free_buffer;
+@@ -513,7 +508,7 @@ static int mmc_change_freq(struct mmc *mmc)
+ 		mmc->card_caps |= MMC_MODE_HS_52MHz | MMC_MODE_HS;
+ 	else
+ 		mmc->card_caps |= MMC_MODE_HS;
+-#ifdef CONFIG_EMMC_DDR_MODE
++
+ 	if (cardtype & EMMC_MODE_DDR_3V) {
+ 		if (mmc->card_caps & MMC_MODE_8BIT)
+ 			mmc->card_caps |= EMMC_MODE_8BIT_DDR;
+@@ -521,8 +516,6 @@ static int mmc_change_freq(struct mmc *mmc)
+ 			mmc->card_caps |= EMMC_MODE_4BIT_DDR;
+ 	}
+ 
+-#endif
+-
+ no_err_rtn:
+ 	free(ext_csd);
+ 	return 0;
+@@ -715,9 +708,7 @@ int mmc_switch_partition(struct mmc *mmc, uint part, uint enable_boot)
+ 	int err;
+ 	uint old_part, new_part;
+ 	char boot_config;
+-#ifdef CONFIG_EMMC_DDR_MODE
+ 	char boot_bus_width, card_boot_bus_width;
+-#endif
+ 
+ 	/* partition must be -
+ 		0 - user area
+@@ -802,7 +793,6 @@ int mmc_switch_partition(struct mmc *mmc, uint part, uint enable_boot)
+ 		goto err_rtn;
+ 	}
+ 
+-#ifdef CONFIG_EMMC_DDR_MODE
+ 	/* Program boot_bus_width field for eMMC 4.4 boot mode */
+ 	if ((ext_csd[EXT_CSD_CARD_TYPE] & 0xC) && enable_boot != 0) {
+ 
+@@ -838,7 +828,6 @@ int mmc_switch_partition(struct mmc *mmc, uint part, uint enable_boot)
+ 			goto err_rtn;
+ 		}
+ 	}
+-#endif
+ 
+ 	/* Seems everything is ok, return the partition id before switch */
+ 	free(ext_csd);
+@@ -1098,8 +1087,6 @@ static int mmc_startup(struct mmc *mmc)
+ 			mmc_set_bus_width(mmc, 8);
+ 		}
+ 
+-#ifdef CONFIG_EMMC_DDR_MODE
+-
+ 		if (mmc->card_caps & EMMC_MODE_8BIT_DDR) {
+ 			/* Set the card to use 8 bit DDR mode */
+ 			err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL,
+@@ -1122,7 +1109,6 @@ static int mmc_startup(struct mmc *mmc)
+ 			/* Setup the host controller for DDR mode */
+ 			mmc_set_bus_width(mmc, EMMC_MODE_4BIT_DDR);
+ 		}
+-#endif
+ 
+ 		if (mmc->card_caps & MMC_MODE_HS) {
+ 			if (mmc->card_caps & MMC_MODE_HS_52MHz)
+diff --git a/include/configs/mx53_arm2.h b/include/configs/mx53_arm2.h
+index f69193d..061ee68 100644
+--- a/include/configs/mx53_arm2.h
++++ b/include/configs/mx53_arm2.h
+@@ -168,7 +168,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+@@ -213,6 +213,7 @@
+ 	#define CONFIG_CMD_EXT2		1
+ 
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ #endif
+ 
+diff --git a/include/configs/mx53_arm2_ddr3.h b/include/configs/mx53_arm2_ddr3.h
+index 6cfb493..b131bea 100644
+--- a/include/configs/mx53_arm2_ddr3.h
++++ b/include/configs/mx53_arm2_ddr3.h
+@@ -166,7 +166,7 @@
+ /*
+  * FUSE Configs
+  * */
+-#ifdef CONFIG_CMD_MMC
++#ifdef CONFIG_CMD_IIM
+ 	#define CONFIG_IMX_IIM
+ 	#define IMX_IIM_BASE    IIM_BASE_ADDR
+ 	#define CONFIG_IIM_MAC_BANK     1
+@@ -210,6 +210,7 @@
+ 	#define CONFIG_CMD_FAT		1
+ 	#define CONFIG_CMD_EXT2		1
+ 	#define CONFIG_BOOT_PARTITION_ACCESS
++	#define CONFIG_EMMC_DDR_PORT_DETECT
+ 	#define CONFIG_DYNAMIC_MMC_DEVNO
+ #endif
+ /*-----------------------------------------------------------------------
+-- 
+1.5.4.4
+

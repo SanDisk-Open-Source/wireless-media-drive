@@ -1,0 +1,296 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>MaraDNS - a security-aware DNS server</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<link rel="stylesheet" title="Woodson (Default)"
+ type="text/css" media="screen, projection" href="maradns-1.2-s.css">
+<link rel="alternate stylesheet" title="Large Print" 
+ type="text/css" media="screen, projection" href="maradns-1.2-l.css">
+<link rel="stylesheet" type="text/css" media="print" 
+ href="maradns-1.2-p.css">
+<link rel="stylesheet" type="text/css" media="handheld" 
+ href="maradns-1.2-h.css">
+<script type=text/javascript src=styleswitcher.js></script>
+</head>
+<body>
+
+<div align=center id=maradns-all>
+<table><tr><td>
+<div align=left>
+<table><tr>
+<td valign=top width=340>
+<font id=maradns-name size="+4"><i><b>MaraDNS</b></i></font>
+<br>
+<div id=maradns-t>
+A&nbsp;security-aware DNS&nbsp;server
+</div>
+</td>
+<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+<td valign=top id=topright width=220>
+        <div align=right><table><tr><td id=trabalengua>
+        <i>
+                Erre con erre cigarro<br>
+                Erre con erre barril<br> 
+                R&aacute;pido&nbsp;ruedan&nbsp;los&nbsp;carros<br>
+                En el ferrocarril<br></i>
+        </td></tr></table></div>
+</td>
+</tr></table>
+<script type=text/javascript>
+</script>
+<div id=lefthand>
+<div id=maradns-l>
+	<a href="index.html">Main</a>
+	<a href="download.html">Download</a>
+	<a href="notes.html">Documentation</a>
+	<a href="/blog">Blog</a>
+	<a href="changelog.html">Changelog</a>
+	<a href="roadmap.html">Roadmap</a>
+	<a href="contact.html">Contact</a>
+</div> <!-- maradns-l -->
+<script type="text/javascript">
+<!--
+if(isOKbrowser()) { 
+document.write("<p class=nocss><font size=-1>The following links that change text size will do nothing on your browser because your browser does not support CSS.  This page is otherwise usable in a non-CSS browser.");
+document.write("<\/font><\/p><div class=makelarge><div class=iebug>");
+document.write("To make the font larger, <A href=\"#\" onclick=\"setActiveStyleSheet('Large Print');return false;\">click here<\/A><\/div><\/div><p class=makenormal>");
+document.write("To see this without using a large font, <A href=\"#\" onclick=\"setActiveStyleSheet('Woodson (Default)');return false;\">click here<\/A><\/p>");
+}
+-->
+</script>
+</div>
+<hr class=moyet>
+<table><tr><td class=content width=596>
+<div id=maradns-r>
+<div id=paypal>
+<form action="https://www.paypal.com/cgi-bin/webscr" method="post">
+<input type="hidden" name="cmd" value="_s-xclick">
+<input type="image" src="https://www.paypal.com/en_US/i/btn/x-click-but04.gif" border="0" name="submit" alt="PayPal Donate">
+<input type="hidden" name="encrypted" value="-----BEGIN PKCS7-----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-----END PKCS7-----
+">
+</form>
+</div>
+<!-- end header -->
+<h2>MaraDNS roadmap</h2>
+
+The MaraDNS 1.3.07 branch of MaraDNS is now in beta testing.  In other 
+words, the only changes to this branch before being declared stable will
+be documentation updates, bug fixes, and new SQA tests added. <p>
+
+The 1.3.07 branch has a few new features compared to MaraDNS 1.2:
+
+<ul>
+<li>BIND zone file support.  This is done with a Python script that 
+    converts a BIND zone file in to a MaraDNS-compatible zone file, and 
+    with some minor changes to the CSV2 zone file format (see below).
+<li>It's now possible to tell the recursive resolver to use different 
+    DNS servers to resolve records that end with a given string.  For 
+    example, you can tell the recursive resolver to use the DNS server 
+    with the IP 192.168.1.2 to resolve anything that ends in 
+    <tt>.local</tt>.
+<li>New mararc variables: <tt>upstream_port</tt> and <tt>dns_port</tt> 
+    (these two mararc variables allow one to resolve dangling CNAME 
+    records when one only has a single IP), 
+    <tt>recurse_min_bind_port</tt> and <tt>recurse_number_ports</tt> 
+    (these mararc variables allow one to choose which ports MaraDNS
+    binds to when making recursive queries), <tt>recurse_delegation</tt>
+    (how we handle things when we are both a recursive server and 
+    delegate zones), and <tt>max_mem</tt> (What is the maximum amount of
+    memory we allow MaraDNS to allocate).
+<li>'.' can now be a hostname by itself in csv2 zone files
+</ul>
+
+<h3>Tildes now separate records</h3>
+
+In order to make it easier to convert from BIND's zone file format to 
+MaraDNS' zone file format, the tilde (~) now separates records.  The 
+tilde is only used to separate records.  I chose the tilde because it's 
+a character that one is usually not going to have in comments nor in 
+TXT/SPF/RAW records.
+
+<p>
+
+What the csv2 parser does is parse the first record.  If it sees a tilde 
+between the end of the first record and the beginning of the second 
+record, the parser requires that there be a tilde between every single 
+record.  A tilde is not allowed anywhere else in a csv2 zone file except 
+in comments; a tilde is not allowed in TXT/SPF records, for example.
+If you need a tilde in a TXT record, use the \x7e escape sequence.
+
+<p>
+
+For people who have csv2 zone files with tildes in them already, it is 
+possible to disable this new behavior by setting a new mararc 
+variable, called <tt>csv2_tilde_handling</tt>, to 0.  
+<tt>csv2_tilde_handling</tt>, with a value of 0, is also supported in 
+MaraDNS 1.2.12.04 and later 1.2 releases of MaraDNS.
+
+<p>
+
+Basically, I am transitioning zone files from looking like this:
+
+<pre>
+%       SOA     % email@% 1 7200 3600 604800 1800
+%       NS      a.%
+%       NS      b.%
+a.example.net.  10.10.10.10
+b.example.net.  10.10.10.11
+b.example.net.  10.10.10.12
+Z.EXAMPLE.NET.  10.2.3.4
+Y.EXAMPLE.net.  10.3.4.5
+percent.%       a               10.9.8.7
+*.example.net.  A               10.11.12.13
+d.example.net. +86400 A 10.11.12.13
+f.example.net.
+                A       10.2.19.83
+</pre>
+
+To looking like this:
+
+<pre>
+%       SOA     % email@% 1 7200 3600 604800 1800 ~
+%       NS      a.% ~
+%       NS      b.% ~
+a.example.net.  10.10.10.10 ~
+b.example.net.  10.10.10.11 ~
+b.example.net.  10.10.10.12 ~
+Z.EXAMPLE.NET.  10.2.3.4
+~
+Y.EXAMPLE.net.  10.3.4.5
+~
+percent.%       a               10.9.8.7 ~
+*.example.net.  A               10.11.12.13 ~
+d.example.net. +86400 A 10.11.12.13 ~
+f.example.net.
+                A       10.2.19.83 ~
+</pre>
+
+<h3>MaraDNS 1.3.07 plans</h3>
+
+I will be creating new tests for the 1.3.07 series to see if I can find 
+any other bugs before making the 1.3.07 series stable on December 21, 
+2007.  I will also be updating the documentation, and fixing any bugs 
+that I find.  Once 1.3.07 is made stable on December 21, the only 
+changes I will make to this branch are important bugfixes and 
+documentation updates.
+
+<h3>Post-1.3.07 plans</h3>
+
+I, on September 21, 2007, split the 1.3 series in to two branches: The 
+1.3.07 branch, and the post-1.3.07 branch, starting with MaraDNS 1.3.08.  
+The reason for this split is new features to MaraDNS can be contributed.  
+For example, Jean-Jacques Sarton is working on improving MaraDNS' ipv6 
+support, and I added support for the NAPTR record that someone on the 
+mailing list asked for.  <p>
+
+I plan on rewriting the recursive resolver. Basically, the code is quite 
+ugly and this recursive resolver has been needing a rewrite for a few 
+years now.  While I'm at it, I will probably add ipv6 support to the 
+recursive half of Mara.  This is a project that will take <i>at 
+least</i> six months to implement once I start writing code (I've been 
+too busy babysitting older releases and answering support questions to 
+start work on my code, and, yeah, this thing called real life sometimes 
+gets in the way too).
+
+<p>
+
+After that, I may revamp the authoritative code to handle AXFRs 
+correctly, to have "views", and to be able to reload zones without 
+restarting MaraDNS.  It will be a while before I start writing this 
+code.
+
+<h3>Show me the money</h3>
+
+Since MaraDNS is an open source project, any of these plans can change 
+at any time.  For example, since I'm not getting paid to work on 
+MaraDNS, I may decide that it's more fun to hang out with my girlfriend 
+or to play some interactive fiction. <p>
+
+If people desperately need features added to MaraDNS, let's talk.  Since 
+I'm living in Mexico, my expenses are fairly low so I can add new 
+features at good prices.  Note that, if you want to keep the new 
+features proprietary, I will charge considerably more to implement the 
+new features.
+
+<hr>
+
+<h3>MaraDNS 1.0 and 1.2</h3>
+
+MaraDNS 1.0 was released over five years ago, and will only be supported 
+(with the exception of security updates) until December 21, 2007.  After 
+that date, MaraDNS 1.0 users will be on their own.  I no longer answer 
+"how do I" questions for this release of MaraDNS, and will not fix 
+non-security bugs after December 21.  If anyone is interested in 
+becoming the maintainer of MaraDNS 1.0, <A 
+href=contact.html>let me know</A>.
+
+<p> MaraDNS 1.2, which was released nearly two years ago, has the 
+following new features over 1.0:
+
+<ul>
+<li>MaraDNS can now run with only a single three-line configuration 
+    file.
+<li>Expanded and improved documentation.
+<li>A partial native Win32 port has been done; basic MaraDNS functionality
+    is now available on Windows.
+<li>Full Y2038 compliance; on systems with a 32-bit timestamp, MaraDNS will
+    happily run until 2106 or so.
+<li>A tool, called <code>duende</code> that can daemonize MaraDNS or any other
+    non-daemonizing program, outputting the program's standard output
+    to syslog.
+<li>The ability to bind to multiple IP addresses.
+<li>A new zone file format that works side-by-side with the MaraDNS 1.0 zone
+    file format.
+<li>A Perl tool for converting csv1 (older) zone files to csv2 (newer) zone 
+    files.  Note that MaraDNS continues to parse csv1 zone files; this tool 
+    is here for people who want to transition to the enhanced csv2 zone 
+    files.
+<li>Full support for processing DNS records over ipv4 TCP.
+<li>Better RFC compliance: 
+    Have the rcode in the DNS header for a reply reflect whether we have 
+    any records for the host name in question.  
+<li>The addition of a <code>+=</code> operator to the mararc file
+    parser, so that long strings may be split up.
+<li>It is now possible to have a default zonefile with stars at the end of
+    hostnames
+<li>It is possible to compile the server without recursive support, making
+    the maradns binary 20% smaller and not needing to be linked to the  
+    pthread library.
+<li>There is a special DOS survival mode which resoves hostnames as 
+    quickly as possible at the expense of not supporting some DNS 
+    features (such as CNAME records or star records)
+<li>MaraDNS now has authoritative-only UDP ipv6 support.  AAAA records are 
+    supported in csv2 zone files, and it is possible to run MaraDNS on
+    an ipv6 address.  
+<li>Cname records now point back for any record type, not just
+    A records in the authoritative half.
+</ul>
+
+I have added the following features to the post-1.2.00 releases of MaraDNS:
+
+<ul>
+<li>Optional strict RFC-compliant handling of star records.
+<li>Added special record which sets up both forward and reverse DNS lookup
+    for a given IP.
+<li>Added limited remove administrative features (disabled by default), and
+    restricted all queries that give internal informaiton about MaraDNS to
+    a list of IPs specified by the admin.
+<li>Ability to customize the case of informing the DNS stub resolver how
+    to handle the case of being unable to contact any remote servers.
+<li>Daniel Zilli has translated all of Mara's documentation in to 
+    Brazilian Portuguese.
+</ul>
+
+The 1.2 release of MaraDNS will only be updated to fix critical and 
+security bugs, and to fix errors in the documentation.
+
+<p>
+- Sam (2007.09.23)
+
+
+</div>
+</td></table>
+</div>
+</td></table>
+</div>
+</body>
+</html>

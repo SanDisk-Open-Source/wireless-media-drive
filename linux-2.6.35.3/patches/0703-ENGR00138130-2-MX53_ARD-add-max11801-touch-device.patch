@@ -1,0 +1,38 @@
+From 2c785547079f2ad5ee6afc028676ac2b60bb7ad2 Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Tue, 18 Jan 2011 17:01:57 +0800
+Subject: [PATCH] ENGR00138130-2 MX53_ARD: add max11801 touch device.
+
+Add max11801 touch screen driver for MX53_ARD.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c |    5 ++++-
+ 1 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index b0ca6f5..909f419 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1170,6 +1170,10 @@ static void __init mx53_ard_io_init(void)
+ 
+ 	gpio_request(ARD_FPGA_INT_B, "fpga-int");
+ 	gpio_direction_input(ARD_FPGA_INT_B);
++
++	gpio_request(ARD_TS_INT, "ts-int");
++	gpio_direction_input(ARD_TS_INT);
++	gpio_free(ARD_TS_INT);
+ }
+ 
+ /* Config CS1 settings for ethernet controller */
+@@ -1300,7 +1304,6 @@ static void __init mxc_board_init(void)
+ 	i2c_register_board_info(2, mxc_i2c2_board_info,
+ 				ARRAY_SIZE(mxc_i2c2_board_info));
+ 
+-
+ 	mxc_register_device(&mxc_mlb_device, &mlb_data);
+ 	mx5_set_otghost_vbus_func(mx53_ard_usbotg_driver_vbus);
+ 	mx5_usb_dr_init();
+-- 
+1.5.4.4
+

@@ -1,0 +1,549 @@
+From 9ef0863e8bd5eba9243b4f5e84b75806b1d4c889 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Wed, 12 May 2010 22:47:31 +0800
+Subject: [PATCH] ENGR00123418: Add peripheral clock setup support
+
+Add peripheral clock setup support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ common/cmd_clk.c                 |    7 +
+ cpu/arm_cortexa8/mx53/crm_regs.h |    2 +
+ cpu/arm_cortexa8/mx53/generic.c  |  347 ++++++++++++++++++++++++++++++-------
+ include/asm-arm/arch-mx53/mx53.h |    1 +
+ include/asm-arm/clock.h          |    1 +
+ 5 files changed, 292 insertions(+), 66 deletions(-)
+
+diff --git a/common/cmd_clk.c b/common/cmd_clk.c
+index 2f81492..0d6123e 100644
+--- a/common/cmd_clk.c
++++ b/common/cmd_clk.c
+@@ -38,6 +38,8 @@ int do_clkops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	case 2:
+ 		if (strcmp(argv[1], "core") == 0)
+ 			clk_info(CPU_CLK);
++		else if (strcmp(argv[1], "periph") == 0)
++			clk_info(PERIPH_CLK);
+ 		else if (strcmp(argv[1], "ddr") == 0)
+ 			clk_info(DDR_CLK);
+ 		else
+@@ -47,6 +49,8 @@ int do_clkops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		freq = simple_strtoul(argv[2], NULL, 10);
+ 		if (strcmp(argv[1], "core") == 0)
+ 			clk_config(CONFIG_REF_CLK_FREQ, freq, CPU_CLK);
++		else if (strcmp(argv[1], "periph") == 0)
++			clk_config(CONFIG_REF_CLK_FREQ, freq, PERIPH_CLK);
+ 		else if (strcmp(argv[1], "ddr") == 0)
+ 			clk_config(CONFIG_REF_CLK_FREQ, freq, DDR_CLK);
+ 		else
+@@ -68,9 +72,12 @@ U_BOOT_CMD(
+ 	"Setup/Display clock\n"
+ 	"clk - Display all clocks\n"
+ 	"clk core <core clock in MHz> - Setup/Display core clock\n"
++	"clk periph <peripheral clock in MHz> -"
++	"Setup/Display peripheral clock\n"
+ 	"clk ddr <DDR clock in MHz> - Setup/Display DDR clock\n"
+ 	"Example:\n"
+ 	"clk - Show various clocks\n"
+ 	"clk core 665 - Set core clock to 665MHz\n"
++	"clk periph 600 - Set peripheral clock to 600MHz\n"
+ 	"clk ddr 166 - Set DDR clock to 166MHz");
+ 
+diff --git a/cpu/arm_cortexa8/mx53/crm_regs.h b/cpu/arm_cortexa8/mx53/crm_regs.h
+index 92a083e..aadca1f 100644
+--- a/cpu/arm_cortexa8/mx53/crm_regs.h
++++ b/cpu/arm_cortexa8/mx53/crm_regs.h
+@@ -201,7 +201,9 @@
+ #define MXC_CCM_CBCMR_GPU_CLK_SEL_OFFSET		(4)
+ #define MXC_CCM_CBCMR_GPU_CLK_SEL_MASK		(0x3 << 4)
+ #define MXC_CCM_CBCMR_PERCLK_LP_APM_CLK_SEL		(0x1 << 1)
++#define MXC_CCM_CBCMR_PERCLK_LP_APM_CLK_SEL_OFFSET	(1)
+ #define MXC_CCM_CBCMR_PERCLK_IPG_CLK_SEL		(0x1 << 0)
++#define MXC_CCM_CBCMR_PERCLK_IPG_CLK_SEL_OFFSET		(0)
+ 
+ /* Define the bits in register CSCMR1 */
+ #define MXC_CCM_CSCMR1_SSI_EXT2_CLK_SEL_OFFSET		(30)
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 812e040..26a7894 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -47,6 +47,10 @@ enum pll_sw_clocks {
+ 	PLL4_SW_CLK,
+ };
+ 
++#define AHB_CLK_ROOT 133333333
++#define IPG_CLK_ROOT 66666666
++#define IPG_PER_CLK_ROOT 40000000
++
+ #ifdef CONFIG_CMD_CLOCK
+ #define SZ_DEC_1M       1000000
+ #define PLL_PD_MAX      16      /* Actual pd+1 */
+@@ -175,6 +179,29 @@ static u32 __get_lp_apm(void)
+ 	return ret_val;
+ }
+ 
++/*
++static u32 __get_perclk_lp_apm(void)
++{
++	u32 ret_val = 0;
++	u32 cbcmr = __REG(MXC_CCM_CBCMR);
++	u32 clk_sel = (cbcmr & MXC_CCM_CBCMR_PERCLK_LP_APM_CLK_SEL) \
++			>> MXC_CCM_CBCMR_PERCLK_LP_APM_CLK_SEL_OFFSET;
++
++	switch (clk_sel) {
++	case 0:
++		ret_val =  __get_periph_clk();
++		break;
++	case 1:
++		ret_val =  __get_lp_apm();
++		break;
++	default:
++		break;
++	}
++
++	return ret_val;
++}
++*/
++
+ static u32 __get_uart_clk(void)
+ {
+ 	u32 freq = 0, reg, pred, podf;
+@@ -284,10 +311,21 @@ static u32 __get_emi_slow_clk(void)
+ 	return  __get_periph_clk() / (pdf + 1);
+ }
+ 
++/*
++static u32 __get_nfc_clk(void)
++{
++	u32 cbcdr =  __REG(MXC_CCM_CBCDR);
++	u32 pdf = (cbcdr & MXC_CCM_CBCDR_NFC_PODF_MASK) \
++			>> MXC_CCM_CBCDR_NFC_PODF_OFFSET;
++
++	return  __get_emi_slow_clk() / (pdf + 1);
++}
++*/
++
+ static u32 __get_ddr_clk(void)
+ {
+ 	u32 ret_val = 0;
+-	u32 cbcmr =  __REG(MXC_CCM_CBCMR);
++	u32 cbcmr = __REG(MXC_CCM_CBCMR);
+ 	u32 ddr_clk_sel = (cbcmr & MXC_CCM_CBCMR_DDR_CLK_SEL_MASK) \
+ 				>> MXC_CCM_CBCMR_DDR_CLK_SEL_OFFSET;
+ 
+@@ -411,6 +449,8 @@ unsigned int mxc_get_clock(enum mxc_clock clk)
+ 	switch (clk) {
+ 	case MXC_ARM_CLK:
+ 		return __get_mcu_main_clk();
++	case MXC_PER_CLK:
++		return __get_periph_clk();
+ 	case MXC_AHB_CLK:
+ 		return __get_ahb_clk();
+ 	case MXC_IPG_CLK:
+@@ -497,18 +537,22 @@ static int gcd(int m, int n)
+  */
+ static int calc_pll_params(u32 ref, u32 target, struct pll_param *pll)
+ {
+-	u64 pd, mfi = 1, mfn, mfd;
++	u64 pd, mfi = 1, mfn, mfd, t1;
+ 	u32 n_target = target;
+ 	u32 n_ref = ref, i;
+-	u64 t1, t2;
+ 
+ 	/*
+ 	 * Make sure targeted freq is in the valid range.
+ 	 * Otherwise the following calculation might be wrong!!!
+ 	 */
+ 	if (n_target < PLL_FREQ_MIN(ref) ||
+-			n_target > PLL_FREQ_MAX(ref))
++		n_target > PLL_FREQ_MAX(ref)) {
++		printf("Targeted peripheral clock should be"
++			"within [%d - %d]\n",
++			PLL_FREQ_MIN(ref) / SZ_DEC_1M,
++			PLL_FREQ_MAX(ref) / SZ_DEC_1M);
+ 		return -1;
++	}
+ 
+ 	for (i = 0; i < ARRAY_SIZE(fixed_mfd); i++) {
+ 		if (fixed_mfd[i].ref_clk_hz == ref) {
+@@ -566,35 +610,39 @@ int clk_info(u32 clk_type)
+ 	switch (clk_type) {
+ 	case CPU_CLK:
+ 		printf("CPU Clock: %dHz\n",
+-				mxc_get_clock(MXC_ARM_CLK));
++			mxc_get_clock(MXC_ARM_CLK));
++		break;
++	case PERIPH_CLK:
++		printf("Peripheral Clock: %dHz\n",
++			mxc_get_clock(MXC_PER_CLK));
+ 		break;
+ 	case AHB_CLK:
+ 		printf("AHB Clock: %dHz\n",
+-				mxc_get_clock(MXC_AHB_CLK));
++			mxc_get_clock(MXC_AHB_CLK));
+ 		break;
+ 	case IPG_CLK:
+ 		printf("IPG Clock: %dHz\n",
+-				mxc_get_clock(MXC_IPG_CLK));
++			mxc_get_clock(MXC_IPG_CLK));
+ 		break;
+ 	case IPG_PERCLK:
+ 		printf("IPG_PER Clock: %dHz\n",
+-				mxc_get_clock(MXC_IPG_PERCLK));
++			mxc_get_clock(MXC_IPG_PERCLK));
+ 		break;
+ 	case UART_CLK:
+ 		printf("UART Clock: %dHz\n",
+-				mxc_get_clock(MXC_UART_CLK));
++			mxc_get_clock(MXC_UART_CLK));
+ 		break;
+ 	case CSPI_CLK:
+ 		printf("CSPI Clock: %dHz\n",
+-				mxc_get_clock(MXC_CSPI_CLK));
++			mxc_get_clock(MXC_CSPI_CLK));
+ 		break;
+ 	case DDR_CLK:
+ 		printf("DDR Clock: %dHz\n",
+-				mxc_get_clock(MXC_DDR_CLK));
++			mxc_get_clock(MXC_DDR_CLK));
+ 		break;
+ 	case ALL_CLK:
+ 		printf("cpu clock: %dHz\n",
+-				mxc_get_clock(MXC_ARM_CLK));
++			mxc_get_clock(MXC_ARM_CLK));
+ 		mxc_dump_clocks();
+ 		break;
+ 	default:
+@@ -604,29 +652,216 @@ int clk_info(u32 clk_type)
+ 	return 0;
+ }
+ 
+-int config_core_clk(struct pll_param *pll_param)
++#define calc_div(target_clk, src_clk, limit) ({	\
++		u32 tmp = 0;	\
++		if ((src_clk % target_clk) <= 100)	\
++			tmp = src_clk / target_clk;	\
++		else	\
++			tmp = (src_clk / target_clk) + 1;	\
++		if (tmp > limit)	\
++			tmp = limit;	\
++		(tmp - 1);	\
++	})
++
++u32 calc_per_cbcdr_val(u32 per_clk, u32 cbcmr)
++{
++	u32 cbcdr = __REG(MXC_CCM_CBCDR);
++	u32 tmp_clk = 0, div = 0, clk_sel = 0;
++
++	cbcdr &= ~MXC_CCM_CBCDR_PERIPH_CLK_SEL;
++
++	/* emi_slow_podf divider */
++	tmp_clk = __get_emi_slow_clk();
++	clk_sel = cbcdr & MXC_CCM_CBCDR_EMI_CLK_SEL;
++	if (clk_sel) {
++		div = calc_div(tmp_clk, per_clk, 8);
++		cbcdr &= ~MXC_CCM_CBCDR_EMI_PODF_MASK;
++		cbcdr |= (div << MXC_CCM_CBCDR_EMI_PODF_OFFSET);
++	}
++
++	/* axi_b_podf divider */
++	tmp_clk = __get_axi_b_clk();
++	div = calc_div(tmp_clk, per_clk, 8);
++	cbcdr &= ~MXC_CCM_CBCDR_AXI_B_PODF_MASK;
++	cbcdr |= (div << MXC_CCM_CBCDR_AXI_B_PODF_OFFSET);
++
++	/* axi_b_podf divider */
++	tmp_clk = __get_axi_a_clk();
++	div = calc_div(tmp_clk, per_clk, 8);
++	cbcdr &= ~MXC_CCM_CBCDR_AXI_A_PODF_MASK;
++	cbcdr |= (div << MXC_CCM_CBCDR_AXI_A_PODF_OFFSET);
++
++	/* ahb podf divider */
++	tmp_clk = AHB_CLK_ROOT;
++	div = calc_div(tmp_clk, per_clk, 8);
++	cbcdr &= ~MXC_CCM_CBCDR_AHB_PODF_MASK;
++	cbcdr |= (div << MXC_CCM_CBCDR_AHB_PODF_OFFSET);
++
++	return cbcdr;
++}
++
++#define CHANGE_PLL_SETTINGS(base, pd, mfi, mfn, mfd) \
++	{	\
++		writel(((pd - 1) << 0) | (mfi << 4),	\
++			base + PLL_DP_OP);	\
++		writel(mfn, base + PLL_DP_MFN);	\
++		writel(mfd - 1, base + PLL_DP_MFD);	\
++		writel(((pd - 1) << 0) | (mfi << 4),	\
++			base + PLL_DP_HFS_OP);	\
++		writel(mfn, base + PLL_DP_HFS_MFN);	\
++		writel(mfd - 1, base + PLL_DP_HFS_MFD);	\
++	}
++
++int config_pll_clk(enum pll_clocks pll, struct pll_param *pll_param)
+ {
+ 	u32 ccsr = readl(CCM_BASE_ADDR + CLKCTL_CCSR);
++	u32 pll_base = pll;
++
++	switch (pll) {
++	case PLL1_CLK:
++		/* Switch ARM to PLL2 clock */
++		writel(ccsr | 0x4, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x4, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	case PLL2_CLK:
++		/* Switch to pll2 bypass clock */
++		writel(ccsr | 0x2, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x2, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	case PLL3_CLK:
++		/* Switch to pll3 bypass clock */
++		writel(ccsr | 0x1, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x1, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	case PLL4_CLK:
++		/* Switch to pll4 bypass clock */
++		writel(ccsr | 0x20, CCM_BASE_ADDR + CLKCTL_CCSR);
++		CHANGE_PLL_SETTINGS(pll_base, pll_param->pd,
++					pll_param->mfi, pll_param->mfn,
++					pll_param->mfd);
++		/* Switch back */
++		writel(ccsr & ~0x20, CCM_BASE_ADDR + CLKCTL_CCSR);
++		break;
++	default:
++		return -1;
++	}
+ 
+-	/* Switch ARM to PLL2 clock */
+-	writel(ccsr | 0x4, CCM_BASE_ADDR + CLKCTL_CCSR);
+-
+-	/* Adjust pll settings */
+-	writel(((pll_param->pd - 1) << 0) | (pll_param->mfi << 4),
+-			PLL1_BASE_ADDR + PLL_DP_OP);
+-	writel(pll_param->mfn,
+-			PLL1_BASE_ADDR + PLL_DP_MFN);
+-	writel(pll_param->mfd - 1,
+-			PLL1_BASE_ADDR + PLL_DP_MFD);
+-	writel(((pll_param->pd - 1) << 0) | (pll_param->mfi << 4),
+-			PLL1_BASE_ADDR + PLL_DP_HFS_OP);
+-	writel(pll_param->mfn,
+-			PLL1_BASE_ADDR + PLL_DP_HFS_MFN);
+-	writel(pll_param->mfd - 1,
+-			PLL1_BASE_ADDR + PLL_DP_HFS_MFD);
+-
+-	/* Switch ARM back to PLL1 */
+-	writel((ccsr & ~0x4), CCM_BASE_ADDR + CLKCTL_CCSR);
++	return 0;
++}
++
++int config_core_clk(u32 ref, u32 freq)
++{
++	int ret = 0;
++	u32 pll = 0;
++	struct pll_param pll_param;
++
++	memset(&pll_param, 0, sizeof(struct pll_param));
++
++	/* The case that periph uses PLL1 is not considered here */
++	pll = freq;
++	ret = calc_pll_params(ref, pll, &pll_param);
++	if (ret != 0) {
++		printf("Can't find pll parameters: %d\n",
++			ret);
++		return ret;
++	}
++
++	return config_pll_clk(PLL1_CLK, &pll_param);
++}
++
++int config_periph_clk(u32 ref, u32 freq)
++{
++	int ret = 0;
++	u32 pll = 0;
++	struct pll_param pll_param;
++
++	memset(&pll_param, 0, sizeof(struct pll_param));
++
++	if (__REG(MXC_CCM_CBCDR) & MXC_CCM_CBCDR_PERIPH_CLK_SEL) {
++		/* Actually this case is not considered here */
++		pll = freq;
++		ret = calc_pll_params(ref, pll, &pll_param);
++		if (ret != 0) {
++			printf("Can't find pll parameters: %d\n",
++				ret);
++			return ret;
++		}
++		switch ((__REG(MXC_CCM_CBCMR) & \
++			MXC_CCM_CBCMR_PERIPH_CLK_SEL_MASK) >>
++			MXC_CCM_CBCMR_PERIPH_CLK_SEL_OFFSET) {
++		case 0:
++			return config_pll_clk(PLL1_CLK, &pll_param);
++			break;
++		case 1:
++			return config_pll_clk(PLL3_CLK, &pll_param);
++			break;
++		default:
++			return -1;
++		}
++	} else {
++		u32 pll3_freq = __decode_pll(PLL3_CLK, CONFIG_MX53_HCLK_FREQ);
++		u32 old_cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
++		u32 cbcdr = 0;
++
++		/* Set PLL3 to 400MHz */
++		ret = calc_pll_params(ref, 400000000, &pll_param);
++		if (ret != 0) {
++			printf("Can't find pll parameters: %d\n",
++				ret);
++			return ret;
++		}
++		config_pll_clk(PLL3_CLK, &pll_param);
++
++		/* Switch peripheral to PLL3 */
++		writel(0x00015154, CCM_BASE_ADDR + CLKCTL_CBCMR);
++		writel(0x02888945, CCM_BASE_ADDR + CLKCTL_CBCDR);
++
++		/* Make sure change is effective */
++		while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++			;
++
++		/* Setup PLL2 */
++		pll = freq;
++		ret = calc_pll_params(ref, pll, &pll_param);
++		if (ret != 0) {
++			printf("Can't find pll parameters: %d\n",
++				ret);
++			return ret;
++		}
++		config_pll_clk(PLL2_CLK, &pll_param);
++
++		/* Switch peripheral back */
++		cbcdr = calc_per_cbcdr_val(pll, old_cbcmr);
++		writel(cbcdr, CCM_BASE_ADDR + CLKCTL_CBCDR);
++		writel(old_cbcmr, CCM_BASE_ADDR + CLKCTL_CBCMR);
++
++		/* Make sure change is effective */
++		while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++			;
++
++		/* Switch PLL3's freq back */
++		ret = calc_pll_params(ref, pll3_freq, &pll_param);
++		if (ret != 0) {
++			printf("Can't find pll parameters: %d\n",
++				ret);
++			return ret;
++		}
++		config_pll_clk(PLL3_CLK, &pll_param);
++
++		puts("\n");
++	}
+ 
+ 	return 0;
+ }
+@@ -638,6 +873,13 @@ int config_ddr_clk(u32 emi_clk)
+ 	u32 cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
+ 	u32 cbcdr = readl(CCM_BASE_ADDR + CLKCTL_CBCDR);
+ 
++	if (emi_clk > MAX_DDR_CLK) {
++		printf("DDR clock should be less than"
++			"%d MHz, assuming max value \n",
++			(MAX_DDR_CLK / SZ_DEC_1M));
++		emi_clk = MAX_DDR_CLK;
++	}
++
+ 	clk_src = __get_periph_clk();
+ 	/* Find DDR clock input */
+ 	clk_sel = (cbcmr >> 10) & 0x3;
+@@ -702,47 +944,20 @@ int config_ddr_clk(u32 emi_clk)
+  */
+ int clk_config(u32 ref, u32 freq, u32 clk_type)
+ {
+-	u32 pll;
+-	struct pll_param pll_param;
+-	int ret;
+-
+ 	freq *= SZ_DEC_1M;
+ 
+ 	switch (clk_type) {
+ 	case CPU_CLK:
+-		if ((freq < PLL_FREQ_MIN(ref)) ||
+-			(freq > PLL_FREQ_MAX(ref))) {
+-			printf("Targeted core clock should be"
+-					"within [%d - %d]\n",
+-					PLL_FREQ_MIN(ref) / SZ_DEC_1M,
+-					PLL_FREQ_MAX(ref) / SZ_DEC_1M);
++		if (config_core_clk(ref, freq))
++			return -1;
++		break;
++	case PERIPH_CLK:
++		if (config_periph_clk(ref, freq))
+ 			return -1;
+-		}
+-
+-		pll = freq;
+-		ret = calc_pll_params(ref, pll, &pll_param);
+-		if (ret != 0) {
+-			printf("Can't find pll parameters: %d\n",
+-					ret);
+-			return ret;
+-		}
+-#ifdef CMD_CLOCK_DEBUG
+-		printf("ref=%d, pll=%d, pd=%d, "
+-				"mfi=%d,mfn=%d, mfd=%d\n",
+-				ref, pll, pll_param.pd, pll_param.mfi,
+-				pll_param.mfn, pll_param.mfd);
+-#endif
+-		config_core_clk(&pll_param);
+ 		break;
+ 	case DDR_CLK:
+-		if (freq > MAX_DDR_CLK) {
+-			printf("DDR clock should be less than"
+-					"%d MHz, assuming max value \n",
+-					(MAX_DDR_CLK / SZ_DEC_1M));
+-			freq = MAX_DDR_CLK;
+-		}
+-
+-		config_ddr_clk(freq);
++		if (config_ddr_clk(freq))
++			return -1;
+ 		break;
+ 	default:
+ 		printf("Unsupported or invalid clock type! :(\n");
+diff --git a/include/asm-arm/arch-mx53/mx53.h b/include/asm-arm/arch-mx53/mx53.h
+index b1f3d27..6586b9c 100644
+--- a/include/asm-arm/arch-mx53/mx53.h
++++ b/include/asm-arm/arch-mx53/mx53.h
+@@ -393,6 +393,7 @@ enum boot_device {
+ 
+ enum mxc_clock {
+ 	MXC_ARM_CLK = 0,
++	MXC_PER_CLK,
+ 	MXC_AHB_CLK,
+ 	MXC_IPG_CLK,
+ 	MXC_IPG_PERCLK,
+diff --git a/include/asm-arm/clock.h b/include/asm-arm/clock.h
+index 95afb89..41f8c8c 100644
+--- a/include/asm-arm/clock.h
++++ b/include/asm-arm/clock.h
+@@ -27,6 +27,7 @@
+ 
+ enum {
+ 	CPU_CLK = 0,
++	PERIPH_CLK,
+ 	AHB_CLK,
+ 	IPG_CLK,
+ 	IPG_PERCLK,
+-- 
+1.5.4.4
+

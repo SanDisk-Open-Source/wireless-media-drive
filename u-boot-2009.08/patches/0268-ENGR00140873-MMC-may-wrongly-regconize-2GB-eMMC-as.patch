@@ -1,0 +1,43 @@
+From 682e2a17a1f5241b2488e3af76bef0063260a64e Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 21 Mar 2011 13:48:07 +0800
+Subject: [PATCH] ENGR00140873: MMC may wrongly regconize 2GB eMMC as high capacity
+
+MMC driver may wrongly regconize some 2GB eMMC as high capacity card.
+
+This patch is picked from community.
+
+A non-zero value of SEC_COUNT does not indicate that the card is sector
+addressed. According to the MMC specification, cards
+with a densitygreater than 2GiB are sector addressed.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/mmc/mmc.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 6fc3be2..ba14330 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2011 Freescale Semiconductor, Inc.
+  * Terry Lv
+  *
+  * Copyright 2008, Freescale Semiconductor, Inc
+@@ -437,7 +437,9 @@ static int mmc_change_freq(struct mmc *mmc)
+ 	if (err)
+ 		goto err_rtn;
+ 
+-	if (ext_csd[212] || ext_csd[213] || ext_csd[214] || ext_csd[215])
++	/* Cards with density > 2GiB are sector addressed */
++	if (ext_csd[212] || ext_csd[213] || ext_csd[214] || ext_csd[215] &&
++			(mmc->capacity > (2u * 1024 * 1024 * 1024) / 512))
+ 		mmc->high_capacity = 1;
+ 
+ 	cardtype = ext_csd[EXT_CSD_CARD_TYPE] & 0xf;
+-- 
+1.5.4.4
+

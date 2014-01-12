@@ -1,0 +1,62 @@
+From c01fcfed4d2c0e852161fba3c968fcfedea0d734 Mon Sep 17 00:00:00 2001
+From: Alan Tull <r80115@freescale.com>
+Date: Wed, 4 Nov 2009 20:25:42 -0600
+Subject: [PATCH] ENGR00118016-2 wm8350: update to 2.6.31
+
+In WM8350_FLL_CONTROL_1, keep FLL_RATE at default.
+Don't mute outputs by default.
+
+Signed-off-by: Alan Tull <r80115@freescale.com>
+---
+ drivers/mfd/wm8350-core.c |    3 ++-
+ sound/soc/codecs/wm8350.c |   10 +++++-----
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/mfd/wm8350-core.c b/drivers/mfd/wm8350-core.c
+index b580748..1ff6ddf 100644
+--- a/drivers/mfd/wm8350-core.c
++++ b/drivers/mfd/wm8350-core.c
+@@ -721,7 +721,8 @@ int wm8350_device_init(struct wm8350 *wm8350, int irq,
+ 		}
+ 	}
+ 
+-	wm8350_reg_write(wm8350, WM8350_SYSTEM_INTERRUPTS_MASK, 0x0);
++	/*mask gpio and rtc interrupt*/
++	wm8350_reg_write(wm8350, WM8350_SYSTEM_INTERRUPTS_MASK, 0x50);
+ 
+ 	wm8350_client_dev_register(wm8350, "wm8350-codec",
+ 				   &(wm8350->codec.pdev));
+diff --git a/sound/soc/codecs/wm8350.c b/sound/soc/codecs/wm8350.c
+index 0221ca7..b9ee3cf 100644
+--- a/sound/soc/codecs/wm8350.c
++++ b/sound/soc/codecs/wm8350.c
+@@ -1136,7 +1136,7 @@ static int wm8350_set_fll(struct snd_soc_dai *codec_dai,
+ 	fll_1 = wm8350_codec_read(codec, WM8350_FLL_CONTROL_1) &
+ 	    ~(WM8350_FLL_OUTDIV_MASK | WM8350_FLL_RSP_RATE_MASK | 0xc000);
+ 	wm8350_codec_write(codec, WM8350_FLL_CONTROL_1,
+-			   fll_1 | (fll_div.div << 8) | 0x50);
++			   fll_1 | (fll_div.div << 8));
+ 	wm8350_codec_write(codec, WM8350_FLL_CONTROL_2,
+ 			   (fll_div.ratio << 11) | (fll_div.
+ 						    n & WM8350_FLL_N_MASK));
+@@ -1534,13 +1534,13 @@ static int wm8350_probe(struct platform_device *pdev)
+ 
+ 	/* Latch VU bits & mute */
+ 	wm8350_set_bits(wm8350, WM8350_LOUT1_VOLUME,
+-			WM8350_OUT1_VU | WM8350_OUT1L_MUTE);
++			WM8350_OUT1_VU);
+ 	wm8350_set_bits(wm8350, WM8350_LOUT2_VOLUME,
+-			WM8350_OUT2_VU | WM8350_OUT2L_MUTE);
++			WM8350_OUT2_VU);
+ 	wm8350_set_bits(wm8350, WM8350_ROUT1_VOLUME,
+-			WM8350_OUT1_VU | WM8350_OUT1R_MUTE);
++			WM8350_OUT1_VU);
+ 	wm8350_set_bits(wm8350, WM8350_ROUT2_VOLUME,
+-			WM8350_OUT2_VU | WM8350_OUT2R_MUTE);
++			WM8350_OUT2_VU);
+ 
+ 	/* Make sure jack detect is disabled to start off with */
+ 	wm8350_clear_bits(wm8350, WM8350_JACK_DETECT,
+-- 
+1.5.4.4
+

@@ -1,0 +1,105 @@
+<HEAD><TITLE>Atualizando do MaraDNS 1.0 para 1.2</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD>
+<BODY>
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<h1>Atualizando do MaraDNS 1.0 para 1.2</h1>
+
+O MaraDNS 1.2 tem um grande número de vantagens sobre a versão 1.0,
+incluido Y2038 compliance, suporte completo para DNS sobre TCP, e um
+novo formato de zona. Mesmo com esse grande número de novas características
+MaraDNS 1.2 é quase que completamente compatível com todos os arquivos de 
+dados do MaraDNS 1.0. Uma atualização da versão 1.0 para 1.2 não irá, com pequenas
+exceções, precisar fazer qualquer alterações em seus arquivos de configuração. Todas as
+zone de arquivos 1.0 irão trabalhar com MaraDNS 1.2, e quase todos todas configuraçãodo
+arquivo <tt>mararc</tt> irão funcionar com o MaraDNS 1.2.
+
+<p>
+
+Para atualizar uma instalação do MaraDNS do 1.0 para 1.2, download o pacote MaraDNS
+1.2, e digite os seguintes comandos:
+
+<pre>
+	./configure ; make
+</pre>
+<pre>
+	make install
+</pre>
+
+Nenhum arquivo de configuração será sobescrito pela instalação de uma 
+nova versão do MaraDNS 1.2 (fazer backups de todos os seus dados, 
+naturalmente, é sempre uma boa idéia).
+
+<hr>
+
+A única vez que um arquivo <tt>mararc</tt> do 1.0 não funcionará é
+quando existe um erro ortográfica em alguma variável do mararc. Por exemplo,
+vamos supor que temos o seguinte arquivo <tt>mararc</tt>:
+
+<pre>
+bind_address = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+maradns_uid = 99
+maxprocs = 96
+default_rrany_set = 3
+verbose_levul = 1
+</pre>
+
+Isto irá executar corretamente no MaraDNS 1.0.  Entretando, quando executado no 
+MaraDNS 1.2, nós teremos a segunte menssagem de erro:
+
+<pre>
+FATAL ERROR: Unknown mararc variable verbose_levul
+Please look for the uncommented string "verbose_levul"
+in your mararc file and remove this line.
+
+A linha com o erro é:
+verbose_levul = 1
+</pre>
+
+Este erro ortográfico na variável do <tt>mararc</tt>precisa ser completamente
+removida ou a linha ser comentada no arquivo <tt>mararc</tt>. 
+A solução seguinte funcionará sem problema tanto na vesão 1.0 com na 1.1 do
+MaraDNS:
+
+<pre>
+bind_address = "127.0.0.1"
+chroot_dir = "/etc/maradns"
+maradns_uid = 99
+maxprocs = 96
+default_rrany_set = 3
+# Comment out the misspelled mararc variable
+#verbose_levul = 1
+</pre>
+
+<hr>
+
+Com MaraDNS 1.2 é geralmente inicializado com o novo programa <tt>duende</tt>
+timestamps são, por padrão, não mais exebidos.
+(desde que de outra maneira os registros do sistema teriam
+um timestamp redundante neles).  Se o comportamento mais velho
+de mostrar um timestamp de UNIX for desejado, adicione o seguinte
+para o arquivo MaraDNS 1,2 <tt>mararc</tt >: 
+
+<pre>
+timestamp_type = 0
+</pre>
+
+</BODY></HTML>
+

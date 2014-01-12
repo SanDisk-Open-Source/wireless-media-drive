@@ -1,0 +1,148 @@
+From 6b0f3a58488964cbce3d96d5083c7c342ea86c14 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Mon, 11 Oct 2010 21:04:48 +0800
+Subject: [PATCH] ENGR00132459-3 MX5: Support 2 PWM based backlights
+
+Support 2 PWM based backlights, and add PWMO invertion
+option on i.MX53 ARD.
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ arch/arm/mach-mx5/devices.c      |    9 +++++++--
+ arch/arm/mach-mx5/devices.h      |    3 ++-
+ arch/arm/mach-mx5/mx51_3stack.c  |    3 ++-
+ arch/arm/mach-mx5/mx51_babbage.c |    3 ++-
+ arch/arm/mach-mx5/mx53_ard.c     |   29 +++++++++++++++++++++++++----
+ arch/arm/mach-mx5/mx53_evk.c     |    3 ++-
+ 6 files changed, 40 insertions(+), 10 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/devices.c b/arch/arm/mach-mx5/devices.c
+index cba86e5..5a4106c 100644
+--- a/arch/arm/mach-mx5/devices.c
++++ b/arch/arm/mach-mx5/devices.c
+@@ -281,9 +281,14 @@ struct platform_device mxc_pwm2_device = {
+ 	.resource = pwm2_resources,
+ };
+ 
+-struct platform_device mxc_pwm_backlight_device = {
++struct platform_device mxc_pwm1_backlight_device = {
+ 	.name = "pwm-backlight",
+-	.id = -1,
++	.id = 0,
++};
++
++struct platform_device mxc_pwm2_backlight_device = {
++	.name = "pwm-backlight",
++	.id = 1,
+ };
+ 
+ static struct resource flexcan0_resources[] = {
+diff --git a/arch/arm/mach-mx5/devices.h b/arch/arm/mach-mx5/devices.h
+index 0d955ad..e3a73b0 100644
+--- a/arch/arm/mach-mx5/devices.h
++++ b/arch/arm/mach-mx5/devices.h
+@@ -33,7 +33,8 @@ extern struct platform_device imx_nfc_device;
+ extern struct platform_device mxc_wdt_device;
+ extern struct platform_device mxc_pwm1_device;
+ extern struct platform_device mxc_pwm2_device;
+-extern struct platform_device mxc_pwm_backlight_device;
++extern struct platform_device mxc_pwm1_backlight_device;
++extern struct platform_device mxc_pwm2_backlight_device;
+ extern struct platform_device mxc_flexcan0_device;
+ extern struct platform_device mxc_flexcan1_device;
+ extern struct platform_device mxc_ipu_device;
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index 61fd7b0..d79883e 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -981,7 +981,8 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+ 	mxc_register_device(&mxc_iim_device, NULL);
+ 	mxc_register_device(&mxc_pwm1_device, NULL);
+-	mxc_register_device(&mxc_pwm_backlight_device, &mxc_pwm_backlight_data);
++	mxc_register_device(&mxc_pwm1_backlight_device,
++		&mxc_pwm_backlight_data);
+ 	mxc_register_device(&mxc_keypad_device, &keypad_plat_data);
+ 	mxcsdhc1_device.resource[2].start = IOMUX_TO_IRQ(MX51_PIN_GPIO1_0);
+ 	mxcsdhc1_device.resource[2].end = IOMUX_TO_IRQ(MX51_PIN_GPIO1_0);
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index 2b378e5..f7eae32 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -1203,7 +1203,8 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_dvfs_per_device, &dvfs_per_data);
+ 	mxc_register_device(&mxc_iim_device, NULL);
+ 	mxc_register_device(&mxc_pwm1_device, NULL);
+-	mxc_register_device(&mxc_pwm_backlight_device, &mxc_pwm_backlight_data);
++	mxc_register_device(&mxc_pwm1_backlight_device,
++		&mxc_pwm_backlight_data);
+ 	mxc_register_device(&mxc_keypad_device, &keypad_plat_data);
+ 	mxc_register_device(&mxcsdhc1_device, &mmc1_data);
+ 	mxc_register_device(&mxcsdhc2_device, &mmc2_data);
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 03d0e4c..d58015d 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -465,11 +465,26 @@ void mx53_ard_set_num_cpu_wp(int num)
+ 	return;
+ }
+ 
+-static struct platform_pwm_backlight_data mxc_pwm_backlight_data = {
++static struct mxc_pwm_platform_data mxc_pwm1_platform_data = {
++	.pwmo_invert = 1,
++};
++
++static struct platform_pwm_backlight_data mxc_pwm1_backlight_data = {
++	.pwm_id = 0,
++	.max_brightness = 255,
++	.dft_brightness = 128,
++	.pwm_period_ns = 5000000,
++};
++
++static struct mxc_pwm_platform_data mxc_pwm2_platform_data = {
++	.pwmo_invert = 1,
++};
++
++static struct platform_pwm_backlight_data mxc_pwm2_backlight_data = {
+ 	.pwm_id = 1,
+ 	.max_brightness = 255,
+ 	.dft_brightness = 128,
+-	.pwm_period_ns = 78770,
++	.pwm_period_ns = 5000000,
+ };
+ 
+ static void flexcan_xcvr_enable(int id, int en)
+@@ -1349,8 +1364,14 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&busfreq_device, NULL);
+ 
+ 	mxc_register_device(&mxc_iim_device, NULL);
+-	mxc_register_device(&mxc_pwm2_device, NULL);
+-	mxc_register_device(&mxc_pwm_backlight_device, &mxc_pwm_backlight_data);
++
++	mxc_register_device(&mxc_pwm1_device, &mxc_pwm1_platform_data);
++	mxc_register_device(&mxc_pwm1_backlight_device,
++		&mxc_pwm1_backlight_data);
++
++	mxc_register_device(&mxc_pwm2_device, &mxc_pwm2_platform_data);
++	mxc_register_device(&mxc_pwm2_backlight_device,
++		&mxc_pwm2_backlight_data);
+ 
+ 	mxc_register_device(&mxc_flexcan0_device, &flexcan0_data);
+ 	mxc_register_device(&mxc_flexcan1_device, &flexcan1_data);
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 107973e..d7ecaee 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -1643,7 +1643,8 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_iim_device, NULL);
+ 	if (!board_is_mx53_arm2()) {
+ 		mxc_register_device(&mxc_pwm2_device, NULL);
+-		mxc_register_device(&mxc_pwm_backlight_device, &mxc_pwm_backlight_data);
++		mxc_register_device(&mxc_pwm1_backlight_device,
++			&mxc_pwm_backlight_data);
+ 	}
+ 	mxc_register_device(&mxc_flexcan0_device, &flexcan0_data);
+ 	mxc_register_device(&mxc_flexcan1_device, &flexcan1_data);
+-- 
+1.5.4.4
+

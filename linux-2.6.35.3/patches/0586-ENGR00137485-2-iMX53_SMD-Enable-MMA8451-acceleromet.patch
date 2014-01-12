@@ -1,0 +1,50 @@
+From a21adf2ae2f26f44f95fd7ecfd5a0ced6d386861 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Fri, 31 Dec 2010 01:05:25 +0800
+Subject: [PATCH] ENGR00137485-2 iMX53_SMD: Enable MMA8451 accelerometer sensor
+
+Enable MMA8451 accelerometer sensor on imx53_smd board.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig |    3 ++-
+ arch/arm/mach-mx5/mx53_smd.c    |    2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index a984330..8fb5404 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.35.3
+-# Wed Dec 29 20:42:09 2010
++# Fri Dec 31 01:04:45 2010
+ #
+ CONFIG_ARM=y
+ CONFIG_HAVE_PWM=y
+@@ -1226,6 +1226,7 @@ CONFIG_SENSORS_MAX17135=y
+ # CONFIG_SENSORS_LIS3_SPI is not set
+ # CONFIG_SENSORS_LIS3_I2C is not set
+ CONFIG_SENSORS_ISL29003=y
++CONFIG_MXC_MMA8451=y
+ # CONFIG_THERMAL is not set
+ CONFIG_WATCHDOG=y
+ CONFIG_WATCHDOG_NOWAYOUT=y
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 42d266b..0b4098b 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -756,7 +756,7 @@ static struct imxi2c_platform_data mxci2c_data = {
+ 
+ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
+ 	{
+-	.type = "mma8450",
++	.type = "mma8451",
+ 	.addr = 0x1C,
+ 	 },
+ };
+-- 
+1.5.4.4
+

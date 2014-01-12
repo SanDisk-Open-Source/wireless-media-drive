@@ -1,0 +1,115 @@
+From e3f5232e3d7461f9ab4fd4277db2bb91fefe12cc Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 3 Sep 2009 18:14:01 +0800
+Subject: [PATCH] ENGR00116203: Change nand Makefile to use CONFIG_MXC_NAND.
+
+Change nand Makefile to use CONFIG_MXC_NAND.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ drivers/mtd/nand/Makefile             |    3 +--
+ include/configs/mx35_3stack.h         |    1 +
+ include/configs/mx35_3stack_mmc.h     |    2 +-
+ include/configs/mx51_3stack.h         |    1 +
+ include/configs/mx51_3stack_android.h |    6 ++++--
+ 5 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mtd/nand/Makefile b/drivers/mtd/nand/Makefile
+index 29f316b..ecf2803 100644
+--- a/drivers/mtd/nand/Makefile
++++ b/drivers/mtd/nand/Makefile
+@@ -48,8 +48,7 @@ COBJS-$(CONFIG_NAND_OMAP_GPMC) += omap_gpmc.o
+ COBJS-$(CONFIG_NAND_PLAT) += nand_plat.o
+ COBJS-$(CONFIG_MX25) += mxc_nand.o
+ COBJS-$(CONFIG_MX31_NAND) += mx31_nand.o
+-COBJS-$(CONFIG_MX35) += mxc_nand.o
+-COBJS-$(CONFIG_MX51) += mxc_nand.o
++COBJS-$(CONFIG_MXC_NAND) += mxc_nand.o
+ endif
+ 
+ COBJS	:= $(COBJS-y)
+diff --git a/include/configs/mx35_3stack.h b/include/configs/mx35_3stack.h
+index b78f48e..e0181d1 100644
+--- a/include/configs/mx35_3stack.h
++++ b/include/configs/mx35_3stack.h
+@@ -86,6 +86,7 @@
+ /*#define CONFIG_CMD_SPI*/
+ /*#define CONFIG_CMD_DATE*/
+ #define CONFIG_CMD_NAND
++#define CONFIG_MXC_NAND
+ 
+ #define CONFIG_CMD_I2C
+ #define CONFIG_CMD_MII
+diff --git a/include/configs/mx35_3stack_mmc.h b/include/configs/mx35_3stack_mmc.h
+index d4bf467..1676004 100644
+--- a/include/configs/mx35_3stack_mmc.h
++++ b/include/configs/mx35_3stack_mmc.h
+@@ -85,7 +85,7 @@
+ #define CONFIG_CMD_DHCP
+ /*#define CONFIG_CMD_SPI*/
+ /*#define CONFIG_CMD_DATE*/
+-#define CONFIG_CMD_NAND
++/*#define CONFIG_CMD_NAND*/
+ 
+ #define CONFIG_CMD_I2C
+ #define CONFIG_CMD_MII
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 2cee9d6..bf9440b 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -101,6 +101,7 @@
+ #define CONFIG_CMD_DHCP
+ /* Enable below configure when supporting nand */
+ #define CONFIG_CMD_NAND
++#define CONFIG_MXC_NAND
+ #define CONFIG_CMD_ENV
+ #undef CONFIG_CMD_IMLS
+ 
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index c4958c0..153993b 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -25,7 +25,6 @@
+ #define __CONFIG_H
+ 
+ #include <asm/arch/mx51.h>
+-#include <asm/arch/keypad.h>
+ 
+  /* High Level Configuration Options */
+ #define CONFIG_ARMV7		1	/* This is armv7 Cortex-A8 CPU core */
+@@ -72,6 +71,7 @@
+ /*
+  * SPI Configs
+  * */
++/*
+ #define CONFIG_FSL_SF		1
+ #define CONFIG_CMD_SPI
+ #define CONFIG_CMD_SF
+@@ -82,6 +82,7 @@
+ #define CONFIG_IMX_SPI_PMIC_CS 0
+ 
+ #define MAX_SPI_BYTES		(64 * 4)
++*/
+ 
+ /*
+  * MMC Configs
+@@ -151,6 +152,7 @@
+ #define CONFIG_CMD_DHCP
+ /* Enable below configure when supporting nand */
+ #define CONFIG_CMD_NAND
++#define CONFIG_MXC_NAND
+ #define CONFIG_CMD_ENV
+ 
+ #undef CONFIG_CMD_IMLS
+@@ -168,7 +170,7 @@
+ 		"uboot_addr=0xa0000000\0"				\
+ 		"uboot=u-boot.bin\0"			\
+ 		"kernel=uImage\0"				\
+-		"rd_loadaddr=0x90B00000\0"
++		"rd_loadaddr=0x90B00000\0"	\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+ 		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
+ 		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
+-- 
+1.5.4.4
+

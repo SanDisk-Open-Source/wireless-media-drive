@@ -1,0 +1,28 @@
+From 2c8df33031419235872d398d39b46d2f502c23d8 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Fri, 31 Dec 2010 10:14:32 +0800
+Subject: [PATCH] ENGR00137447-2 MSL edid: add mxc edid header file
+
+Add mxc edid header file.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/mxc_edid.h |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_edid.h b/arch/arm/plat-mxc/include/mach/mxc_edid.h
+index 8c52fd4..155ec36 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc_edid.h
++++ b/arch/arm/plat-mxc/include/mach/mxc_edid.h
+@@ -27,7 +27,6 @@
+ #define MXC_EDID_H
+ 
+ int read_edid(struct i2c_adapter *adp,
+-	       struct fb_var_screeninfo *einfo,
+-	       int *dvi);
++	       unsigned char *edid);
+ 
+ #endif
+-- 
+1.5.4.4
+

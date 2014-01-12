@@ -1,0 +1,35 @@
+From 29bd21dce9ec998adfd2dd5d12326acae60d9a8f Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Sun, 19 Sep 2010 11:22:09 +0800
+Subject: [PATCH] ENGR00131704 MXC FB:Refine initialization for SII9022 transmitter
+
+1) Return directly if the first access to SII9022 transmitter via
+   I2C bus fails.
+2) Remove the msleep function in probe.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/video/mxc/mxcfb_sii9022.c |    7 +++++--
+ 1 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/video/mxc/mxcfb_sii9022.c b/drivers/video/mxc/mxcfb_sii9022.c
+index e37d8d2..dad16e9 100644
+--- a/drivers/video/mxc/mxcfb_sii9022.c
++++ b/drivers/video/mxc/mxcfb_sii9022.c
+@@ -137,8 +137,11 @@ static int __devinit sii9022_probe(struct i2c_client *client,
+ 	}
+ 
+ 	/* Set 9022 in hardware TPI mode on and jump out of D3 state */
+-	i2c_smbus_write_byte_data(sii9022_client, 0xc7, 0x00);
+-	msleep(10);
++	if (i2c_smbus_write_byte_data(sii9022_client, 0xc7, 0x00) < 0) {
++		dev_err(&sii9022_client->dev,
++			"SII9022: cound not find device\n");
++		return -ENODEV;
++	}
+ 
+ 	/* read device ID */
+ 	for (i = 10; i > 0; i--) {
+-- 
+1.5.4.4
+

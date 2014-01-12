@@ -1,0 +1,138 @@
+From 4bead8462c52d817acf1db05a33740a9ac0f30e7 Mon Sep 17 00:00:00 2001
+From: Jie Zhou <b30303@freescale.com>
+Date: Thu, 25 Nov 2010 15:19:42 +0800
+Subject: [PATCH] ENGR00134150 GPU: destroy device in workqueue for error interrupts
+
+If GPU error interrupt detected, related device will be destroyed.
+In the destory function, device_idle and mutex_lock may cause sleep,
+which may cause kernel crash, so delay the device destroy to the
+workqueue to avoid this.
+
+Signed-off-by: Jie Zhou <b30303@freescale.com>
+---
+ drivers/mxc/amd-gpu/common/gsl_g12.c        |   12 ++++++++++--
+ drivers/mxc/amd-gpu/common/gsl_mmu.c        |    3 ++-
+ drivers/mxc/amd-gpu/common/gsl_ringbuffer.c |    4 ++--
+ drivers/mxc/amd-gpu/common/gsl_yamato.c     |   13 +++++++++++--
+ drivers/mxc/amd-gpu/include/gsl_device.h    |    1 +
+ 5 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/mxc/amd-gpu/common/gsl_g12.c b/drivers/mxc/amd-gpu/common/gsl_g12.c
+index c8c22a9..8286e8e 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_g12.c
++++ b/drivers/mxc/amd-gpu/common/gsl_g12.c
+@@ -138,8 +138,9 @@ kgsl_g12_intrcallback(gsl_intrid_t id, void *cookie)
+ 
+         // error condition interrupt
+         case GSL_INTR_G12_FIFO:
+-            device->ftbl.device_destroy(device);
+-            break;
++		printk(KERN_ERR "GPU: Z160 FIFO Error\n");
++		schedule_work(&device->irq_err_work);
++		break;
+ 
+         case GSL_INTR_G12_MH:
+             // don't do anything. this is handled by the MMU manager
+@@ -252,6 +253,12 @@ static void kgsl_g12_irqtask(struct work_struct *work)
+ 	kgsl_g12_updatetimestamp(device);
+ 	wake_up_interruptible_all(&device->timestamp_waitq);
+ }
++
++static void kgsl_g12_irqerr(struct work_struct *work)
++{
++	gsl_device_t *device = &gsl_driver.device[GSL_DEVICE_G12-1];
++	device->ftbl.device_destroy(device);
++}
+ #endif
+ 
+ //----------------------------------------------------------------------------
+@@ -315,6 +322,7 @@ kgsl_g12_init(gsl_device_t *device)
+ #elif defined(_LINUX)
+ 	device->irq_workq = create_singlethread_workqueue("z1xx_workq");
+ 	INIT_WORK(&device->irq_work, kgsl_g12_irqtask);
++	INIT_WORK(&device->irq_err_work, kgsl_g12_irqerr);
+ #else
+     #pragma warning(disable:4152)
+     device->irq_thread_handle = kos_thread_create( (oshandle_t)irq_thread, &(device->irq_thread) );
+diff --git a/drivers/mxc/amd-gpu/common/gsl_mmu.c b/drivers/mxc/amd-gpu/common/gsl_mmu.c
+index 1250cdb..810a058 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_mmu.c
++++ b/drivers/mxc/amd-gpu/common/gsl_mmu.c
+@@ -156,7 +156,8 @@ kgsl_mh_intrcallback(gsl_intrid_t id, void *cookie)
+         id == gsl_cfg_mh_intr[devindex].AXI_WRITE_ERROR ||
+         id == gsl_cfg_mh_intr[devindex].MMU_PAGE_FAULT)
+     {
+-        mmu->device->ftbl.device_destroy(mmu->device);
++	printk(KERN_ERR "GPU: AXI Read/Write Error or MMU page fault\n");
++	schedule_work(&mmu->device->irq_err_work);
+     }
+ 
+     kgsl_log_write( KGSL_LOG_GROUP_MEMORY | KGSL_LOG_LEVEL_TRACE, "<-- kgsl_mh_intrcallback.\n" );
+diff --git a/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c b/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c
+index ed922ef..76c6c70 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c
++++ b/drivers/mxc/amd-gpu/common/gsl_ringbuffer.c
+@@ -86,8 +86,8 @@ kgsl_cp_intrcallback(gsl_intrid_t id, void *cookie)
+         case GSL_INTR_YDX_CP_PROTECTED_MODE_ERROR:
+         case GSL_INTR_YDX_CP_RESERVED_BIT_ERROR:
+         case GSL_INTR_YDX_CP_IB_ERROR:
+-
+-            rb->device->ftbl.device_destroy(rb->device);
++	    printk(KERN_ERR "GPU: CP Error\n");
++	    schedule_work(&rb->device->irq_err_work);
+             break;
+ 
+         // non-error condition interrupt
+diff --git a/drivers/mxc/amd-gpu/common/gsl_yamato.c b/drivers/mxc/amd-gpu/common/gsl_yamato.c
+index 658cd80..a9a73fa 100644
+--- a/drivers/mxc/amd-gpu/common/gsl_yamato.c
++++ b/drivers/mxc/amd-gpu/common/gsl_yamato.c
+@@ -78,8 +78,8 @@ kgsl_yamato_rbbmintrcallback(gsl_intrid_t id, void *cookie)
+     {
+         // error condition interrupt
+         case GSL_INTR_YDX_RBBM_READ_ERROR:
+-
+-            device->ftbl.device_destroy(device);
++	    printk(KERN_ERR "GPU: Z430 RBBM Read Error\n");
++	    schedule_work(&device->irq_err_work);
+             break;
+ 
+         // non-error condition interrupt
+@@ -316,6 +316,12 @@ kgsl_yamato_setpagetable(gsl_device_t *device, unsigned int reg_ptbase, gpuaddr_
+ 
+ //----------------------------------------------------------------------------
+ 
++static void kgsl_yamato_irqerr(struct work_struct *work)
++{
++	gsl_device_t *device = &gsl_driver.device[GSL_DEVICE_YAMATO-1];
++	device->ftbl.device_destroy(device);
++}
++
+ int
+ kgsl_yamato_init(gsl_device_t *device)
+ {
+@@ -362,6 +368,9 @@ kgsl_yamato_init(gsl_device_t *device)
+         return (status);
+     }
+ 
++    /* handle error condition */
++    INIT_WORK(&device->irq_err_work, kgsl_yamato_irqerr);
++
+     return(status);
+ }
+ 
+diff --git a/drivers/mxc/amd-gpu/include/gsl_device.h b/drivers/mxc/amd-gpu/include/gsl_device.h
+index 087dcc1..07c1438 100644
+--- a/drivers/mxc/amd-gpu/include/gsl_device.h
++++ b/drivers/mxc/amd-gpu/include/gsl_device.h
+@@ -123,6 +123,7 @@ struct _gsl_device_t {
+ 	wait_queue_head_t timestamp_waitq;
+ 	struct workqueue_struct	*irq_workq;
+ 	struct work_struct irq_work;	
++	struct work_struct irq_err_work;
+ #endif
+     void              *autogate;
+ };
+-- 
+1.5.4.4
+

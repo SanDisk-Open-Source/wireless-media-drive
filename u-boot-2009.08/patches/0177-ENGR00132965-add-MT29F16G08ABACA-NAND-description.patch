@@ -1,0 +1,31 @@
+From 7906a1ae5053d5c98fadf60c8d34ef1f6a967628 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Tue, 26 Oct 2010 14:22:03 +0800
+Subject: [PATCH] ENGR00132965 add MT29F16G08ABACA NAND description
+
+Add MT29F16G08ABACA NAND description
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ drivers/mtd/nand/nand_device_info.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_device_info.c b/drivers/mtd/nand/nand_device_info.c
+index c840672..de25132 100644
+--- a/drivers/mtd/nand/nand_device_info.c
++++ b/drivers/mtd/nand/nand_device_info.c
+@@ -515,6 +515,11 @@ static struct nand_device_info nand_device_info_table_type_2[] =
+ 	 .data_setup_in_ns         = 15,
+ 	 .data_hold_in_ns          = 10,
+ 	 .address_setup_in_ns      = 20,
++	 .gpmi_sample_delay_in_ns  = 6,
++	 .tREA_in_ns               = 20,
++	 .tRLOH_in_ns              = 5,
++	 .tRHOH_in_ns              = 15,
++	 "MT29F16G08ABACA(2GB)",
+ 	},
+ 	{true}
+ };
+-- 
+1.5.4.4
+

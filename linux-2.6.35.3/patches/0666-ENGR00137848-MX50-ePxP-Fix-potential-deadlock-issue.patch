@@ -1,0 +1,69 @@
+From ff12d13b45b4d02d7e095c3b7ef7ab6f79eeb018 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Tue, 11 Jan 2011 17:09:40 +0800
+Subject: [PATCH] ENGR00137848 MX50 ePxP: Fix potential deadlock issue
+
+Remove spin lock within pxpdma_desc_put(),
+because the caller has held the lock already.
+
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ drivers/dma/pxp/pxp_dma.c |   11 +++++------
+ 1 files changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/dma/pxp/pxp_dma.c b/drivers/dma/pxp/pxp_dma.c
+index 92a2434..fb43e27 100644
+--- a/drivers/dma/pxp/pxp_dma.c
++++ b/drivers/dma/pxp/pxp_dma.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -959,8 +959,8 @@ static irqreturn_t pxp_irq(int irq, void *dev_id)
+ 	return IRQ_HANDLED;
+ }
+ 
+-/* called with pxp_chan->lock hold */
+-static struct pxp_tx_desc *pxp_desc_get(struct pxp_channel *pxp_chan)
++/* called with pxp_chan->lock held */
++static struct pxp_tx_desc *pxpdma_desc_get(struct pxp_channel *pxp_chan)
+ {
+ 	struct pxp_tx_desc *desc, *_desc;
+ 	struct pxp_tx_desc *ret = NULL;
+@@ -974,6 +974,7 @@ static struct pxp_tx_desc *pxp_desc_get(struct pxp_channel *pxp_chan)
+ 	return ret;
+ }
+ 
++/* called with pxp_chan->lock held */
+ static void pxpdma_desc_put(struct pxp_channel *pxp_chan,
+ 			    struct pxp_tx_desc *desc)
+ {
+@@ -982,13 +983,11 @@ static void pxpdma_desc_put(struct pxp_channel *pxp_chan,
+ 		struct pxp_tx_desc *child;
+ 		unsigned long flags;
+ 
+-		spin_lock_irqsave(&pxp_chan->lock, flags);
+ 		list_for_each_entry(child, &desc->tx_list, list)
+ 		    dev_info(dev, "moving child desc %p to freelist\n", child);
+ 		list_splice_init(&desc->tx_list, &pxp_chan->free_list);
+ 		dev_info(dev, "moving desc %p to freelist\n", desc);
+ 		list_add(&desc->list, &pxp_chan->free_list);
+-		spin_unlock_irqrestore(&pxp_chan->lock, flags);
+ 	}
+ }
+ 
+@@ -1022,7 +1021,7 @@ static struct dma_async_tx_descriptor *pxp_prep_slave_sg(struct dma_chan *chan,
+ 
+ 	spin_lock_irqsave(&pxp_chan->lock, flags);
+ 	for_each_sg(sgl, sg, sg_len, i) {
+-		desc = pxp_desc_get(pxp_chan);
++		desc = pxpdma_desc_get(pxp_chan);
+ 		if (!desc) {
+ 			pxpdma_desc_put(pxp_chan, first);
+ 			dev_err(chan->device->dev, "Can't get DMA desc.\n");
+-- 
+1.5.4.4
+

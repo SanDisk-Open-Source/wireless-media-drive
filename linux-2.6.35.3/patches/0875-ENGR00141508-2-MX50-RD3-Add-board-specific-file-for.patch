@@ -1,0 +1,471 @@
+From 8b101289a61ec1da969bdf0ac3c6697ccecb44b2 Mon Sep 17 00:00:00 2001
+From: Robby Cai <R63905@freescale.com>
+Date: Sat, 2 Apr 2011 18:20:30 +0800
+Subject: [PATCH] ENGR00141508-2 MX50 RD3: Add board-specific file for PMIC Ripley
+
+register PMIC spi device and platform data.
+
+Signed-off-by: Anson Huang <b20788@freescale.com>
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+Signed-off-by: Robby Cai <R63905@freescale.com>
+---
+ arch/arm/configs/imx5_defconfig           |    7 +-
+ arch/arm/mach-mx5/Makefile                |    2 +-
+ arch/arm/mach-mx5/mx50_rdp.c              |   17 ++-
+ arch/arm/mach-mx5/mx50_rdp_pmic_mc34708.c |  337 +++++++++++++++++++++++++++++
+ 4 files changed, 360 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/configs/imx5_defconfig b/arch/arm/configs/imx5_defconfig
+index 1566145..de0478e 100644
+--- a/arch/arm/configs/imx5_defconfig
++++ b/arch/arm/configs/imx5_defconfig
+@@ -1300,6 +1300,7 @@ CONFIG_REGULATOR_FIXED_VOLTAGE=y
+ # CONFIG_REGULATOR_TPS65023 is not set
+ # CONFIG_REGULATOR_TPS6507X is not set
+ CONFIG_REGULATOR_MC13892=y
++CONFIG_REGULATOR_MC34708=y
+ CONFIG_REGULATOR_LTC3589=y
+ CONFIG_REGULATOR_MAX17135=y
+ CONFIG_REGULATOR_DA9052=y
+@@ -2086,7 +2087,8 @@ CONFIG_MXC_IPU_V3=y
+ CONFIG_MXC_PMIC=y
+ # CONFIG_MXC_PMIC_MC13783 is not set
+ CONFIG_MXC_PMIC_MC13892=y
+-CONFIG_MXC_PMIC_I2C=y
++CONFIG_MXC_PMIC_MC34708=y
++# CONFIG_MXC_PMIC_I2C is not set
+ CONFIG_MXC_PMIC_SPI=y
+ # CONFIG_MXC_PMIC_MC34704 is not set
+ # CONFIG_MXC_PMIC_MC9SDZ60 is not set
+@@ -2101,6 +2103,9 @@ CONFIG_MXC_MC13892_LIGHT=y
+ CONFIG_MXC_MC13892_BATTERY=m
+ CONFIG_MXC_MC13892_CONNECTIVITY=y
+ CONFIG_MXC_MC13892_POWER=y
++CONFIG_MXC_MC34708_ADC=y
++CONFIG_MXC_MC34708_RTC=y
++# CONFIG_MXC_MC34708_BATTERY is not set
+ # CONFIG_MXC_PMIC_MC9S08DZ60 is not set
+ 
+ #
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index 417f790..784fb26 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -17,5 +17,5 @@ obj-$(CONFIG_MACH_MX53_ARD) += mx53_ard.o mx53_ard_pmic_ltc3589.o
+ obj-$(CONFIG_MACH_MX53_SMD) += mx53_smd.o mx53_smd_pmic_da9053.o
+ obj-$(CONFIG_MACH_MX53_LOCO) += mx53_loco.o mx53_loco_pmic_da9053.o
+ obj-$(CONFIG_MACH_MX50_ARM2) += mx50_arm2.o mx50_arm2_pmic_mc13892.o
+-obj-$(CONFIG_MACH_MX50_RDP) += mx50_rdp.o mx50_rdp_pmic_mc13892.o
++obj-$(CONFIG_MACH_MX50_RDP) += mx50_rdp.o mx50_rdp_pmic_mc13892.o mx50_rdp_pmic_mc34708.o
+ obj-$(CONFIG_MXC_BLUETOOTH_RFKILL) += mx53_smd_rfkill.o
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 6a78ac9..f824c08 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -118,8 +118,10 @@
+ #define USB_OTG_PWR	(5*32 + 25) /*GPIO_6_25*/
+ #define DCDC_EN (3*32 + 16) /*GPIO_4_16*/
+ #define UART1_RTS (5*32 + 9) /*GPIO_6_9*/
++#define UART2_RX (5*32 + 11) /*GPIO_6_11*/
+ 
+ extern int __init mx50_rdp_init_mc13892(void);
++extern int __init mx50_rdp_init_mc34708(void);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void (*set_num_cpu_wp)(int num);
+ extern struct dvfs_wp *(*get_dvfs_core_wp)(int *wp);
+@@ -324,6 +326,7 @@ static iomux_v3_cfg_t mx50_rd3_adjust[] = {
+ 	MX50_PAD_DISP_CS__ELCDIF_HSYNC,
+ 	MX50_PAD_DISP_BUSY__GPIO_2_18,
+ 	MX50_PAD_UART1_RTS__GPIO_6_9,	/* SD2 VDD */
++	MX50_PAD_UART2_RXD__GPIO_6_11,
+ };
+ 
+ static iomux_v3_cfg_t mx50_gpmi_nand[] = {
+@@ -1542,6 +1545,9 @@ static void __init mx50_rdp_io_init(void)
+ 	if (board_is_mx50_rd3()) {
+ 		gpio_request(UART1_RTS, "sd2-vdd");
+ 		gpio_direction_output(UART1_RTS, 1);
++		/* isolate EIM signals and boot configuration signals. */
++		gpio_request(UART2_RX, "eim-bootcfg-iso");
++		gpio_direction_output(UART2_RX, 0);
+ 	}
+ 
+ 	if (enable_w1) {
+@@ -1596,13 +1602,19 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&mxc_pxp_device, NULL);
+ 	mxc_register_device(&mxc_pxp_client_device, NULL);
+ 	mxc_register_device(&mxc_pxp_v4l2, NULL);
++	if (board_is_mx50_rd3())
++		bus_freq_data.gp_reg_id = "SW1A";
+ 	mxc_register_device(&busfreq_device, &bus_freq_data);
+ 	mxc_register_device(&pm_device, &mx50_pm_data);
++	if (board_is_mx50_rd3())
++		dvfs_core_data.reg_id = "SW1A";
+ 	mxc_register_device(&mxc_dvfs_core_device, &dvfs_core_data);
+ 	if (enable_keypad)
+ 		mxc_register_device(&mxc_keypad_device, &keypad_plat_data);
+ 
+ 	mxc_register_device(&mxcsdhc1_device, &mmc1_data);
++	if (board_is_mx50_rd3())
++		mmc2_data.power_mmc = NULL;
+ 	mxc_register_device(&mxcsdhc2_device, &mmc2_data);
+ 	mxc_register_device(&mxcsdhc3_device, &mmc3_data);
+ 	mxc_register_device(&mxc_ssi1_device, NULL);
+@@ -1629,7 +1641,10 @@ static void __init mxc_board_init(void)
+ 	mxc_register_device(&fixed_volt_reg_device, &fixed_volt_reg_pdata);
+ 	if (mx50_revision() >= IMX_CHIP_REVISION_1_1)
+ 		mxc_register_device(&mxc_zq_calib_device, NULL);
+-	mx50_rdp_init_mc13892();
++	if (board_is_mx50_rd3())
++		mx50_rdp_init_mc34708();
++	else
++		mx50_rdp_init_mc13892();
+ /*
+ 	pm_power_off = mxc_power_off;
+ 	*/
+diff --git a/arch/arm/mach-mx5/mx50_rdp_pmic_mc34708.c b/arch/arm/mach-mx5/mx50_rdp_pmic_mc34708.c
+new file mode 100644
+index 0000000..4fcc9d6
+--- /dev/null
++++ b/arch/arm/mach-mx5/mx50_rdp_pmic_mc34708.c
+@@ -0,0 +1,337 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/spi/spi.h>
++#include <linux/err.h>
++#include <linux/pmic_external.h>
++#include <linux/regulator/machine.h>
++#include <linux/mfd/mc34708/core.h>
++#include <mach/irqs.h>
++#include <mach/iomux-mx50.h>
++
++#include <mach/gpio.h>
++/*
++ * Convenience conversion.
++ * Here atm, maybe there is somewhere better for this.
++ */
++#define mV_to_uV(mV) (mV * 1000)
++#define uV_to_mV(uV) (uV / 1000)
++#define V_to_uV(V) (mV_to_uV(V * 1000))
++#define uV_to_V(uV) (uV_to_mV(uV) / 1000)
++
++/* regulator standby mask */
++#define GEN1_STBY_MASK		(1 << 1)
++#define GEN2_STBY_MASK		(1 << 13)
++#define PLL_STBY_MASK		(1 << 16)
++#define USB2_STBY_MASK		(1 << 19)
++#define USB_EN_MASK			(1 << 3)
++
++
++#define REG_MODE_0_ALL_MASK	(GEN1_STBY_MASK | PLL_STBY_MASK\
++				| GEN2_STBY_MASK | USB2_STBY_MASK)
++
++#define SW1A_MODE_MASK		(0xf << 0)
++#define SW2_MODE_MASK		(0xf << 14)
++#define SW1A_MODE_VALUE		(0xd << 0)
++#define SW2_MODE_VALUE		(0xd << 14)
++
++#define REG_SW_1_2_MASK	(SW1A_MODE_MASK | SW2_MODE_MASK)
++#define REG_SW_1_2_VALUE	(SW1A_MODE_VALUE | SW2_MODE_VALUE)
++
++#define SW3_MODE_MASK		(0xf << 0)
++#define SW4A_MODE_MASK		(0xf << 6)
++#define SW4B_MODE_MASK		(0xf << 12)
++#define SW5_MODE_MASK		(0xf << 18)
++
++#define SW3_MODE_VALUE		(0xd << 0)
++#define SW4A_MODE_VALUE		(0xd << 6)
++#define SW4B_MODE_VALUE		(0xd << 12)
++#define SW5_MODE_VALUE		(0xd << 18)
++
++#define REG_SW_3_4_5_MASK	(SW3_MODE_MASK | SW4A_MODE_MASK\
++				| SW4B_MODE_MASK | SW5_MODE_MASK)
++#define REG_SW_3_4_5_VALUE	(SW3_MODE_VALUE | SW4A_MODE_VALUE\
++					| SW4B_MODE_VALUE | SW5_MODE_VALUE)
++
++#define SWBST_MODE_MASK		(0x3 << 5)
++#define SWBST_MODE_VALUE	(0x1 << 5)
++
++#define REG_SWBST_MODE_MASK	(SWBST_MODE_MASK)
++#define REG_SWBST_MODE_VALUE	(SWBST_MODE_VALUE)
++
++#define SWHOLD_MASK		(0x1 << 12)
++
++#define	ECSPI2_MISO_GP4_18	(3 * 32 + 18)
++
++struct mc34708;
++
++static struct regulator_init_data sw1a_init = {
++	.constraints = {
++		.name = "SW1",
++		.min_uV = 650000,
++		.max_uV = 1437500,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_modes_mask = 0,
++		.always_on = 1,
++		.boot_on = 1,
++		.initial_state = PM_SUSPEND_MEM,
++		.state_mem = {
++			.uV = 850000,
++			.mode = REGULATOR_MODE_NORMAL,
++			.enabled = 1,
++		},
++	},
++};
++
++static struct regulator_init_data sw1b_init = {
++	.constraints = {
++		.name = "SW1B",
++		.min_uV = 650000,
++		.max_uV = 1437500,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.valid_modes_mask = 0,
++		.always_on = 1,
++		.boot_on = 1,
++	},
++};
++
++static struct regulator_init_data sw2_init = {
++	.constraints = {
++		.name = "SW2",
++		.min_uV = 650000,
++		.max_uV = 1437500,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++		.initial_state = PM_SUSPEND_MEM,
++		.state_mem = {
++			.uV = 950000,
++			.mode = REGULATOR_MODE_NORMAL,
++			.enabled = 1,
++		},
++	}
++};
++
++static struct regulator_init_data sw3_init = {
++	.constraints = {
++		.name = "SW3",
++		.min_uV = 650000,
++		.max_uV = 1425000,
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++		.initial_state = PM_SUSPEND_MEM,
++		.state_mem = {
++			.uV = 950000,
++			.mode = REGULATOR_MODE_NORMAL,
++			.enabled = 1,
++		},
++	}
++};
++
++static struct regulator_init_data sw4a_init = {
++	.constraints = {
++		.name = "SW4A",
++		.min_uV = mV_to_uV(1200),
++		.max_uV = mV_to_uV(3300),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++	}
++};
++
++static struct regulator_init_data sw4b_init = {
++	.constraints = {
++		.name = "SW4B",
++		.min_uV = mV_to_uV(1200),
++		.max_uV = mV_to_uV(3300),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++	}
++};
++
++static struct regulator_init_data sw5_init = {
++	.constraints = {
++		.name = "SW5",
++		.min_uV = mV_to_uV(1200),
++		.max_uV = mV_to_uV(1975),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++		.boot_on = 1,
++	}
++};
++
++static struct regulator_init_data vrefddr_init = {
++	.constraints = {
++		.name = "VREFDDR",
++		.always_on = 1,
++		.boot_on = 1,
++	}
++};
++
++static struct regulator_init_data vusb_init = {
++	.constraints = {
++		.name = "VUSB",
++		.valid_ops_mask = REGULATOR_CHANGE_STATUS,
++		.boot_on = 1,
++		.always_on = 1,
++	}
++};
++
++static struct regulator_init_data swbst_init = {
++	.constraints = {
++		.name = "SWBST",
++		.boot_on = 1,
++		.always_on = 1,
++	}
++};
++
++static struct regulator_init_data vpll_init = {
++	.constraints = {
++		.name = "VPLL",
++		.min_uV = mV_to_uV(1200),
++		.max_uV = mV_to_uV(1800),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.boot_on = 1,
++	},
++};
++
++static struct regulator_init_data vdac_init = {
++	.constraints = {
++		.name = "VDAC",
++		.min_uV = mV_to_uV(2500),
++		.max_uV = mV_to_uV(2775),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.boot_on = 1,
++		.always_on = 1,
++	}
++};
++
++static struct regulator_init_data vusb2_init = {
++	.constraints = {
++		.name = "VUSB2",
++		.min_uV = mV_to_uV(2500),
++		.max_uV = mV_to_uV(3000),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.boot_on = 1,
++		.always_on = 1,
++	}
++};
++
++static struct regulator_init_data vgen1_init = {
++	.constraints = {
++		.name = "VGEN1",
++		.min_uV = mV_to_uV(1200),
++		.max_uV = mV_to_uV(1550),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++	}
++};
++
++static struct regulator_init_data vgen2_init = {
++	.constraints = {
++		.name = "VGEN2",
++		.min_uV = mV_to_uV(2500),
++		.max_uV = mV_to_uV(3300),
++		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++		.always_on = 1,
++	}
++};
++
++
++static int mc34708_regulator_init(struct mc34708 *mc34708)
++{
++	unsigned int value, register_mask;
++
++	pmic_read_reg(REG_MC34708_IDENTIFICATION, &value, 0xffffff);
++	pr_info("PMIC MC34708 ID:0x%x\n", value);
++
++	/* enable standby controll for mode0 regulators */
++	pmic_read_reg(REG_MC34708_MODE_0, &value, 0xffffff);
++	value |= REG_MODE_0_ALL_MASK;
++	value &= ~USB_EN_MASK;
++	pmic_write_reg(REG_MC34708_MODE_0, value, 0xffffff);
++
++	/* enable standby controll for mode0 regulators */
++	pmic_read_reg(REG_MC34708_SW_1_2_OP, &value, 0xffffff);
++	value &= ~REG_SW_1_2_MASK;
++	value |= REG_SW_1_2_VALUE;
++	pmic_write_reg(REG_MC34708_SW_1_2_OP, value, 0xffffff);
++
++	/* enable standby controll for mode0 regulators */
++	pmic_read_reg(REG_MC34708_SW_3_4_5_OP, &value, 0xffffff);
++	value &= ~REG_SW_3_4_5_MASK;
++	value |= REG_SW_3_4_5_VALUE;
++	pmic_write_reg(REG_MC34708_SW_3_4_5_OP, value, 0xffffff);
++
++	/* enable standby controll for mode0 regulators */
++	pmic_read_reg(REG_MC34708_SWBST, &value, 0xffffff);
++	value &= ~REG_SWBST_MODE_MASK;
++	value |= REG_SWBST_MODE_VALUE;
++	pmic_write_reg(REG_MC34708_SWBST, value, 0xffffff);
++
++	/* clear SWHOLD bit  to enable USB MUX */
++	pmic_read_reg(REG_MC34708_USB_CONTROL, &value, 0xffffff);
++	value &= ~SWHOLD_MASK;
++	pmic_write_reg(REG_MC34708_USB_CONTROL, value, 0xffffff);
++
++	pr_info("Initializing mc34708 regulators for mx50 rdp.\n");
++
++	mc34708_register_regulator(mc34708, MC34708_SW1A, &sw1a_init);
++	mc34708_register_regulator(mc34708, MC34708_SW1B, &sw1b_init);
++	mc34708_register_regulator(mc34708, MC34708_SW2, &sw2_init);
++	mc34708_register_regulator(mc34708, MC34708_SW3, &sw3_init);
++	mc34708_register_regulator(mc34708, MC34708_SW4A, &sw4a_init);
++	mc34708_register_regulator(mc34708, MC34708_SW4B, &sw4b_init);
++	mc34708_register_regulator(mc34708, MC34708_SW5, &sw5_init);
++	mc34708_register_regulator(mc34708, MC34708_SWBST, &swbst_init);
++	mc34708_register_regulator(mc34708, MC34708_VPLL, &vpll_init);
++	mc34708_register_regulator(mc34708, MC34708_VREFDDR, &vrefddr_init);
++	mc34708_register_regulator(mc34708, MC34708_VDAC, &vdac_init);
++	mc34708_register_regulator(mc34708, MC34708_VUSB, &vusb_init);
++	mc34708_register_regulator(mc34708, MC34708_VUSB2, &vusb2_init);
++	mc34708_register_regulator(mc34708, MC34708_VGEN1, &vgen1_init);
++	mc34708_register_regulator(mc34708, MC34708_VGEN2, &vgen2_init);
++
++	regulator_has_full_constraints();
++
++	return 0;
++}
++
++static struct mc34708_platform_data mc34708_plat = {
++	.init = mc34708_regulator_init,
++};
++
++static struct spi_board_info __initdata mc34708_spi_device = {
++	.modalias = "mc34708",
++	.irq = gpio_to_irq(ECSPI2_MISO_GP4_18),
++	.max_speed_hz = 6000000,	/* max spi SCK clock speed in HZ */
++	.bus_num = 3,
++	.chip_select = 0,
++	.platform_data = &mc34708_plat,
++};
++
++
++int __init mx50_rdp_init_mc34708(void)
++{
++	return spi_register_board_info(&mc34708_spi_device, 1);
++}
+-- 
+1.5.4.4
+

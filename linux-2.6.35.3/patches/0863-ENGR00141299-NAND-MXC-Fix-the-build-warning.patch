@@ -1,0 +1,29 @@
+From 16430ef30173a51fb40daaed030d5028440e1bb0 Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Tue, 29 Mar 2011 17:57:54 +0800
+Subject: [PATCH] ENGR00141299: NAND/MXC: Fix the build warning
+
+Fix the the following build warning,
+drivers/mtd/nand/mxc_nd2.h:498:7: warning: "CONFIG_ARCH_MXC_HAS_NFC_V2"
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nd2.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nd2.h b/drivers/mtd/nand/mxc_nd2.h
+index 9f33c96..9d12517 100644
+--- a/drivers/mtd/nand/mxc_nd2.h
++++ b/drivers/mtd/nand/mxc_nd2.h
+@@ -495,7 +495,7 @@ do {	\
+ #define READ_PAGE()	send_read_page(0)
+ #define PROG_PAGE() 	send_prog_page(0)
+ 
+-#elif CONFIG_ARCH_MXC_HAS_NFC_V2
++#elif defined(CONFIG_ARCH_MXC_HAS_NFC_V2)
+ 
+ /*
+  * For V1/V2 NFC registers Definition
+-- 
+1.5.4.4
+

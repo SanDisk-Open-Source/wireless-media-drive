@@ -1,0 +1,66 @@
+From 527d3392b4f96d1102853a6e8f3f5b29a9aa92db Mon Sep 17 00:00:00 2001
+From: Huang Shijie <shijie8@gmail.com>
+Date: Mon, 27 Sep 2010 10:43:53 +0800
+Subject: [PATCH] mtd: add init_size hook for NAND driver
+
+Not all the NAND devices have all the information in additional
+id bytes.
+
+So add a hook in the nand_chip{} is a good method to calculate the
+right value of oobsize, erasesize and so on.
+
+Without the hook,you will get the wrong value, and you have to hack
+in the ->scan_bbt() to change the wrong value which make the code
+mess.
+
+Signed-off-by: Huang Shijie <shijie8@gmail.com>
+Signed-off-by: David Woodhouse <David.Woodhouse@intel.com>
+---
+ drivers/mtd/nand/nand_base.c |    6 ++++--
+ include/linux/mtd/nand.h     |    6 ++++++
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index ce60862..8bc3e7b 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -2837,8 +2837,10 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 
+ 	chip->chipsize = (uint64_t)type->chipsize << 20;
+ 
+-	/* Newer devices have all the information in additional id bytes */
+-	if (!type->pagesize) {
++	if (!type->pagesize && chip->init_size) {
++		/* set the pagesize, oobsize, erasesize by the driver*/
++		busw = chip->init_size(mtd, chip, id_data);
++	} else if (!type->pagesize) {
+ 		int extid;
+ 		/* The 3rd id byte holds MLC / multichip data */
+ 		chip->cellinfo = id_data[2];
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index f1ba0f0..3a470b1 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -342,6 +342,10 @@ struct nand_buffers {
+  * @block_markbad:	[REPLACEABLE] mark the block bad
+  * @cmd_ctrl:		[BOARDSPECIFIC] hardwarespecific funtion for controlling
+  *			ALE/CLE/nCE. Also used to write command and address
++ * @init_size:		[BOARDSPECIFIC] hardwarespecific funtion for setting
++ *			mtd->oobsize, mtd->writesize and so on.
++ *			@id_data contains the 8 bytes values of NAND_CMD_READID.
++ *			Return with the bus width.
+  * @dev_ready:		[BOARDSPECIFIC] hardwarespecific function for accesing device ready/busy line
+  *			If set to NULL no access to ready/busy is available and the ready/busy information
+  *			is read from the chip status register
+@@ -396,6 +400,8 @@ struct nand_chip {
+ 	int		(*block_markbad)(struct mtd_info *mtd, loff_t ofs);
+ 	void		(*cmd_ctrl)(struct mtd_info *mtd, int dat,
+ 				    unsigned int ctrl);
++	int		(*init_size)(struct mtd_info *mtd,
++					struct nand_chip *this, u8 *id_data);
+ 	int		(*dev_ready)(struct mtd_info *mtd);
+ 	void		(*cmdfunc)(struct mtd_info *mtd, unsigned command, int column, int page_addr);
+ 	int		(*waitfunc)(struct mtd_info *mtd, struct nand_chip *this);
+-- 
+1.5.4.4
+

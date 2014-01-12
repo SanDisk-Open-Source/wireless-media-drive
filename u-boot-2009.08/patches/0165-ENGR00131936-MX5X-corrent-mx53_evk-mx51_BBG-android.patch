@@ -1,0 +1,260 @@
+From eb2a5695baa418412b75ef834537399aa20560bc Mon Sep 17 00:00:00 2001
+From: Zhang Jiejing <jiejing.zhang@freescale.com>
+Date: Sat, 25 Sep 2010 18:05:57 +0800
+Subject: [PATCH] ENGR00131936 MX5X corrent mx53_evk mx51_BBG android default env setting
+
+This change make a bootable default setting of MX53 EVK and MX51 BBG board,
+the old default setting is too old to boot android system up.
+
+Also add the recovery command in the env strings, if you want
+to boot to recovery mode with mx53_evk, you can just :
+> run bootcmd_android_recovery
+This command will boot android into recovery mode.
+
+Also fix MX51 can't see UI in recovery mode.
+
+Signed-off-by: Zhang Jiejing <jiejing.zhang@freescale.com>
+---
+ board/freescale/common/recovery.c        |    6 +---
+ include/configs/mx51_bbg_android.h       |   33 +++++++++++++++++++--------
+ include/configs/mx53_arm2_android.h      |   35 +++++++++++++++++-----------
+ include/configs/mx53_arm2_ddr3_android.h |   35 +++++++++++++++++-----------
+ include/configs/mx53_evk_android.h       |   36 ++++++++++++++++++-----------
+ 5 files changed, 89 insertions(+), 56 deletions(-)
+
+diff --git a/board/freescale/common/recovery.c b/board/freescale/common/recovery.c
+index 9f488b8..90b76c5 100644
+--- a/board/freescale/common/recovery.c
++++ b/board/freescale/common/recovery.c
+@@ -84,16 +84,14 @@ void setup_recovery_env(void)
+ 
+ 	env = getenv("bootargs_android_recovery");
+ 	/* Set env to recovery mode */
++	/* Only set recovery env when these env not exist, give user a
++	 * chance to change their recovery env */
+ 	if (!env)
+ 		setenv("bootargs_android_recovery", boot_args);
+-	else
+-		setenv("bootargs_android_recovery", env);
+ 
+ 	env = getenv("bootcmd_android_recovery");
+ 	if (!env)
+ 		setenv("bootcmd_android_recovery", boot_cmd);
+-	else
+-		setenv("bootcmd_android_recovery", env);
+ 	setenv("bootcmd", "run bootcmd_android_recovery");
+ }
+ 
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index a44e821..576fe89 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -107,9 +107,11 @@
+ #define CONFIG_MXC_KPD_COLMAX 6
+ #define CONFIG_MXC_KPD_ROWMAX 4
+ #define CONFIG_ANDROID_RECOVERY_BOOTARGS_MMC \
+-	"setenv bootargs ${bootargs} root=/dev/mmcblk0p4 ip=off init=/init rootfstype=ext3 wvga"
++	"setenv bootargs ${bootargs} init=/init root=/dev/mmcblk0p4 " \
++	"rootfs=ext4 di1_primary"
+ #define CONFIG_ANDROID_RECOVERY_BOOTCMD_MMC  \
+-	"run bootargs_base bootargs_android;mmc read 0 ${loadaddr} 0x800 0x1280;bootm"
++	"run bootargs_base bootargs_android_recovery;"	\
++	"mmc read 0 ${loadaddr} 0x800 0x1800;bootm"
+ #define CONFIG_ANDROID_RECOVERY_CMD_FILE "/recovery/command"
+ #define CONFIG_ANDROID_CACHE_PARTITION_MMC 6
+ 
+@@ -150,21 +152,32 @@
+ 		"rd_loadaddr=0x90B00000\0"	\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+ 		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
+-		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
+ 			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
+-		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
+-		"bootcmd=run bootcmd_android\0"				\
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
+-		"bootcmd_android=run bootargs_base bootargs_android; "	\
+-			"mmc read 0 ${loadaddr} 0x800 0x1280; "	\
+-			"mmc read 0 ${rd_loadaddr} 0x2000 0x258; "	\
+-			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
+ 		"prg_uboot=tftpboot ${loadaddr} ${uboot}; "		\
+ 			"protect off ${uboot_addr} 0xa003ffff; "	\
+ 			"erase ${uboot_addr} 0xa003ffff; "		\
+ 			"cp.b ${loadaddr} ${uboot_addr} ${filesize}; "	\
+-			"setenv filesize; saveenv\0"
++			"setenv filesize; saveenv\0"			\
++		"bootcmd=run bootcmd_SD \0"				\
++		"bootcmd_SD=run bootargs_base bootargs_android;"	\
++		     "mmc read 0 ${loadaddr} 0x800 1800;"		\
++		     "mmc read 0 ${rd_loadaddr} 0x2000 0x258;"		\
++		     "bootm ${loadaddr} ${rd_loadaddr}\0"		\
++		"bootargs_android=setenv bootargs ${bootargs}  "	\
++		     "androidboot.console=ttymxc0 init=/init "		\
++		     "di1_primary calibration\0"			\
++		"bootcmd_android_recovery=run bootargs_base"		\
++		     " bootargs_android_recovery;"			\
++		     "mmc read 0 ${loadaddr} 0x800 0x1800;bootm\0"	\
++		"bootargs_android_recovery=setenv bootargs ${bootargs}" \
++		     " init=/init root=/dev/mmcblk0p4 rootfs=ext4"	\
++		     " di1_primary \0"					\
++
++
++
+ 
+ /*Support LAN9217*/
+ /*
+diff --git a/include/configs/mx53_arm2_android.h b/include/configs/mx53_arm2_android.h
+index 84648fb..0b0dae5 100644
+--- a/include/configs/mx53_arm2_android.h
++++ b/include/configs/mx53_arm2_android.h
+@@ -133,23 +133,30 @@
+ #define	CONFIG_EXTRA_ENV_SETTINGS					\
+ 		"netdev=eth0\0"						\
+ 		"ethprime=FEC0\0"					\
+-		"uboot=u-boot.bin\0"			\
+-		"kernel=uImage\0"				\
+-		"loadaddr=0x70800000\0"		\
+-		"rd_loadaddr=0x70B00000\0"	\
++		"uboot=u-boot.bin\0"					\
++		"kernel=uImage\0"					\
++		"loadaddr=0x70800000\0"					\
++		"rd_loadaddr=0x70B00000\0"				\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+-		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
+-		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
+-			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
+-		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
+-		"bootcmd=run bootcmd_android\0"				\
++		"bootargs_base=setenv bootargs ${bootargs} "		\
++		"console=ttymxc0,115200\0"				\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
++		     "ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"	\
++		"bootargs_android=setenv bootargs ${bootargs} mem=512M " \
++		     "androidboot.console=ttymxc0 init=/init "		\
++		     "video=mxcdi0fb:RGB565,800x480M@55 calibration\0"	\
++		"bootcmd=run bootcmd_SD \0"				\
++		"bootcmd_SD=run bootargs_base bootargs_android;"	\
++		     "mmc read 0 ${loadaddr} 0x800 1800;"		\
++		     "mmc read 0 ${rd_loadaddr} 0x2000 0x258;"		\
++		     "bootm ${loadaddr} ${rd_loadaddr}\0"		\
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
+-		"bootcmd_android=run bootargs_base bootargs_android; "	\
+-			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
+-			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
+-			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
+-
++		"bootcmd_android_recovery=run bootargs_base"		\
++		     " bootargs_android_recovery;"			\
++		     "mmc read 0 ${loadaddr} 0x800 0x1800;bootm\0"	\
++		"bootargs_android_recovery=setenv bootargs ${bootargs}" \
++		     " init=/init root=/dev/mmcblk0p4 rootfs=ext4\0"	\
+ 
+ #define CONFIG_ARP_TIMEOUT	200UL
+ 
+diff --git a/include/configs/mx53_arm2_ddr3_android.h b/include/configs/mx53_arm2_ddr3_android.h
+index d2fcb77..c84563c 100644
+--- a/include/configs/mx53_arm2_ddr3_android.h
++++ b/include/configs/mx53_arm2_ddr3_android.h
+@@ -131,23 +131,30 @@
+ #define	CONFIG_EXTRA_ENV_SETTINGS					\
+ 		"netdev=eth0\0"						\
+ 		"ethprime=FEC0\0"					\
+-		"uboot=u-boot.bin\0"			\
+-		"kernel=uImage\0"				\
+-		"loadaddr=0x70800000\0"		\
+-		"rd_loadaddr=0x70B00000\0"	\
++		"uboot=u-boot.bin\0"					\
++		"kernel=uImage\0"					\
++		"loadaddr=0x70800000\0"					\
++		"rd_loadaddr=0x70B00000\0"				\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+-		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
+-		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
+-			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
+-		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
+-		"bootcmd=run bootcmd_android\0"				\
++		"bootargs_base=setenv bootargs ${bootargs} "		\
++		"console=ttymxc0,115200\0"				\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
++		     "ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"	\
++		"bootargs_android=setenv bootargs ${bootargs} mem=512M " \
++		     "androidboot.console=ttymxc0 init=/init "		\
++		     "video=mxcdi0fb:RGB565,800x480M@55 calibration\0"	\
++		"bootcmd=run bootcmd_SD \0"				\
++		"bootcmd_SD=run bootargs_base bootargs_android;"	\
++		     "mmc read 0 ${loadaddr} 0x800 1800;"		\
++		     "mmc read 0 ${rd_loadaddr} 0x2000 0x258;"		\
++		     "bootm ${loadaddr} ${rd_loadaddr}\0"		\
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
+-		"bootcmd_android=run bootargs_base bootargs_android; "	\
+-			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
+-			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
+-			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
+-
++		"bootcmd_android_recovery=run bootargs_base"		\
++		     " bootargs_android_recovery;"			\
++		     "mmc read 0 ${loadaddr} 0x800 0x1800;bootm\0"	\
++		"bootargs_android_recovery=setenv bootargs ${bootargs}" \
++		     " init=/init root=/dev/mmcblk0p4 rootfs=ext4\0"	\
+ 
+ #define CONFIG_ARP_TIMEOUT	200UL
+ 
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index 1fca679..d97a186 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -127,26 +127,34 @@
+ #define CONFIG_LOADADDR		0x70800000	/* loadaddr env var */
+ #define CONFIG_RD_LOADADDR	(CONFIG_LOADADDR + 0x300000)
+ 
++
+ #define	CONFIG_EXTRA_ENV_SETTINGS					\
+ 		"netdev=eth0\0"						\
+ 		"ethprime=FEC0\0"					\
+-		"uboot=u-boot.bin\0"			\
+-		"kernel=uImage\0"				\
+-		"loadaddr=0x70800000\0"		\
+-		"rd_loadaddr=0x70B00000\0"	\
++		"uboot=u-boot.bin\0"					\
++		"kernel=uImage\0"					\
++		"loadaddr=0x70800000\0"					\
++		"rd_loadaddr=0x70B00000\0"				\
+ 		"nfsroot=/opt/eldk/arm\0"				\
+-		"bootargs_base=setenv bootargs console=ttymxc0,115200\0"\
+-		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs "\
+-			"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"\
+-		"bootargs_android=setenv bootargs ${bootargs} ip=dhcp mem=480M init=/init wvga calibration\0"	\
+-		"bootcmd=run bootcmd_android\0"				\
++		"bootargs_base=setenv bootargs ${bootargs} "		\
++		"console=ttymxc0,115200\0"				\
++		"bootargs_nfs=setenv bootargs ${bootargs} root=/dev/nfs " \
++		     "ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0"	\
++		"bootargs_android=setenv bootargs ${bootargs} mem=512M " \
++		     "androidboot.console=ttymxc0 init=/init "		\
++		     "video=mxcdi0fb:RGB565,800x480M@55 calibration\0"	\
++		"bootcmd=run bootcmd_SD \0"				\
++		"bootcmd_SD=run bootargs_base bootargs_android;"	\
++		     "mmc read 0 ${loadaddr} 0x800 1800;"		\
++		     "mmc read 0 ${rd_loadaddr} 0x2000 0x258;"		\
++		     "bootm ${loadaddr} ${rd_loadaddr}\0"		\
+ 		"bootcmd_net=run bootargs_base bootargs_nfs; "		\
+ 			"tftpboot ${loadaddr} ${kernel}; bootm\0"	\
+-		"bootcmd_android=run bootargs_base bootargs_android; "	\
+-			"mmcinit;cp.b 0x100000 ${loadaddr} 0x250000; "	\
+-			"cp.b 0x400000 ${rd_loadaddr} 0x4B000; "	\
+-			"bootm ${loadaddr} ${rd_loadaddr}\0"		\
+-
++		"bootcmd_android_recovery=run bootargs_base"		\
++		     " bootargs_android_recovery;"			\
++		     "mmc read 0 ${loadaddr} 0x800 0x1800;bootm\0"	\
++		"bootargs_android_recovery=setenv bootargs ${bootargs}" \
++		     " init=/init root=/dev/mmcblk0p4 rootfs=ext4\0"	\
+ 
+ #define CONFIG_ARP_TIMEOUT	200UL
+ 
+-- 
+1.5.4.4
+

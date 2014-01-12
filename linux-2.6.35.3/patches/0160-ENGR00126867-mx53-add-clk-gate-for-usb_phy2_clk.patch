@@ -1,0 +1,49 @@
+From 3d97a424acb89acfb18bd8f211045db1f8ee4c5c Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Tue, 31 Aug 2010 10:53:01 +0800
+Subject: [PATCH] ENGR00126867 mx53: add clk gate for usb_phy2_clk
+
+add usb host1 clock gate for usb host1's phy clock
+
+Signed-off-by: Huhui <b29976@freescale.com>
+---
+ arch/arm/mach-mx5/usb_h1.c |   11 ++++++++++-
+ 1 files changed, 10 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/usb_h1.c b/arch/arm/mach-mx5/usb_h1.c
+index 52a2bca..0a68bf2 100644
+--- a/arch/arm/mach-mx5/usb_h1.c
++++ b/arch/arm/mach-mx5/usb_h1.c
+@@ -76,12 +76,17 @@ static void _wake_up_enable(struct fsl_usb2_platform_data *pdata, bool enable)
+ static void usbotg_clock_gate(bool on)
+ {
+ 	struct clk *usb_clk;
++
+ 	if (on) {
++		usb_clk = clk_get(NULL, "usboh3_clk");
++		clk_enable(usb_clk);
++		clk_put(usb_clk);
++
+ 		usb_clk = clk_get(NULL, "usb_ahb_clk");
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+-		usb_clk = clk_get(NULL, "usboh3_clk");
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
+ 		clk_enable(usb_clk);
+ 		clk_put(usb_clk);
+ 
+@@ -93,6 +98,10 @@ static void usbotg_clock_gate(bool on)
+ 		usb_clk = clk_get(NULL, "usb_ahb_clk");
+ 		clk_disable(usb_clk);
+ 		clk_put(usb_clk);
++
++		usb_clk = clk_get(NULL, "usb_phy2_clk");
++		clk_disable(usb_clk);
++		clk_put(usb_clk);
+ 	}
+ }
+ 
+-- 
+1.5.4.4
+

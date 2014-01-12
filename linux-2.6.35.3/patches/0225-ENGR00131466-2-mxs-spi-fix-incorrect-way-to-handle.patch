@@ -1,0 +1,104 @@
+From a51f364bb5afe9c46534cf4fbc10a84b7e97b59b Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 13 Sep 2010 16:54:05 +0800
+Subject: [PATCH] ENGR00131466-2 mxs spi: fix incorrect way to handle plat_data of spi device
+
+1. The spi host driver should not process the plat_data of spi device
+2. The spi host driver should not assume the type of plat_data of spi
+device is mxs_spi_platform_data.
+If spi device passes in a different type of plat_data to its slave driver,
+then spi host driver will wrongly interpret it and system crash.
+For example, this issue will happen for m25p80 spi nor driver.
+
+Let's use the platform_device's platform_data to pass platform specific
+parameters for spi host driver and just let spi slave driver to handle
+its device private data since it's more meaningful to him.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/spi/spi_mxs.c |   32 +++++++++++++++-----------------
+ 1 files changed, 15 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/spi/spi_mxs.c b/drivers/spi/spi_mxs.c
+index ca51891..106b813 100644
+--- a/drivers/spi/spi_mxs.c
++++ b/drivers/spi/spi_mxs.c
+@@ -161,17 +161,13 @@ static int mxs_spi_setup_transfer(struct spi_device *spi,
+ 
+ static void mxs_spi_cleanup(struct spi_device *spi)
+ {
+-	struct mxs_spi_platform_data *pdata = spi->dev.platform_data;
+-
+-	if (pdata && pdata->hw_pin_release)
+-		pdata->hw_pin_release();
++	return;
+ }
+ 
+ /* the spi->mode bits understood by this driver: */
+ #define MODEBITS (SPI_CPOL | SPI_CPHA)
+ static int mxs_spi_setup(struct spi_device *spi)
+ {
+-	struct mxs_spi_platform_data *pdata;
+ 	struct mxs_spi *ss;
+ 	int err = 0;
+ 
+@@ -190,22 +186,11 @@ static int mxs_spi_setup(struct spi_device *spi)
+ 	dev_dbg(&spi->dev, "%s, mode %d, %u bits/w\n",
+ 		__func__, spi->mode & MODEBITS, spi->bits_per_word);
+ 
+-	pdata = spi->dev.platform_data;
+-
+-	if (pdata && pdata->hw_pin_init) {
+-		err = pdata->hw_pin_init();
+-		if (err)
+-			goto out;
+-	}
+-
+ 	err = mxs_spi_setup_transfer(spi, NULL);
+ 	if (err)
+-		goto out2;
++		goto out;
+ 	return 0;
+ 
+-out2:
+-	if (pdata && pdata->hw_pin_release)
+-		pdata->hw_pin_release();
+ out:
+ 	dev_err(&spi->dev, "Failed to setup transfer, error = %d\n", err);
+ 	return err;
+@@ -520,12 +505,21 @@ static irqreturn_t mxs_spi_irq_err(int irq, void *dev_id)
+ 
+ static int __init mxs_spi_probe(struct platform_device *dev)
+ {
++	struct mxs_spi_platform_data *pdata;
+ 	int err = 0;
+ 	struct spi_master *master;
+ 	struct mxs_spi *ss;
+ 	struct resource *r;
+ 	u32 mem;
+ 
++	pdata = dev->dev.platform_data;
++
++	if (pdata && pdata->hw_pin_init) {
++		err = pdata->hw_pin_init();
++		if (err)
++			goto out0;
++	}
++
+ 	/* Get resources(memory, IRQ) associated with the device */
+ 	master = spi_alloc_master(&dev->dev, sizeof(struct mxs_spi));
+ 
+@@ -652,6 +646,10 @@ static int __devexit mxs_spi_remove(struct platform_device *dev)
+ {
+ 	struct mxs_spi *ss;
+ 	struct spi_master *master;
++	struct mxs_spi_platform_data *pdata = dev->dev.platform_data;
++
++	if (pdata && pdata->hw_pin_release)
++		pdata->hw_pin_release();
+ 
+ 	master = platform_get_drvdata(dev);
+ 	if (master == NULL)
+-- 
+1.5.4.4
+

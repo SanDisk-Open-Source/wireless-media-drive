@@ -1,0 +1,71 @@
+From 86c82e487066b04ff934453242e78ea901d16cc0 Mon Sep 17 00:00:00 2001
+From: Hu hui <b29976@freescale.com>
+Date: Mon, 18 Oct 2010 10:43:19 +0800
+Subject: [PATCH] ENGR00132608 I.MX USB:crashed with cable unpluged during data transfer
+
+During data transfer between pc and imx board, if unplug the cable, the
+udc will enter low power mode and the gadget class driver is
+disconnected from the udc driver with the ep->desc cleared, this is done
+in udc irq handler which may interrupte the current udc queue operation,
+so when queue operation can continue it's work, the ep->desc may be
+NULL which will cause the NULL pointer exception in kernel.
+
+Signed-off-by: Hu Hui <b29976@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |   17 +++++++++++------
+ 1 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index b86d293..595ad38 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -1072,26 +1072,33 @@ fsl_ep_queue(struct usb_ep *_ep, struct usb_request *_req, gfp_t gfp_flags)
+ 	unsigned long flags;
+ 	int is_iso = 0;
+ 
+-	if (!_ep || (!ep->desc && ep_index(ep))) {
++	spin_lock_irqsave(&udc->lock, flags);
++
++	if (!_ep || !ep->desc) {
+ 		VDBG("%s, bad ep\n", __func__);
++		spin_unlock_irqrestore(&udc->lock, flags);
+ 		return -EINVAL;
+ 	}
+ 	/* catch various bogus parameters */
+ 	if (!_req || !req->req.buf || (ep_index(ep)
+ 				      && !list_empty(&req->queue))) {
+ 		VDBG("%s, bad params\n", __func__);
++		spin_unlock_irqrestore(&udc->lock, flags);
+ 		return -EINVAL;
+ 	}
+ 	if (ep->desc->bmAttributes == USB_ENDPOINT_XFER_ISOC) {
+-		if (req->req.length > ep->ep.maxpacket)
++		if (req->req.length > ep->ep.maxpacket) {
++			spin_unlock_irqrestore(&udc->lock, flags);
+ 			return -EMSGSIZE;
++		}
+ 		is_iso = 1;
+ 	}
+ 
+ 	udc = ep->udc;
+-	if (!udc->driver || udc->gadget.speed == USB_SPEED_UNKNOWN)
++	if (!udc->driver || udc->gadget.speed == USB_SPEED_UNKNOWN) {
++		spin_unlock_irqrestore(&udc->lock, flags);
+ 		return -ESHUTDOWN;
+-
++	}
+ 	req->ep = ep;
+ 
+ 	/* map virtual address to hardware */
+@@ -1119,8 +1126,6 @@ fsl_ep_queue(struct usb_ep *_ep, struct usb_request *_req, gfp_t gfp_flags)
+ 		req->buffer_offset = 0;
+ 	}
+ 
+-	spin_lock_irqsave(&udc->lock, flags);
+-
+ 	/* build dtds and push them to device queue */
+ 	if (!fsl_req_to_dtd(req)) {
+ 		fsl_queue_td(ep, req);
+-- 
+1.5.4.4
+

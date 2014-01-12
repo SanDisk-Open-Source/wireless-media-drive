@@ -1,0 +1,137 @@
+<HTML>
+<HEAD><TITLE>Tipos de registros DNS</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+</HEAD><BODY>
+
+
+<!-- Copyright 2005 Sam Trenholme
+
+    TERMS
+
+    Redistribution and use, with or without modification, are permitted 
+    provided that the following condition is met:
+
+    1. Redistributions must retain the above copyright notice, this 
+       list of conditions and the following disclaimer.
+
+    This documentation is provided 'as is' with no guarantees of 
+    correctness or fitness for purpose.
+
+ -->
+
+<H1>Tipos de registros DNS</H1>
+
+Esta é uma lista de alguns tipos de registros DNS que o MaraDNS suporta.
+
+<DL>
+
+<DT>A
+<DD>Registros A, ou endereço, descrevem o IP que um dado nó de DNS tem.
+
+<p> MaraDNS usa opcionalmente o 'A' para significar um registro A.
+Este tem um campo dados-dependente: O ip para o nó em questão, em formato
+decimal pontilhado (e.g. 192.168.42.55).
+
+<DT>MX
+<DD>registros MX, ou servidor de email, descrevem as máquinas para serem 
+contatadas em orden e para enviar email a um determinado nó de DNS.  
+
+<p>
+Este tem dois campos de dados-dependente: 
+
+A preferência para o servidor de emial (preferências mais baixas  adquirem 
+prioridade mais alta),  e o nome do nó de DNS para entrega correio para.    
+
+<DT>NS
+<DD>Um registro NS nos diz os nomes dos servidores na qual as máquinas 
+tomam conta de uma determinada zona de domínio.
+
+<p>
+Este tem um campo dados-dependente:
+O nome do nó de DNS para o qual um determinado registro de NS aponta.
+<p>
+
+Qualquer zona determinada deve ter um ou mais registros NS.  Se nenhum 
+registro de NS é apresentado em uma zona, MaraDNS sintetizará registros de
+NS para a zona em questão.  Se a pessoa deseja montar seu próprio registor NS,
+todos os registros NS para uma determinada zona DNS precisa ser colocada 
+imediatamente depois do registro SOA.
+
+<p>
+MaraDNS também suporta delegação de registros NS, que nomeia os 
+servidores de DNS para uma sub-zona, que normalmente é um outro 
+servidor de DNS.  DNS permite para pessoas delegarem sub-zonas em DNS.  
+Da mesma maneira que o servidor  ". " delega qualquer nome que termina em 
+". com." para outro conjunto de servidores de nome,  e o servidor de nome ". com." ,
+em troca, delegam qualquer nome que termina em "example.com.", como 
+"www.example.com.", para o servidor de nome "example.com." , o servidor de nome 
+"example.com." pode delegar mais adiante sub-zonas.
+
+
+
+<p>
+
+Por exemplo, se example.com deseja
+sub-delegar "john.example.com." para John que trabalha em Exemplo, inc.,  
+linhas como a seguir podem ser acrescentadas na zona arquivo de example.com :  
+
+<pre>
+john.example.com. NS ns1.john.example.com.
+john.example.com. NS ns2.john.example.com.
+# It's important to provide "glue"; in other words, let the world know
+# the IPs for these name servers.
+ns1.john.example.com. 10.9.8.7
+ns2.john.example.com. 10.5.77.65
+</pre>
+
+John que está executando seu próprio servidor de nomes com o IPs 10.9.8.7 e 10.5.77.65  
+então tem um arquivo de zona para john.example.com. que se parace com isso:  
+
+<pre>
+# It is best if the NS records for a subzone agree with the delegation
+# records above
+john.example.com. NS ns1.john.example.com.
+john.example.com. NS ns2.john.example.com.
+
+ns1.john.example.com. 10.9.8.7
+ns2.john.example.com. 10.5.77.65
+
+# Now that that is out of the way, here is the rest of the zone
+john.example.com. 10.9.8.7
+www.john.example.com. 10.5.77.65
+john.example.com. MX 10 mail.john.example.com.
+mail.john.example.com. 10.9.8.7
+</pre>
+
+
+<DT>SOA
+
+<DD>
+Esté é um registro usado quando se usa DNS para sincronizar datos entre 
+múltiplos computadores. Detalhes em como esse registro trabalha está no  
+documento <A href=dnsmaster.html>DNS master</A>.
+
+<p>
+Uma determinada zona tem que ter precisamente um registro SOA.  Se nenhum
+registro de SOA estiver presente em um arquivo de zona, MaraDNS sintetizará 
+um registro SOA.  Se o registro estiver em um arquivo de zona, ele deverá ser a 
+primeira linha do arquivo de zona. Qualquer outro uso do registro SOA resultará 
+em erro no MaraDNS.  
+
+
+<DT>TXT
+<DD>Registros TXT, ou texto, são cadeias de texto arbitrários no qual podem 
+ser anexadas a um determinado nó de DNS. Certos protocolos, como o SPF,
+utiliza esse campo para armazenar dados específicos do protocolo.
+
+<p>
+Este tem um campo dados-dependente: A cadeio de texto em questão.
+
+</DL>
+
+Note que este documento não descreve cada um dos registros que MaraDNS
+suporta. Favor se referi ao <A href=man.csv2.html>CSV2 man page
+</A> para um referência mais completa.
+
+</BODY>
+

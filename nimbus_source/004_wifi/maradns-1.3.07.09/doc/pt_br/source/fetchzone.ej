@@ -1,0 +1,72 @@
+<HEAD>
+<TH>FETCHZONE 1 "fetchzone" "Junho 2004" "fetchzone"</TH>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; CHARSET=iso8859-1">
+</HEAD>
+<body>
+<h1>NOME</h1>
+fetchzone - obtem uma zona dns do servidor
+
+<h1>DESCRIÇÃO</h1>
+<b>fetchzone</b> transfere zonas dns de um usuário especifico
+de um servidor de zona e exibe em formato csv2 na saída padrão. 
+
+<h1>USO</h1>
+<b>fetchzone</b> zone_name zone_server_IP [query_class]
+
+<h1>OPÇÔES</h1>
+<b>zone_name</b>
+<p>
+Nome da zona de dns a ser transferida.
+<p>
+<b>zone_server_IP</b>
+<p>
+Endereço IP do servidor dns.
+<p>
+<b>query_class</b>
+<p>
+Argumento opcional no qual pode mudar a classe de consulta de 1
+(padrão) para 255.  Isto pode ser necessário para algumas versão do Bind.
+
+<H1>EXEMPLOS</H1>
+Para obter a zona example.com do servidor 192.168.9.8:
+<blockquote>
+<pre>
+fetchzone example.com 192.168.9.8 
+</pre>
+</blockquote>
+Para obter a zona example.org do servidor 10.9.8.78 usado uma classe query 
+de 255:
+<blockquote>
+<pre>
+fetchzone example.com 10.9.8.78 255
+</pre>
+</blockquote>
+<h1>BUGS</h1>
+Fetchzone não exibirá corretamente a saída dos nomes de host que contenham
+carácteres utf-8 dentro eles.
+
+<h1>VEJA TAMBÉM</h1>
+Os man pages <b>maradns(8)</b> e <b>csv2(5)</b>
+<p>
+<A href=http://www.maradns.org>http://www.maradns.org</A>
+<h1>LEGAL DISCLAIMER</h1>
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ''AS IS'' AND ANY EXPRESS 
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE 
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+<h1>AUTOR</h1>
+Sam Trenholme
+
+<h1>TRADUÇÃO</h1>
+A tradução deste documento foi realizada por Daniel Zilli.
+
+</body>
+

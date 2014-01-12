@@ -1,0 +1,532 @@
+From 8bab684efeed6ae55e43df47298578c31b251af3 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Sat, 6 Feb 2010 18:19:39 +0800
+Subject: [PATCH] ENGR00120830: Add eMMC and eSD fast boot support
+
+Add eMMC and eSD fast boot support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+Signed-off-by: Brian Liu <b14843@freescale.com>
+---
+ common/cmd_mmc.c           |  131 +++++++++++++++++++++++++++++++++++++-
+ drivers/mmc/mmc.c          |  151 +++++++++++++++++++++++++++++++++++++++++++-
+ include/configs/mx51_bbg.h |   33 +---------
+ include/mmc.h              |   26 +++++++-
+ 4 files changed, 307 insertions(+), 34 deletions(-)
+
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index 421482e..b8d494b 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -112,6 +112,48 @@ static void print_mmcinfo(struct mmc *mmc)
+ 	printf("Capacity: %lld\n", mmc->capacity);
+ 
+ 	printf("Bus Width: %d-bit\n", mmc->bus_width);
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++	if (mmc->boot_size_mult == 0) {
++		printf("Boot Partition Size: %s\n", "No boot partition available");
++	} else {
++		printf("Boot Partition Size: %5dKB\n", mmc->boot_size_mult * 128);
++
++		printf("Current Partition for boot: ");
++		switch (mmc->boot_config & EXT_CSD_BOOT_PARTITION_ENABLE_MASK) {
++		case EXT_CSD_BOOT_PARTITION_DISABLE:
++			printf("Not bootable\n");
++			break;
++		case EXT_CSD_BOOT_PARTITION_PART1:
++			printf("Boot partition 1\n");
++			break;
++		case EXT_CSD_BOOT_PARTITION_PART2:
++			printf("Boot partition 2\n");
++			break;
++		case EXT_CSD_BOOT_PARTITION_USER:
++			printf("User area\n");
++			break;
++		default:
++			printf("Unknown\n");
++			break;
++		}
++
++		printf("Current Partition for read/write: ");
++		switch (mmc->boot_config & EXT_CSD_BOOT_PARTITION_ACCESS_MASK) {
++		case EXT_CSD_BOOT_PARTITION_ACCESS_DISABLE:
++			printf("User Area\n");
++			break;
++		case EXT_CSD_BOOT_PARTITION_ACCESS_PART1:
++			printf("Boot partition 1\n");
++			break;
++		case EXT_CSD_BOOT_PARTITION_ACCESS_PART2:
++			printf("Boot partition 2\n");
++			break;
++		default:
++			printf("Unknown\n");
++			break;
++		}
++	}
++#endif
+ }
+ 
+ int do_mmcinfo (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+@@ -144,6 +186,9 @@ U_BOOT_CMD(mmcinfo, 2, 0, do_mmcinfo,
+ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+ 	int rc = 0;
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++	u32 part = 0;
++#endif
+ 
+ 	switch (argc) {
+ 	case 3:
+@@ -171,6 +216,10 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			return 0;
+ 		}
+ 		return 1;
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++	case 6: /* Fall through */
++		part = simple_strtoul(argv[6], NULL, 10);
++#endif
+ 	default: /* at least 5 args */
+ 		if (strcmp(argv[1], "read") == 0) {
+ 			int dev = simple_strtoul(argv[2], NULL, 10);
+@@ -178,6 +227,7 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			u32 cnt = simple_strtoul(argv[5], NULL, 16);
+ 			u32 n;
+ 			u32 blk = simple_strtoul(argv[4], NULL, 16);
++
+ 			struct mmc *mmc = find_mmc_device(dev);
+ 
+ 			if (!mmc)
+@@ -188,11 +238,44 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ 			mmc_init(mmc);
+ 
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++			/* After mmc_init, we now know whether this is a eSD/eMMC which support boot partition */
++			if (part > 0) {
++				if (IS_SD(mmc)) {
++					if (sd_switch_partition(mmc, 1) < 0) {
++						printf("\nError: Fail to switch partition to %d before reading\n", 1);
++						return 1;
++					}
++				} else {
++					if (mmc_switch_partition(mmc, part) < 0) {
++						printf("\nError: Fail to switch partition to %d before reading\n", part);
++						return 1;
++					}
++				}
++			}
++#endif
++
+ 			n = mmc->block_dev.block_read(dev, blk, cnt, addr);
+ 
+ 			/* flush cache after read */
+ 			flush_cache((ulong)addr, cnt * 512); /* FIXME */
+ 
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++			/* Switch back */
++			if (part > 0) {
++				if (IS_SD(mmc)) {
++					if (sd_switch_partition(mmc, 0) < 0) {
++						printf("\nError: Fail to switch partition back!\n");
++						return 1;
++					}
++				} else {
++					if (mmc_switch_partition(mmc, 0) < 0) {
++						printf("\nError: Fail to switch partition back!\n");
++						return 1;
++					}
++				}
++			}
++#endif
+ 			printf("%d blocks read: %s\n",
+ 				n, (n==cnt) ? "OK" : "ERROR");
+ 			return (n == cnt) ? 0 : 1;
+@@ -201,6 +284,7 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
+ 			u32 cnt = simple_strtoul(argv[5], NULL, 16);
+ 			u32 n;
++
+ 			struct mmc *mmc = find_mmc_device(dev);
+ 
+ 			int blk = simple_strtoul(argv[4], NULL, 16);
+@@ -213,8 +297,42 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ 			mmc_init(mmc);
+ 
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++			/* After mmc_init, we now know whether this is a eSD/eMMC which support boot partition */
++			 if (part > 0) {
++				if (IS_SD(mmc)) {
++					if (sd_switch_partition(mmc, 1) < 0) {
++						printf("\nError: Fail to switch partition to %d before writing\n", 1);
++						return 1;
++					}
++				} else {
++					if (mmc_switch_partition(mmc, part) < 0) {
++						printf("\nError: Fail to switch partition to %d before writing\n", part);
++						return 1;
++					}
++				}
++			}
++#endif
++
+ 			n = mmc->block_dev.block_write(dev, blk, cnt, addr);
+ 
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++			/* Switch back */
++			if (part > 0) {
++				if (IS_SD(mmc)) {
++					if (sd_switch_partition(mmc, 0) < 0) {
++						printf("\nError: Fail to switch partition back!\n");
++						return 1;
++					}
++				} else {
++					if (mmc_switch_partition(mmc, 0) < 0) {
++						printf("\nError: Fail to switch partition back!\n");
++						return 1;
++					}
++				}
++			}
++#endif
++
+ 			printf("%d blocks written: %s\n",
+ 				n, (n == cnt) ? "OK" : "ERROR");
+ 			return (n == cnt) ? 0 : 1;
+@@ -227,11 +345,22 @@ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	}
+ }
+ 
++#ifndef CONFIG_BOOT_PARTITION_ACCESS
+ U_BOOT_CMD(
+ 	mmc, 6, 1, do_mmcops,
+ 	"MMC sub system",
+-	"read <device num> addr blk# cnt\n"
++	"mmc read <device num> addr blk# cnt\n"
+ 	"mmc write <device num> addr blk# cnt\n"
+ 	"mmc rescan <device num>\n"
+ 	"mmc list - lists available devices");
++#else
++U_BOOT_CMD(
++	mmc, 7, 1, do_mmcops,
++	"MMC sub system",
++	"mmc read <device num> addr blk# cnt [partition]\n"
++	"mmc write <device num> addr blk# cnt [partition]\n"
++	"mmc rescan <device num>\n"
++	"mmc list - lists available devices");
++#endif
+ #endif
++
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index f78b8a8..422c6ed 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2008-2010 Freescale Semiconductor, Inc.
+  * Terry Lv
+  *
+  * Copyright 2008, Freescale Semiconductor, Inc
+@@ -646,6 +646,149 @@ void mmc_set_bus_width(struct mmc *mmc, uint width)
+ 	mmc_set_ios(mmc);
+ }
+ 
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++/* Return 0/1/2 for partition id before switch; Return -1 if fail to switch */
++int mmc_switch_partition(struct mmc *mmc, uint part)
++{
++	char *ext_csd;
++	int err;
++	uint old_part, new_part;
++	char boot_config;
++
++	/* partition must be -
++		0 - user area
++		1 - boot partition 1
++		2 - boot partition 2
++	*/
++	if (part > 2) {
++		printf("\nWrong partition id - 0 (user area), 1 (boot1), 2 (boot2)\n");
++		return 1;
++	}
++
++	/* Before calling this func, "mmc" struct must have been initialized */
++	if (mmc->version < MMC_VERSION_4) {
++		puts("Error: invalid mmc version! mmc version is below version 4!");
++		return -1;
++	}
++
++	if (mmc->boot_size_mult <= 0) {
++		/* it's a normal SD/MMC but user request to boot partition */
++		printf("\nError: This is a normal SD/MMC card but you request to access boot partition\n");
++		return -1;
++	}
++
++	/* part must be 0 (user area), 1 (boot partition1) or 2 (boot partition2) */
++	if (part > 2) {
++		puts("Error: partition id must be 0(user area), 1(boot partition1) or 2(boot partition2)\n");
++		return -1;
++	}
++
++	if (IS_SD(mmc)) {
++		/* eSD card hadn't been supported. Return directly without warning */
++		return -1;
++	}
++
++	ext_csd = (char *)malloc(512);
++	if (!ext_csd) {
++		puts("Error: Could not allocate buffer for MMC ext csd!\n");
++		return -1;
++	}
++
++	err = mmc_send_ext_csd(mmc, ext_csd);
++	if (err) {
++		puts("Warning: fail to get ext csd for MMC!\n");
++		goto err_rtn;
++    }
++
++	old_part = ext_csd[EXT_CSD_BOOT_CONFIG] & EXT_CSD_BOOT_PARTITION_ACCESS_MASK;
++
++	/* Send SWITCH command to change partition for access */
++	boot_config = (ext_csd[EXT_CSD_BOOT_CONFIG] & ~EXT_CSD_BOOT_PARTITION_ACCESS_MASK) | (char)part;
++
++	err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL, EXT_CSD_BOOT_CONFIG, boot_config);
++	if (err) {
++		puts("Error: fail to send SWITCH command to card to swich partition for access!\n");
++		goto err_rtn;
++	}
++
++	/* Now check whether it works */
++	err = mmc_send_ext_csd(mmc, ext_csd);
++	if (err) {
++		puts("Warning: fail to get ext csd for MMC!\n");
++		goto err_rtn;
++	}
++
++	new_part = ext_csd[EXT_CSD_BOOT_CONFIG] & EXT_CSD_BOOT_PARTITION_ACCESS_MASK;
++	if ((char)part != new_part) {
++		printf("Warning: after SWITCH, current part id %d is not same as requested partition %d!\n",
++			new_part, part);
++		goto err_rtn;
++	}
++
++	/* Seems everything is ok, return the partition id before switch */
++	free(ext_csd);
++	return old_part;
++
++err_rtn:
++	free(ext_csd);
++	return -1;
++}
++
++int sd_switch_partition(struct mmc *mmc, uint part)
++{
++	struct mmc_cmd cmd;
++	int err;
++
++	if (part > 1) {
++		printf("\nWrong partition id - 0 (user area), 1 (boot1)\n");
++		return 1;
++	}
++
++	cmd.cmdidx = SD_CMD_SELECT_PARTITION;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = part << 24;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err) {
++		printf("Failed to switch to partition %d\nPartition not exists or command execute fail!\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++int mmc_get_cur_boot_partition(struct mmc *mmc)
++{
++	char *ext_csd;
++	int err;
++
++	ext_csd = (char *)malloc(512);
++
++	if (!ext_csd) {
++		puts("Error! Could not allocate buffer for MMC ext csd!\n");
++		return -1;
++	}
++
++	err = mmc_send_ext_csd(mmc, ext_csd);
++
++	if (err) {
++		mmc->boot_config = 0;
++		mmc->boot_size_mult = 0;
++		/* continue since it's not a fatal error */
++	} else {
++		mmc->boot_config = ext_csd[EXT_CSD_BOOT_CONFIG];
++		mmc->boot_size_mult = ext_csd[EXT_CSD_BOOT_INFO];
++	}
++
++	free(ext_csd);
++
++	return err;
++}
++
++#endif
++
+ int mmc_startup(struct mmc *mmc)
+ {
+ 	int err;
+@@ -819,6 +962,7 @@ int mmc_startup(struct mmc *mmc)
+ 			mmc_set_clock(mmc, 50000000);
+ 		else
+ 			mmc_set_clock(mmc, 25000000);
++
+ 	} else {
+ 		if (mmc->card_caps & MMC_MODE_4BIT) {
+ 			/* Set the card to use 4 bit*/
+@@ -849,6 +993,10 @@ int mmc_startup(struct mmc *mmc)
+ 				mmc_set_clock(mmc, 26000000);
+ 		} else
+ 			mmc_set_clock(mmc, 20000000);
++
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++		mmc_get_cur_boot_partition(mmc);
++#endif
+ 	}
+ 
+ 	/* fill in device description */
+@@ -1009,3 +1157,4 @@ int mmc_initialize(bd_t *bis)
+ 
+ 	return 0;
+ }
++
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index f773563..b2961a2 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -69,36 +69,6 @@
+ #define CONFIG_MX51_UART	1
+ #define CONFIG_MX51_UART1	1
+ 
+-/*
+- * SPI Configs
+- * */
+-#define CONFIG_FSL_SF		1
+-#define CONFIG_SPI_FLASH_IMX_ATMEL	1
+-#define CONFIG_SPI_FLASH_CS	1
+-#define CONFIG_IMX_ECSPI
+-#define CONFIG_IMX_SPI_PMIC
+-#define CONFIG_IMX_SPI_PMIC_CS	0
+-#define	IMX_CSPI_VER_2_3	1
+-#define MAX_SPI_BYTES		(64 * 4)
+-
+-/*
+- * MMC Configs
+- * */
+-
+-/*
+- * Eth Configs
+- */
+-#define CONFIG_HAS_ETH1
+-#define CONFIG_NET_MULTI 1
+-#define CONFIG_MXC_FEC
+-#define CONFIG_MII
+-#define CONFIG_DISCOVER_PHY
+-
+-#define CONFIG_FEC0_IOBASE	FEC_BASE_ADDR
+-#define CONFIG_FEC0_PINMUX	-1
+-#define CONFIG_FEC0_PHY_ADDR	0x1F
+-#define CONFIG_FEC0_MIIBASE 	-1
+-
+ /* allow to overwrite serial and ethaddr */
+ #define CONFIG_ENV_OVERWRITE
+ #define CONFIG_CONS_INDEX		1
+@@ -133,7 +103,8 @@
+ 	#define CONFIG_FSL_SF		1
+ 	#define CONFIG_SPI_FLASH_IMX_ATMEL	1
+ 	#define CONFIG_SPI_FLASH_CS	1
+-	#define CONFIG_IMX_SPI
++	#define CONFIG_IMX_ECSPI
++	#define IMX_CSPI_VER_2_3        1
+ 	#define CONFIG_IMX_SPI_PMIC
+ 	#define CONFIG_IMX_SPI_PMIC_CS 0
+ 
+diff --git a/include/mmc.h b/include/mmc.h
+index 2dc69ab..fe63ed7 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -1,5 +1,7 @@
+ /*
+- * Copyright 2008, Freescale Semiconductor, Inc
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
++ *
++ * Copyright 2008-2010, Freescale Semiconductor, Inc
+  * Andy Fleming
+  *
+  * Based (loosely) on the Linux code
+@@ -79,6 +81,7 @@
+ #define SD_CMD_SEND_RELATIVE_ADDR	3
+ #define SD_CMD_SWITCH_FUNC		6
+ #define SD_CMD_SEND_IF_COND		8
++#define SD_CMD_SELECT_PARTITION   43
+ 
+ #define SD_CMD_APP_SET_BUS_WIDTH	6
+ #define SD_CMD_APP_SEND_OP_COND		41
+@@ -128,11 +131,13 @@
+  * EXT_CSD fields
+  */
+ 
++#define EXT_CSD_BOOT_CONFIG	179	/* RW */
+ #define EXT_CSD_BUS_WIDTH	183	/* R/W */
+ #define EXT_CSD_HS_TIMING	185	/* R/W */
+ #define EXT_CSD_CARD_TYPE	196	/* RO */
+ #define EXT_CSD_REV		192	/* RO */
+ #define EXT_CSD_SEC_CNT		212	/* RO, 4 bytes */
++#define EXT_CSD_BOOT_INFO	228	/* RO */
+ 
+ /*
+  * EXT_CSD field definitions
+@@ -149,6 +154,17 @@
+ #define EXT_CSD_BUS_WIDTH_4	1	/* Card is in 4 bit mode */
+ #define EXT_CSD_BUS_WIDTH_8	2	/* Card is in 8 bit mode */
+ 
++#define EXT_CSD_BOOT_PARTITION_ENABLE_MASK	(0x7 << 3)
++#define EXT_CSD_BOOT_PARTITION_DISABLE		(0x0)
++#define EXT_CSD_BOOT_PARTITION_PART1		(0x1 << 3)
++#define EXT_CSD_BOOT_PARTITION_PART2		(0x2 << 3)
++#define EXT_CSD_BOOT_PARTITION_USER		(0x7 << 3)
++
++#define EXT_CSD_BOOT_PARTITION_ACCESS_MASK	(0x7)
++#define EXT_CSD_BOOT_PARTITION_ACCESS_DISABLE   (0x0)
++#define EXT_CSD_BOOT_PARTITION_ACCESS_PART1   	(0x1)
++#define EXT_CSD_BOOT_PARTITION_ACCESS_PART2   	(0x2)
++
+ #define R1_ILLEGAL_COMMAND		(1 << 22)
+ #define R1_APP_CMD			(1 << 5)
+ 
+@@ -259,6 +275,10 @@ struct mmc {
+ 	uint read_bl_len;
+ 	uint write_bl_len;
+ 	u64 capacity;
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++	uint boot_config;
++	uint boot_size_mult;
++#endif
+ 	block_dev_desc_t block_dev;
+ 	int (*send_cmd)(struct mmc *mmc,
+ 			struct mmc_cmd *cmd, struct mmc_data *data);
+@@ -272,6 +292,10 @@ int mmc_init(struct mmc *mmc);
+ int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size);
+ struct mmc *find_mmc_device(int dev_num);
+ void print_mmc_devices(char separator);
++#ifdef CONFIG_BOOT_PARTITION_ACCESS
++int mmc_switch_partition(struct mmc *mmc, uint part);
++int sd_switch_partition(struct mmc *mmc, uint part);
++#endif
+ 
+ #ifndef CONFIG_GENERIC_MMC
+ int mmc_legacy_init(int verbose);
+-- 
+1.5.4.4
+

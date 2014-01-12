@@ -1,0 +1,43 @@
+From a8f2635bbd8f5154df344746cb9cdba98a5713c9 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Fri, 7 Jan 2011 13:35:22 +0800
+Subject: [PATCH] ENGR00137723 usb-otg: fix otg symbols are undefined problem at non-otg config
+
+Some otg symbols are used at non-otg def-config due to judge otg port
+dynamically, so it needs to always define CONFIG_USB_OTG_UTILS for
+usb driver.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/Kconfig |    2 +-
+ drivers/usb/host/Kconfig   |    1 +
+ 2 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/usb/gadget/Kconfig b/drivers/usb/gadget/Kconfig
+index 908756d..5b6b913 100644
+--- a/drivers/usb/gadget/Kconfig
++++ b/drivers/usb/gadget/Kconfig
+@@ -477,7 +477,7 @@ config USB_GADGET_ARC
+ 	boolean "Freescale USB Device Controller"
+ 	depends on ARCH_MXC || ARCH_STMP3XXX || ARCH_MXS
+ 	select USB_GADGET_DUALSPEED
+-	select USB_GADGET_DUALSPEED if USB_GADGET_FSL_1504 || USB_GADGET_FSL_UTMI
++	select USB_OTG_UTILS
+ 	help
+ 	   Some Freescale processors have a USBOTG controller,
+ 	   which supports device mode.
+diff --git a/drivers/usb/host/Kconfig b/drivers/usb/host/Kconfig
+index 226f6c8..f90afd3 100644
+--- a/drivers/usb/host/Kconfig
++++ b/drivers/usb/host/Kconfig
+@@ -62,6 +62,7 @@ config USB_EHCI_HCD
+ config USB_EHCI_ARC
+ 	bool "Support for Freescale controller"
+ 	depends on USB_EHCI_HCD && (ARCH_MXC || ARCH_STMP3XXX || ARCH_MXS)
++	select USB_OTG_UTILS
+ 	---help---
+ 	   Some Freescale processors have an integrated High Speed
+ 	   USBOTG controller, which supports EHCI host mode.
+-- 
+1.5.4.4
+

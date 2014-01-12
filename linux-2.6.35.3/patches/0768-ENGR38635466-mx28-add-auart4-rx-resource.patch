@@ -1,0 +1,38 @@
+From 19e6cc9c7f6191a1f676893a4c6f5e44da764c59 Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Tue, 15 Feb 2011 13:19:07 +0800
+Subject: [PATCH] ENGR38635466 [mx28]add auart4 rx resource
+
+	add missed rx resource for auart4
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ arch/arm/mach-mx28/serial.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/serial.c b/arch/arm/mach-mx28/serial.c
+index a7297d1..4c2cc6e 100644
+--- a/arch/arm/mach-mx28/serial.c
++++ b/arch/arm/mach-mx28/serial.c
+@@ -1,5 +1,5 @@
+ /*
+-  * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++  * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
+   *
+   * This program is distributed in the hope that it will be useful,
+   * This program is free software; you can redistribute it and/or modify
+@@ -217,6 +217,11 @@ static struct resource auart4_resource[] = {
+ 	 .start = AUART4_PHYS_ADDR,
+ 	 .end	= AUART4_PHYS_ADDR + 0xFFF,
+ 	 },
++	 {
++	 .flags = IORESOURCE_DMA,
++	 .start = MXS_DMA_CHANNEL_AHB_APBX_UART4_RX,
++	 .end = MXS_DMA_CHANNEL_AHB_APBX_UART4_RX,
++	 },
+ 	{
+ 	 .flags = IORESOURCE_DMA,
+ 	 .start = MXS_DMA_CHANNEL_AHB_APBX_UART4_TX,
+-- 
+1.5.4.4
+

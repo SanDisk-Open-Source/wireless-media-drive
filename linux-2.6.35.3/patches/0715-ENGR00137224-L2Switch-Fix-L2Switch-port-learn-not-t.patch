@@ -1,0 +1,37 @@
+From 65da4da27e7efa756b5902362ad86432fb2e1915 Mon Sep 17 00:00:00 2001
+From: Fan Zhicheng <r32736@freescale.com>
+Date: Tue, 28 Dec 2010 14:39:31 +0800
+Subject: [PATCH] ENGR00137224 L2Switch: Fix L2Switch port learn not take effect issue.
+
+Fix Mx28 L2Switch port learning not works issue.
+
+Signed-off-by: Fan Zhicheng <r32736@freescale.com>
+---
+ drivers/net/fec_switch.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/fec_switch.c b/drivers/net/fec_switch.c
+index dc3f205..8467f74 100644
+--- a/drivers/net/fec_switch.c
++++ b/drivers/net/fec_switch.c
+@@ -1,7 +1,7 @@
+ /*
+  *  L2 switch Controller (Etheren switch) driver for Mx28.
+  *
+- *  Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *  Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *    Shrek Wu (B16972@freescale.com)
+  *
+  *  This program is free software; you can redistribute  it and/or modify it
+@@ -875,7 +875,7 @@ static void esw_get_port_learning(
+ 	struct switch_t  *fecp;
+ 
+ 	fecp = fep->hwp;
+-	*ulPortLearning = (readl(&fecp->ESW_BKLR) & 0xff00) >> 16;
++	*ulPortLearning = (readl(&fecp->ESW_BKLR) & 0xff0000) >> 16;
+ #ifdef DEBUG_PORT_LEARNING
+ 	printk(KERN_INFO "%s  fecp->ESW_BKLR %#lx\n",
+ 		__func__, readl(&fecp->ESW_BKLR));
+-- 
+1.5.4.4
+

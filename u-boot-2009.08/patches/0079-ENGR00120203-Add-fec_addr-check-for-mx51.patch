@@ -1,0 +1,46 @@
+From be8a4f952c8dd1a6e97e25ea48fa7e1d7963ef15 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Mon, 18 Jan 2010 12:09:11 +0800
+Subject: [PATCH] ENGR00120203: Add fec_addr check for mx51
+
+As mx51 also uses FEC, we need to write FEC mac addr to register for kernel.
+Thus fec_addr also need to be checked.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ cpu/arm_cortexa8/mx51/generic.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index a073de1..4920c5c 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -2,7 +2,7 @@
+  * (C) Copyright 2007
+  * Sascha Hauer, Pengutronix
+  *
+- * (C) Copyright 2009 Freescale Semiconductor, Inc.
++ * (C) Copyright 2009-2010 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -252,11 +252,16 @@ int print_cpuinfo(void)
+ int cpu_eth_init(bd_t *bis)
+ {
+ 	int rc = -ENODEV;
++	char *env = NULL;
+ 
+ #if defined(CONFIG_MXC_FEC)
+ 	rc = mxc_fec_initialize(bis);
+ #endif
+ 
++	env = getenv("fec_addr");
++	if (env)
++		mxc_fec_set_mac_from_env(env);
++
+ 	return rc;
+ }
+ 
+-- 
+1.5.4.4
+

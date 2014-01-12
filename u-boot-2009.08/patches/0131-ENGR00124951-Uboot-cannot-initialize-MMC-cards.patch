@@ -1,0 +1,61 @@
+From 1ac6a858ea0d1618b9341794c4b9b550cce659ad Mon Sep 17 00:00:00 2001
+From: Anish Trivedi <anish@freescale.com>
+Date: Wed, 7 Jul 2010 12:11:44 -0500
+Subject: [PATCH] ENGR00124951 Uboot cannot initialize MMC cards
+
+Removed low voltage (1.8V) from supported voltage ranges.
+Changed SD2_CMD pad setting to enable SD2 r/w in uboot.
+Loaded env from booted device instead of SD1 always.
+
+Signed-off-by: Anish Trivedi <anish@freescale.com>
+---
+ board/freescale/mx50_arm2/mx50_arm2.c |    8 ++++----
+ drivers/mmc/imx_esdhc.c               |    2 --
+ 2 files changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/board/freescale/mx50_arm2/mx50_arm2.c b/board/freescale/mx50_arm2/mx50_arm2.c
+index d606dfc..bb0ea3a 100644
+--- a/board/freescale/mx50_arm2/mx50_arm2.c
++++ b/board/freescale/mx50_arm2/mx50_arm2.c
+@@ -434,13 +434,13 @@ int get_mmc_env_devno()
+ 
+ 	switch (soc_sbmr & 0x00300000) {
+ 	default:
+-	case 0:
++	case 0x0:
+ 		mmc_devno = 0;
+ 		break;
+-	case 1:
++	case 0x00100000:
+ 		mmc_devno = 1;
+ 		break;
+-	case 2:
++	case 0x00200000:
+ 		mmc_devno = 2;
+ 		break;
+ 	}
+@@ -486,7 +486,7 @@ int esdhc_gpio_init(bd_t *bis)
+ 			mxc_request_iomux(MX50_PIN_SD2_D6,  IOMUX_CONFIG_ALT0);
+ 			mxc_request_iomux(MX50_PIN_SD2_D7,  IOMUX_CONFIG_ALT0);
+ 
+-			mxc_iomux_set_pad(MX50_PIN_SD2_CMD, 0x1E4);
++			mxc_iomux_set_pad(MX50_PIN_SD2_CMD, 0x14);
+ 			mxc_iomux_set_pad(MX50_PIN_SD2_CLK, 0xD4);
+ 			mxc_iomux_set_pad(MX50_PIN_SD2_D0,  0x1D4);
+ 			mxc_iomux_set_pad(MX50_PIN_SD2_D1,  0x1D4);
+diff --git a/drivers/mmc/imx_esdhc.c b/drivers/mmc/imx_esdhc.c
+index 78e0607..e3a1fb7 100644
+--- a/drivers/mmc/imx_esdhc.c
++++ b/drivers/mmc/imx_esdhc.c
+@@ -412,8 +412,6 @@ int fsl_esdhc_initialize(bd_t *bis, struct fsl_esdhc_cfg *cfg)
+ 	mmc->init = esdhc_init;
+ 
+ 	caps = regs->hostcapblt;
+-	if (caps & ESDHC_HOSTCAPBLT_VS18)
+-		mmc->voltages |= MMC_VDD_165_195;
+ 	if (caps & ESDHC_HOSTCAPBLT_VS30)
+ 		mmc->voltages |= MMC_VDD_29_30 | MMC_VDD_30_31;
+ 	if (caps & ESDHC_HOSTCAPBLT_VS33)
+-- 
+1.5.4.4
+

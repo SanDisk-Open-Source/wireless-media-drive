@@ -1,0 +1,53 @@
+From 499398d1ae16b65d55cb112d0b878f6f0a8c2ec2 Mon Sep 17 00:00:00 2001
+From: Xie Xiaobo <r63061@freescale.com>
+Date: Mon, 23 Aug 2010 15:50:31 +0800
+Subject: [PATCH] ENGR00126576 L2-Switch: support getting mac address from platform data
+
+The L2 Switch can get mac address from platform data.
+
+Signed-off-by: Xie Xiaobo <X.Xie@freescale.com>
+---
+ drivers/net/fec_switch.c |   17 +++++++++++++++++
+ 1 files changed, 17 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/fec_switch.c b/drivers/net/fec_switch.c
+index f2c78e4..0485349 100644
+--- a/drivers/net/fec_switch.c
++++ b/drivers/net/fec_switch.c
+@@ -131,9 +131,13 @@ static void *swap_buffer(void *bufaddr, int len)
+ /*last read entry from learning interface*/
+ struct eswPortInfo g_info;
+ 
++#ifdef USE_DEFAULT_SWITCH_PORT0_MAC
+ static unsigned char    switch_mac_default[] = {
+ 	0x00, 0x08, 0x02, 0x6B, 0xA3, 0x1A,
+ };
++#else
++static unsigned char    switch_mac_default[ETH_ALEN];
++#endif
+ 
+ static void switch_request_intrs(struct net_device *dev,
+ 	irqreturn_t switch_net_irq_handler(int irq, void *private),
+@@ -3700,6 +3704,19 @@ static int __init switch_enet_init(struct net_device *dev,
+ 		fep->phy_interface = plat->fec_enet->phy;
+ 		if (plat->fec_enet->init && plat->fec_enet->init())
+ 			return -EIO;
++
++		/*
++		 * The priority for getting MAC address is:
++		 * (1) kernel command line fec_mac = xx:xx:xx...
++		 * (2) platform data mac field got from fuse etc
++		 * (3) bootloader set the FEC mac register
++		 */
++
++		if (!is_valid_ether_addr(switch_mac_default) &&
++			plat->fec_enet->mac &&
++			is_valid_ether_addr(plat->fec_enet->mac))
++			memcpy(switch_mac_default, plat->fec_enet->mac,
++						sizeof(switch_mac_default));
+ 	} else
+ 		fep->phy_interface = PHY_INTERFACE_MODE_MII;
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,38 @@
+From 833b0697e99cf7fd3b54e0635fae85892ce2534b Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Thu, 9 Dec 2010 12:33:58 +0800
+Subject: [PATCH] ENGR00136150 IIM:Remap user defined size of IIM registers
+
+This patch remaps user defined size of IIM registers from
+IIM base address.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/char/mxc_iim.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/char/mxc_iim.c b/drivers/char/mxc_iim.c
+index 53fdaca..cb1dde9 100644
+--- a/drivers/char/mxc_iim.c
++++ b/drivers/char/mxc_iim.c
+@@ -423,7 +423,7 @@ invald_arg_out:
+ 
+ /*!
+  * MXC IIM interface - memory map function
+- * This function maps 4KB IIM registers from IIM base address.
++ * This function maps IIM registers from IIM base address.
+  *
+  * @param file	     struct file *
+  * @param vma	     structure vm_area_struct *
+@@ -440,7 +440,7 @@ static int mxc_iim_mmap(struct file *file, struct vm_area_struct *vma)
+ 	if (remap_pfn_range(vma,
+ 			    vma->vm_start,
+ 			    iim_data->reg_base >> PAGE_SHIFT,
+-			    iim_data->reg_size,
++			    vma->vm_end - vma->vm_start,
+ 			    vma->vm_page_prot))
+ 		return -EAGAIN;
+ 
+-- 
+1.5.4.4
+

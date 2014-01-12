@@ -1,0 +1,126 @@
+From 2f0524938f3430125baae136d5d0d68b86a70b96 Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Mon, 18 Oct 2010 15:03:10 +0800
+Subject: [PATCH] ENGR00132709 MX53: add "clk nfc" command support
+
+Add "clk nfc" command support.
+Limit NFC MAX clock as 34MHZ to be compatible with
+some old NAND flashes.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx53_rd/mx53_rd.c |    7 +++++++
+ common/cmd_clk.c                  |    5 +++++
+ cpu/arm_cortexa8/mx53/generic.c   |   27 +++++++++++++++++++++++++++
+ 3 files changed, 39 insertions(+), 0 deletions(-)
+
+diff --git a/board/freescale/mx53_rd/mx53_rd.c b/board/freescale/mx53_rd/mx53_rd.c
+index d88cb38..9c71514 100644
+--- a/board/freescale/mx53_rd/mx53_rd.c
++++ b/board/freescale/mx53_rd/mx53_rd.c
+@@ -1036,6 +1036,13 @@ void setup_nfc(void)
+ 		reg &= ~WEIM_GCR2_MUX16_BYP_GRANT_MASK;
+ 		__raw_writel(reg, WEIM_BASE_ADDR + i);
+ 	}
++
++	/* To be compatible with some old NAND flash,
++	 * limit NFC clocks as 34MHZ. The user can modify
++	 * it according to dedicate NAND flash
++	 */
++	clk_config(0, 34, MXC_NFC_CLK);
++
+ #if defined(CONFIG_MX53_ARD)
+ 	mxc_request_iomux(MX53_PIN_NANDF_CS0,
+ 			IOMUX_CONFIG_ALT0);
+diff --git a/common/cmd_clk.c b/common/cmd_clk.c
+index 0d6123e..b4130f3 100644
+--- a/common/cmd_clk.c
++++ b/common/cmd_clk.c
+@@ -42,6 +42,8 @@ int do_clkops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			clk_info(PERIPH_CLK);
+ 		else if (strcmp(argv[1], "ddr") == 0)
+ 			clk_info(DDR_CLK);
++		else if (strcmp(argv[1], "nfc") == 0)
++			clk_info(MXC_NFC_CLK);
+ 		else
+ 			printf("Unsupported clock type!\n");
+ 		break;
+@@ -53,6 +55,8 @@ int do_clkops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			clk_config(CONFIG_REF_CLK_FREQ, freq, PERIPH_CLK);
+ 		else if (strcmp(argv[1], "ddr") == 0)
+ 			clk_config(CONFIG_REF_CLK_FREQ, freq, DDR_CLK);
++		else if (strcmp(argv[1], "nfc") == 0)
++			clk_config(CONFIG_REF_CLK_FREQ, freq, MXC_NFC_CLK);
+ 		else
+ 			printf("Unsupported clock type!\n");
+ 		break;
+@@ -75,6 +79,7 @@ U_BOOT_CMD(
+ 	"clk periph <peripheral clock in MHz> -"
+ 	"Setup/Display peripheral clock\n"
+ 	"clk ddr <DDR clock in MHz> - Setup/Display DDR clock\n"
++	"clk nfc <NFC clk in MHz> - Setup/Display NFC clock\n"
+ 	"Example:\n"
+ 	"clk - Show various clocks\n"
+ 	"clk core 665 - Set core clock to 665MHz\n"
+diff --git a/cpu/arm_cortexa8/mx53/generic.c b/cpu/arm_cortexa8/mx53/generic.c
+index 8904d9d..6ba61ee 100644
+--- a/cpu/arm_cortexa8/mx53/generic.c
++++ b/cpu/arm_cortexa8/mx53/generic.c
+@@ -789,6 +789,26 @@ static int config_core_clk(u32 ref, u32 freq)
+ 	return config_pll_clk(PLL1_CLK, &pll_param);
+ }
+ 
++static int config_nfc_clk(u32 nfc_clk)
++{
++	u32 reg;
++	u32 parent_rate = __get_emi_slow_clk();
++	u32 div = parent_rate / nfc_clk;
++
++	if (nfc_clk <= 0)
++		return -1;
++	if (div == 0)
++		div++;
++	if (parent_rate / div > NFC_CLK_MAX)
++		div++;
++	reg = __REG(MXC_CCM_CBCDR);
++	reg &= ~MXC_CCM_CBCDR_NFC_PODF_MASK;
++	reg |= (div - 1) << MXC_CCM_CBCDR_NFC_PODF_OFFSET;
++	writel(reg, MXC_CCM_CBCDR);
++	while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
++		;
++	return 0;
++}
+ static int config_periph_clk(u32 ref, u32 freq)
+ {
+ 	int ret = 0;
+@@ -820,6 +840,7 @@ static int config_periph_clk(u32 ref, u32 freq)
+ 	} else {
+ 		u32 old_cbcmr = readl(CCM_BASE_ADDR + CLKCTL_CBCMR);
+ 		u32 new_cbcdr = calc_per_cbcdr_val(pll, old_cbcmr);
++		u32 old_nfc = __get_nfc_clk();
+ 
+ 		/* Switch peripheral to PLL3 */
+ 		writel(0x00015154, CCM_BASE_ADDR + CLKCTL_CBCMR);
+@@ -845,6 +866,8 @@ static int config_periph_clk(u32 ref, u32 freq)
+ 		/* Make sure change is effective */
+ 		while (readl(CCM_BASE_ADDR + CLKCTL_CDHIPR) != 0)
+ 			;
++		/* restore to old NFC clock */
++		config_nfc_clk(old_nfc);
+ 		puts("\n");
+ 	}
+ 
+@@ -944,6 +967,10 @@ int clk_config(u32 ref, u32 freq, u32 clk_type)
+ 		if (config_ddr_clk(freq))
+ 			return -1;
+ 		break;
++	case MXC_NFC_CLK:
++		if (config_nfc_clk(freq))
++			return -1;
++		break;
+ 	default:
+ 		printf("Unsupported or invalid clock type! :(\n");
+ 	}
+-- 
+1.5.4.4
+

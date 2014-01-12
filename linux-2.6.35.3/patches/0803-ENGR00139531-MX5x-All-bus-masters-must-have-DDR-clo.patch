@@ -1,0 +1,268 @@
+From aede786934d3e69cec340725e13baa931b03df6f Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Mon, 21 Feb 2011 15:44:14 -0600
+Subject: [PATCH] ENGR00139531: MX5x-All bus-masters must have DDR clock as a dependent clock.
+
+All the bus masters need to have clock to DDR (emi_fast_clk for MX51 & MX53) as
+secondary clocks to ensure the clocks to DDR remain ON as long as the bus master
+is active.
+In case of SDMA (and associated peripherals), if the buffers are stored in IRAM,
+ emi_fast or ddr_clk is not a dependent clock.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c      |   18 +++++++++++++++---
+ arch/arm/mach-mx5/clock_mx50.c |   20 +++++++++++++++++---
+ arch/arm/mach-mx5/mx50_freq.c  |    4 ++--
+ arch/arm/mach-mx5/mx50_wfi.S   |   10 +++++++++-
+ arch/arm/mach-mx5/system.c     |   18 +++++++++++++-----
+ 5 files changed, 56 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 858f3bd..cd83264 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -1409,6 +1409,8 @@ static struct clk sdma_clk[] = {
+ 	 .parent = &ipg_clk,
+ #ifdef CONFIG_SDMA_IRAM
+ 	 .secondary = &emi_intr_clk[0],
++#else
++	 .secondary = &emi_fast_clk,
+ #endif
+ 	 },
+ };
+@@ -3396,6 +3398,7 @@ static struct clk sata_clk = {
+ 	.enable_reg = MXC_CCM_CCGR4,
+ 	.enable_shift = MXC_CCM_CCGRx_CG1_OFFSET,
+ 	.disable = _clk_disable,
++	.secondary = &emi_fast_clk,
+ };
+ 
+ static struct clk ieee_1588_clk = {
+@@ -3971,14 +3974,19 @@ static struct clk rtc_clk = {
+ 	.disable = _clk_disable,
+ };
+ 
+-static struct clk ata_clk = {
+-	.parent = &ipg_clk,
+-	.secondary = &spba_clk,
++static struct clk ata_clk[] = {
++	{
++	.parent = &spba_clk,
++	.secondary = &ata_clk[1],
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR4,
+ 	.enable_shift = MXC_CCM_CCGRx_CG0_OFFSET,
+ 	.disable = _clk_disable,
+ 	.flags = AHB_HIGH_SET_POINT | CPU_FREQ_TRIG_UPDATE,
++	},
++	{
++	.parent = &emi_fast_clk,
++	}
+ };
+ 
+ static struct clk owire_clk = {
+@@ -4532,6 +4540,8 @@ int __init mx51_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	esdhc2_clk[0].get_rate = _clk_esdhc2_get_rate;
+ 	esdhc2_clk[0].set_rate = _clk_esdhc2_set_rate;
+ 
++	ata_clk[1].secondary = &ahb_max_clk;
++
+ 	clk_tree_init();
+ 
+ 	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
+@@ -4853,6 +4863,8 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 	esdhc3_clk[0].get_rate = _clk_esdhc3_get_rate;
+ 	esdhc3_clk[0].set_rate = _clk_sdhc3_set_rate;
+ 
++	ata_clk[1].secondary = &tmax3_clk;
++
+ #if defined(CONFIG_USB_STATIC_IRAM) \
+     || defined(CONFIG_USB_STATIC_IRAM_PPH)
+ 	usboh3_clk[1].secondary = &emi_intr_clk[1];
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 87eee08..7c0727a 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -1363,7 +1363,11 @@ static struct clk sdma_clk[] = {
+ 	 },
+ 	{
+ 	 .parent = &ipg_clk,
++#ifdef CONFIG_SDMA_IRAM
++	 .secondary = &ocram_clk,
++#else
+ 	 .secondary = &ddr_clk,
++#endif
+ 	 },
+ };
+ 
+@@ -1786,6 +1790,11 @@ static struct clk ssi1_clk[] = {
+ 	{
+ 	 .id = 0,
+ 	 .parent = &aips_tz2_clk,
++#ifdef CONFIG_SND_MXC_SOC_IRAM
++	 .secondary = &ocram_clk,
++#else
++	 .secondary = &ddr_clk,
++#endif
+ 	 },
+ };
+ 
+@@ -1841,6 +1850,11 @@ static struct clk ssi2_clk[] = {
+ 	{
+ 	 .id = 1,
+ 	 .parent = &spba_clk,
++#ifdef CONFIG_SND_MXC_SOC_IRAM
++	 .secondary = &ocram_clk,
++#else
++	 .secondary = &ddr_clk,
++#endif
+ 	 },
+ };
+ 
+@@ -2507,7 +2521,7 @@ static struct clk gpmi_nfc_clk[] = {
+ 	.disable = gpmi_clk_disable,
+ 	},
+ 	{	/* gpmi_apb_clk */
+-	.parent = &ahb_clk,
++	.parent = &apbh_dma_clk,
+ 	.secondary = &gpmi_nfc_clk[2],
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR7,
+@@ -2523,7 +2537,7 @@ static struct clk gpmi_nfc_clk[] = {
+ 	.disable = bch_clk_disable,
+ 	},
+ 	{	/* bch_apb_clk */
+-	.parent = &ahb_clk,
++	.parent = &apbh_dma_clk,
+ 	.enable = _clk_enable,
+ 	.enable_reg = MXC_CCM_CCGR7,
+ 	.enable_shift = MXC_CCM_CCGRx_CG12_OFFSET,
+diff --git a/arch/arm/mach-mx5/mx50_freq.c b/arch/arm/mach-mx5/mx50_freq.c
+index 9cbdfc9..2bf7b1c 100644
+--- a/arch/arm/mach-mx5/mx50_freq.c
++++ b/arch/arm/mach-mx5/mx50_freq.c
+@@ -52,9 +52,9 @@ void __iomem *databahn_base;
+ void (*change_ddr_freq)(void *ccm_addr, void *databahn_addr,
+ 			u32 freq, void *iram_ddr_settings) = NULL;
+ void *wait_in_iram_base;
+-void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
++void (*wait_in_iram)(void *ccm_addr, void *databahn_addr, u32 sys_clk_count);
+ 
+-extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
++extern void mx50_wait(u32 ccm_base, u32 databahn_addr, u32 sys_clk_count);
+ extern int ddr_med_rate;
+ extern void __iomem *ccm_base;
+ extern void __iomem *databahn_base;
+diff --git a/arch/arm/mach-mx5/mx50_wfi.S b/arch/arm/mach-mx5/mx50_wfi.S
+index 3335b0f..a3bf20d 100644
+--- a/arch/arm/mach-mx5/mx50_wfi.S
++++ b/arch/arm/mach-mx5/mx50_wfi.S
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -30,6 +30,7 @@ ENTRY(mx50_wait)
+ 
+     mov    r6, r0                       @save CCM address
+     mov    r5, r1                       @save DataBahn address
++    mov    r7, r2                       @save sys_clk usecount
+ 
+     /*
+      * Make sure the DDR is self-refresh, before setting the clock bits.
+@@ -64,6 +65,10 @@ LoopCKE0:
+     b       Wfi_Done
+ 
+ Sync_mode:
++    /* If usecount of sys_clk is greater than 0, donot gate it. */
++    cmp    r7, #0
++    bgt    do_wfi
++
+     /* Check if PLL1 is sourcing SYS_CLK. */
+     ldr     r5, [r6, #0x90]
+     and    r5, r0, #0x1
+@@ -93,6 +98,9 @@ pll1_source:
+ do_wfi:
+     .long     0xe320f003              @ Opcode for WFI
+ 
++    cmp    r7, #0
++    bgt     Wfi_Done
++
+      cmp    r5, #1
+      beq    pll1_source1
+     /* Set the SYS_XTAL_DIV to 24MHz.*/
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index a04962f..868a406 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -40,8 +40,10 @@ extern int dvfs_core_is_active;
+ extern void __iomem *ccm_base;
+ extern void __iomem *databahn_base;
+ extern int low_bus_freq_mode;
+-extern void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
+-extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
++extern void (*wait_in_iram)(void *ccm_addr, void *databahn_addr,
++							u32 sys_clk_count);
++extern void mx50_wait(u32 ccm_base, u32 databahn_addr,
++						u32 sys_clk_count);
+ extern void stop_dvfs(void);
+ extern void *wait_in_iram_base;
+ extern void __iomem *apll_base;
+@@ -52,6 +54,7 @@ static struct clk *pll1_sw_clk;
+ static struct clk *osc;
+ static struct clk *pll1_main_clk;
+ static struct clk *ddr_clk ;
++static struct clk *sys_clk ;
+ static int dvfs_core_paused;
+ 
+ /* set cpu low power mode before WFI instruction */
+@@ -180,6 +183,9 @@ void arch_idle(void)
+ 		mxc_cpu_lp_set(arch_idle_mode);
+ 
+ 		if (cpu_is_mx50() && (clk_get_usecount(ddr_clk) == 0)) {
++			if (sys_clk == NULL)
++				sys_clk = clk_get(NULL, "sys_clk");
++
+ 			memcpy(wait_in_iram_base, mx50_wait, SZ_4K);
+ 			wait_in_iram = (void *)wait_in_iram_base;
+ 			if (low_bus_freq_mode) {
+@@ -209,7 +215,8 @@ void arch_idle(void)
+ 				cpu_podf = __raw_readl(MXC_CCM_CACRR);
+ 				__raw_writel(0x01, MXC_CCM_CACRR);
+ 
+-				wait_in_iram(ccm_base, databahn_base);
++				wait_in_iram(ccm_base, databahn_base,
++					clk_get_usecount(sys_clk));
+ 
+ 				/* Set the ARM-POD divider back
+ 				 * to the original.
+@@ -217,7 +224,8 @@ void arch_idle(void)
+ 				__raw_writel(cpu_podf, MXC_CCM_CACRR);
+ 				clk_set_parent(pll1_sw_clk, pll1_main_clk);
+ 			} else
+-				wait_in_iram(ccm_base, databahn_base);
++				wait_in_iram(ccm_base, databahn_base,
++					clk_get_usecount(sys_clk));
+ 		} else
+ 			cpu_do_idle();
+ 		clk_disable(gpc_dvfs_clk);
+-- 
+1.5.4.4
+

@@ -1,0 +1,45 @@
+From ce5a02e16a4fd62a58ac4e78ec27b3966750f72d Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Tue, 9 Nov 2010 11:13:30 +0800
+Subject: [PATCH] ENGR00133481-1 [MX28] eMMC Write failed on MX28 boards
+
+Fix eMMC can't write bug on mx28 evk boards.
+HOST send the data at neg edge, the card receive the
+data at pos edge in DDR mode
+But in SDR mode, card is always receive the data at pos edge
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ drivers/mmc/host/mxs-mmc.c |   14 +++++++++++---
+ 1 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mmc/host/mxs-mmc.c b/drivers/mmc/host/mxs-mmc.c
+index f0a52ed..bd5e474 100644
+--- a/drivers/mmc/host/mxs-mmc.c
++++ b/drivers/mmc/host/mxs-mmc.c
+@@ -569,11 +569,19 @@ static void mxs_mmc_adtc(struct mxs_mmc_host *host)
+ 			val = BF(log2_block_size, SSP_BLOCK_SIZE_BLOCK_SIZE) |
+ 			BF(cmd->data->blocks - 1, SSP_BLOCK_SIZE_BLOCK_COUNT);
+ 			__raw_writel(val, host->ssp_base + HW_SSP_BLOCK_SIZE);
+-			if (host->mmc->ios.bus_width & MMC_BUS_WIDTH_DDR)
+-				/* Enable the DDR mode */
++			if (host->mmc->ios.bus_width & MMC_BUS_WIDTH_DDR) {
++				/*
++				 * Enable the DDR mode
++				 * Make sure the POLARITY bit is cleared
++				 */
++				__raw_writel(BM_SSP_CTRL1_POLARITY, \
++					host->ssp_base + HW_SSP_CTRL1_CLR);
+ 				ssp_cmd0 |= BM_SSP_CMD0_DBL_DATA_RATE_EN;
+-			else
++			} else {
++				__raw_writel(BM_SSP_CTRL1_POLARITY, \
++					host->ssp_base + HW_SSP_CTRL1_SET);
+ 				ssp_cmd0 &= ~BM_SSP_CMD0_DBL_DATA_RATE_EN;
++			}
+ 
+ 		}
+ 	} else {
+-- 
+1.5.4.4
+

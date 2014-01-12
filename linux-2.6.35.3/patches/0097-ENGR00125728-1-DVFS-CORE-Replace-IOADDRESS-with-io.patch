@@ -1,0 +1,371 @@
+From b580484bb1e3cd9cd7e17858d3851e5eaec5fa89 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Tue, 3 Aug 2010 15:58:43 -0500
+Subject: [PATCH] ENGR00125728-1: DVFS-CORE: Replace IOADDRESS with ioremap.
+
+Replace all references to virutal address with ioremap and use offsets to
+access registers.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/cpu.c                   |    4 ++
+ arch/arm/mach-mx5/crm_regs.h              |   16 +++++--
+ arch/arm/mach-mx5/mx51_3stack.c           |   10 ++--
+ arch/arm/mach-mx5/mx51_babbage.c          |   10 ++--
+ arch/arm/mach-mx5/mx53_evk.c              |   10 ++--
+ arch/arm/plat-mxc/dvfs_core.c             |   64 +++++++++++++++--------------
+ arch/arm/plat-mxc/include/mach/mxc_dvfs.h |   21 +++++-----
+ 7 files changed, 74 insertions(+), 61 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/cpu.c b/arch/arm/mach-mx5/cpu.c
+index 93a42e8..39213d6 100644
+--- a/arch/arm/mach-mx5/cpu.c
++++ b/arch/arm/mach-mx5/cpu.c
+@@ -34,6 +34,8 @@
+ 
+ void __iomem *arm_plat_base;
+ void __iomem *gpc_base;
++void __iomem *ccm_base;
++
+ static int cpu_silicon_rev = -1;
+ 
+ #define SI_REV 0x48
+@@ -176,6 +178,8 @@ static int __init post_cpu_init(void)
+ 	}
+ 
+ 	gpc_base = ioremap(MX53_BASE_ADDR(GPC_BASE_ADDR), SZ_4K);
++	ccm_base = ioremap(MX53_BASE_ADDR(CCM_BASE_ADDR), SZ_4K);
++
+ 	clk_enable(gpcclk);
+ 
+ 	/* Setup the number of clock cycles to wait for SRPG
+diff --git a/arch/arm/mach-mx5/crm_regs.h b/arch/arm/mach-mx5/crm_regs.h
+index 415feda..f6cf57f 100644
+--- a/arch/arm/mach-mx5/crm_regs.h
++++ b/arch/arm/mach-mx5/crm_regs.h
+@@ -166,6 +166,11 @@
+ #define MXC_CCM_BCH		(MXC_CCM_BASE + 0xB0)
+ #define MXC_CCM_MSHC_XMSCKI	(MXC_CCM_BASE + 0xB4)
+ 
++/* CCM Register Offsets. */
++#define MXC_CCM_CDCR_OFFSET		0x4C
++#define MXC_CCM_CACRR_OFFSET		0x10
++#define MXC_CCM_CDHIPR_OFFSET	0x48
++
+ /* Define the bits in register CCR */
+ #define MXC_CCM_CCR_COSC_EN		(1 << 12)
+ #define MXC_CCM_CCR_FPM_MULT_MASK	(1 << 11)
+@@ -783,11 +788,12 @@ extern void __iomem *arm_plat_base;
+ #define MXC_DVFSPER_PMCR1	(MXC_DVFS_PER_BASE + 0x1C)
+ 
+ /* GPC */
+-#define MXC_GPC_CNTR		(MXC_GPC_BASE + 0x0)
+-#define MXC_GPC_PGR		(MXC_GPC_BASE + 0x4)
+-#define MXC_GPC_VCR		(MXC_GPC_BASE + 0x8)
+-#define MXC_GPC_ALL_PU		(MXC_GPC_BASE + 0xC)
+-#define MXC_GPC_NEON		(MXC_GPC_BASE + 0x10)
++#define MXC_GPC_CNTR				(MXC_GPC_BASE  + 0x0)
++#define MXC_GPC_PGR				(MXC_GPC_BASE  + 0x4)
++#define MXC_GPC_VCR				(MXC_GPC_BASE  + 0x8)
++#define MXC_GPC_CNTR_OFFSET		0x0
++#define MXC_GPC_PGR_OFFSET		0x4
++#define MXC_GPC_VCR_OFFSET		0x8
+ 
+ /* PGC */
+ #define MXC_PGC_IPU_PGCR	(MXC_PGC_IPU_BASE + 0x0)
+diff --git a/arch/arm/mach-mx5/mx51_3stack.c b/arch/arm/mach-mx5/mx51_3stack.c
+index be30ae3..61fd7b0 100644
+--- a/arch/arm/mach-mx5/mx51_3stack.c
++++ b/arch/arm/mach-mx5/mx51_3stack.c
+@@ -280,11 +280,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "SW1",
+ 	.clk1_id = "cpu_clk",
+ 	.clk2_id = "gpc_dvfs_clk",
+-	.gpc_cntr_reg_addr = MXC_GPC_CNTR,
+-	.gpc_vcr_reg_addr = MXC_GPC_VCR,
+-	.ccm_cdcr_reg_addr = MXC_CCM_CDCR,
+-	.ccm_cacrr_reg_addr = MXC_CCM_CACRR,
+-	.ccm_cdhipr_reg_addr = MXC_CCM_CDHIPR,
++	.gpc_cntr_offset = MXC_GPC_CNTR_OFFSET,
++	.gpc_vcr_offset = MXC_GPC_VCR_OFFSET,
++	.ccm_cdcr_offset = MXC_CCM_CDCR_OFFSET,
++	.ccm_cacrr_offset = MXC_CCM_CACRR_OFFSET,
++	.ccm_cdhipr_offset = MXC_CCM_CDHIPR_OFFSET,
+ 	.prediv_mask = 0x1F800,
+ 	.prediv_offset = 11,
+ 	.prediv_val = 3,
+diff --git a/arch/arm/mach-mx5/mx51_babbage.c b/arch/arm/mach-mx5/mx51_babbage.c
+index af40ee8..0891490 100644
+--- a/arch/arm/mach-mx5/mx51_babbage.c
++++ b/arch/arm/mach-mx5/mx51_babbage.c
+@@ -448,11 +448,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "SW1",
+ 	.clk1_id = "cpu_clk",
+ 	.clk2_id = "gpc_dvfs_clk",
+-	.gpc_cntr_reg_addr = MXC_GPC_CNTR,
+-	.gpc_vcr_reg_addr = MXC_GPC_VCR,
+-	.ccm_cdcr_reg_addr = MXC_CCM_CDCR,
+-	.ccm_cacrr_reg_addr = MXC_CCM_CACRR,
+-	.ccm_cdhipr_reg_addr = MXC_CCM_CDHIPR,
++	.gpc_cntr_offset = MXC_GPC_CNTR_OFFSET,
++	.gpc_vcr_offset = MXC_GPC_VCR_OFFSET,
++	.ccm_cdcr_offset = MXC_CCM_CDCR_OFFSET,
++	.ccm_cacrr_offset = MXC_CCM_CACRR_OFFSET,
++	.ccm_cdhipr_offset = MXC_CCM_CDHIPR_OFFSET,
+ 	.prediv_mask = 0x1F800,
+ 	.prediv_offset = 11,
+ 	.prediv_val = 3,
+diff --git a/arch/arm/mach-mx5/mx53_evk.c b/arch/arm/mach-mx5/mx53_evk.c
+index 61f9e67..5c900e2 100644
+--- a/arch/arm/mach-mx5/mx53_evk.c
++++ b/arch/arm/mach-mx5/mx53_evk.c
+@@ -677,11 +677,11 @@ static struct mxc_dvfs_platform_data dvfs_core_data = {
+ 	.reg_id = "SW1",
+ 	.clk1_id = "cpu_clk",
+ 	.clk2_id = "gpc_dvfs_clk",
+-	.gpc_cntr_reg_addr = MXC_GPC_CNTR,
+-	.gpc_vcr_reg_addr = MXC_GPC_VCR,
+-	.ccm_cdcr_reg_addr = MXC_CCM_CDCR,
+-	.ccm_cacrr_reg_addr = MXC_CCM_CACRR,
+-	.ccm_cdhipr_reg_addr = MXC_CCM_CDHIPR,
++	.gpc_cntr_offset = MXC_GPC_CNTR_OFFSET,
++	.gpc_vcr_offset = MXC_GPC_VCR_OFFSET,
++	.ccm_cdcr_offset = MXC_CCM_CDCR_OFFSET,
++	.ccm_cacrr_offset = MXC_CCM_CACRR_OFFSET,
++	.ccm_cdhipr_offset = MXC_CCM_CDHIPR_OFFSET,
+ 	.prediv_mask = 0x1F800,
+ 	.prediv_offset = 11,
+ 	.prediv_val = 3,
+diff --git a/arch/arm/plat-mxc/dvfs_core.c b/arch/arm/plat-mxc/dvfs_core.c
+index 449f883..ec2e722 100644
+--- a/arch/arm/plat-mxc/dvfs_core.c
++++ b/arch/arm/plat-mxc/dvfs_core.c
+@@ -187,14 +187,14 @@ static int set_cpu_freq(int wp)
+ 		}
+ 		spin_lock_irqsave(&mxc_dvfs_core_lock, flags);
+ 		/* PLL_RELOCK, set ARM_FREQ_SHIFT_DIVIDER */
+-		reg = __raw_readl(dvfs_data->ccm_cdcr_reg_addr);
++		reg = __raw_readl(ccm_base + dvfs_data->ccm_cdcr_offset);
+ 		reg &= 0xFFFFFFFB;
+-		__raw_writel(reg, dvfs_data->ccm_cdcr_reg_addr);
++		__raw_writel(reg, ccm_base + dvfs_data->ccm_cdcr_offset);
+ 
+ 		setup_pll();
+ 		/* START the GPC main control FSM */
+ 		/* set VINC */
+-		reg = __raw_readl(dvfs_data->gpc_vcr_reg_addr);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_vcr_offset);
+ 		reg &= ~(MXC_GPCVCR_VINC_MASK | MXC_GPCVCR_VCNTU_MASK |
+ 			 MXC_GPCVCR_VCNT_MASK);
+ 
+@@ -203,17 +203,18 @@ static int set_cpu_freq(int wp)
+ 
+ 		reg |= (1 << MXC_GPCVCR_VCNTU_OFFSET) |
+ 		       (1 << MXC_GPCVCR_VCNT_OFFSET);
+-		__raw_writel(reg, dvfs_data->gpc_vcr_reg_addr);
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_vcr_offset);
+ 
+-		reg = __raw_readl(dvfs_data->gpc_cntr_reg_addr);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 		reg &= ~(MXC_GPCCNTR_ADU_MASK | MXC_GPCCNTR_FUPD_MASK);
+ 		reg |= MXC_GPCCNTR_FUPD;
+ 		reg |= MXC_GPCCNTR_ADU;
+-		__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ 		reg |= MXC_GPCCNTR_STRT;
+-		__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
+-		while (__raw_readl(dvfs_data->gpc_cntr_reg_addr) & 0x4000)
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
++		while (__raw_readl(gpc_base + dvfs_data->gpc_cntr_offset)
++				& 0x4000)
+ 			udelay(10);
+ 		spin_unlock_irqrestore(&mxc_dvfs_core_lock, flags);
+ 
+@@ -234,13 +235,13 @@ static int set_cpu_freq(int wp)
+ 
+ 		/* Change arm_podf only */
+ 		/* set ARM_FREQ_SHIFT_DIVIDER */
+-		reg = __raw_readl(dvfs_data->ccm_cdcr_reg_addr);
++		reg = __raw_readl(ccm_base + dvfs_data->ccm_cdcr_offset);
+ 		reg &= 0xFFFFFFFB;
+ 		reg |= 1 << 2;
+-		__raw_writel(reg, dvfs_data->ccm_cdcr_reg_addr);
++		__raw_writel(reg, ccm_base + dvfs_data->ccm_cdcr_offset);
+ 
+ 		/* Get ARM_PODF */
+-		reg = __raw_readl(dvfs_data->ccm_cacrr_reg_addr);
++		reg = __raw_readl(ccm_base + dvfs_data->ccm_cacrr_offset);
+ 		arm_podf = reg & 0x07;
+ 		if (podf == arm_podf) {
+ 			printk(KERN_DEBUG
+@@ -268,37 +269,38 @@ static int set_cpu_freq(int wp)
+ 		reg &= 0xFFFFFFF8;
+ 		reg |= arm_podf;
+ 
+-		reg1 = __raw_readl(dvfs_data->ccm_cdhipr_reg_addr);
++		reg1 = __raw_readl(ccm_base + dvfs_data->ccm_cdhipr_offset);
+ 		if ((reg1 & 0x00010000) == 0)
+-			__raw_writel(reg, dvfs_data->ccm_cacrr_reg_addr);
++			__raw_writel(reg,
++				ccm_base + dvfs_data->ccm_cacrr_offset);
+ 		else {
+ 			printk(KERN_DEBUG "ARM_PODF still in busy!!!!\n");
+ 			return 0;
+ 		}
+ 
+ 		/* START the GPC main control FSM */
+-		reg = __raw_readl(dvfs_data->gpc_cntr_reg_addr);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 		reg |= MXC_GPCCNTR_FUPD;
+ 		/* ADU=1, select ARM domain */
+ 		reg |= MXC_GPCCNTR_ADU;
+-		__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 		/* set VINC */
+-		reg = __raw_readl(dvfs_data->gpc_vcr_reg_addr);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_vcr_offset);
+ 		reg &=
+ 		    ~(MXC_GPCVCR_VINC_MASK | MXC_GPCVCR_VCNTU_MASK |
+ 		      MXC_GPCVCR_VCNT_MASK);
+ 		reg |= (1 << MXC_GPCVCR_VCNTU_OFFSET) |
+ 		    (100 << MXC_GPCVCR_VCNT_OFFSET) |
+ 		    (vinc << MXC_GPCVCR_VINC_OFFSET);
+-		__raw_writel(reg, dvfs_data->gpc_vcr_reg_addr);
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_vcr_offset);
+ 
+-		reg = __raw_readl(dvfs_data->gpc_cntr_reg_addr);
++		reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 		reg &= (~(MXC_GPCCNTR_ADU | MXC_GPCCNTR_FUPD));
+ 		reg |= MXC_GPCCNTR_ADU | MXC_GPCCNTR_FUPD | MXC_GPCCNTR_STRT;
+-		__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
++		__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ 		/* Wait for arm podf Enable */
+-		while ((__raw_readl(dvfs_data->gpc_cntr_reg_addr) &
++		while ((__raw_readl(gpc_base + dvfs_data->gpc_cntr_offset) &
+ 			MXC_GPCCNTR_STRT) == MXC_GPCCNTR_STRT) {
+ 			printk(KERN_DEBUG "Waiting arm_podf enabled!\n");
+ 			udelay(10);
+@@ -316,9 +318,9 @@ static int set_cpu_freq(int wp)
+ 		}
+ 
+ 		/* Clear the ARM_FREQ_SHIFT_DIVIDER */
+-		reg = __raw_readl(dvfs_data->ccm_cdcr_reg_addr);
++		reg = __raw_readl(ccm_base + dvfs_data->ccm_cdcr_offset);
+ 		reg &= 0xFFFFFFFB;
+-		__raw_writel(reg, dvfs_data->ccm_cdcr_reg_addr);
++		__raw_writel(reg, ccm_base + dvfs_data->ccm_cdcr_offset);
+ 	}
+ #if defined(CONFIG_CPU_FREQ)
+ 		cpufreq_trig_needed = 1;
+@@ -343,14 +345,14 @@ static int start_dvfs(void)
+ 	dvfs_load_config(0);
+ 
+ 	/* config reg GPC_CNTR */
+-	reg = __raw_readl(dvfs_data->gpc_cntr_reg_addr);
++	reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ 	reg &= ~MXC_GPCCNTR_GPCIRQM;
+ 	/* GPCIRQ=1, select ARM IRQ */
+ 	reg |= MXC_GPCCNTR_GPCIRQ_ARM;
+ 	/* ADU=1, select ARM domain */
+ 	reg |= MXC_GPCCNTR_ADU;
+-	__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
++	__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ 	/* Set PREDIV bits */
+ 	reg = __raw_readl(dvfs_data->membase + MXC_DVFSCORE_CNTR);
+@@ -415,8 +417,8 @@ static irqreturn_t dvfs_irq(int irq, void *dev_id)
+ 	u32 reg;
+ 
+ 	/* Check if DVFS0 (ARM) id requesting for freqency/voltage update */
+-	if ((__raw_readl(dvfs_data->gpc_cntr_reg_addr) & MXC_GPCCNTR_DVFS0CR) ==
+-	    0)
++	if ((__raw_readl(gpc_base + dvfs_data->gpc_cntr_offset)
++			& MXC_GPCCNTR_DVFS0CR) == 0)
+ 		return IRQ_NONE;
+ 
+ 	/* Mask DVFS irq */
+@@ -426,9 +428,9 @@ static irqreturn_t dvfs_irq(int irq, void *dev_id)
+ 	__raw_writel(reg, dvfs_data->membase + MXC_DVFSCORE_CNTR);
+ 
+ 	/* Mask GPC1 irq */
+-	reg = __raw_readl(dvfs_data->gpc_cntr_reg_addr);
++	reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 	reg |= MXC_GPCCNTR_GPCIRQM | 0x1000000;
+-	__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
++	__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ 	schedule_delayed_work(&dvfs_core_handler, 0);
+ 	return IRQ_HANDLED;
+@@ -533,9 +535,9 @@ END:	/* Set MAXF, MINF */
+ 	reg |= MXC_DVFSCNTR_LBFL;
+ 	__raw_writel(reg, dvfs_data->membase + MXC_DVFSCORE_CNTR);
+ 	/*Unmask GPC1 IRQ */
+-	reg = __raw_readl(dvfs_data->gpc_cntr_reg_addr);
++	reg = __raw_readl(gpc_base + dvfs_data->gpc_cntr_offset);
+ 	reg &= ~MXC_GPCCNTR_GPCIRQM;
+-	__raw_writel(reg, dvfs_data->gpc_cntr_reg_addr);
++	__raw_writel(reg, gpc_base + dvfs_data->gpc_cntr_offset);
+ 
+ #if defined(CONFIG_CPU_FREQ)
+ 	if (cpufreq_trig_needed == 1) {
+@@ -800,7 +802,6 @@ static int __devinit mxc_dvfs_core_probe(struct platform_device *pdev)
+ 		goto err1;
+ 	}
+ 	dvfs_data->membase = ioremap(res->start, res->end - res->start + 1);
+-
+ 	/*
+ 	 * Request the DVFS interrupt
+ 	 */
+@@ -945,6 +946,7 @@ static void __exit dvfs_cleanup(void)
+ 	/* Unregister the device structure */
+ 	platform_driver_unregister(&mxc_dvfs_core_driver);
+ 
++	iounmap(ccm_base);
+ 	iounmap(dvfs_data->membase);
+ 	clk_put(cpu_clk);
+ 	clk_put(dvfs_clk);
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_dvfs.h b/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
+index 43bcd2f..05c6ea4 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
++++ b/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
+@@ -35,6 +35,7 @@
+ #include <linux/device.h>
+ 
+ extern void __iomem *gpc_base;
++extern void __iomem *ccm_base;
+ 
+ #define MXC_GPCCNTR_GPCIRQ2M		(1 << 25)
+ #define MXC_GPCCNTR_GPCIRQ2		(1 << 24)
+@@ -143,16 +144,16 @@ struct mxc_dvfs_platform_data {
+ 	void __iomem *membase;
+ 	/* The interrupt number used by the DVFS core */
+ 	int irq;
+-	/* GPC control reg address */
+-	void __iomem *gpc_cntr_reg_addr;
+-	/* GPC voltage counter reg address */
+-	void __iomem *gpc_vcr_reg_addr;
+-	/* CCM DVFS control reg address */
+-	void __iomem *ccm_cdcr_reg_addr;
+-	/* CCM ARM clock root reg address */
+-	void __iomem *ccm_cacrr_reg_addr;
+-	/* CCM divider handshake in-progree reg address */
+-	void __iomem *ccm_cdhipr_reg_addr;
++	/* GPC control reg offset */
++	int gpc_cntr_offset;
++	/* GPC voltage counter reg offset */
++	int gpc_vcr_offset;
++	/* CCM DVFS control reg offset */
++	int ccm_cdcr_offset;
++	/* CCM ARM clock root reg offset */
++	int ccm_cacrr_offset;
++	/* CCM divider handshake in-progress reg offset */
++	int ccm_cdhipr_offset;
+ 	/* PREDIV mask */
+ 	u32 prediv_mask;
+ 	/* PREDIV offset */
+-- 
+1.5.4.4
+

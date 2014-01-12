@@ -1,0 +1,83 @@
+From 294d70d6704b63e66dbc78e6ffb9c2ab2ae49c05 Mon Sep 17 00:00:00 2001
+From: Zeng Zhaoming <b32542@freescale.com>
+Date: Tue, 14 Dec 2010 07:39:30 +0800
+Subject: [PATCH] ENGR00136921 FEC: Fix nfs not works after kernel suspend and resume on i.MX28
+
+Fec phy state changing occurs in delay works, which in normal task context.
+And package sending mostly happens in softirq context, only happens in ksoftirq
+while network traffic is heavy and some _many retries_ situation.
+
+Linux network qdisc code keep raising NET_TX_SOFTIRQ softirq if package
+not send out when netdev queue set to start.  And the subsequenece process
+will loop in softirq context for 10ms. Since Imx28 HZ set to 100Hz, the next
+timer interrupt will trigger softirq again. this loop  prevent network link
+changing to up status. And cause a chicken-egg problem.
+
+To break this loop, we need to set netdev transmit queue stop when link is down,
+and start it when link becomes up.
+
+commit 757bfe446bab7661d12a8772ca10b7a490c8aa47 try to resolve this problem,
+but hand-merge mistake introduce a power resume bug.
+
+Reported-by: Peter Chen <peter.chen@freescale.com>
+Signed-off-by: Zeng Zhaoming <b32542@freescale.com>
+---
+ drivers/net/fec.c |   13 +++++++++----
+ 1 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/fec.c b/drivers/net/fec.c
+index f581960..2f159b5 100644
+--- a/drivers/net/fec.c
++++ b/drivers/net/fec.c
+@@ -682,7 +682,6 @@ static void fec_enet_adjust_link(struct net_device *dev)
+ 	if (phy_dev->link) {
+ 		if (fep->full_duplex != phy_dev->duplex) {
+ 			fec_restart(dev, phy_dev->duplex);
+-			netif_wake_queue(dev);
+ 			status_change = 1;
+ 		}
+ 	}
+@@ -690,8 +689,15 @@ static void fec_enet_adjust_link(struct net_device *dev)
+ 	/* Link on or off change */
+ 	if (phy_dev->link != fep->link) {
+ 		fep->link = phy_dev->link;
+-		if (phy_dev->link)
++		if (phy_dev->link) {
+ 			fec_restart(dev, phy_dev->duplex);
++
++			/* if link becomes up and tx be stopped, start it */
++			if (netif_queue_stopped(dev)) {
++				netif_start_queue(dev);
++				netif_wake_queue(dev);
++			}
++		}
+ 		else
+ 			fec_stop(dev);
+ 		status_change = 1;
+@@ -1024,7 +1030,6 @@ fec_enet_open(struct net_device *dev)
+ 	}
+ 	phy_start(fep->phy_dev);
+ 	fec_restart(dev, fep->phy_dev->duplex);
+-	netif_start_queue(dev);
+ 	fep->opened = 1;
+ 	return 0;
+ }
+@@ -1036,7 +1041,6 @@ fec_enet_close(struct net_device *dev)
+ 
+ 	/* Don't know what to do yet. */
+ 	fep->opened = 0;
+-	netif_stop_queue(dev);
+ 	fec_stop(dev);
+ 
+ 	if (fep->phy_dev) {
+@@ -1421,6 +1425,7 @@ fec_stop(struct net_device *dev)
+ 		fec_ptp_stop(fep->ptp_priv);
+ 	writel(FEC_DEFAULT_IMASK, fep->hwp + FEC_IMASK);
+ 
++	netif_stop_queue(dev);
+ 	fep->link = 0;
+ }
+ 
+-- 
+1.5.4.4
+

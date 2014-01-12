@@ -1,0 +1,27 @@
+From 14cf5e51d489db18ad40216cd85ced5be4e70bac Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 7 Dec 2010 14:49:26 +0800
+Subject: [PATCH] ENGR00136031 mfgtool: sync config file for mx50 rdp
+
+Some configs for mx50 rdp is missed at mfg-tool firmware config file
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ include/configs/mx50_rdp_mfg.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/mx50_rdp_mfg.h b/include/configs/mx50_rdp_mfg.h
+index eacdfb1..6c8dc7f 100644
+--- a/include/configs/mx50_rdp_mfg.h
++++ b/include/configs/mx50_rdp_mfg.h
+@@ -29,6 +29,7 @@
+ #define CONFIG_MXC
+ #define CONFIG_MX50
+ #define CONFIG_MX50_RDP
++#define CONFIG_LPDDR2
+ #define CONFIG_FLASH_HEADER
+ #define CONFIG_FLASH_HEADER_OFFSET 0x400
+ 
+-- 
+1.5.4.4
+

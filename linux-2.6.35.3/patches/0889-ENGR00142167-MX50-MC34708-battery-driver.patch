@@ -1,0 +1,30 @@
+From 86b07293f72c02b6caf8fc91ebe2d1a68d6ba57c Mon Sep 17 00:00:00 2001
+From: Anson Huang <b20788@freescale.com>
+Date: Fri, 15 Apr 2011 11:20:00 +0800
+Subject: [PATCH] ENGR00142167 [MX50]MC34708 battery driver
+
+Current charging point number should be 1, unless
+Sometimes system will hang if ADC reading battery
+voltage > 4.2V.
+
+Signed-off-by: Anson Huang <b20788@freescale.com>
+---
+ drivers/mxc/pmic/mc34708/mc34708_battery.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mxc/pmic/mc34708/mc34708_battery.c b/drivers/mxc/pmic/mc34708/mc34708_battery.c
+index 55dd7d0..e36a224 100644
+--- a/drivers/mxc/pmic/mc34708/mc34708_battery.c
++++ b/drivers/mxc/pmic/mc34708/mc34708_battery.c
+@@ -162,7 +162,7 @@ static struct mc34708_charger_config ripley_charge_config = {
+ 	.lowBattThreshold = 3100000,
+ 	.toppingOffMicroAmp = 50000,	/* 50mA */
+ 	.chargingPoints = ripley_charger_setting_point,
+-	.pointsNumber = 3,
++	.pointsNumber = 1,
+ };
+ 
+ static int dump_ripley_register(int reg);
+-- 
+1.5.4.4
+

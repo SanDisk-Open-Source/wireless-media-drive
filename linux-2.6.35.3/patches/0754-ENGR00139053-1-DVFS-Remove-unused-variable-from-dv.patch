@@ -1,0 +1,28 @@
+From b9f72759e9b17b919238a67d9e1a7e52487dbf82 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Thu, 10 Feb 2011 15:38:33 -0600
+Subject: [PATCH] ENGR00139053-1: DVFS: Remove unused variable from dvfs_core structure
+
+Remove unused variable, num_wp from the dvfs_core structure.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/plat-mxc/include/mach/mxc_dvfs.h |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/plat-mxc/include/mach/mxc_dvfs.h b/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
+index 35aefaa..e4c15cf 100644
+--- a/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
++++ b/arch/arm/plat-mxc/include/mach/mxc_dvfs.h
+@@ -185,8 +185,6 @@ struct mxc_dvfs_platform_data {
+ 	int dncnt_val;
+ 	/* Delay time in us */
+ 	int delay_time;
+-	/* Number of woking points supported */
+-	int num_wp;
+ };
+ 
+ /*!
+-- 
+1.5.4.4
+

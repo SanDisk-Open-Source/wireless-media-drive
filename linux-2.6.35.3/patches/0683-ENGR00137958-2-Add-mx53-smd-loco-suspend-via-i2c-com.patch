@@ -1,0 +1,681 @@
+From b81596cbc3188522be727dd6dec2d3a9488df7bd Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Thu, 13 Jan 2011 21:50:55 +0800
+Subject: [PATCH] ENGR00137958-2 Add mx53 smd&loco suspend via i2c command
+
+Add mx53 smd&loco suspend via i2c command
+Only a maximu 30ms delay before da9053 enter suspend, thus
+the command is sent out at the latest stage of system suspend
+operation when all other drivers already suspended and irq disabled.
+A standalone polling-mode i2c interface is therefor deployed for the suspend
+command operations.
+In current solution, mx53 fails to resume from 1GHZ working poing when reduce
+VDD &VCC to stop mode level. Thus a workaround is added to set mx53 working
+point to 400MHZ before suspend and restore to previous working point after
+it resume back.
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ arch/arm/mach-mx5/Makefile                |    2 +-
+ arch/arm/mach-mx5/clock.c                 |    2 +-
+ arch/arm/mach-mx5/mx53_loco.c             |    2 +-
+ arch/arm/mach-mx5/mx53_loco_pmic_da9053.c |   29 ++--
+ arch/arm/mach-mx5/mx53_smd.c              |    2 +-
+ arch/arm/mach-mx5/mx53_smd_pmic_da9053.c  |   30 ++--
+ arch/arm/mach-mx5/pm.c                    |   35 +++-
+ arch/arm/mach-mx5/pm_da9053.c             |  345 +++++++++++++++++++++++++++++
+ 8 files changed, 410 insertions(+), 37 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index fb72f52..2ef2ceb 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -7,7 +7,7 @@ obj-y   := system.o iomux.o cpu.o mm.o devices.o serial.o dma.o lpmodes.o pm.o \
+ sdram_autogating.o bus_freq.o usb_dr.o usb_h1.o usb_h2.o dummy_gpio.o  early_setup.o
+ 
+ obj-$(CONFIG_ARCH_MX51) += clock.o suspend.o
+-obj-$(CONFIG_ARCH_MX53) += clock.o suspend.o mx53_wp.o
++obj-$(CONFIG_ARCH_MX53) += clock.o suspend.o mx53_wp.o pm_da9053.o
+ obj-$(CONFIG_ARCH_MX50) += clock_mx50.o dmaengine.o dma-apbh.o mx50_suspend.o mx50_ddr_freq.o mx50_wfi.o
+ 
+ obj-$(CONFIG_MACH_MX51_3DS) += mx51_3stack.o mx51_3stack_gpio.o mx51_3stack_pmic_mc13892.o
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 5ea895c..d0be51f 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4310,7 +4310,7 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK("mxcintuart.0", NULL, uart1_clk[0]),
+ 	_REGISTER_CLOCK("mxcintuart.1", NULL, uart2_clk[0]),
+ 	_REGISTER_CLOCK("mxcintuart.2", NULL, uart3_clk[0]),
+-	_REGISTER_CLOCK("imx-i2c.0", NULL, i2c_clk[0]),
++	_REGISTER_CLOCK(NULL, "i2c_clk", i2c_clk[0]),
+ 	_REGISTER_CLOCK("imx-i2c.1", NULL, i2c_clk[1]),
+ 	_REGISTER_CLOCK("mxc_pwm.0", NULL, pwm1_clk[0]),
+ 	_REGISTER_CLOCK("mxc_pwm.1", NULL, pwm2_clk[0]),
+diff --git a/arch/arm/mach-mx5/mx53_loco.c b/arch/arm/mach-mx5/mx53_loco.c
+index 1d7e600..adc0fd6 100644
+--- a/arch/arm/mach-mx5/mx53_loco.c
++++ b/arch/arm/mach-mx5/mx53_loco.c
+@@ -680,7 +680,7 @@ static void mx53_loco_usbh1_vbus(bool on)
+ }
+ 
+ static struct gpio_keys_button loco_buttons[] = {
+-	GPIO_BUTTON(MX53_nONKEY, KEY_POWER, 1, "power", 1),
++	GPIO_BUTTON(MX53_nONKEY, KEY_POWER, 1, "power", 0),
+ 	GPIO_BUTTON(USER_UI1, KEY_VOLUMEUP, 1, "volume-up", 0),
+ 	GPIO_BUTTON(USER_UI2, KEY_VOLUMEDOWN, 1, "volume-down", 0),
+ };
+diff --git a/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c b/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
+index 10bfb26..1a833d8 100644
+--- a/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
++++ b/arch/arm/mach-mx5/mx53_loco_pmic_da9053.c
+@@ -46,44 +46,45 @@
+ 		|REGULATOR_CHANGE_STATUS | REGULATOR_CHANGE_MODE,\
+ 		.valid_modes_mask = REGULATOR_MODE_NORMAL,\
+ 		.state_mem = { \
+-			.uV = suspend_mv, \
++			.uV = suspend_mv * 1000, \
+ 			.mode = REGULATOR_MODE_NORMAL, \
+ 			.enabled = (0 == suspend_mv) ? 0 : 1, \
++			.disabled = 0, \
+ 		}, \
+ 	},\
+ }
+ 
+ static struct regulator_init_data da9052_regulators_init[] = {
+ 	DA9052_LDO(DA9052_LDO1_VOLT_UPPER,
+-		DA9052_LDO1_VOLT_LOWER, "DA9052_LDO1", 0),
++		DA9052_LDO1_VOLT_LOWER, "DA9052_LDO1", 1300),
+ 	DA9052_LDO(DA9052_LDO2_VOLT_UPPER,
+-		DA9052_LDO2_VOLT_LOWER, "DA9052_LDO2", 0),
++		DA9052_LDO2_VOLT_LOWER, "DA9052_LDO2", 1300),
+ 	DA9052_LDO(DA9052_LDO34_VOLT_UPPER,
+-		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO3", 0),
++		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO3", 3300),
+ 	DA9052_LDO(DA9052_LDO34_VOLT_UPPER,
+-		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO4", 0),
++		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO4", 2775),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO5", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO5", 1300),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO6", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO6", 1200),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO7", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO7", 2750),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO8", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO8", 1800),
+ 	DA9052_LDO(DA9052_LDO9_VOLT_UPPER,
+-		DA9052_LDO9_VOLT_LOWER, "DA9052_LDO9", 0),
++		DA9052_LDO9_VOLT_LOWER, "DA9052_LDO9", 2500),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO10", 950),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO10", 1200),
+ 
+ 	/* BUCKS */
+ 	DA9052_LDO(DA9052_BUCK_CORE_PRO_VOLT_UPPER,
+ 		DA9052_BUCK_CORE_PRO_VOLT_LOWER, "DA9052_BUCK_CORE", 850),
+ 	DA9052_LDO(DA9052_BUCK_CORE_PRO_VOLT_UPPER,
+-		DA9052_BUCK_CORE_PRO_VOLT_LOWER, "DA9052_BUCK_PRO", 1175),
++		DA9052_BUCK_CORE_PRO_VOLT_LOWER, "DA9052_BUCK_PRO", 950),
+ 	DA9052_LDO(DA9052_BUCK_MEM_VOLT_UPPER,
+-		DA9052_BUCK_MEM_VOLT_LOWER, "DA9052_BUCK_MEM", 0),
++		DA9052_BUCK_MEM_VOLT_LOWER, "DA9052_BUCK_MEM", 1500),
+ 	DA9052_LDO(DA9052_BUCK_PERI_VOLT_UPPER,
+-		DA9052_BUCK_PERI_VOLT_LOWER, "DA9052_BUCK_PERI", 0)
++		DA9052_BUCK_PERI_VOLT_LOWER, "DA9052_BUCK_PERI", 2500)
+ };
+ 
+ 
+diff --git a/arch/arm/mach-mx5/mx53_smd.c b/arch/arm/mach-mx5/mx53_smd.c
+index 2c603c4..6c9f3bf 100644
+--- a/arch/arm/mach-mx5/mx53_smd.c
++++ b/arch/arm/mach-mx5/mx53_smd.c
+@@ -765,7 +765,7 @@ static struct i2c_board_info mxc_i2c1_board_info[] __initdata = {
+ }
+ 
+ static struct gpio_keys_button smd_buttons[] = {
+-	GPIO_BUTTON(MX53_SMD_PMIC_ON_OFF_REQ, KEY_POWER, 0, "power", 1),
++	GPIO_BUTTON(MX53_SMD_PMIC_ON_OFF_REQ, KEY_POWER, 0, "power", 0),
+ 	GPIO_BUTTON(MX53_SMD_KEY_VOL_UP, KEY_VOLUMEUP, 1, "volume-up", 0),
+ 	GPIO_BUTTON(MX53_SMD_KEY_VOL_DOWN, KEY_VOLUMEDOWN, 1, "volume-down", 0),
+ };
+diff --git a/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c b/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
+index 2f0436d..6179e8e 100644
+--- a/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
++++ b/arch/arm/mach-mx5/mx53_smd_pmic_da9053.c
+@@ -48,46 +48,48 @@
+ 		|REGULATOR_CHANGE_STATUS | REGULATOR_CHANGE_MODE,\
+ 		.valid_modes_mask = REGULATOR_MODE_NORMAL,\
+ 		.state_mem = { \
+-			.uV = suspend_mv, \
++			.uV = suspend_mv * 1000, \
+ 			.mode = REGULATOR_MODE_NORMAL, \
+ 			.enabled = (0 == suspend_mv) ? 0 : 1, \
++			.disabled = 0, \
+ 		}, \
+ 	},\
+ }
+ 
+ static struct regulator_init_data da9052_regulators_init[] = {
+ 	DA9052_LDO(DA9052_LDO1_VOLT_UPPER,
+-		DA9052_LDO1_VOLT_LOWER, "DA9052_LDO1", 0),
++		DA9052_LDO1_VOLT_LOWER, "DA9052_LDO1", 1300),
+ 	DA9052_LDO(DA9052_LDO2_VOLT_UPPER,
+-		DA9052_LDO2_VOLT_LOWER, "DA9052_LDO2", 0),
++		DA9052_LDO2_VOLT_LOWER, "DA9052_LDO2", 1300),
+ 	DA9052_LDO(DA9052_LDO34_VOLT_UPPER,
+-		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO3", 0),
++		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO3", 3300),
+ 	DA9052_LDO(DA9052_LDO34_VOLT_UPPER,
+-		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO4", 0),
++		DA9052_LDO34_VOLT_LOWER, "DA9052_LDO4", 2775),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO5", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO5", 1300),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO6", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO6", 1200),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO7", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO7", 2750),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO8", 0),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO8", 1800),
+ 	DA9052_LDO(DA9052_LDO9_VOLT_UPPER,
+-		DA9052_LDO9_VOLT_LOWER, "DA9052_LDO9", 0),
++		DA9052_LDO9_VOLT_LOWER, "DA9052_LDO9", 2500),
+ 	DA9052_LDO(DA9052_LDO567810_VOLT_UPPER,
+-		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO10", 950),
++		DA9052_LDO567810_VOLT_LOWER, "DA9052_LDO10", 1200),
+ 
+ 	/* BUCKS */
+ 	DA9052_LDO(DA9052_BUCK_CORE_PRO_VOLT_UPPER,
+ 		DA9052_BUCK_CORE_PRO_VOLT_LOWER, "DA9052_BUCK_CORE", 850),
+ 	DA9052_LDO(DA9052_BUCK_CORE_PRO_VOLT_UPPER,
+-		DA9052_BUCK_CORE_PRO_VOLT_LOWER, "DA9052_BUCK_PRO", 1175),
++		DA9052_BUCK_CORE_PRO_VOLT_LOWER, "DA9052_BUCK_PRO", 950),
+ 	DA9052_LDO(DA9052_BUCK_MEM_VOLT_UPPER,
+-		DA9052_BUCK_MEM_VOLT_LOWER, "DA9052_BUCK_MEM", 0),
++		DA9052_BUCK_MEM_VOLT_LOWER, "DA9052_BUCK_MEM", 1500),
+ 	DA9052_LDO(DA9052_BUCK_PERI_VOLT_UPPER,
+-		DA9052_BUCK_PERI_VOLT_LOWER, "DA9052_BUCK_PERI", 0)
++		DA9052_BUCK_PERI_VOLT_LOWER, "DA9052_BUCK_PERI", 2500)
+ };
+ 
++
+ #define MX53_SMD_WiFi_BT_PWR_EN		(2*32 + 10)	/*GPIO_3_10 */
+ struct regulator_init_data wifi_bt_reg_initdata = {
+ 	.constraints = {
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index 6107c35..7df6753 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -1,5 +1,5 @@
+ /*
+- *  Copyright (C) 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *  Copyright (C) 2008-2011 Freescale Semiconductor, Inc. All Rights Reserved.
+  */
+ 
+ /*
+@@ -15,9 +15,11 @@
+ #include <linux/io.h>
+ #include <linux/kernel.h>
+ #include <linux/clk.h>
++#include <linux/i2c.h>
+ #include <linux/platform_device.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/suspend.h>
++#include <linux/regulator/machine.h>
+ #include <linux/proc_fs.h>
+ #include <linux/cpufreq.h>
+ #include <linux/iram_alloc.h>
+@@ -25,6 +27,7 @@
+ #include <asm/mach-types.h>
+ #include <asm/cacheflush.h>
+ #include <asm/tlb.h>
++#include <asm/delay.h>
+ #include <asm/mach/map.h>
+ #include <mach/hardware.h>
+ #include <mach/gpio.h>
+@@ -38,8 +41,10 @@
+ #define DATABAHN_CTL_REG19	0x4c
+ #define DATABAHN_CTL_REG79	0x13c
+ #define DATABAHN_PHY_REG25	0x264
++#define MX53_OFFSET 0x20000000
+ 
+ static struct cpu_wp *cpu_wp_tbl;
++static int cpu_wp_nr;
+ static struct clk *cpu_clk;
+ static struct mxc_pm_platform_data *pm_data;
+ 
+@@ -56,6 +61,8 @@ extern void cpu_do_suspend_workaround(u32 sdclk_iomux_addr);
+ extern void mx50_suspend(u32 databahn_addr);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ extern void __iomem *databahn_base;
++extern void da9053_suspend_cmd(void);
++extern void pm_da9053_i2c_init(u32 base_addr);
+ 
+ extern int iram_ready;
+ void *suspend_iram_base;
+@@ -87,6 +94,9 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 		flush_cache_all();
+ 
+ 		if (cpu_is_mx51() || cpu_is_mx53()) {
++			if (machine_is_mx53_smd() ||
++				machine_is_mx53_loco())
++				da9053_suspend_cmd();
+ 			/* Run the suspend code from iRAM. */
+ 			suspend_in_iram(suspend_param1);
+ 
+@@ -115,20 +125,32 @@ static int mx5_suspend_enter(suspend_state_t state)
+ static int mx5_suspend_prepare(void)
+ {
+ #if defined(CONFIG_CPU_FREQ)
++#define MX53_SUSPEND_CPU_WP 400000000
+ 	struct cpufreq_freqs freqs;
++	u32 suspend_wp = 0;
+ 	org_freq = clk_get_rate(cpu_clk);
++	/* workaround for mx53 to suspend on 400MHZ wp */
++	if (cpu_is_mx53())
++		for (suspend_wp = 0; suspend_wp < cpu_wp_nr; suspend_wp++)
++			if (cpu_wp_tbl[suspend_wp].cpu_rate
++				== MX53_SUSPEND_CPU_WP)
++				break;
++	if (suspend_wp == cpu_wp_nr)
++		suspend_wp = 0;
++	pr_info("suspend wp cpu=%d\n", cpu_wp_tbl[suspend_wp].cpu_rate);
+ 	freqs.old = org_freq / 1000;
+-	freqs.new = cpu_wp_tbl[0].cpu_rate / 1000;
++	freqs.new = cpu_wp_tbl[suspend_wp].cpu_rate / 1000;
+ 	freqs.cpu = 0;
+ 	freqs.flags = 0;
+ 
+ 	cpufreq_suspended = 1;
+-	if (clk_get_rate(cpu_clk) != cpu_wp_tbl[0].cpu_rate) {
+-		set_cpu_freq(cpu_wp_tbl[0].cpu_rate);
++	if (clk_get_rate(cpu_clk) != cpu_wp_tbl[suspend_wp].cpu_rate) {
++		set_cpu_freq(cpu_wp_tbl[suspend_wp].cpu_rate);
+ 		cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
+ 		cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
+ 	}
+ #endif
++	regulator_suspend_prepare(PM_SUSPEND_MEM);
+ 	return 0;
+ }
+ 
+@@ -192,7 +214,6 @@ static struct platform_driver mx5_pm_driver = {
+ 
+ static int __init pm_init(void)
+ {
+-	int cpu_wp_nr;
+ 	unsigned long iram_paddr;
+ 
+ 	pr_info("Static Power Management for Freescale i.MX5\n");
+@@ -232,6 +253,10 @@ static int __init pm_init(void)
+ 	}
+ 	printk(KERN_INFO "PM driver module loaded\n");
+ 
++	if (machine_is_mx53_smd() ||
++		machine_is_mx53_loco())
++		pm_da9053_i2c_init(I2C1_BASE_ADDR - MX53_OFFSET);
++
+ 	return 0;
+ }
+ 
+diff --git a/arch/arm/mach-mx5/pm_da9053.c b/arch/arm/mach-mx5/pm_da9053.c
+new file mode 100644
+index 0000000..3190135
+--- /dev/null
++++ b/arch/arm/mach-mx5/pm_da9053.c
+@@ -0,0 +1,345 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc. All Rights Reserved.
++ */
++
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/errno.h>
++#include <linux/err.h>
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <linux/mfd/da9052/reg.h>
++
++#include <mach/hardware.h>
++#include <mach/i2c.h>
++
++/** Defines ********************************************************************
++*******************************************************************************/
++
++
++/* IMX I2C registers */
++#define IMX_I2C_IADR	0x00	/* i2c slave address */
++#define IMX_I2C_IFDR	0x04	/* i2c frequency divider */
++#define IMX_I2C_I2CR	0x08	/* i2c control */
++#define IMX_I2C_I2SR	0x0C	/* i2c status */
++#define IMX_I2C_I2DR	0x10	/* i2c transfer data */
++
++/* Bits of IMX I2C registers */
++#define I2SR_RXAK	0x01
++#define I2SR_IIF	0x02
++#define I2SR_SRW	0x04
++#define I2SR_IAL	0x10
++#define I2SR_IBB	0x20
++#define I2SR_IAAS	0x40
++#define I2SR_ICF	0x80
++#define I2CR_RSTA	0x04
++#define I2CR_TXAK	0x08
++#define I2CR_MTX	0x10
++#define I2CR_MSTA	0x20
++#define I2CR_IIEN	0x40
++#define I2CR_IEN	0x80
++
++static void __iomem		*base;
++static int stopped;
++
++/** Functions for IMX I2C adapter driver ***************************************
++*******************************************************************************/
++
++static int pm_i2c_imx_bus_busy(int for_busy)
++{
++	unsigned int temp;
++
++	while (1) {
++		temp = readb(base + IMX_I2C_I2SR);
++		if (for_busy && (temp & I2SR_IBB))
++			break;
++		if (!for_busy && !(temp & I2SR_IBB))
++			break;
++		pr_debug("waiting bus busy=%d\n", for_busy);
++	}
++
++	return 0;
++}
++
++static int pm_i2c_imx_trx_complete(void)
++{
++	unsigned int temp;
++	while (!((temp = readb(base + IMX_I2C_I2SR)) & I2SR_IIF))
++		pr_debug("waiting or I2SR_IIF\n");
++	temp &= ~I2SR_IIF;
++	writeb(temp, base + IMX_I2C_I2SR);
++
++	return 0;
++}
++
++static int pm_i2c_imx_acked(void)
++{
++	if (readb(base + IMX_I2C_I2SR) & I2SR_RXAK) {
++		pr_info("<%s> No ACK\n", __func__);
++		return -EIO;  /* No ACK */
++	}
++	return 0;
++}
++
++static int pm_i2c_imx_start(void)
++{
++	unsigned int temp = 0;
++	int result;
++
++	/* Enable I2C controller */
++	writeb(0, base + IMX_I2C_I2SR);
++	writeb(I2CR_IEN, base + IMX_I2C_I2CR);
++
++	/* Wait controller to be stable */
++	udelay(50);
++
++	/* Start I2C transaction */
++	temp = readb(base + IMX_I2C_I2CR);
++	temp |= I2CR_MSTA;
++	writeb(temp, base + IMX_I2C_I2CR);
++	result = pm_i2c_imx_bus_busy(1);
++
++	temp |= I2CR_IIEN | I2CR_MTX | I2CR_TXAK;
++	writeb(temp, base + IMX_I2C_I2CR);
++	return result;
++}
++
++static void pm_i2c_imx_stop(void)
++{
++	unsigned int temp = 0;
++
++	/* Stop I2C transaction */
++	temp = readb(base + IMX_I2C_I2CR);
++	temp &= ~(I2CR_MSTA | I2CR_MTX);
++	writeb(temp, base + IMX_I2C_I2CR);
++
++	pm_i2c_imx_bus_busy(0);
++
++	/* Disable I2C controller */
++	writeb(0, base + IMX_I2C_I2CR);
++}
++
++static int pm_i2c_imx_write(struct i2c_msg *msgs)
++{
++	int i, result;
++
++	/* write slave address */
++	writeb(msgs->addr << 1, base + IMX_I2C_I2DR);
++	result = pm_i2c_imx_trx_complete();
++	if (result)
++		return result;
++	result = pm_i2c_imx_acked();
++	if (result)
++		return result;
++
++	/* write data */
++	for (i = 0; i < msgs->len; i++) {
++		writeb(msgs->buf[i], base + IMX_I2C_I2DR);
++		result = pm_i2c_imx_trx_complete();
++		if (result)
++			return result;
++		result = pm_i2c_imx_acked();
++		if (result)
++			return result;
++	}
++	return 0;
++}
++
++static int pm_i2c_imx_read(struct i2c_msg *msgs)
++{
++	int i, result;
++	unsigned int temp;
++
++	/* write slave address */
++	writeb((msgs->addr << 1) | 0x01, base + IMX_I2C_I2DR);
++	result = pm_i2c_imx_trx_complete();
++	if (result)
++		return result;
++	result = pm_i2c_imx_acked();
++	if (result)
++		return result;
++
++	/* setup bus to read data */
++	temp = readb(base + IMX_I2C_I2CR);
++	temp &= ~I2CR_MTX;
++	if (msgs->len - 1)
++		temp &= ~I2CR_TXAK;
++	writeb(temp, base + IMX_I2C_I2CR);
++	readb(base + IMX_I2C_I2DR); /* dummy read */
++
++	/* read data */
++	for (i = 0; i < msgs->len; i++) {
++		result = pm_i2c_imx_trx_complete();
++		if (result)
++			return result;
++		if (i == (msgs->len - 1)) {
++			/* It must generate STOP before read I2DR to prevent
++			   controller from generating another clock cycle */
++			temp = readb(base + IMX_I2C_I2CR);
++			temp &= ~(I2CR_MSTA | I2CR_MTX);
++			writeb(temp, base + IMX_I2C_I2CR);
++			pm_i2c_imx_bus_busy(0);
++			stopped = 1;
++		} else if (i == (msgs->len - 2)) {
++			temp = readb(base + IMX_I2C_I2CR);
++			temp |= I2CR_TXAK;
++			writeb(temp, base + IMX_I2C_I2CR);
++		}
++		msgs->buf[i] = readb(base + IMX_I2C_I2DR);
++	}
++	return 0;
++}
++
++int pm_i2c_imx_xfer(struct i2c_msg *msgs, int num)
++{
++	unsigned int i, temp;
++	int result;
++
++	/* Start I2C transfer */
++	result = pm_i2c_imx_start();
++	if (result)
++		goto fail0;
++
++	/* read/write data */
++	for (i = 0; i < num; i++) {
++		if (i) {
++			temp = readb(base + IMX_I2C_I2CR);
++			temp |= I2CR_RSTA;
++			writeb(temp, base + IMX_I2C_I2CR);
++			result =  pm_i2c_imx_bus_busy(1);
++			if (result)
++				goto fail0;
++		}
++		/* write/read data */
++		if (msgs[i].flags & I2C_M_RD)
++			result = pm_i2c_imx_read(&msgs[i]);
++		else
++			result = pm_i2c_imx_write(&msgs[i]);
++		if (result)
++			goto fail0;
++	}
++
++fail0:
++	/* Stop I2C transfer */
++	pm_i2c_imx_stop();
++
++	return (result < 0) ? result : num;
++}
++
++void pm_da9053_i2c_init(u32 base_addr)
++{
++	base = ioremap(base_addr, SZ_4K);
++}
++
++void pm_da9053_i2c_deinit(void)
++{
++	iounmap(base);
++}
++
++void pm_da9053_read_reg(u8 reg, u8 *value)
++{
++	unsigned char buf[2] = {0, 0};
++	struct i2c_msg i2cmsg[2];
++	buf[0] = reg;
++	i2cmsg[0].addr  = 0x48 ;
++	i2cmsg[0].len   = 1;
++	i2cmsg[0].buf   = &buf[0];
++
++	i2cmsg[0].flags = 0;
++
++	i2cmsg[1].addr  = 0x48 ;
++	i2cmsg[1].len   = 1;
++	i2cmsg[1].buf   = &buf[1];
++
++	i2cmsg[1].flags = I2C_M_RD;
++
++	pm_i2c_imx_xfer(i2cmsg, 2);
++	*value = buf[1];
++}
++
++void pm_da9053_write_reg(u8 reg, u8 value)
++{
++	unsigned char buf[2] = {0, 0};
++	struct i2c_msg i2cmsg[2];
++	buf[0] = reg;
++	buf[1] = value;
++	i2cmsg[0].addr  = 0x48 ;
++	i2cmsg[0].len   = 2;
++	i2cmsg[0].buf   = &buf[0];
++	i2cmsg[0].flags = 0;
++	pm_i2c_imx_xfer(i2cmsg, 1);
++}
++
++#define DA9053_SLEEP_DELAY 0x1f
++int da9053_suspend_cmd(void)
++{
++	unsigned char buf[2] = {0, 0};
++	struct clk *i2c_clk;
++	u8 data;
++	buf[0] = 29;
++
++	i2c_clk = clk_get(NULL, "i2c_clk");
++	if (IS_ERR(i2c_clk)) {
++		pr_err("unable to get i2c clk\n");
++		return PTR_ERR(i2c_clk);
++	}
++	clk_enable(i2c_clk);
++
++	pm_da9053_read_reg(DA9052_ID01_REG, &data);
++	data &= ~(DA9052_ID01_DEFSUPPLY | DA9052_ID01_nRESMODE);
++	pm_da9053_write_reg(DA9052_ID01_REG, data);
++
++	pm_da9053_write_reg(DA9052_SEQB_REG, DA9053_SLEEP_DELAY);
++
++	pm_da9053_read_reg(DA9052_CONTROLB_REG, &data);
++	data |= DA9052_CONTROLB_DEEPSLEEP;
++	pm_da9053_write_reg(DA9052_CONTROLB_REG, data);
++
++	clk_disable(i2c_clk);
++	clk_put(i2c_clk);
++	return 0;
++}
++
++int da9053_poweroff_cmd(void)
++{
++	unsigned char buf[2] = {0, 0};
++	struct clk *i2c_clk;
++	u8 data;
++	buf[0] = 29;
++
++	i2c_clk = clk_get(NULL, "i2c_clk");
++	if (IS_ERR(i2c_clk)) {
++		pr_err("unable to get i2c clk\n");
++		return PTR_ERR(i2c_clk);
++	}
++	clk_enable(i2c_clk);
++
++	pm_da9053_read_reg(DA9052_CONTROLB_REG, &data);
++	data |= DA9052_CONTROLB_SHUTDOWN;
++	pm_da9053_write_reg(DA9052_CONTROLB_REG, data);
++
++	clk_disable(i2c_clk);
++	clk_put(i2c_clk);
++	return 0;
++}
++
+-- 
+1.5.4.4
+

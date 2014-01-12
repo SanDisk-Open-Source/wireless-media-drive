@@ -1,0 +1,528 @@
+From 784cad4a077b8af802466e102d276e1b9170818d Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Fri, 3 Sep 2010 16:47:58 -0500
+Subject: [PATCH] ENGR00127147: MX50: Add support for Automatic Low Power Mode on DDR
+
+Configure the Databahn so that the DDR automatically enters Low Power Mode 4.
+This will allow DDR to enter into self-refresh after an idle timeout.
+Also added code to disable DDR_CLKGAT bits in the CCM when no bus masters
+are accessing the DDR and ARM is in WFI.
+Removed calls to change DDR frequency to 24MHz in LPAPM mode as this is
+causing some random lockups. DDR is left at 266MHz in LPAPM mode currently.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/Makefile            |    2 +-
+ arch/arm/mach-mx5/bus_freq.c          |   27 ------------
+ arch/arm/mach-mx5/cpu.c               |   41 ++++++++++++++++++
+ arch/arm/mach-mx5/mx50_ddr_freq.S     |   12 ++++-
+ arch/arm/mach-mx5/mx50_suspend.S      |   76 ++++++++++++++++++---------------
+ arch/arm/mach-mx5/mx50_wfi.S          |   66 ++++++++++++++++++++++++++++
+ arch/arm/mach-mx5/pm.c                |   20 ++-------
+ arch/arm/mach-mx5/system.c            |   18 +++++++-
+ arch/arm/plat-mxc/include/mach/mx5x.h |   19 ++++++++
+ 9 files changed, 199 insertions(+), 82 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/Makefile b/arch/arm/mach-mx5/Makefile
+index 2474c94..e388fe2 100644
+--- a/arch/arm/mach-mx5/Makefile
++++ b/arch/arm/mach-mx5/Makefile
+@@ -8,7 +8,7 @@ sdram_autogating.o bus_freq.o usb_dr.o usb_h1.o usb_h2.o dummy_gpio.o  early_set
+ 
+ obj-$(CONFIG_ARCH_MX51) += clock.o suspend.o
+ obj-$(CONFIG_ARCH_MX53) += clock.o suspend.o
+-obj-$(CONFIG_ARCH_MX50) += clock_mx50.o dmaengine.o dma-apbh.o mx50_suspend.o mx50_ddr_freq.o
++obj-$(CONFIG_ARCH_MX50) += clock_mx50.o dmaengine.o dma-apbh.o mx50_suspend.o mx50_ddr_freq.o mx50_wfi.o
+ 
+ obj-$(CONFIG_MACH_MX51_3DS) += mx51_3stack.o mx51_3stack_gpio.o mx51_3stack_pmic_mc13892.o
+ obj-$(CONFIG_MACH_MX51_BABBAGE) += mx51_babbage.o mx51_babbage_pmic_mc13892.o
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index 87a493e..444ce3f 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -262,21 +262,6 @@ void enter_lpapm_mode_mx50()
+ 	reg = __raw_readl(MXC_CCM_CLK_SYS);
+ 	reg &= ~MXC_CCM_CLK_SYS_SYS_PLL_CLKGATE_MASK;
+ 	__raw_writel(reg, MXC_CCM_CLK_SYS);
+-
+-	local_flush_tlb_all();
+-	flush_cache_all();
+-
+-	memcpy(ddr_freq_change_iram_base, mx50_ddr_freq_change, SZ_8K);
+-	change_ddr_freq = (void *)ddr_freq_change_iram_base;
+-
+-	/* Set the DDR to run from 24MHz.
+-	 * Need to source the DDR from the SYS_CLK after
+-	 * setting it into self-refresh mode. This code needs to run from iRAM.
+-	 */
+-	change_ddr_freq(ccm_base, databahn_base, LP_APM_CLK);
+-
+-	udelay(100);
+-
+ 	spin_unlock_irqrestore(&ddr_freq_lock, flags);
+ 
+ }
+@@ -434,18 +419,6 @@ void exit_lpapm_mode_mx50()
+ 
+ 	spin_lock_irqsave(&ddr_freq_lock, flags);
+ 
+-	local_flush_tlb_all();
+-	flush_cache_all();
+-
+-	memcpy(ddr_freq_change_iram_base, mx50_ddr_freq_change, SZ_8K);
+-	change_ddr_freq = (void *)ddr_freq_change_iram_base;
+-
+-	/* Set the DDR to default freq.
+-	 */
+-	change_ddr_freq(ccm_base, databahn_base, ddr_normal_rate);
+-
+-	udelay(100);
+-
+ 	/* Set SYS_CLK to source from PLL1 */
+ 	/* Set sys_clk back to 200MHz. */
+ 	/* Set the divider to 4. */
+diff --git a/arch/arm/mach-mx5/cpu.c b/arch/arm/mach-mx5/cpu.c
+index 90813cc..abb3378 100644
+--- a/arch/arm/mach-mx5/cpu.c
++++ b/arch/arm/mach-mx5/cpu.c
+@@ -11,6 +11,7 @@
+  * This file contains the CPU initialization code.
+  */
+ 
++#include <linux/proc_fs.h>
+ #include <linux/types.h>
+ #include <linux/err.h>
+ #include <linux/kernel.h>
+@@ -21,6 +22,7 @@
+ #include <linux/clk.h>
+ #include <mach/common.h>
+ #include <mach/hardware.h>
++#include <asm/mach/map.h>
+ 
+ #define CORTEXA8_PLAT_AMC	0x18
+ #define SRPG_NEON_PUPSCR	0x284
+@@ -36,6 +38,10 @@ void __iomem *arm_plat_base;
+ void __iomem *gpc_base;
+ void __iomem *ccm_base;
+ void __iomem *databahn_base;
++void *wait_in_iram_base;
++void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
++
++extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
+ 
+ static int cpu_silicon_rev = -1;
+ 
+@@ -234,6 +240,41 @@ static int __init post_cpu_init(void)
+ 	}
+ 
+ 	databahn_base = ioremap(MX50_DATABAHN_BASE_ADDR, SZ_16K);
++
++	if (cpu_is_mx50()) {
++		struct clk *ddr_clk = clk_get(NULL, "ddr_clk");
++		unsigned long iram_paddr;
++
++		iram_alloc(SZ_4K, &iram_paddr);
++		/* Need to remap the area here since we want the memory region
++			 to be executable. */
++		wait_in_iram_base = __arm_ioremap(iram_paddr,
++							SZ_4K, MT_HIGH_VECTORS);
++		memcpy(wait_in_iram_base, mx50_wait, SZ_4K);
++		wait_in_iram = (void *)wait_in_iram_base;
++
++		clk_enable(ddr_clk);
++
++		/* Set the DDR to enter automatic self-refresh. */
++		/* Set the DDR to automatically enter lower power mode 4. */
++		reg = __raw_readl(databahn_base + DATABAHN_CTL_REG22);
++		reg &= ~LOWPOWER_AUTOENABLE_MASK;
++		reg |= 1 << 1;
++		__raw_writel(reg, databahn_base + DATABAHN_CTL_REG22);
++
++		/* set the counter for entering mode 4. */
++		reg = __raw_readl(databahn_base + DATABAHN_CTL_REG21);
++		reg &= ~LOWPOWER_EXTERNAL_CNT_MASK;
++		reg = 128 << LOWPOWER_EXTERNAL_CNT_OFFSET;
++		__raw_writel(reg, databahn_base + DATABAHN_CTL_REG21);
++
++		/* Enable low power mode 4 */
++		reg = __raw_readl(databahn_base + DATABAHN_CTL_REG20);
++		reg &= ~LOWPOWER_CONTROL_MASK;
++		reg |= 1 << 1;
++		__raw_writel(reg, databahn_base + DATABAHN_CTL_REG20);
++		clk_disable(ddr_clk);
++	}
+ 	return 0;
+ }
+ 
+diff --git a/arch/arm/mach-mx5/mx50_ddr_freq.S b/arch/arm/mach-mx5/mx50_ddr_freq.S
+index f478dbe..7628b6a 100644
+--- a/arch/arm/mach-mx5/mx50_ddr_freq.S
++++ b/arch/arm/mach-mx5/mx50_ddr_freq.S
+@@ -40,6 +40,14 @@ ENTRY(mx50_ddr_freq_change)
+     bic     r0, #0x1F
+     str     r0,[r5, #0x50]
+ 
++LoopCKE2:
++    /*Wait for CKE = 1 */
++    ldr     r0,[r5, #0xfc]
++    and    r0, r0, #0x10000
++    ldr     r2, =0x10000
++    cmp     r0, r2
++    bne     LoopCKE2
++
+     /*
+      * Make sure the DDR is self-refresh, before switching its frequency
+      * and clock source
+@@ -81,9 +89,9 @@ LoopCKE0:
+     str     r0, [r5, #0xac]
+ 
+      /* Change the freq now */
+-     /* If the freq req is below 200MHz, set DDR to synchronous mode.
++     /* If the freq req is below 24MHz, set DDR to synchronous mode.
+       * else set to async mode. */
+-    ldr     r0, =200000000
++    ldr     r0, =24000000
+     cmp   r4, r0
+     bgt    Async_Mode
+ 
+diff --git a/arch/arm/mach-mx5/mx50_suspend.S b/arch/arm/mach-mx5/mx50_suspend.S
+index eb230c4..4d9e1b4 100644
+--- a/arch/arm/mach-mx5/mx50_suspend.S
++++ b/arch/arm/mach-mx5/mx50_suspend.S
+@@ -30,9 +30,20 @@
+  *  IRQs are already disabled.
+  */
+ ENTRY(mx50_suspend)
+-    stmfd   sp!, {r4,r5,r6,r7,r9,r10,r11}     @ Save registers
++    stmfd   sp!, {r4,r5,r6,r7,r8, r9,r10,r11}     @ Save registers
+ 
+     mov    r6, r0                       @save databahn address
++
++/* Before putting DDR into self-refresh, make sure
++    any LPM mode that the DDR might be in is exited.
++*/
++    /* If Databahn is in LPM4, exit that mode first. */
++    ldr     r8,[r6, #0x50]             @Store LPM mode in r8
++    mov   r0, r8
++    bic     r0, r0, #0x1F
++    str     r0,[r6, #0x50]
++
++
+     /* Disable L1 caches */
+     mrc     p15, 0, r0, c1, c0, 0    @ R0 = system control reg
+     bic     r0, r0, #ARM_CTRL_ICACHE @ Disable ICache
+@@ -96,63 +107,57 @@ FinishedClean:
+      being made.
+ */
+ EnterWFI:
+-    ldr     r1,[r6, #0x8]
+-    ldr     r0,[r1]
+-    and     r0, r0, #0x100
++    ldr     r0,[r6, #0x13c]
++    and    r0, r0, #0x100
+     ldr     r2, =0x100
+     cmp     r0, r2
+     beq     EnterWFI
++
+     /* Enter self-refresh mode */
+-    ldr     r1,[r6, #0x4]
+-    ldr     r0,[r1]
++    ldr     r0,[r6, #0x4c]
+     orr     r0,r0,#0x1
+-    str     r0,[r1]
++    str     r0,[r6, #0x4c]
+ 
+ LoopCKE0:
+     /* Wait for CKE = 0 */
+-    ldr     r1,[r6, #0x8]
+-    ldr     r0,[r1]
+-    and     r0, r0, #0x10
+-    ldr     r2, =0x10
++    ldr     r0,[r6, #0xfc]
++    and    r0, r0, #0x10000
++    ldr     r2, =0x10000
+     cmp     r0, r2
+     beq     LoopCKE0
++
+     /* Stop controller */
+-    ldr     r1,[r6, #0]
+-    ldr     r0,[r1]
+-    and     r0,r0,#0xfffffffe
+-    str     r0,[r1]
++    ldr     r0,[r6]
++    bic     r0, r0, #0x1
++    str     r0,[r6]
+ 
+     .long     0xe320f003              @ Opcode for WFI
+ 
+-
+     /* Start controller */
+-    ldr     r1,[r6, #0]
+-    ldr     r0,[r1]
++    ldr     r0,[r6]
+     orr     r0,r0,#0x1
+-    str     r0,[r1]
++    str     r0,[r6]
+ 
+ LoopPHY:
+     /* Wait for PHY ready */
+-    ldr     r1,[r6, #0xC]
+-    ldr     r0,[r1]
+-    and     r0, r0, #0xfffffffe
+-    ldr     r2, =0x0
+-    cmp     r0, r2
++    ldr     r0,[r6, #0x264]
++    and    r0, r0, #0xfffffffe
++    ldr      r2, =0x0
++    cmp    r0, r2
+     beq     LoopPHY
++
+     /*Leave self-refresh mode */
+-    ldr     r1,[r6, #4]
+-    ldr     r0,[r1]
+-    and     r0,r0,#0xfffffffe
+-    str     r0,[r1]
++    ldr     r0,[r6, #0x4c]
++    and    r0,r0,#0xfffffffe
++    str     r0,[r6, #0x4c]
+ 
+ LoopCKE1:
+     /*Wait for CKE = 1 */
+-    ldr     r1,[r6, #0x8]
+-    ldr     r0,[r1]
+-    and     r0, r0, #0x10
+-    ldr     r2, =0x0
++    ldr     r0,[r6, #0xfc]
++    and    r0, r0, #0x10000
++    ldr     r2, =0x10000
+     cmp     r0, r2
+-    beq     LoopCKE1
++    bne     LoopCKE1
+ 
+     mov     r0, #0
+     mcr     p15, 0, r0, c7, c5, 0      @ Invalidate inst cache
+@@ -216,8 +221,11 @@ FinishedInvalidate:
+     orr     r0, r0, #ARM_CTRL_DCACHE @ Enable DCache
+     mcr     p15, 0, r0, c1, c0, 0    @ Update system control reg
+ 
++    /* restore LPM mode. */
++    str       r8, [r6, #0x50]
++
+     /* Restore registers */
+-    ldmfd sp!, {r4,r5,r6,r7,r9,r10,r11}
++    ldmfd sp!, {r4,r5,r6,r7,r8,r9,r10,r11}
+     mov     pc, lr
+ 
+     .type   mx50_do_suspend, #object
+diff --git a/arch/arm/mach-mx5/mx50_wfi.S b/arch/arm/mach-mx5/mx50_wfi.S
+new file mode 100644
+index 0000000..b0d984c
+--- /dev/null
++++ b/arch/arm/mach-mx5/mx50_wfi.S
+@@ -0,0 +1,66 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#include <linux/linkage.h>
++
++/*
++ *  mx50_wait
++ *
++ *  Idle the processor (eg, wait for interrupt).
++ *  Make sure DDR is in self-refresh.
++ *  IRQs are already disabled.
++ */
++ENTRY(mx50_wait)
++    stmfd   sp!, {r3,r4,r5,r6,r7,r8,r9,r10,r11}     @ Save registers
++
++    mov    r6, r0                       @save CCM address
++    mov    r5, r1                       @save DataBahn address
++
++    /*
++     * Make sure the DDR is self-refresh, before setting the clock bits.
++     */
++
++     /* Step 2: Poll the CKE_STATUS bit. */
++LoopCKE0:
++    /* Wait for CKE = 0 */
++    ldr     r0,[r5, #0xfc]
++    and     r0, r0, #0x10000
++    ldr     r2, =0x10000
++    cmp     r0, r2
++    beq     LoopCKE0
++
++    /* Set the DDR_CLKGATE to 0x1. */
++    ldr      r0, [r6, #0x98]
++    bic     r0, r0, #0x80000000
++    str     r0, [r6, #0x98]
++
++    .long     0xe320f003              @ Opcode for WFI
++
++    /* Set the DDR_CLKGATE to 0x3. */
++    ldr      r0, [r6, #0x98]
++    orr     r0, r0, #0xC0000000
++    str     r0, [r6, #0x98]
++
++    /* Restore registers */
++    ldmfd sp!, {r3,r4,r5,r6,r7,r8,r9,r10,r11}
++    mov     pc, lr
++
++    .type   mx50_do_wait, #object
++ENTRY(mx50_do_wait)
++    .word   mx50_wait
++    .size    mx50_wait, . - mx50_wait
+diff --git a/arch/arm/mach-mx5/pm.c b/arch/arm/mach-mx5/pm.c
+index f9a1988..140b3de 100644
+--- a/arch/arm/mach-mx5/pm.c
++++ b/arch/arm/mach-mx5/pm.c
+@@ -48,12 +48,12 @@ struct clk *gpc_dvfs_clk;
+ extern void cpu_do_suspend_workaround(u32 sdclk_iomux_addr);
+ extern void mx50_suspend(u32 databahn_addr);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
++extern void __iomem *databahn_base;
+ 
+ extern int iram_ready;
+ void *suspend_iram_base;
+ void (*suspend_in_iram)(void *sdclk_iomux_addr) = NULL;
+ void __iomem *suspend_param1;
+-u32 *suspend_param;
+ 
+ static int mx5_suspend_enter(suspend_state_t state)
+ {
+@@ -90,7 +90,7 @@ static int mx5_suspend_enter(suspend_state_t state)
+ 			local_flush_tlb_all();
+ 			flush_cache_all();
+ 
+-			suspend_in_iram(suspend_param);
++			suspend_in_iram(databahn_base);
+ 	} else {
+ 			cpu_do_idle();
+ 	}
+@@ -196,7 +196,6 @@ static int __init pm_init(void)
+ 		 to be executable. */
+ 	suspend_iram_base = __arm_ioremap(iram_paddr, SZ_4K,
+ 					  MT_HIGH_VECTORS);
+-	suspend_param = (u32 *)iram_alloc(SZ_4K, &iram_paddr1);
+ 
+ 	if (cpu_is_mx51()) {
+ 		suspend_param1 = IO_ADDRESS(IOMUXC_BASE_ADDR + 0x4b8);
+@@ -208,19 +207,8 @@ static int __init pm_init(void)
+ 		 * to be put into self refresh mode manually.
+ 		 */
+ 		memcpy(suspend_iram_base, mx50_suspend, SZ_4K);
+-		suspend_param1 = ioremap(MX50_DATABAHN_BASE_ADDR, SZ_4K);
+-		/* DDR Controller [0] */
+-		*suspend_param = (u32)suspend_param1 +
+-								DATABAHN_CTL_REG0;
+-		/* DDR Controller [19] */
+-		*(suspend_param + 1) = (u32)suspend_param1 +
+-								DATABAHN_CTL_REG19;
+-		/* DDR Controller [79] */
+-		*(suspend_param + 2) = (u32)suspend_param1 +
+-								DATABAHN_CTL_REG79;
+-		/* DDR Controller PHY [25] */
+-		*(suspend_param + 3) = (u32)suspend_param1 +
+-								DATABAHN_PHY_REG25;
++
++		suspend_param1 = databahn_base;
+ 	}
+ 	suspend_in_iram = (void *)suspend_iram_base;
+ 
+diff --git a/arch/arm/mach-mx5/system.c b/arch/arm/mach-mx5/system.c
+index 785dfa6..48b2ec6 100644
+--- a/arch/arm/mach-mx5/system.c
++++ b/arch/arm/mach-mx5/system.c
+@@ -16,6 +16,7 @@
+ #include <linux/platform_device.h>
+ #include <asm/io.h>
+ #include <mach/hardware.h>
++#include <mach/clock.h>
+ #include <asm/proc-fns.h>
+ #include <asm/system.h>
+ #include "crm_regs.h"
+@@ -33,6 +34,12 @@
+ 
+ extern int mxc_jtag_enabled;
+ extern int iram_ready;
++extern void __iomem *ccm_base;
++extern void __iomem *databahn_base;
++extern void (*wait_in_iram)(void *ccm_addr, void *databahn_addr);
++extern void *wait_in_iram_base;
++extern void mx50_wait(u32 ccm_base, u32 databahn_addr);
++
+ static struct clk *gpc_dvfs_clk;
+ 
+ /* set cpu low power mode before WFI instruction */
+@@ -149,14 +156,21 @@ static int arch_idle_mode = WAIT_UNCLOCKED_POWER_OFF;
+  */
+ void mx51_idle(void)
+ {
+-/*	if (likely(!mxc_jtag_enabled))*/ {
++/*	if (likely(!mxc_jtag_enabled)) */{
++		struct clk *ddr_clk = clk_get(NULL, "ddr_clk");
+ 		if (gpc_dvfs_clk == NULL)
+ 			gpc_dvfs_clk = clk_get(NULL, "gpc_dvfs_clk");
+ 		/* gpc clock is needed for SRPG */
+ 		clk_enable(gpc_dvfs_clk);
+ 		mxc_cpu_lp_set(arch_idle_mode);
+-		cpu_do_idle();
++		if (cpu_is_mx50() && (clk_get_usecount(ddr_clk) == 0)) {
++			memcpy(wait_in_iram_base, mx50_wait, SZ_4K);
++			wait_in_iram = (void *)wait_in_iram_base;
++			wait_in_iram(ccm_base, databahn_base);
++		} else
++			cpu_do_idle();
+ 		clk_disable(gpc_dvfs_clk);
++		clk_put(ddr_clk);
+ 	}
+ }
+ 
+diff --git a/arch/arm/plat-mxc/include/mach/mx5x.h b/arch/arm/plat-mxc/include/mach/mx5x.h
+index 2bbc2d1..9d44e4a 100644
+--- a/arch/arm/plat-mxc/include/mach/mx5x.h
++++ b/arch/arm/plat-mxc/include/mach/mx5x.h
+@@ -142,7 +142,26 @@
+  * Databahn MX50
+  */
+ #define MX50_DATABAHN_BASE_ADDR		0x14000000
++#define DATABAHN_CTL_REG19			0x4c
++#define DATABAHN_CTL_REG20			0x50
++#define DATABAHN_CTL_REG21			0x54
++#define DATABAHN_CTL_REG22			0x58
++#define DATABAHN_CTL_REG23			0x5c
++#define DATABAHN_CTL_REG42			0xa8
++#define DATABAHN_CTL_REG43			0xac
+ #define DATABAHN_CTL_REG55			0xdc
++#define DATABAHN_CTL_REG63			0xFC
++#define LOWPOWER_CONTROL_MASK	 	0x1F
++#define LOWPOWER_AUTOENABLE_MASK 		0x1F
++#define LOWPOWER_EXTERNAL_CNT_MASK		(0xFFFF << 16)
++#define LOWPOWER_EXTERNAL_CNT_OFFSET	16
++#define LOWPOWER_INTERNAL_CNT_MASK		(0xFFFF << 8)
++#define LOWPOWER_INTERNAL_CNT_OFFSET	8
++#define LOWPOWER_REFRESH_ENABLE_MASK	(3 << 16)
++#define LOWPOWER_REFRESH_ENABLE_OFFSET	16
++#define LOWPOWER_REFRESH_HOLD_MASK		0xFFFF
++#define LOWPOWER_REFRESH_HOLD_OFFSET	0
++
+ 
+ #define DEBUG_BASE_ADDR	0x40000000
+ /*MX53 + 0x2000000 */
+-- 
+1.5.4.4
+

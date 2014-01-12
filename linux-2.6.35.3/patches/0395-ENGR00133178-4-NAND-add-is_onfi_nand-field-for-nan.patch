@@ -1,0 +1,63 @@
+From 1d2dccb074606dc674d5609b95b17a72188a0098 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Tue, 2 Nov 2010 10:48:51 +0800
+Subject: [PATCH] ENGR00133178-4 NAND : add is_onfi_nand field for nand_device_info{}
+
+Add the new field to distinguish the ONFI nand from the others.
+Alos add the function is_onfi_nand() to check the ONFI nand.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/nand_device_info.c |    6 ++++++
+ drivers/mtd/nand/nand_device_info.h |    9 +++++++++
+ 2 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_device_info.c b/drivers/mtd/nand/nand_device_info.c
+index 008fc7d..47980ef 100644
+--- a/drivers/mtd/nand/nand_device_info.c
++++ b/drivers/mtd/nand/nand_device_info.c
+@@ -2347,3 +2347,9 @@ struct nand_device_info * __init nand_device_get_info(const uint8_t id[])
+ 	return fn(id);
+ 
+ }
++
++
++bool is_onfi_nand(struct nand_device_info *info)
++{
++	return info->is_onfi_nand;
++}
+diff --git a/drivers/mtd/nand/nand_device_info.h b/drivers/mtd/nand/nand_device_info.h
+index a0960b1..63011c7 100644
+--- a/drivers/mtd/nand/nand_device_info.h
++++ b/drivers/mtd/nand/nand_device_info.h
+@@ -43,6 +43,7 @@ enum nand_device_cell_technology {
+  *                             the device.
+  * @device_code:               The device code (2nd ID byte) reported by the
+  *                             device.
++ * @is_onfi_nand:              Is this nand an ONFI nand ?
+  * @cell_technology:           The storage cell technology.
+  * @chip_size_in_bytes:        The total size of the storage behind a single
+  *                             chip select, in bytes. Notice that this is *not*
+@@ -89,6 +90,9 @@ struct nand_device_info {
+ 	uint8_t   manufacturer_code;
+ 	uint8_t   device_code;
+ 
++	/* ONFI nand */
++	bool	  is_onfi_nand;
++
+ 	/* Technology */
+ 
+ 	enum nand_device_cell_technology  cell_technology;
+@@ -137,4 +141,9 @@ struct nand_device_info *nand_device_get_info(const uint8_t id_bytes[]);
+ 
+ void nand_device_print_info(struct nand_device_info *info);
+ 
++/*
++ * Check the NAND whether it is an ONFI nand.
++ */
++bool is_onfi_nand(struct nand_device_info *info);
++
+ #endif
+-- 
+1.5.4.4
+

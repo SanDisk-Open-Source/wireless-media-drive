@@ -1,0 +1,77 @@
+From aa7f249559650b8d9f4c99551d02e6ceca4a5415 Mon Sep 17 00:00:00 2001
+From: Zhou Jingyu <b02241@freescale.com>
+Date: Mon, 23 Aug 2010 16:06:06 +0800
+Subject: [PATCH] ENGR00125875-2 led: add suspend/resume for LED driver
+
+add suspend/resume for LED driver
+disable debug uart for suspend
+
+Signed-off-by: Zhou Jingyu <Jingyu.Zhou@freescale.com>
+---
+ drivers/leds/leds-mxs-pwm.c |   25 +++++++++++++++++++++++++
+ drivers/serial/mxs-duart.c  |    2 ++
+ 2 files changed, 27 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/leds/leds-mxs-pwm.c b/drivers/leds/leds-mxs-pwm.c
+index c768217..a546900 100644
+--- a/drivers/leds/leds-mxs-pwm.c
++++ b/drivers/leds/leds-mxs-pwm.c
+@@ -165,10 +165,35 @@ static int __devexit mxs_pwm_led_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PM
++static int mxs_led_suspend(struct platform_device *dev, pm_message_t state)
++{
++	int i;
++
++	for (i = 0; i < leds.led_num; i++)
++		led_classdev_suspend(&leds.leds[i].dev);
++	return 0;
++}
++
++static int mxs_led_resume(struct platform_device *dev)
++{
++	int i;
++
++	for (i = 0; i < leds.led_num; i++)
++		led_classdev_resume(&leds.leds[i].dev);
++	return 0;
++}
++#else
++#define mxs_led_suspend NULL
++#define mxs_led_resume NULL
++#endif
++
+ 
+ static struct platform_driver mxs_pwm_led_driver = {
+ 	.probe   = mxs_pwm_led_probe,
+ 	.remove  = __devexit_p(mxs_pwm_led_remove),
++	.suspend = mxs_led_suspend,
++	.resume = mxs_led_resume,
+ 	.driver  = {
+ 		.name = "mxs-leds",
+ 	},
+diff --git a/drivers/serial/mxs-duart.c b/drivers/serial/mxs-duart.c
+index 64e5057..716994f 100644
+--- a/drivers/serial/mxs-duart.c
++++ b/drivers/serial/mxs-duart.c
+@@ -742,6 +742,7 @@ static int duart_suspend(struct platform_device *pdev,
+ 	int ret = 0;
+ 	if (!duart_port.suspended) {
+ 		ret = uart_suspend_port(&duart_drv, &duart_port.port);
++		duart_shutdown((struct uart_port *)&duart_port);
+ 		if (!ret)
+ 			duart_port.suspended = 1;
+ 	}
+@@ -754,6 +755,7 @@ static int duart_resume(struct platform_device *pdev,
+ 	int ret = 0;
+ 	if (duart_port.suspended) {
+ 		ret = uart_resume_port(&duart_drv, &duart_port.port);
++		duart_startup((struct uart_port *)&duart_port);
+ 		if (!ret)
+ 			duart_port.suspended = 0;
+ 	}
+-- 
+1.5.4.4
+

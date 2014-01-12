@@ -1,0 +1,28 @@
+From 7214e35a40067cd1f5cc66b3dace29d78ad65547 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Mon, 10 Jan 2011 16:26:17 +0800
+Subject: [PATCH] ENGR00137777 Enable MMA8450 accelerator support for i.mx50 evk
+
+Enable MMA8450 accelerator support for i.mx50 evk.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ arch/arm/mach-mx5/mx50_rdp.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx50_rdp.c b/arch/arm/mach-mx5/mx50_rdp.c
+index 20b0b7c..f6ca52c 100644
+--- a/arch/arm/mach-mx5/mx50_rdp.c
++++ b/arch/arm/mach-mx5/mx50_rdp.c
+@@ -941,7 +941,7 @@ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
+ 	 .platform_data = &max17135_pdata,
+ 	 },
+ 	 {
+-	 .type = "accelerometer",
++	 .type = "mma8450",
+ 	 .addr = 0x1c,
+ 	 },
+ 	 {
+-- 
+1.5.4.4
+

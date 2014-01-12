@@ -1,0 +1,37 @@
+From 2205133fb6fdea1393933e332ed693d82d922dba Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Mon, 27 Dec 2010 20:22:11 +0800
+Subject: [PATCH] ENGR00137390 UBOOT:NAND: BBT not found on MX53 board
+
+BBT table can't be found on MX53 board, which is due to
+that the BBT table flag has been written to the ECC area
+which cause the BBT flag lost.
+
+This patch also fix the BBT version not correct issue.
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/mxc_nand.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/mxc_nand.c b/drivers/mtd/nand/mxc_nand.c
+index eb20f58..be4be3e 100644
+--- a/drivers/mtd/nand/mxc_nand.c
++++ b/drivers/mtd/nand/mxc_nand.c
+@@ -1205,6 +1205,13 @@ skip_it:
+ 	/* fix up the offset */
+ 	largepage_memorybased.offs = BAD_BLK_MARKER_OOB_OFFS;
+ 
++	/* keep compatible for bbt table with old soc */
++#ifdef CONFIG_MX53
++	bbt_mirror_descr.offs = BAD_BLK_MARKER_OOB_OFFS + 2;
++	bbt_main_descr.offs = BAD_BLK_MARKER_OOB_OFFS + 2;
++	bbt_mirror_descr.veroffs = bbt_mirror_descr.offs + 4;
++	bbt_main_descr.veroffs = bbt_main_descr.offs + 4;
++#endif
+ 	/* use flash based bbt */
+ 	this->bbt_td = &bbt_main_descr;
+ 	this->bbt_md = &bbt_mirror_descr;
+-- 
+1.5.4.4
+

@@ -1,0 +1,47 @@
+From 3450d11f4ba2c093d2437d1e18f760773ea5c023 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Mon, 10 Jan 2011 13:40:56 +0800
+Subject: [PATCH] ENGR00137767 IPUv3 video:Support splashimage with MMU disabled
+
+This patch corrects the fbi->screen_base value and fbi->fix.smem_start
+value when MMU is disabled.
+
+Reported-by: Terry Lv <r65388@freescale.com>
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/video/mxc_ipuv3_fb.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/video/mxc_ipuv3_fb.c b/drivers/video/mxc_ipuv3_fb.c
+index cb1d623..545d1fe 100644
+--- a/drivers/video/mxc_ipuv3_fb.c
++++ b/drivers/video/mxc_ipuv3_fb.c
+@@ -6,7 +6,7 @@
+  *
+  * MX51 Linux framebuffer:
+  *
+- * (C) Copyright 2004-2010 Freescale Semiconductor, Inc.
++ * (C) Copyright 2004-2011 Freescale Semiconductor, Inc.
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -439,11 +439,15 @@ static int mxcfb_map_video_memory(struct fb_info *fbi)
+ 		fbi->fix.smem_len = fbi->var.yres_virtual *
+ 				    fbi->fix.line_length;
+ 	}
+-
++#if defined(CONFIG_ARCH_MMU)
+ 	fbi->screen_base =
+ 		(char *)iomem_to_phys((unsigned long)lcd_base);
+ 	fbi->fix.smem_start =
+ 		(unsigned long)iomem_to_phys((unsigned long)lcd_base);
++#else
++	fbi->screen_base = (char *)lcd_base;
++	fbi->fix.smem_start = (unsigned long)lcd_base;
++#endif
+ 	if (fbi->screen_base == 0) {
+ 		puts("Unable to allocate framebuffer memory\n");
+ 		fbi->fix.smem_len = 0;
+-- 
+1.5.4.4
+

@@ -1,0 +1,251 @@
+From 298e4cf6838aca016388f6fdfc7ce80cb7902228 Mon Sep 17 00:00:00 2001
+From: Sandeep Paulraj <s-paulraj@ti.com>
+Date: Fri, 30 Oct 2009 13:51:23 -0400
+Subject: [PATCH] NAND: Update to support 64 bit device size
+
+This patch adds support for NANDs greater than 2 GB.
+Patch is based on the MTD NAND driver in the kernel.
+
+Signed-off-by: Sandeep Paulraj <s-paulraj@ti.com>
+Signed-off-by: Scott Wood <scottwood@freescale.com>
+---
+ drivers/mtd/nand/nand_base.c   |   26 +++++++++++++++---------
+ drivers/mtd/nand/nand_bbt.c    |   41 ++++++++++++++++++++++-----------------
+ include/linux/mtd/nand.h       |    2 +-
+ include/linux/mtd/partitions.h |    4 +-
+ 4 files changed, 42 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 0478740..b68e112 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -2161,13 +2161,15 @@ static int nand_erase(struct mtd_info *mtd, struct erase_info *instr)
+ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 		    int allowbbt)
+ {
+-	int page, len, status, pages_per_block, ret, chipnr;
++	int page, status, pages_per_block, ret, chipnr;
+ 	struct nand_chip *chip = mtd->priv;
+-	int rewrite_bbt[CONFIG_SYS_NAND_MAX_CHIPS]={0};
++	loff_t rewrite_bbt[CONFIG_SYS_NAND_MAX_CHIPS] = {0};
+ 	unsigned int bbt_masked_page = 0xffffffff;
++	loff_t len;
+ 
+-	MTDDEBUG (MTD_DEBUG_LEVEL3, "nand_erase: start = 0x%08x, len = %i\n",
+-	          (unsigned int) instr->addr, (unsigned int) instr->len);
++	MTDDEBUG(MTD_DEBUG_LEVEL3, "nand_erase: start = 0x%012llx, "
++		 "len = %llu\n", (unsigned long long) instr->addr,
++		 (unsigned long long) instr->len);
+ 
+ 	/* Start address must align on block boundary */
+ 	if (instr->addr & ((1 << chip->phys_erase_shift) - 1)) {
+@@ -2263,7 +2265,7 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 			MTDDEBUG (MTD_DEBUG_LEVEL0, "nand_erase: "
+ 			          "Failed erase, page 0x%08x\n", page);
+ 			instr->state = MTD_ERASE_FAILED;
+-			instr->fail_addr = (page << chip->page_shift);
++			instr->fail_addr = ((loff_t)page << chip->page_shift);
+ 			goto erase_exit;
+ 		}
+ 
+@@ -2273,7 +2275,8 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 		 */
+ 		if (bbt_masked_page != 0xffffffff &&
+ 		    (page & BBT_PAGE_MASK) == bbt_masked_page)
+-			    rewrite_bbt[chipnr] = (page << chip->page_shift);
++			rewrite_bbt[chipnr] =
++				((loff_t)page << chip->page_shift);
+ 
+ 		/* Increment page address and decrement length */
+ 		len -= (1 << chip->phys_erase_shift);
+@@ -2320,8 +2323,8 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 			continue;
+ 		/* update the BBT for chip */
+ 		MTDDEBUG (MTD_DEBUG_LEVEL0, "nand_erase_nand: nand_update_bbt "
+-		          "(%d:0x%0x 0x%0x)\n", chipnr, rewrite_bbt[chipnr],
+-		          chip->bbt_td->pages[chipnr]);
++			  "(%d:0x%0llx 0x%0x)\n", chipnr, rewrite_bbt[chipnr],
++			  chip->bbt_td->pages[chipnr]);
+ 		nand_update_bbt(mtd, rewrite_bbt[chipnr]);
+ 	}
+ 
+@@ -2516,7 +2519,7 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 	if (!mtd->name)
+ 		mtd->name = type->name;
+ 
+-	chip->chipsize = type->chipsize << 20;
++	chip->chipsize = (uint64_t)type->chipsize << 20;
+ 
+ 	/* Newer devices have all the information in additional id bytes */
+ 	if (!type->pagesize) {
+@@ -2575,7 +2578,10 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 
+ 	chip->bbt_erase_shift = chip->phys_erase_shift =
+ 		ffs(mtd->erasesize) - 1;
+-	chip->chip_shift = ffs(chip->chipsize) - 1;
++	if (chip->chipsize & 0xffffffff)
++		chip->chip_shift = ffs(chip->chipsize) - 1;
++	else
++		chip->chip_shift = ffs((unsigned)(chip->chipsize >> 32)) + 31;
+ 
+ 	/* Set the bad block position */
+ 	chip->badblockpos = mtd->writesize > 512 ?
+diff --git a/drivers/mtd/nand/nand_bbt.c b/drivers/mtd/nand/nand_bbt.c
+index d68a315..2fe68ab 100644
+--- a/drivers/mtd/nand/nand_bbt.c
++++ b/drivers/mtd/nand/nand_bbt.c
+@@ -182,16 +182,19 @@ static int read_bbt(struct mtd_info *mtd, uint8_t *buf, int page, int num,
+ 				if (tmp == msk)
+ 					continue;
+ 				if (reserved_block_code && (tmp == reserved_block_code)) {
+-					printk(KERN_DEBUG "nand_read_bbt: Reserved block at 0x%08x\n",
+-					       ((offs << 2) + (act >> 1)) << this->bbt_erase_shift);
++					printk(KERN_DEBUG "nand_read_bbt: Reserved block at 0x%012llx\n",
++						(loff_t)((offs << 2) +
++						(act >> 1)) <<
++						this->bbt_erase_shift);
+ 					this->bbt[offs + (act >> 3)] |= 0x2 << (act & 0x06);
+ 					mtd->ecc_stats.bbtblocks++;
+ 					continue;
+ 				}
+ 				/* Leave it for now, if its matured we can move this
+ 				 * message to MTD_DEBUG_LEVEL0 */
+-				printk(KERN_DEBUG "nand_read_bbt: Bad block at 0x%08x\n",
+-				       ((offs << 2) + (act >> 1)) << this->bbt_erase_shift);
++				printk(KERN_DEBUG "nand_read_bbt: Bad block at 0x%012llx\n",
++					(loff_t)((offs << 2) + (act >> 1)) <<
++					this->bbt_erase_shift);
+ 				/* Factory marked bad or worn out ? */
+ 				if (tmp == 0)
+ 					this->bbt[offs + (act >> 3)] |= 0x3 << (act & 0x06);
+@@ -295,8 +298,8 @@ static int read_abs_bbts(struct mtd_info *mtd, uint8_t *buf,
+ 
+ 	/* Read the primary version, if available */
+ 	if (td->options & NAND_BBT_VERSION) {
+-		scan_read_raw(mtd, buf, td->pages[0] << this->page_shift,
+-			      mtd->writesize);
++		scan_read_raw(mtd, buf, (loff_t)td->pages[0] <<
++				this->page_shift, mtd->writesize);
+ 		td->version[0] = buf[mtd->writesize + td->veroffs];
+ 		printk(KERN_DEBUG "Bad block table at page %d, version 0x%02X\n",
+ 		       td->pages[0], td->version[0]);
+@@ -304,8 +307,8 @@ static int read_abs_bbts(struct mtd_info *mtd, uint8_t *buf,
+ 
+ 	/* Read the mirror version, if available */
+ 	if (md && (md->options & NAND_BBT_VERSION)) {
+-		scan_read_raw(mtd, buf, md->pages[0] << this->page_shift,
+-			      mtd->writesize);
++		scan_read_raw(mtd, buf, (loff_t)md->pages[0] <<
++				this->page_shift, mtd->writesize);
+ 		md->version[0] = buf[mtd->writesize + md->veroffs];
+ 		printk(KERN_DEBUG "Bad block table at page %d, version 0x%02X\n",
+ 		       md->pages[0], md->version[0]);
+@@ -422,7 +425,7 @@ static int create_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 		numblocks = this->chipsize >> (this->bbt_erase_shift - 1);
+ 		startblock = chip * numblocks;
+ 		numblocks += startblock;
+-		from = startblock << (this->bbt_erase_shift - 1);
++		from = (loff_t)startblock << (this->bbt_erase_shift - 1);
+ 	}
+ 
+ 	for (i = startblock; i < numblocks;) {
+@@ -440,8 +443,8 @@ static int create_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 		if (ret) {
+ 			this->bbt[i >> 3] |= 0x03 << (i & 0x6);
+ 			MTDDEBUG (MTD_DEBUG_LEVEL0,
+-			          "Bad eraseblock %d at 0x%08x\n",
+-			          i >> 1, (unsigned int)from);
++				  "Bad eraseblock %d at 0x%012llx\n",
++				  i >> 1, (unsigned long long)from);
+ 			mtd->ecc_stats.badblocks++;
+ 		}
+ 
+@@ -507,7 +510,7 @@ static int search_bbt(struct mtd_info *mtd, uint8_t *buf, struct nand_bbt_descr
+ 		for (block = 0; block < td->maxblocks; block++) {
+ 
+ 			int actblock = startblock + dir * block;
+-			loff_t offs = actblock << this->bbt_erase_shift;
++			loff_t offs = (loff_t)actblock << this->bbt_erase_shift;
+ 
+ 			/* Read first page */
+ 			scan_read_raw(mtd, buf, offs, mtd->writesize);
+@@ -731,7 +734,7 @@ static int write_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 
+ 		memset(&einfo, 0, sizeof(einfo));
+ 		einfo.mtd = mtd;
+-		einfo.addr = (unsigned long)to;
++		einfo.addr = to;
+ 		einfo.len = 1 << this->bbt_erase_shift;
+ 		res = nand_erase_nand(mtd, &einfo, 1);
+ 		if (res < 0)
+@@ -741,8 +744,9 @@ static int write_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 		if (res < 0)
+ 			goto outerr;
+ 
+-		printk(KERN_DEBUG "Bad block table written to 0x%08x, version "
+-		       "0x%02X\n", (unsigned int)to, td->version[chip]);
++		printk(KERN_DEBUG "Bad block table written to 0x%012llx, "
++		       "version 0x%02X\n", (unsigned long long)to,
++		       td->version[chip]);
+ 
+ 		/* Mark it as used */
+ 		td->pages[chip] = page;
+@@ -922,7 +926,8 @@ static void mark_bbt_region(struct mtd_info *mtd, struct nand_bbt_descr *td)
+ 			newval = oldval | (0x2 << (block & 0x06));
+ 			this->bbt[(block >> 3)] = newval;
+ 			if ((oldval != newval) && td->reserved_block_code)
+-				nand_update_bbt(mtd, block << (this->bbt_erase_shift - 1));
++				nand_update_bbt(mtd, (loff_t)block <<
++					(this->bbt_erase_shift - 1));
+ 			continue;
+ 		}
+ 		update = 0;
+@@ -943,7 +948,8 @@ static void mark_bbt_region(struct mtd_info *mtd, struct nand_bbt_descr *td)
+ 		   new ones have been marked, then we need to update the stored
+ 		   bbts.  This should only happen once. */
+ 		if (update && td->reserved_block_code)
+-			nand_update_bbt(mtd, (block - 2) << (this->bbt_erase_shift - 1));
++			nand_update_bbt(mtd, (loff_t)(block - 2) <<
++				(this->bbt_erase_shift - 1));
+ 	}
+ }
+ 
+@@ -1039,7 +1045,6 @@ int nand_update_bbt(struct mtd_info *mtd, loff_t offs)
+ 	if (!this->bbt || !td)
+ 		return -EINVAL;
+ 
+-	len = mtd->size >> (this->bbt_erase_shift + 2);
+ 	/* Allocate a temporary buffer for one eraseblock incl. oob */
+ 	len = (1 << this->bbt_erase_shift);
+ 	len += (len >> this->page_shift) * mtd->oobsize;
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index ea90961..37e08cc 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -396,7 +396,7 @@ struct nand_chip {
+ 	int		bbt_erase_shift;
+ 	int		chip_shift;
+ 	int		numchips;
+-	unsigned long	chipsize;
++	uint64_t	chipsize;
+ 	int		pagemask;
+ 	int		pagebuf;
+ 	int		subpagesize;
+diff --git a/include/linux/mtd/partitions.h b/include/linux/mtd/partitions.h
+index 1016675..d1d9a96 100644
+--- a/include/linux/mtd/partitions.h
++++ b/include/linux/mtd/partitions.h
+@@ -38,8 +38,8 @@
+ 
+ struct mtd_partition {
+ 	char *name;			/* identifier string */
+-	u_int32_t size;			/* partition size */
+-	u_int32_t offset;		/* offset within the master MTD space */
++	uint64_t size;			/* partition size */
++	uint64_t offset;		/* offset within the master MTD space */
+ 	u_int32_t mask_flags;		/* master MTD flags to mask out for this partition */
+ 	struct nand_ecclayout *ecclayout;	/* out of band layout for this partition (NAND only)*/
+ 	struct mtd_info **mtdp;		/* pointer to store the MTD object */
+-- 
+1.5.4.4
+

@@ -1,0 +1,51 @@
+<h2>What is MaraDNS ?</h2>
+
+MaraDNS is a package that implements the Domain Name Service (DNS), an
+essential internet service.  MaraDNS has the following advantages:
+
+<ul>
+<li><b>Secure</b>. MaraDNS has a <A   
+href="security.html">security history</A> as good as or better than any
+other DNS server. 
+<li><b>Supported</b>.
+MaraDNS has a long history of being maintained and updated.  MaraDNS was 
+originally created in 2001.  MaraDNS 1.0 was released in 2002
+and MaraDNS 1.2 was released in December of 2005.  MaraDNS has been
+extensively tested, both with a SQA process and with over four years of
+real-world use.  MaraDNS continues to be fully supported: The most recent
+release was done on September 21, 2007.
+<li><b>Easy to use</b>.  A basic recursive configuration needs only a 
+single three-line configuration file.  A basic authoritative configuration
+needs only a four-line configuration file and a one-line zone file.
+MaraDNS is fully documented, with both easy-to-follow tutorials and a 
+complete and up-to-date reference manual.
+<li><b>Small</b>.  MaraDNS is well suited for embedded applications 
+and other environments where the server must use the absolute minimum 
+number of resources possible.
+MaraDNS' binary is smaller than
+that of any other currently maintained recursive DNS server.
+<li><b>Open Source</b>.  MaraDNS is fully open-source, The license is a
+<A href=license.html>two-clause BSD license</A> that is almost
+identical to the 
+<A href="http://www.freebsd.org/copyright/freebsd-license.html">FreeBSD
+license</A>.
+</li>
+</ul>
+
+A full comparison between MaraDNS and other DNS servers is available in the
+<A href="advocacy.html">advocacy document</A>.
+
+<h2>Mailing list</h2>
+To join the mailing list, send an email to 
+<A href="mailto:list-request@maradns.org">list-request@maradns.org</A> with
+the word "subscribe" in the subject and body of the message.
+<p>
+Mailing list archives are here:
+<A href="http://marc.10east.com/?l=maradns-list">Archive #1</A>,
+<A href="http://hotaru.chaosring.org/~sam/archive.txt">Archive #2</A>.
+
+<H2>Special Thanks</H2>
+
+I would like to thank <A href="http://www.webconquest.com/">WebConquest</A> for
+hosting MaraDNS.org's web page.
+

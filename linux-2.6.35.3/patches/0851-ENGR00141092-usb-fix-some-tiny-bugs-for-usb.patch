@@ -1,0 +1,140 @@
+From 0d8444e23e422135ce0caa8b95de1e07052706c7 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Thu, 24 Mar 2011 14:25:45 +0800
+Subject: [PATCH] ENGR00141092 usb: fix some tiny bugs for usb
+
+For android system, the gadget driver is built in, when the usb
+device is on otg port, the udc suspended counter will be error at
+the situation. This patch fix it, if this situation is met, the
+udc suspended counter will be not added.
+
+Using A VBus Valid to judge whether the usb cable is connected, as
+some boards' vbus may higher than 0.8v(B Session Valid)
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/arcotg_udc.c |   22 +++++++++++++++-------
+ drivers/usb/gadget/arcotg_udc.h |    1 +
+ drivers/usb/host/ehci-arc.c     |    5 +++--
+ 3 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/usb/gadget/arcotg_udc.c b/drivers/usb/gadget/arcotg_udc.c
+index 142a615..0b5c8b6 100644
+--- a/drivers/usb/gadget/arcotg_udc.c
++++ b/drivers/usb/gadget/arcotg_udc.c
+@@ -320,6 +320,7 @@ static void dr_phy_low_power_mode(struct fsl_udc *udc, bool enable)
+ 	struct fsl_usb2_platform_data *pdata = udc->pdata;
+ 	u32 portsc;
+ 
++	pdata->lowpower = enable;
+ 	if (pdata && pdata->phy_lowpower_suspend) {
+ 		pdata->phy_lowpower_suspend(pdata, enable);
+ 	} else {
+@@ -333,7 +334,6 @@ static void dr_phy_low_power_mode(struct fsl_udc *udc, bool enable)
+ 			fsl_writel(portsc, &dr_regs->portsc1);
+ 		}
+ 	}
+-	pdata->lowpower = enable;
+ }
+ 
+ 
+@@ -3120,9 +3120,6 @@ static int udc_suspend(struct fsl_udc *udc)
+ 		else
+ 			dr_wake_up_enable(udc, true);
+ 	}
+-	mode = fsl_readl(&dr_regs->usbmode) & USB_MODE_CTRL_MODE_MASK;
+-	usbcmd = fsl_readl(&dr_regs->usbcmd);
+-
+ 	/*
+ 	 * If the controller is already stopped, then this must be a
+ 	 * PM suspend.  Remember this fact, so that we will leave the
+@@ -3133,6 +3130,8 @@ static int udc_suspend(struct fsl_udc *udc)
+ 		goto out;
+ 	}
+ 
++	mode = fsl_readl(&dr_regs->usbmode) & USB_MODE_CTRL_MODE_MASK;
++	usbcmd = fsl_readl(&dr_regs->usbcmd);
+ 	if (mode != USB_MODE_CTRL_MODE_DEVICE) {
+ 		printk(KERN_DEBUG "gadget not in device mode, leaving early\n");
+ 		goto out;
+@@ -3154,7 +3153,7 @@ static int udc_suspend(struct fsl_udc *udc)
+ 	 * In that case, the usb device can be remained on suspend state
+ 	 * and the dp will not be changed.
+ 	 */
+-	if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_B_SESSION_VALID)) {
++	if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_A_BUS_VALID)) {
+ 		/* stop the controller */
+ 		usbcmd = fsl_readl(&dr_regs->usbcmd) & ~USB_CMD_RUN_STOP;
+ 		fsl_writel(usbcmd, &dr_regs->usbcmd);
+@@ -3163,9 +3162,16 @@ static int udc_suspend(struct fsl_udc *udc)
+ 	dr_phy_low_power_mode(udc, true);
+ 	printk(KERN_DEBUG "USB Gadget suspend ends\n");
+ out:
++	if (udc->suspended > 1) {
++		pr_warning(
++		"It's the case usb device is on otg port and the gadget driver"
++		"is loaded during boots up\n"
++		"So, do not increase suspended counter Or there is a error, "
++		"please debug it !!! \n"
++		);
++		return 0;
++	}
+ 	udc->suspended++;
+-	if (udc->suspended > 2)
+-		printk(KERN_ERR "ERROR: suspended times > 2\n");
+ 
+ 	return 0;
+ }
+@@ -3177,6 +3183,8 @@ out:
+ static int fsl_udc_suspend(struct platform_device *pdev, pm_message_t state)
+ {
+ 	int ret;
++	pr_debug("%s(): stopped %d  suspended %d\n", __func__,
++		 udc_controller->stopped, udc_controller->suspended);
+ #ifdef CONFIG_USB_OTG
+ 	if (udc_controller->transceiver->gadget == NULL)
+ 		return 0;
+diff --git a/drivers/usb/gadget/arcotg_udc.h b/drivers/usb/gadget/arcotg_udc.h
+index bc88afb..8c154d0 100644
+--- a/drivers/usb/gadget/arcotg_udc.h
++++ b/drivers/usb/gadget/arcotg_udc.h
+@@ -265,6 +265,7 @@ struct usb_sys_interface {
+ #define  OTGSC_B_SESSION_VALID_IRQ_EN           (1 << 27)
+ #define  OTGSC_B_SESSION_VALID_IRQ_STS          (1 << 19)
+ #define  OTGSC_B_SESSION_VALID                  (1 << 11)
++#define  OTGSC_A_BUS_VALID			(1 << 9)
+ 
+ /* bit 28 is parallel transceiver width for UTMI interface */
+ #define  PORTSCX_PTW                          (0x10000000)
+diff --git a/drivers/usb/host/ehci-arc.c b/drivers/usb/host/ehci-arc.c
+index cf932e3..e54eef8 100644
+--- a/drivers/usb/host/ehci-arc.c
++++ b/drivers/usb/host/ehci-arc.c
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (c) 2005 MontaVista Software
+- * Copyright (C) 2011 Freescale Semiconductor
++ * Copyright (C) 2011 Freescale Semiconductor, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify it
+  * under the terms of the GNU General Public License as published by the
+@@ -33,6 +33,8 @@ extern int usb_host_wakeup_irq(struct device *wkup_dev);
+ extern void usb_host_set_wakeup(struct device *wkup_dev, bool para);
+ static void fsl_usb_lowpower_mode(struct fsl_usb2_platform_data *pdata, bool enable)
+ {
++	pdata->lowpower = enable;
++
+ 	if (enable) {
+ 		if (pdata->phy_lowpower_suspend)
+ 			pdata->phy_lowpower_suspend(pdata, true);
+@@ -40,7 +42,6 @@ static void fsl_usb_lowpower_mode(struct fsl_usb2_platform_data *pdata, bool ena
+ 		if (pdata->phy_lowpower_suspend)
+ 			pdata->phy_lowpower_suspend(pdata, false);
+ 	}
+-	pdata->lowpower = enable;
+ }
+ 
+ static void fsl_usb_clk_gate(struct fsl_usb2_platform_data *pdata, bool enable)
+-- 
+1.5.4.4
+

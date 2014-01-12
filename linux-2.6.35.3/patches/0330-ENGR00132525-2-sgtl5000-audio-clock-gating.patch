@@ -1,0 +1,29 @@
+From 19c511da7cc64d552483d5f5ca4872c607408d44 Mon Sep 17 00:00:00 2001
+From: Alan Tull <r80115@freescale.com>
+Date: Wed, 6 Oct 2010 15:04:28 -0500
+Subject: [PATCH] ENGR00132525-2 sgtl5000: audio clock gating
+
+Turn off audio clock when possible.  Empirical data says that we
+need to leave the clocks on for 300 mSec after all codec writes
+are done so schedule work to do that.
+
+Signed-off-by: Alan Tull <alan.tull@freescale.com>
+---
+ include/linux/fsl_devices.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/fsl_devices.h b/include/linux/fsl_devices.h
+index e2bf4d8..c127ae6 100644
+--- a/include/linux/fsl_devices.h
++++ b/include/linux/fsl_devices.h
+@@ -223,6 +223,7 @@ struct mxc_audio_platform_data {
+ 
+ 	int (*init) (void);	/* board specific init */
+ 	int (*amp_enable) (int enable);
++	int (*clock_enable) (int enable);
+ 	int (*finit) (void);	/* board specific finit */
+ 	void *priv;		/* used by board specific functions */
+ };
+-- 
+1.5.4.4
+

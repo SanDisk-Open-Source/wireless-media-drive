@@ -1,0 +1,40 @@
+From 27d1b9d7cf3d61f66341e9a8f5fc79344b59b603 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Wed, 5 Jan 2011 16:07:16 -0600
+Subject: [PATCH] ENGR00137638 - EPDC fb: Temperature index wrong during EPDC init
+
+- Changed initial EPDC temp index setting to be based off of a default
+temperature rather than a default index.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index 0a6981a..8d7909a 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -205,6 +205,8 @@ void __iomem *epdc_base;
+ struct mxc_epdc_fb_data *g_fb_data;
+ 
+ /* forward declaration */
++static int mxc_epdc_fb_get_temp_index(struct mxc_epdc_fb_data *fb_data,
++						int temp);
+ static void mxc_epdc_fb_flush_updates(struct mxc_epdc_fb_data *fb_data);
+ static int mxc_epdc_fb_blank(int blank, struct fb_info *info);
+ static int mxc_epdc_fb_init_hw(struct fb_info *info);
+@@ -635,8 +637,8 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
+ 	       EPDC_FIFOCTRL_FIFO_L_LEVEL_MASK);
+ 	__raw_writel(reg_val, EPDC_FIFOCTRL);
+ 
+-	/* EPDC_TEMP - Use default temp index */
+-	epdc_set_temp(fb_data->temp_index);
++	/* EPDC_TEMP - Use default temp to get index */
++	epdc_set_temp(mxc_epdc_fb_get_temp_index(fb_data, DEFAULT_TEMP));
+ 
+ 	/* EPDC_RES */
+ 	epdc_set_screen_res(epdc_mode->vmode->xres, epdc_mode->vmode->yres);
+-- 
+1.5.4.4
+

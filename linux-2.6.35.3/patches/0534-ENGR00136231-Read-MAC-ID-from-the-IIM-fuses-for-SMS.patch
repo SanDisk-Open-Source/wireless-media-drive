@@ -1,0 +1,74 @@
+From 3804737b6a816cfaa711cae04dec8537e36e8e00 Mon Sep 17 00:00:00 2001
+From: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+Date: Fri, 10 Dec 2010 13:14:44 -0600
+Subject: [PATCH] ENGR00136231: Read MAC ID from the IIM fuses for SMSC911x driver
+
+For boards that use the SMSC 911x ethernet driver, the MAC ID for
+the ethernet controller was randomly being generated. It should get
+the MAC ID from the IIM fuses that are blown to show the correct MAC ID.
+
+Signed-off-by: Dinh Nguyen <Dinh.Nguyen@freescale.com>
+---
+ arch/arm/mach-mx5/mx53_ard.c          |   26 ++++++++++++++++++++++++++
+ arch/arm/plat-mxc/include/mach/mx5x.h |    2 ++
+ 2 files changed, 28 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/mx53_ard.c b/arch/arm/mach-mx5/mx53_ard.c
+index 82b1f63..1a5afc5 100644
+--- a/arch/arm/mach-mx5/mx53_ard.c
++++ b/arch/arm/mach-mx5/mx53_ard.c
+@@ -1245,6 +1245,31 @@ static void weim_cs_config(void)
+ 	iounmap(weim_base);
+ }
+ 
++static int mxc_read_mac_iim(void)
++{
++	struct clk *iim_clk;
++	void __iomem *iim_base = IO_ADDRESS(IIM_BASE_ADDR);
++	void __iomem *iim_mac_base = iim_base + \
++		MXC_IIM_MX53_BANK_AREA_1_OFFSET + \
++		MXC_IIM_MX53_MAC_ADDR_OFFSET;
++	int i;
++
++	iim_clk = clk_get(NULL, "iim_clk");
++
++	if (!iim_clk) {
++		printk(KERN_ERR "Could not get IIM clk to read MAC fuses!\n");
++		return ~EINVAL;
++	}
++
++	clk_enable(iim_clk);
++
++	for (i = 0; i < 6; i++)
++		ard_smsc911x_config.mac[i] = readl(iim_mac_base + (i*4));
++
++	clk_disable(iim_clk);
++	return 0;
++}
++
+ /*!
+  * Board specific initialization.
+  */
+@@ -1265,6 +1290,7 @@ static void __init mxc_board_init(void)
+ 
+ 	mx53_ard_io_init();
+ 	weim_cs_config();
++	mxc_read_mac_iim();
+ 	mxc_register_device(&ard_smsc_lan9220_device, &ard_smsc911x_config);
+ 
+ 	mxc_register_device(&mxc_dma_device, NULL);
+diff --git a/arch/arm/plat-mxc/include/mach/mx5x.h b/arch/arm/plat-mxc/include/mach/mx5x.h
+index 351a78b..0f5cf54 100644
+--- a/arch/arm/plat-mxc/include/mach/mx5x.h
++++ b/arch/arm/plat-mxc/include/mach/mx5x.h
+@@ -677,5 +677,7 @@
+ #define MXC_IIM_MX51_BANK_END_ADDR   0x147c
+ #define MXC_IIM_MX53_BANK_START_ADDR 0x0800
+ #define MXC_IIM_MX53_BANK_END_ADDR   0x183c
++#define MXC_IIM_MX53_BANK_AREA_1_OFFSET	0xc00
++#define MXC_IIM_MX53_MAC_ADDR_OFFSET	0x24
+ 
+ #endif				/*  __ASM_ARCH_MXC_MX5X_H__ */
+-- 
+1.5.4.4
+

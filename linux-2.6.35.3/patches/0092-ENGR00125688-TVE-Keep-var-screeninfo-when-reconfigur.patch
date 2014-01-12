@@ -1,0 +1,39 @@
+From 3617b0d8f118aa339ed196e6a3df6e7661558db4 Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Wed, 4 Aug 2010 10:55:18 +0800
+Subject: [PATCH] ENGR00125688 TVE:Keep var screeninfo when reconfigure TVE fb
+
+This patch keeps TVE variable screeninfo when the TVE driver
+reconfigures TVE framebuffer so that the pixel format of the
+framebuffer will not be changed.
+This patch fixes the wrong pixel format issue when start to
+play video on TVE framebuffer with TVE framebuffer in blanked
+status.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/video/mxc/tve.c |    7 ++-----
+ 1 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/video/mxc/tve.c b/drivers/video/mxc/tve.c
+index 2596167..446ef13 100644
+--- a/drivers/video/mxc/tve.c
++++ b/drivers/video/mxc/tve.c
+@@ -514,12 +514,9 @@ static irqreturn_t tve_detect_handler(int irq, void *data)
+ /* Re-construct clk for tve display */
+ static inline void tve_recfg_fb(struct fb_info *fbi)
+ {
+-	struct fb_var_screeninfo var;
+-
+-	memset(&var, 0, sizeof(var));
+-	fb_videomode_to_var(&var, fbi->mode);
+ 	fbi->flags &= ~FBINFO_MISC_USEREVENT;
+-	fb_set_var(fbi, &var);
++	fbi->var.activate |= FB_ACTIVATE_FORCE;
++	fb_set_var(fbi, &fbi->var);
+ }
+ 
+ int tve_fb_event(struct notifier_block *nb, unsigned long val, void *v)
+-- 
+1.5.4.4
+

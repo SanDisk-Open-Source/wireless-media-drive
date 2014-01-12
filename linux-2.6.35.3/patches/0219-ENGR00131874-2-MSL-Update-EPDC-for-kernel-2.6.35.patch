@@ -1,0 +1,68 @@
+From e15f88932774b2488a9e63c5ce1b8bd0bac44cab Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Wed, 22 Sep 2010 19:02:42 -0500
+Subject: [PATCH] ENGR00131874-2 - MSL: Update EPDC for kernel 2.6.35
+
+- Added proper registration of all EPDC-dependent clocks.
+- Added flags to allow Maxim PMIC regulators to be enabled/disabled
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ arch/arm/mach-mx5/clock_mx50.c |   11 +++++++++++
+ arch/arm/mach-mx5/mx50_arm2.c  |    4 +++-
+ 2 files changed, 14 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock_mx50.c b/arch/arm/mach-mx5/clock_mx50.c
+index 5e64ae2..026255d 100644
+--- a/arch/arm/mach-mx5/clock_mx50.c
++++ b/arch/arm/mach-mx5/clock_mx50.c
+@@ -3049,6 +3049,15 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "pll1_sw_clk", pll1_sw_clk),
+ 	_REGISTER_CLOCK(NULL, "pll2", pll2_sw_clk),
+ 	_REGISTER_CLOCK(NULL, "pll3", pll3_sw_clk),
++	_REGISTER_CLOCK(NULL, "apll", apll_clk),
++	_REGISTER_CLOCK(NULL, "pfd0", pfd0_clk),
++	_REGISTER_CLOCK(NULL, "pfd1", pfd1_clk),
++	_REGISTER_CLOCK(NULL, "pfd2", pfd2_clk),
++	_REGISTER_CLOCK(NULL, "pfd3", pfd3_clk),
++	_REGISTER_CLOCK(NULL, "pfd4", pfd4_clk),
++	_REGISTER_CLOCK(NULL, "pfd5", pfd5_clk),
++	_REGISTER_CLOCK(NULL, "pfd6", pfd6_clk),
++	_REGISTER_CLOCK(NULL, "pfd7", pfd7_clk),
+ 	_REGISTER_CLOCK(NULL, "gpc_dvfs_clk", gpc_dvfs_clk),
+ 	_REGISTER_CLOCK(NULL, "lp_apm", lp_apm_clk),
+ 	_REGISTER_CLOCK(NULL, "cpu_clk", cpu_clk),
+@@ -3108,6 +3117,8 @@ static struct clk_lookup lookups[] = {
+ 	_REGISTER_CLOCK(NULL, "display_axi", display_axi_clk),
+ 	_REGISTER_CLOCK(NULL, "elcdif_axi", elcdif_axi_clk),
+ 	_REGISTER_CLOCK(NULL, "pxp_axi", pxp_axi_clk),
++	_REGISTER_CLOCK("mxc_epdc_fb", "epdc_axi", epdc_axi_clk),
++	_REGISTER_CLOCK("mxc_epdc_fb", "epdc_pix", epdc_pix_clk),
+ };
+ 
+ static void clk_tree_init(void)
+diff --git a/arch/arm/mach-mx5/mx50_arm2.c b/arch/arm/mach-mx5/mx50_arm2.c
+index ce0c2a2..62921d4 100644
+--- a/arch/arm/mach-mx5/mx50_arm2.c
++++ b/arch/arm/mach-mx5/mx50_arm2.c
+@@ -446,6 +446,7 @@ static struct regulator_init_data max17135_init_data[] __initdata = {
+ 	{
+ 		.constraints = {
+ 			.name = "DISPLAY",
++			.valid_ops_mask =  REGULATOR_CHANGE_STATUS,
+ 		},
+ 	}, {
+ 		.constraints = {
+@@ -476,7 +477,8 @@ static struct regulator_init_data max17135_init_data[] __initdata = {
+ 			.name = "VCOM",
+ 			.min_uV = mV_to_uV(-4325),
+ 			.max_uV = mV_to_uV(-500),
+-			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
++			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
++			REGULATOR_CHANGE_STATUS,
+ 		},
+ 	}, {
+ 		.constraints = {
+-- 
+1.5.4.4
+

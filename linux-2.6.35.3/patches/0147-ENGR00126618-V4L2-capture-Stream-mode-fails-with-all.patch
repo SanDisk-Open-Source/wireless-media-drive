@@ -1,0 +1,222 @@
+From a2b69707b63af0dc7926d40aea54bc9184a052db Mon Sep 17 00:00:00 2001
+From: Liu Ying <b17645@freescale.com>
+Date: Tue, 24 Aug 2010 15:47:54 +0800
+Subject: [PATCH] ENGR00126618 V4L2 capture:Stream mode fails with all IPU channels off
+
+If IPU clock is disabled, enable it when configuring the CSI module.
+
+Signed-off-by: Liu Ying <b17645@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_capture.c |   91 ++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 91 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_capture.c b/drivers/mxc/ipu3/ipu_capture.c
+index 391cc96..8bb729a 100644
+--- a/drivers/mxc/ipu3/ipu_capture.c
++++ b/drivers/mxc/ipu3/ipu_capture.c
+@@ -26,6 +26,7 @@
+ #include <linux/delay.h>
+ #include <linux/ipu.h>
+ #include <linux/clk.h>
++#include <mach/mxc_dvfs.h>
+ 
+ #include "ipu_prv.h"
+ #include "ipu_regs.h"
+@@ -93,6 +94,12 @@ ipu_csi_init_interface(uint16_t width, uint16_t height, uint32_t pixel_fmt,
+ 		cfg_param.force_eof << CSI_SENS_CONF_FORCE_EOF_SHIFT |
+ 		cfg_param.data_en_pol << CSI_SENS_CONF_DATA_EN_POL_SHIFT;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	__raw_writel(data, CSI_SENS_CONF(csi));
+@@ -202,6 +209,12 @@ void ipu_csi_get_window_size(uint32_t *width, uint32_t *height, uint32_t csi)
+ 	uint32_t reg;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	reg = __raw_readl(CSI_ACT_FRM_SIZE(csi));
+@@ -223,6 +236,12 @@ void ipu_csi_set_window_size(uint32_t width, uint32_t height, uint32_t csi)
+ {
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	__raw_writel((width - 1) | (height - 1) << 16, CSI_ACT_FRM_SIZE(csi));
+@@ -243,6 +262,12 @@ void ipu_csi_set_window_pos(uint32_t left, uint32_t top, uint32_t csi)
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_OUT_FRM_CTRL(csi));
+@@ -265,6 +290,12 @@ void _ipu_csi_horizontal_downsize_enable(uint32_t csi)
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_OUT_FRM_CTRL(csi));
+@@ -285,6 +316,12 @@ void _ipu_csi_horizontal_downsize_disable(uint32_t csi)
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_OUT_FRM_CTRL(csi));
+@@ -305,6 +342,12 @@ void _ipu_csi_vertical_downsize_enable(uint32_t csi)
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_OUT_FRM_CTRL(csi));
+@@ -325,6 +368,12 @@ void _ipu_csi_vertical_downsize_disable(uint32_t csi)
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_OUT_FRM_CTRL(csi));
+@@ -351,6 +400,12 @@ void ipu_csi_set_test_generator(bool active, uint32_t r_value,
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_TST_CTRL(csi));
+@@ -386,6 +441,12 @@ void _ipu_csi_ccir_err_detection_enable(uint32_t csi)
+ {
+ 	uint32_t temp;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	temp = __raw_readl(CSI_CCIR_CODE_1(csi));
+ 	temp |= CSI_CCIR_ERR_DET_EN;
+ 	__raw_writel(temp, CSI_CCIR_CODE_1(csi));
+@@ -402,6 +463,12 @@ void _ipu_csi_ccir_err_detection_disable(uint32_t csi)
+ {
+ 	uint32_t temp;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	temp = __raw_readl(CSI_CCIR_CODE_1(csi));
+ 	temp &= ~CSI_CCIR_ERR_DET_EN;
+ 	__raw_writel(temp, CSI_CCIR_CODE_1(csi));
+@@ -427,6 +494,12 @@ int _ipu_csi_set_mipi_di(uint32_t num, uint32_t di_val, uint32_t csi)
+ 		goto err;
+ 	}
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_MIPI_DI(csi));
+@@ -484,6 +557,12 @@ int _ipu_csi_set_skip_isp(uint32_t skip, uint32_t max_ratio, uint32_t csi)
+ 		goto err;
+ 	}
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_SKIP(csi));
+@@ -521,6 +600,12 @@ int _ipu_csi_set_skip_smfc(uint32_t skip, uint32_t max_ratio,
+ 		goto err;
+ 	}
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(CSI_SKIP(csi));
+@@ -589,6 +674,12 @@ void _ipu_smfc_set_wmc(ipu_channel_t channel, bool set, uint32_t level)
+ 	uint32_t temp;
+ 	unsigned long lock_flags;
+ 
++	if (g_ipu_clk_enabled == false) {
++		stop_dvfs_per();
++		g_ipu_clk_enabled = true;
++		clk_enable(g_ipu_clk);
++	}
++
+ 	spin_lock_irqsave(&ipu_lock, lock_flags);
+ 
+ 	temp = __raw_readl(SMFC_WMC);
+-- 
+1.5.4.4
+

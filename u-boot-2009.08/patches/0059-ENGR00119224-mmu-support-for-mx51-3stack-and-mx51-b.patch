@@ -1,0 +1,315 @@
+From 53f07baf9167201943561651ba9f3587f1b8edc9 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 11 Dec 2009 15:19:57 +0800
+Subject: [PATCH] ENGR00119224: mmu support for mx51 3stack and mx51 bbg
+
+mmu support for mx51 3stack and mx51 bbg.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx51_3stack/mx51_3stack.c |   71 ++++++++++++++++++++++++++++-
+ board/freescale/mx51_bbg/flash_header.S   |    3 +-
+ board/freescale/mx51_bbg/mx51_bbg.c       |   62 +++++++++++++++++++++++++
+ cpu/arm_cortexa8/mx51/generic.c           |    8 +++
+ cpu/arm_cortexa8/start.S                  |    3 +
+ include/configs/mx51_3stack.h             |    3 +
+ include/configs/mx51_3stack_android.h     |    3 +
+ include/configs/mx51_bbg.h                |    3 +
+ include/configs/mx51_bbg_android.h        |    3 +
+ 9 files changed, 155 insertions(+), 4 deletions(-)
+
+diff --git a/board/freescale/mx51_3stack/mx51_3stack.c b/board/freescale/mx51_3stack/mx51_3stack.c
+index 38eed4f..0ed1ccb 100644
+--- a/board/freescale/mx51_3stack/mx51_3stack.c
++++ b/board/freescale/mx51_3stack/mx51_3stack.c
+@@ -29,7 +29,6 @@
+ #include <asm/arch/mx51_pins.h>
+ #include <asm/arch/iomux.h>
+ #include <i2c.h>
+-#include <mxc_keyb.h>
+ #include <asm/arch/keypad.h>
+ #include "board-mx51_3stack.h"
+ #include <netdev.h>
+@@ -39,7 +38,13 @@
+ #include <fsl_esdhc.h>
+ #endif
+ 
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
++
+ #ifdef CONFIG_FSL_ANDROID
++#include <mxc_keyb.h>
+ #include <part.h>
+ #include <ext2fs.h>
+ #include <linux/mtd/mtd.h>
+@@ -130,6 +135,66 @@ inline int is_soc_rev(int rev)
+ 	return (system_rev & 0xFF) - rev;
+ }
+ 
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
++	unsigned long i;
++
++	/*
++	* Set the TTB register
++	*/
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	* Set the Domain Access Control Register
++	*/
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	* First clear all TT entries - ie Set them to Faulting
++	*/
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes          Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0x200, 0x1,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* ROM */
++	X_ARM_MMU_SECTION(0x1FF, 0x1FF, 0x001,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IRAM */
++	X_ARM_MMU_SECTION(0x300, 0x300, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* GPU */
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IPUv3D */
++	X_ARM_MMU_SECTION(0x600, 0x600, 0x300,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* periperals */
++	X_ARM_MMU_SECTION(0x900, 0x000, 0x080,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM */
++	X_ARM_MMU_SECTION(0x900, 0x900, 0x080,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM */
++	X_ARM_MMU_SECTION(0x900, 0x980, 0x080,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM 0:128M*/
++	X_ARM_MMU_SECTION(0xA00, 0xA00, 0x100,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM */
++	X_ARM_MMU_SECTION(0xB80, 0xB80, 0x10,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS1 EIM control*/
++	X_ARM_MMU_SECTION(0xCC0, 0xCC0, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS4/5/NAND Flash buffer */
++}
++#endif
++
+ int dram_init(void)
+ {
+ 	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+@@ -781,7 +846,7 @@ static int check_nand_recovery_cmd_file(char *mtd_part_name,
+ 
+ static int check_recovery_cmd_file(void)
+ {
+-	int if_exist;
++	int if_exist = 0;
+ 	char *env = NULL;
+ 
+ 	switch (get_boot_device()) {
+@@ -803,9 +868,11 @@ static int check_recovery_cmd_file(void)
+ 		if (!env)
+ 			setenv("partition", MTD_ACTIVE_PART);
+ 
++		/*
+ 		if_exist = check_nand_recovery_cmd_file(CONFIG_ANDROID_UBIFS_PARTITION_NM,
+ 						CONFIG_ANDROID_CACHE_PARTITION_NAND,
+ 						CONFIG_ANDROID_RECOVERY_CMD_FILE);
++		*/
+ 		break;
+ 	case SPI_NOR_BOOT:
+ 		return 0;
+diff --git a/board/freescale/mx51_bbg/flash_header.S b/board/freescale/mx51_bbg/flash_header.S
+index 6790679..17a5c59 100644
+--- a/board/freescale/mx51_bbg/flash_header.S
++++ b/board/freescale/mx51_bbg/flash_header.S
+@@ -108,6 +108,5 @@ MXC_DCD_ITEM(54, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDMISC, 0x000ad6d0)
+ MXC_DCD_ITEM(55, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDCDLYGD, 0x90000000)
+ MXC_DCD_ITEM(56, 4, ESDCTL_BASE_ADDR + ESDCTL_ESDSCR, 0x00000000)
+ dcd_data_end:
+-image_len:		.word	0x100000
+-//image_len:		.word	_end - _start
++image_len:		.word	__u_boot_cmd_end - TEXT_BASE
+ #endif
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 8a45a78..4279ac6 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -41,6 +41,11 @@
+ #include <fsl_esdhc.h>
+ #endif
+ 
++#ifdef CONFIG_ARCH_MMU
++#include <asm/mmu.h>
++#include <asm/arch/mmu.h>
++#endif
++
+ #ifdef CONFIG_FSL_ANDROID
+ #include <mxc_keyb.h>
+ #include <part.h>
+@@ -140,6 +145,63 @@ inline int is_soc_rev(int rev)
+ 	return (system_rev & 0xFF) - rev;
+ }
+ 
++#ifdef CONFIG_ARCH_MMU
++void board_mmu_init(void)
++{
++	unsigned long ttb_base = PHYS_SDRAM_1 + 0x4000;
++	unsigned long i;
++
++	/*
++	* Set the TTB register
++	*/
++	asm volatile ("mcr  p15,0,%0,c2,c0,0" : : "r"(ttb_base) /*:*/);
++
++	/*
++	* Set the Domain Access Control Register
++	*/
++	i = ARM_ACCESS_DACR_DEFAULT;
++	asm volatile ("mcr  p15,0,%0,c3,c0,0" : : "r"(i) /*:*/);
++
++	/*
++	* First clear all TT entries - ie Set them to Faulting
++	*/
++	memset((void *)ttb_base, 0, ARM_FIRST_LEVEL_PAGE_TABLE_SIZE);
++	/* Actual   Virtual  Size   Attributes          Function */
++	/* Base     Base     MB     cached? buffered?  access permissions */
++	/* xxx00000 xxx00000 */
++	X_ARM_MMU_SECTION(0x000, 0x200, 0x1,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* ROM */
++	X_ARM_MMU_SECTION(0x1FF, 0x1FF, 0x001,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IRAM */
++	X_ARM_MMU_SECTION(0x300, 0x300, 0x100,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* GPU */
++	X_ARM_MMU_SECTION(0x400, 0x400, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* IPUv3D */
++	X_ARM_MMU_SECTION(0x600, 0x600, 0x300,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* periperals */
++	X_ARM_MMU_SECTION(0x900, 0x000, 0x1FF,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM */
++	X_ARM_MMU_SECTION(0x900, 0x900, 0x200,
++			ARM_CACHEABLE, ARM_BUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM */
++	X_ARM_MMU_SECTION(0x900, 0xE00, 0x200,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* SDRAM 0:128M*/
++	X_ARM_MMU_SECTION(0xB80, 0xB80, 0x10,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS1 EIM control*/
++	X_ARM_MMU_SECTION(0xCC0, 0xCC0, 0x040,
++			ARM_UNCACHEABLE, ARM_UNBUFFERABLE,
++			ARM_ACCESS_PERM_RW_RW); /* CS4/5/NAND Flash buffer */
++}
++#endif
++
+ int dram_init(void)
+ {
+ 	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+diff --git a/cpu/arm_cortexa8/mx51/generic.c b/cpu/arm_cortexa8/mx51/generic.c
+index 2512081..a073de1 100644
+--- a/cpu/arm_cortexa8/mx51/generic.c
++++ b/cpu/arm_cortexa8/mx51/generic.c
+@@ -260,3 +260,11 @@ int cpu_eth_init(bd_t *bis)
+ 	return rc;
+ }
+ 
++#if defined(CONFIG_ARCH_CPU_INIT)
++int arch_cpu_init(void)
++{
++	icache_enable();
++	dcache_enable();
++	return 0;
++}
++#endif
+diff --git a/cpu/arm_cortexa8/start.S b/cpu/arm_cortexa8/start.S
+index 4983a47..4bbb56a 100644
+--- a/cpu/arm_cortexa8/start.S
++++ b/cpu/arm_cortexa8/start.S
+@@ -178,6 +178,9 @@ clbss_l:
+ 	add	r0, r0, #4		@ increment clear index pointer
+ 	bne	clbss_l			@ keep clearing till at end
+ 
++#ifdef CONFIG_ARCH_MMU
++	bl board_mmu_init
++#endif
+ 	ldr	pc, _start_armboot	@ jump to C code
+ 
+ _start_armboot: .word start_armboot
+diff --git a/include/configs/mx51_3stack.h b/include/configs/mx51_3stack.h
+index 29f30da..3cecd58 100644
+--- a/include/configs/mx51_3stack.h
++++ b/include/configs/mx51_3stack.h
+@@ -41,6 +41,9 @@
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+ 
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+diff --git a/include/configs/mx51_3stack_android.h b/include/configs/mx51_3stack_android.h
+index ed0611b..53dd409 100644
+--- a/include/configs/mx51_3stack_android.h
++++ b/include/configs/mx51_3stack_android.h
+@@ -37,6 +37,9 @@
+ #define CONFIG_FLASH_HEADER_OFFSET 0x400
+ #define CONFIG_FLASH_HEADER_BARKER 0xB1
+ 
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+diff --git a/include/configs/mx51_bbg.h b/include/configs/mx51_bbg.h
+index 8ef891f..c5c3ae9 100644
+--- a/include/configs/mx51_bbg.h
++++ b/include/configs/mx51_bbg.h
+@@ -40,6 +40,9 @@
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+ 
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
+ #define CONFIG_DISPLAY_CPUINFO
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index ea1998c..d2cccbc 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -37,6 +37,9 @@
+ #define CONFIG_FLASH_HEADER_OFFSET 0x400
+ #define CONFIG_FLASH_HEADER_BARKER 0xB1
+ 
++#define CONFIG_ARCH_CPU_INIT
++#define CONFIG_ARCH_MMU
++
+ #define CONFIG_SKIP_RELOCATE_UBOOT
+ 
+ #define CONFIG_MX51_HCLK_FREQ	24000000	/* RedBoot says 26MHz */
+-- 
+1.5.4.4
+

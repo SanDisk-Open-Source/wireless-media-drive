@@ -1,0 +1,28 @@
+From 19423c03deba5d92a4a9d84ffabfcd359dd8d2c8 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 5 Mar 2010 15:15:57 +0800
+Subject: [PATCH] ENGR00121314: Fix mx23 and mx28 u-boot build error
+
+mx23 and mx28 u-boot build fails.
+The reason is that cache-cp15.c is changed to cache-cp15.h.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ cpu/arm926ejs/cpu.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/cpu/arm926ejs/cpu.c b/cpu/arm926ejs/cpu.c
+index 5c902df..7f2dbd4 100644
+--- a/cpu/arm926ejs/cpu.c
++++ b/cpu/arm926ejs/cpu.c
+@@ -32,6 +32,7 @@
+ #include <common.h>
+ #include <command.h>
+ #include <asm/system.h>
++#include <asm/cache-cp15.h>
+ 
+ static void cache_flush(void);
+ 
+-- 
+1.5.4.4
+

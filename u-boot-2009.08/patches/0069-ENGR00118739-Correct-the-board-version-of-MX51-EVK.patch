@@ -1,0 +1,91 @@
+From a7fc31a95a55983ddd0015d3778e0fe1c2d220dc Mon Sep 17 00:00:00 2001
+From: Lily Zhang <r58066@freescale.com>
+Date: Sun, 27 Dec 2009 17:21:58 +0800
+Subject: [PATCH] ENGR00118739 Correct the board version of MX51 EVK
+
+The SD card in MMC Slot2 can not be detected. This is because
+the board version of MX51 EVK doesn't keep synchronization
+with kernel. So the card detect PIN is not configured well.
+Here Bit 11-Bit 8 in system_rev indicates the board version.
+The fix is to set Bit 11 -Bit8 as 1 for MX51 EVK board.
+
+Signed-off-by: Lily Zhang <r58066@freescale.com>
+---
+ board/freescale/mx51_bbg/mx51_bbg.c |   22 +++++++++++-----------
+ include/asm-arm/arch-mx51/mx51.h    |    2 ++
+ 2 files changed, 13 insertions(+), 11 deletions(-)
+
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 4279ac6..60fc704 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -121,11 +121,7 @@ static inline void setup_soc_rev(void)
+ 		system_rev = 0x51000 | CHIP_REV_1_1;
+ 		break;
+ 	case 0x10:
+-		if ((__REG(GPIO1_BASE_ADDR + 0x0) & (0x1 << 22)) == 0) {
+-			system_rev = 0x51000 | CHIP_REV_2_5;
+-		} else {
+-			system_rev = 0x51000 | CHIP_REV_2_0;
+-		}
++		system_rev = 0x51000 | CHIP_REV_2_0;
+ 		break;
+ 	case 0x20:
+ 		system_rev = 0x51000 | CHIP_REV_3_0;
+@@ -135,9 +131,11 @@ static inline void setup_soc_rev(void)
+ 	}
+ }
+ 
+-static inline void set_board_rev(int rev)
++static inline void set_board_rev()
+ {
+-	system_rev |= (rev & 0xF) << 8;
++	if ((__REG(GPIO1_BASE_ADDR + 0x0) & (0x1 << 22)) == 0)
++		system_rev |= BOARD_REV_2_0 << BOARD_VER_OFFSET;
++
+ }
+ 
+ inline int is_soc_rev(int rev)
+@@ -664,6 +662,7 @@ int board_init(void)
+ {
+ 	setup_boot_device();
+ 	setup_soc_rev();
++	set_board_rev();
+ 
+ 	gd->bd->bi_arch_number = MACH_TYPE_MX51_BABBAGE;	/* board id for linux */
+ 	/* address of boot parameters */
+@@ -886,13 +885,14 @@ int checkboard(void)
+ {
+ 	printf("Board: MX51 BABBAGE ");
+ 
+-	if (system_rev & CHIP_REV_3_0) {
++	if (is_soc_rev(CHIP_REV_3_0) == 0) {
+ 		printf("3.0 [");
+-	} else if (system_rev & CHIP_REV_2_5) {
++	} else if ((is_soc_rev(CHIP_REV_2_0) == 0)
++	 && (system_rev & (BOARD_REV_2_0 << BOARD_VER_OFFSET))) {
+ 		printf("2.5 [");
+-	} else if (system_rev & CHIP_REV_2_0) {
++	} else if (is_soc_rev(CHIP_REV_2_0) == 0) {
+ 		printf("2.0 [");
+-	} else if (system_rev & CHIP_REV_1_1) {
++	} else if (is_soc_rev(CHIP_REV_1_1) == 0) {
+ 		printf("1.1 [");
+ 	} else {
+ 		printf("1.0 [");
+diff --git a/include/asm-arm/arch-mx51/mx51.h b/include/asm-arm/arch-mx51/mx51.h
+index 6554b56..00e50cf 100644
+--- a/include/asm-arm/arch-mx51/mx51.h
++++ b/include/asm-arm/arch-mx51/mx51.h
+@@ -399,6 +399,8 @@
+ #define BOARD_REV_1_0           0x0
+ #define BOARD_REV_2_0           0x1
+ 
++#define BOARD_VER_OFFSET	0x8
++
+ #define NAND_FLASH_BOOT		0x10000000
+ #define SPI_NOR_FLASH_BOOT	0x80000000
+ #define MMC_FLASH_BOOT		0x40000000
+-- 
+1.5.4.4
+

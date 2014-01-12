@@ -1,0 +1,34 @@
+From eb680c19fc73119ea6fcbae7a52a1c74758991cf Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Tue, 2 Nov 2010 12:43:15 +0800
+Subject: [PATCH] ENGR00133178-8 NAND : add ONFI NAND commands
+
+add the new ONFI NAND commands to the common header file.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ include/linux/mtd/nand.h |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index fb42bc5..f1ba0f0 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -99,6 +99,14 @@ extern int nand_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len);
+ #define NAND_CMD_RNDOUTSTART	0xE0
+ #define NAND_CMD_CACHEDPROG	0x15
+ 
++/* Extended commands for ONFI nand */
++#define NAND_CMD_READ_PARAMETER_PAGE	0xec
++#define NAND_CMD_READ_UNIQUE_ID		0xed
++#define NAND_CMD_GET_FEATURE		0xee
++#define NAND_CMD_SET_FEATURE		0xef
++#define NAND_CMD_RESET_LUN		0xfa
++#define NAND_CMD_SYNC_RESET		0xfc
++
+ /* Extended commands for AG-AND device */
+ /*
+  * Note: the command for NAND_CMD_DEPLETE1 is really 0x00 but
+-- 
+1.5.4.4
+

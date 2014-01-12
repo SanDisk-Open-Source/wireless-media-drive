@@ -1,0 +1,126 @@
+From 7c757f3fac44f4432a8d4ca8d665374c6fc5489f Mon Sep 17 00:00:00 2001
+From: Lionel Xu <Lionel.Xu@freescale.com>
+Date: Mon, 6 Sep 2010 11:29:06 +0800
+Subject: [PATCH] ENGR00127009 MX23 ALSA: Resolve the occasional DMA stuck when recording
+
+Sometimes the DMA for audioin will get stuck when recording, this patch
+is used to resolve the problem.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ sound/soc/mxs/mxs-adc.c |   39 +++++++++++++++++++++++++++++++--------
+ sound/soc/mxs/mxs-pcm.c |   11 -----------
+ sound/soc/mxs/mxs-pcm.h |    9 +++++++++
+ 3 files changed, 40 insertions(+), 19 deletions(-)
+
+diff --git a/sound/soc/mxs/mxs-adc.c b/sound/soc/mxs/mxs-adc.c
+index 0ea70d5..cf6eb36 100644
+--- a/sound/soc/mxs/mxs-adc.c
++++ b/sound/soc/mxs/mxs-adc.c
+@@ -31,6 +31,7 @@
+ #include <mach/hardware.h>
+ #include <mach/regs-audioin.h>
+ #include <mach/regs-audioout.h>
++#include <mach/dmaengine.h>
+ 
+ #include "mxs-pcm.h"
+ 
+@@ -264,23 +265,45 @@ static int mxs_adc_trigger(struct snd_pcm_substream *substream,
+ 				struct snd_soc_dai *dai)
+ {
+ 	int playback = substream->stream == SNDRV_PCM_STREAM_PLAYBACK ? 1 : 0;
++	struct mxs_runtime_data *prtd = substream->runtime->private_data;
+ 	int ret = 0;
++	u32 xfer_count1 = 0;
++	u32 xfer_count2 = 0;
++	u32 cur_bar1 = 0;
++	u32 cur_bar2 = 0;
++	u32 reg;
++	struct mxs_dma_info dma_info;
+ 
+ 	switch (cmd) {
+ 	case SNDRV_PCM_TRIGGER_START:
+ 
+ 		if (playback) {
+ 			/* enable the fifo error interrupt */
+-			__raw_writel(BM_AUDIOOUT_CTRL_FIFO_ERROR_IRQ_EN,
+-				REGS_AUDIOOUT_BASE + HW_AUDIOOUT_CTRL_SET);
++		    __raw_writel(BM_AUDIOOUT_CTRL_FIFO_ERROR_IRQ_EN,
++			REGS_AUDIOOUT_BASE + HW_AUDIOOUT_CTRL_SET);
+ 			/* write a data to data reg to trigger the transfer */
+-			__raw_writel(0x0,
+-				REGS_AUDIOOUT_BASE + HW_AUDIOOUT_DATA);
+-			mxs_dac_schedule_ramp_work(&dac_ramp_work);
++		    __raw_writel(0x0,
++			REGS_AUDIOOUT_BASE + HW_AUDIOOUT_DATA);
++		    mxs_dac_schedule_ramp_work(&dac_ramp_work);
+ 		} else {
+-			__raw_writel(BM_AUDIOIN_CTRL_RUN,
+-				REGS_AUDIOIN_BASE + HW_AUDIOIN_CTRL_SET);
+-			mxs_adc_schedule_ramp_work(&adc_ramp_work);
++		    mxs_dma_get_info(prtd->dma_ch, &dma_info);
++		    cur_bar1 = dma_info.buf_addr;
++		    xfer_count1 = dma_info.xfer_count;
++
++		    __raw_writel(BM_AUDIOIN_CTRL_RUN,
++			REGS_AUDIOIN_BASE + HW_AUDIOIN_CTRL_SET);
++		    udelay(100);
++
++		    mxs_dma_get_info(prtd->dma_ch, &dma_info);
++		    cur_bar2 = dma_info.buf_addr;
++		    xfer_count2 = dma_info.xfer_count;
++
++		    /* check if DMA getting stuck */
++		    if ((xfer_count1 == xfer_count2) && (cur_bar1 == cur_bar2))
++			/* read a data from data reg to trigger the receive */
++			reg = __raw_readl(REGS_AUDIOIN_BASE + HW_AUDIOIN_DATA);
++
++		    mxs_adc_schedule_ramp_work(&adc_ramp_work);
+ 		}
+ 		break;
+ 
+diff --git a/sound/soc/mxs/mxs-pcm.c b/sound/soc/mxs/mxs-pcm.c
+index 6ce4a18..12c9030 100644
+--- a/sound/soc/mxs/mxs-pcm.c
++++ b/sound/soc/mxs/mxs-pcm.c
+@@ -58,17 +58,6 @@ static const struct snd_pcm_hardware mxs_pcm_hardware = {
+  */
+ struct device *mxs_pcm_dev;
+ 
+-struct mxs_runtime_data {
+-	u32 dma_ch;
+-	u32 dma_period;
+-	u32 dma_totsize;
+-	unsigned long appl_ptr_bytes;
+-	int format;
+-
+-	struct mxs_pcm_dma_params *params;
+-	struct mxs_dma_desc *dma_desc_array[255];
+-};
+-
+ static irqreturn_t mxs_pcm_dma_irq(int irq, void *dev_id)
+ {
+ 	struct snd_pcm_substream *substream = dev_id;
+diff --git a/sound/soc/mxs/mxs-pcm.h b/sound/soc/mxs/mxs-pcm.h
+index 08a9d92..738e3fd 100644
+--- a/sound/soc/mxs/mxs-pcm.h
++++ b/sound/soc/mxs/mxs-pcm.h
+@@ -25,6 +25,15 @@ struct mxs_pcm_dma_params {
+ 	int dma_ch;	/* DMA channel number */
+ 	int irq;	/* DMA interrupt number */
+ };
++struct mxs_runtime_data {
++	u32 dma_ch;
++	u32 dma_period;
++	u32 dma_totsize;
++	unsigned long appl_ptr_bytes;
++	int format;
++	struct mxs_pcm_dma_params *params;
++	struct mxs_dma_desc *dma_desc_array[255];
++};
+ 
+ extern struct snd_soc_platform mxs_soc_platform;
+ 
+-- 
+1.5.4.4
+

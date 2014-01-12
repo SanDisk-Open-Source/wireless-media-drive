@@ -1,0 +1,27 @@
+From 74b4a4b025ca6b224697ea5417ec9ed76ed43042 Mon Sep 17 00:00:00 2001
+From: Jason Chen <b02280@freescale.com>
+Date: Sun, 19 Sep 2010 17:15:12 +0800
+Subject: [PATCH] ENGR00131660 ipuv3: left stripe output column should be set to zero
+
+left stripe output column should be set to zero for equal size case.
+
+Signed-off-by: Jason Chen <b02280@freescale.com>
+---
+ drivers/mxc/ipu3/ipu_calc_stripes_sizes.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c b/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c
+index 5d5e0b9..5e6a9e2 100644
+--- a/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c
++++ b/drivers/mxc/ipu3/ipu_calc_stripes_sizes.c
+@@ -261,6 +261,7 @@ int ipu_calc_stripes_sizes(const unsigned int input_frame_width,
+ 			left->output_width = right->output_width = right->output_column =
+ 				output_frame_width >> 1;
+ 			left->input_column = 0;
++			left->output_column = 0;
+ 			div = _do_div(((((u64)irr_steps) << 32) *
+ 				       (right->input_width - 1)), (right->output_width - 1));
+ 			left->irr = right->irr = truncate(0, div, 1);
+-- 
+1.5.4.4
+

@@ -1,0 +1,37 @@
+From 24d4ae0ddcff3da40ab578ede12c84bc25ca23f2 Mon Sep 17 00:00:00 2001
+From: Shen Yong <b00984@freescale.com>
+Date: Mon, 13 Sep 2010 11:33:47 +0800
+Subject: [PATCH] ENGR00127275 mx53: add clock depentent
+
+First, retore the ocram bit, pl301 bits to previous value 3,
+so most functions like fec, audio and video would not be blocked.
+Add clock dependency in the coming commits .
+
+Signed-off-by: Shen Yong <b00984@freescale.com>
+---
+ arch/arm/mach-mx5/clock.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/clock.c b/arch/arm/mach-mx5/clock.c
+index 8c1b706..c94c028 100644
+--- a/arch/arm/mach-mx5/clock.c
++++ b/arch/arm/mach-mx5/clock.c
+@@ -4589,12 +4589,12 @@ int __init mx53_clocks_init(unsigned long ckil, unsigned long osc, unsigned long
+ 		     3 << MXC_CCM_CCGRx_CG11_OFFSET, MXC_CCM_CCGR5);
+ 
+ 	__raw_writel(1 << MXC_CCM_CCGRx_CG0_OFFSET |
+-				1 << MXC_CCM_CCGRx_CG1_OFFSET |
++				3 << MXC_CCM_CCGRx_CG1_OFFSET |
+ 				1 << MXC_CCM_CCGRx_CG4_OFFSET |
+ 				1 << MXC_CCM_CCGRx_CG8_OFFSET |
+ 				1 << MXC_CCM_CCGRx_CG9_OFFSET |
+-				1 << MXC_CCM_CCGRx_CG12_OFFSET |
+-				1 << MXC_CCM_CCGRx_CG13_OFFSET , MXC_CCM_CCGR6);
++				3 << MXC_CCM_CCGRx_CG12_OFFSET |
++				3 << MXC_CCM_CCGRx_CG13_OFFSET , MXC_CCM_CCGR6);
+ 
+ 	__raw_writel(0, MXC_CCM_CCGR7);
+ 
+-- 
+1.5.4.4
+

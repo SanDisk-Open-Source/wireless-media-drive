@@ -1,0 +1,28 @@
+From 22fcd7eef03f9fcd0037cdc7b14a58320403e9d6 Mon Sep 17 00:00:00 2001
+From: Danny Nold <dannynold@freescale.com>
+Date: Thu, 9 Sep 2010 09:53:45 -0500
+Subject: [PATCH] ENGR00127343 - EPDC fb: wait for powerdown value handled incorrectly
+
+jiffies_to_msecs used instead of msecs_to_jiffies.  This mistake has been fixed.
+
+Signed-off-by: Danny Nold <dannynold@freescale.com>
+---
+ drivers/video/mxc/mxc_epdc_fb.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/video/mxc/mxc_epdc_fb.c b/drivers/video/mxc/mxc_epdc_fb.c
+index 7d8abc3..f1c76ad 100644
+--- a/drivers/video/mxc/mxc_epdc_fb.c
++++ b/drivers/video/mxc/mxc_epdc_fb.c
+@@ -2025,7 +2025,7 @@ static irqreturn_t mxc_epdc_irq_handler(int irq, void *dev_id)
+ 
+ 			/* Schedule task to disable EPDC HW until next update */
+ 			schedule_delayed_work(&fb_data->epdc_done_work,
+-				jiffies_to_msecs(fb_data->pwrdown_delay));
++				msecs_to_jiffies(fb_data->pwrdown_delay));
+ 		}
+ 
+ 		if (fb_data->waiting_for_idle)
+-- 
+1.5.4.4
+

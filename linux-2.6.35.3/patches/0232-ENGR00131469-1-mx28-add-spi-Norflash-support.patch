@@ -1,0 +1,55 @@
+From 1b051ac3b85378c2a268215a3d2ae4de0f1d7c5d Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 13 Sep 2010 16:16:44 +0800
+Subject: [PATCH] ENGR00131469-1 mx28: add spi Norflash support
+
+Add w25x80 spi device which is compatible with the m25p80 driver.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ arch/arm/mach-mx28/mx28evk.c |   20 ++++++++++++++++++++
+ 1 files changed, 20 insertions(+), 0 deletions(-)
+
+diff --git a/arch/arm/mach-mx28/mx28evk.c b/arch/arm/mach-mx28/mx28evk.c
+index 3a4741a..f7dff04 100644
+--- a/arch/arm/mach-mx28/mx28evk.c
++++ b/arch/arm/mach-mx28/mx28evk.c
+@@ -33,6 +33,10 @@
+ #include <mach/pinctrl.h>
+ 
+ #include <linux/spi/spi.h>
++#include <linux/spi/flash.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#include <linux/mtd/physmap.h>
+ 
+ #include "device.h"
+ #include "mx28evk.h"
+@@ -45,8 +49,24 @@ static void __init i2c_device_init(void)
+ {
+ 	i2c_register_board_info(0, mxs_i2c_device, ARRAY_SIZE(mxs_i2c_device));
+ }
++#if defined(CONFIG_MTD_M25P80) || defined(CONFIG_MTD_M25P80_MODULE)
++static struct flash_platform_data mx28_spi_flash_data = {
++	.name = "m25p80",
++	.type = "w25x80",
++};
++#endif
+ 
+ static struct spi_board_info spi_board_info[] __initdata = {
++#if defined(CONFIG_MTD_M25P80) || defined(CONFIG_MTD_M25P80_MODULE)
++	{
++		/* the modalias must be the same as spi device driver name */
++		.modalias = "m25p80", /* Name of spi_driver for this device */
++		.max_speed_hz = 20000000,     /* max spi clock (SCK) speed in HZ */
++		.bus_num = 1, /* Framework bus number */
++		.chip_select = 0, /* Framework chip select. */
++		.platform_data = &mx28_spi_flash_data,
++	},
++#endif
+ };
+ 
+ static void spi_device_init(void)
+-- 
+1.5.4.4
+

@@ -1,0 +1,48 @@
+From 375d9bf88742207132d54525ea1d9ca0c2fd8327 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <b32955@freescale.com>
+Date: Mon, 1 Nov 2010 15:13:53 +0800
+Subject: [PATCH] ENGR00133178-7 NAND : set proper ECC parameters for ONFI nand
+
+ONFI nand needs the 24-bit ECC and 1k data chunk.
+DMA page size changes to the real used size.
+
+Signed-off-by: Huang Shijie <b32955@freescale.com>
+---
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+index b38d653..1bc1d2e 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-hal-common.c
+@@ -177,6 +177,9 @@ int gpmi_nfc_set_geometry(struct gpmi_nfc_data *this)
+ 	 */
+ 
+ 	geometry->ecc_chunk_size_in_bytes = 512;
++	/* Only ONFI nand uses 1k chunk now */
++	if (is_onfi_nand(&this->device_info))
++		geometry->ecc_chunk_size_in_bytes = 1024;
+ 
+ 	/* Compute the page size based on the physical geometry. */
+ 
+@@ -218,6 +221,17 @@ int gpmi_nfc_set_geometry(struct gpmi_nfc_data *this)
+ 			break;
+ 		}
+ 		break;
++	case 8192:
++		geometry->ecc_strength = 24;
++
++		/* ONFI nand needs GF14, so re-culculate DMA page size */
++		if (is_onfi_nand(&this->device_info))
++			geometry->page_size_in_bytes =
++				physical->page_data_size_in_bytes +
++				geometry->metadata_size_in_bytes +
++				(geometry->ecc_strength * 14 * 8 /
++					geometry->ecc_chunk_count);
++		break;
+ 	}
+ 
+ 	/* Check if we were able to figure out the ECC strength. */
+-- 
+1.5.4.4
+

@@ -1,0 +1,28 @@
+From 3b071ad4f4f92569add5256e374b671f6ffb0089 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Thu, 16 Sep 2010 15:36:22 +0800
+Subject: [PATCH] ENGR00131593 Fix Build Error cause by usb otg
+
+Fix build error
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/usb/otg/fsl_otg.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/usb/otg/fsl_otg.h b/drivers/usb/otg/fsl_otg.h
+index 0b74461..0857a53 100644
+--- a/drivers/usb/otg/fsl_otg.h
++++ b/drivers/usb/otg/fsl_otg.h
+@@ -363,7 +363,7 @@ struct fsl_otg_timer {
+ 	struct list_head list;
+ };
+ 
+-struct inline fsl_otg_timer * otg_timer_initializer
++inline struct fsl_otg_timer *otg_timer_initializer
+ (void (*function)(unsigned long), unsigned long expires, unsigned long data)
+ {
+ 	struct fsl_otg_timer *timer;
+-- 
+1.5.4.4
+

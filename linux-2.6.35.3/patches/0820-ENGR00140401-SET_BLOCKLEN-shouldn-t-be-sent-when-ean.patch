@@ -1,0 +1,80 @@
+From 0a776d3bf3ca161203e81545ffb1fcf1aa839b62 Mon Sep 17 00:00:00 2001
+From: Richard Zhu <r65037@freescale.com>
+Date: Tue, 8 Mar 2011 17:20:47 +0800
+Subject: [PATCH] ENGR00140401 SET_BLOCKLEN shouldn't be sent when eanble DDR
+
+Customer provided this patch, the SET_BLOCKLEN shouldn't be sent when
+enable the DDR mode required by customer's iNand.
+Tested by customer on it's own board.
+BTW, this patch is not needed on 2.6.38 kernel, should be discarded
+after upgrade the kernel version.
+
+Signed-off-by: Richard Zhu <r65037@freescale.com>
+---
+ drivers/mmc/card/block.c |    4 ++++
+ drivers/mmc/core/mmc.c   |    2 ++
+ include/linux/mmc/card.h |    3 +++
+ 3 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/card/block.c b/drivers/mmc/card/block.c
+index cb9fbc8..28f38d8 100644
+--- a/drivers/mmc/card/block.c
++++ b/drivers/mmc/card/block.c
+@@ -573,6 +573,10 @@ mmc_blk_set_blksize(struct mmc_blk_data *md, struct mmc_card *card)
+ 	if (mmc_card_blockaddr(card))
+ 		return 0;
+ 
++	/* DDR Mode cards ignore MMC_SET_BLOCKLEN. */
++	if (mmc_card_ddrmode(card))
++		return 0;
++
+ 	mmc_claim_host(card->host);
+ 	cmd.opcode = MMC_SET_BLOCKLEN;
+ 	cmd.arg = 512;
+diff --git a/drivers/mmc/core/mmc.c b/drivers/mmc/core/mmc.c
+index 95e13c2..db54b2d 100644
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+@@ -853,11 +853,13 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
+ 				(card->ext_csd.card_type & MMC_DDR_MODE_MASK)) {
+ 			ext_csd_bit = EXT_CSD_BUS_WIDTH_8_DDR;
+ 			bus_width = MMC_BUS_WIDTH_8 | MMC_BUS_WIDTH_DDR;
++			mmc_card_set_ddrmode(card);
+ 		} else if ((host->caps & MMC_CAP_4_BIT_DATA) &&
+ 				(host->caps & MMC_CAP_DATA_DDR) &&
+ 				(card->ext_csd.card_type & MMC_DDR_MODE_MASK)) {
+ 			ext_csd_bit = EXT_CSD_BUS_WIDTH_4_DDR;
+ 			bus_width = MMC_BUS_WIDTH_4 | MMC_BUS_WIDTH_DDR;
++			mmc_card_set_ddrmode(card);
+ 		} else if (host->caps & MMC_CAP_8_BIT_DATA) {
+ 			ext_csd_bit = EXT_CSD_BUS_WIDTH_8;
+ 			bus_width = MMC_BUS_WIDTH_8;
+diff --git a/include/linux/mmc/card.h b/include/linux/mmc/card.h
+index 8613fa6..3f9edbe 100644
+--- a/include/linux/mmc/card.h
++++ b/include/linux/mmc/card.h
+@@ -103,6 +103,7 @@ struct mmc_card {
+ #define MMC_STATE_READONLY	(1<<1)		/* card is read-only */
+ #define MMC_STATE_HIGHSPEED	(1<<2)		/* card is in high speed mode */
+ #define MMC_STATE_BLOCKADDR	(1<<3)		/* card uses block-addressing */
++#define MMC_STATE_DDRMODE	(1<<4)		/* card uses DDR mode */
+ 	unsigned int		quirks; 	/* card quirks */
+ #define MMC_QUIRK_LENIENT_FN0	(1<<0)		/* allow SDIO FN0 writes outside of the VS CCCR range */
+ #define MMC_QUIRK_BLKSZ_FOR_BYTE_MODE (1<<1)	/* use func->cur_blksize */
+@@ -136,11 +137,13 @@ struct mmc_card {
+ #define mmc_card_readonly(c)	((c)->state & MMC_STATE_READONLY)
+ #define mmc_card_highspeed(c)	((c)->state & MMC_STATE_HIGHSPEED)
+ #define mmc_card_blockaddr(c)	((c)->state & MMC_STATE_BLOCKADDR)
++#define mmc_card_ddrmode(c)	((c)->state & MMC_STATE_DDRMODE)
+ 
+ #define mmc_card_set_present(c)	((c)->state |= MMC_STATE_PRESENT)
+ #define mmc_card_set_readonly(c) ((c)->state |= MMC_STATE_READONLY)
+ #define mmc_card_set_highspeed(c) ((c)->state |= MMC_STATE_HIGHSPEED)
+ #define mmc_card_set_blockaddr(c) ((c)->state |= MMC_STATE_BLOCKADDR)
++#define mmc_card_set_ddrmode(c) ((c)->state |= MMC_STATE_DDRMODE)
+ 
+ static inline int mmc_card_lenient_fn0(const struct mmc_card *c)
+ {
+-- 
+1.5.4.4
+

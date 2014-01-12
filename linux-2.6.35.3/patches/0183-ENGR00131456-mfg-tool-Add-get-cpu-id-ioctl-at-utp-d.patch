@@ -1,0 +1,105 @@
+From 3e82e3c6f91e6ff51e8faeb954fa608c141c70c6 Mon Sep 17 00:00:00 2001
+From: Peter Chen <peter.chen@freescale.com>
+Date: Tue, 14 Sep 2010 13:23:15 +0800
+Subject: [PATCH] ENGR00131456 mfg-tool: Add get cpu id ioctl at utp driver
+
+The watchdog operation is differ with SoC's for rom code, so the utp app
+needs to add or not add watchdog operation according to different SoCs.
+
+Signed-off-by: Peter Chen <peter.chen@freescale.com>
+---
+ drivers/usb/gadget/fsl_updater.c |   38 ++++++++++++++++++++++++++++++++++++++
+ drivers/usb/gadget/fsl_updater.h |    7 +++++++
+ 2 files changed, 45 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/usb/gadget/fsl_updater.c b/drivers/usb/gadget/fsl_updater.c
+index 50acce4..cd8ba24 100644
+--- a/drivers/usb/gadget/fsl_updater.c
++++ b/drivers/usb/gadget/fsl_updater.c
+@@ -139,6 +139,44 @@ static ssize_t utp_file_write(struct file *file, const char __user *buf,
+ 	return size;
+ }
+ 
++static int
++utp_ioctl(struct inode *inode, struct file *file,
++	      unsigned int cmd, unsigned long arg)
++{
++	int cpu_id = 0;
++	switch (cmd) {
++	case UTP_GET_CPU_ID:
++/* Currently, it only supports below SoC for manufacture tool
++ * The naming rule
++ * 1. The numberic for SoC string
++ * 2. If there is next SoC version, and the corresponding utp
++ * operation will be differ, then, need to add '1' next to SoC
++ * name. Such as the next 50 SoC version is: cpu_is = 501
++ */
++#ifdef CONFIG_ARCH_MXS
++		if (cpu_is_mx23())
++			cpu_id = 23;
++		else if (cpu_is_mx28())
++			cpu_id = 28;
++#endif
++#ifdef CONFIG_ARCH_MXC
++		if (cpu_is_mx25())
++			cpu_id = 25;
++		else if (cpu_is_mx35())
++			cpu_id = 35;
++		else if (cpu_is_mx51())
++			cpu_id = 51;
++		else if (cpu_is_mx53())
++			cpu_id = 53;
++		else if (cpu_is_mx50())
++			cpu_id = 50;
++#endif
++		return put_user(cpu_id, (int __user *)arg);
++	default:
++		return -ENOIOCTLCMD;
++	}
++}
++
+ /* Will be called when the host wants to get the sense data */
+ static int utp_get_sense(struct fsg_dev *fsg)
+ {
+diff --git a/drivers/usb/gadget/fsl_updater.h b/drivers/usb/gadget/fsl_updater.h
+index 70e4def..1662f9d 100644
+--- a/drivers/usb/gadget/fsl_updater.h
++++ b/drivers/usb/gadget/fsl_updater.h
+@@ -20,6 +20,8 @@
+ #include <linux/miscdevice.h>
+ #include <linux/list.h>
+ #include <linux/vmalloc.h>
++#include <linux/ioctl.h>
++#include <mach/hardware.h>
+ 
+ static int utp_init(struct fsg_dev *fsg);
+ static void utp_exit(struct fsg_dev *fsg);
+@@ -33,6 +35,8 @@ static ssize_t utp_file_write(struct file *file,
+ 			      size_t size,
+ 			      loff_t *off);
+ 
++static int utp_ioctl(struct inode *inode, struct file *file,
++	      unsigned int cmd, unsigned long arg);
+ static struct utp_user_data *utp_user_data_alloc(size_t size);
+ static void utp_user_data_free(struct utp_user_data *uud);
+ static int utp_get_sense(struct fsg_dev *fsg);
+@@ -59,6 +63,8 @@ static int utp_handle_message(struct fsg_dev *fsg,
+ #define UTP_SS_BUSY(fsg, r)	utp_set_sense(fsg, UTP_REPLY_BUSY, (u64)r)
+ #define UTP_SS_SIZE(fsg, r)	utp_set_sense(fsg, UTP_REPLY_SIZE, (u64)r)
+ 
++#define	UTP_IOCTL_BASE	'U'
++#define	UTP_GET_CPU_ID	_IOR(UTP_IOCTL_BASE, 0, int)
+ /* the structure of utp message which is mapped to 16-byte SCSI CBW's CDB */
+ #pragma pack(1)
+ struct utp_msg {
+@@ -98,6 +104,7 @@ static const struct file_operations utp_fops = {
+ 	.open	= nonseekable_open,
+ 	.read	= utp_file_read,
+ 	.write	= utp_file_write,
++	.ioctl  = utp_ioctl,
+ };
+ 
+ static struct miscdevice utp_dev = {
+-- 
+1.5.4.4
+

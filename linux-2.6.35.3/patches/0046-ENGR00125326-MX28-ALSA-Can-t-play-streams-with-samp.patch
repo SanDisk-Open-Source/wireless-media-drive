@@ -1,0 +1,42 @@
+From 2ef468274d93cc9069a5020578a6d9cb349dbc99 Mon Sep 17 00:00:00 2001
+From: Lionel Xu <Lionel.Xu@freescale.com>
+Date: Wed, 28 Jul 2010 13:34:02 +0800
+Subject: [PATCH] ENGR00125326 MX28 ALSA: Can't play streams with sample rate 8k to 22k
+
+Resolve the problem of playing wav streams with sample rate 8k,11k,16k
+and 22k.
+
+Signed-off-by: Lionel Xu <r63889@freescale.com>
+---
+ sound/soc/codecs/sgtl5000.c |    2 ++
+ sound/soc/mxs/mxs-dai.c     |    1 +
+ 2 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/sound/soc/codecs/sgtl5000.c b/sound/soc/codecs/sgtl5000.c
+index f05f764..178678d 100644
+--- a/sound/soc/codecs/sgtl5000.c
++++ b/sound/soc/codecs/sgtl5000.c
+@@ -634,6 +634,8 @@ static int sgtl5000_pcm_hw_params(struct snd_pcm_substream *substream,
+ 	}
+ 	/* SGTL5000 rev1 has a IC bug to prevent switching to MCLK from PLL. */
+ 	if (!sgtl5000->master) {
++		sys_fs = sgtl5000->lrclk;
++		clk_ctl = SGTL5000_RATE_MODE_DIV_1 << SGTL5000_RATE_MODE_SHIFT;
+ 		if (sys_fs * 256 == sgtl5000->sysclk)
+ 			clk_ctl |= SGTL5000_MCLK_FREQ_256FS << \
+ 				SGTL5000_MCLK_FREQ_SHIFT;
+diff --git a/sound/soc/mxs/mxs-dai.c b/sound/soc/mxs/mxs-dai.c
+index 8df684d..04308d8 100644
+--- a/sound/soc/mxs/mxs-dai.c
++++ b/sound/soc/mxs/mxs-dai.c
+@@ -288,6 +288,7 @@ static int mxs_saif_set_dai_clkdiv(struct snd_soc_dai *cpu_dai,
+ 		default:
+ 			return -EINVAL;
+ 		}
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+-- 
+1.5.4.4
+

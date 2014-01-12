@@ -1,0 +1,31 @@
+From dd0a77884eae8e304703d1b537bb8dd35a659709 Mon Sep 17 00:00:00 2001
+From: Aisheng.Dong <b29396@freescale.com>
+Date: Mon, 27 Sep 2010 21:11:19 +0800
+Subject: [PATCH] ENGR00132491-1 ath6kl upgrade: change Kconfig
+
+This series of patches are for upgrading Atheros AR6003(ath6kl)
+in 31 kernel to 35 kernel.
+
+The WLAN_80211 config option has been changed to WLAN in 35 kernel.
+
+Signed-off-by: Aisheng.Dong <b29396@freescale.com>
+---
+ drivers/net/wireless/ath6kl/Kconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/wireless/ath6kl/Kconfig b/drivers/net/wireless/ath6kl/Kconfig
+index cc0e5e3..97735a4 100644
+--- a/drivers/net/wireless/ath6kl/Kconfig
++++ b/drivers/net/wireless/ath6kl/Kconfig
+@@ -1,7 +1,7 @@
+ config ATH6K_LEGACY
+ 	tristate "Atheros AR600x support (non mac80211)"
+ 	depends on MMC
+-	depends on WLAN_80211
++	depends on WLAN
+ 	help
+ 	This module adds support for wireless adapters based on Atheros AR600x chipset running over SDIO. If you choose to build it as a module, it will be called ath6kl.
+ 
+-- 
+1.5.4.4
+

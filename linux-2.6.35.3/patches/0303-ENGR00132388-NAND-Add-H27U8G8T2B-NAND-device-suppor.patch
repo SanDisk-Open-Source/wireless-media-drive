@@ -1,0 +1,45 @@
+From 91c0c680e27057159230ce7802cdf35749a8f93a Mon Sep 17 00:00:00 2001
+From: Jason Liu <r64343@freescale.com>
+Date: Fri, 8 Oct 2010 16:49:21 +0800
+Subject: [PATCH] ENGR00132388 NAND: Add H27U8G8T2B NAND device support
+
+Add H27U8G8T2B NAND device support
+
+Signed-off-by: Jason Liu <r64343@freescale.com>
+---
+ drivers/mtd/nand/nand_device_info.c |   19 +++++++++++++++++++
+ 1 files changed, 19 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_device_info.c b/drivers/mtd/nand/nand_device_info.c
+index cb8a4dc..008fc7d 100644
+--- a/drivers/mtd/nand/nand_device_info.c
++++ b/drivers/mtd/nand/nand_device_info.c
+@@ -1129,6 +1129,25 @@ static struct nand_device_info nand_device_info_table_type_8[] __initdata = {
+ 	.tRHOH_in_ns              = -1,
+ 	"H27UCG",
+ 	},
++	{
++	.end_of_table             = false,
++	.manufacturer_code        = 0xad,
++	.device_code              = 0xd3,
++	.cell_technology          = NAND_DEVICE_CELL_TECH_MLC,
++	.chip_size_in_bytes       = 8LL*SZ_1G,
++	.block_size_in_pages      = 128,
++	.page_total_size_in_bytes = 4*SZ_1K + 128,
++	.ecc_strength_in_bits     = 4,
++	.ecc_size_in_bytes        = 512,
++	.data_setup_in_ns         = 15,
++	.data_hold_in_ns          = 10,
++	.address_setup_in_ns      = 20,
++	.gpmi_sample_delay_in_ns  = 6,
++	.tREA_in_ns               = -1,
++	.tRLOH_in_ns              = -1,
++	.tRHOH_in_ns              = -1,
++	"H27U8G8T2B",
++	},
+ 	{true}
+ };
+ 
+-- 
+1.5.4.4
+

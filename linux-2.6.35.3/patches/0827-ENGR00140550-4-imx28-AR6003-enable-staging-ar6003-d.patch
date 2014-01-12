@@ -1,0 +1,29 @@
+From 2165c7d130179f0cd67f64af62e5e94c2a6b2f88 Mon Sep 17 00:00:00 2001
+From: Tony Lin <tony.lin@freescale.com>
+Date: Tue, 15 Mar 2011 11:08:36 +0800
+Subject: [PATCH] ENGR00140550-4 [imx28/AR6003]enable staging/ar6003 driver in default config
+
+select ar6003 driver under staging
+
+Signed-off-by: Tony Lin <tony.lin@freescale.com>
+---
+ arch/arm/configs/imx28evk_defconfig |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/arm/configs/imx28evk_defconfig b/arch/arm/configs/imx28evk_defconfig
+index 8454a85..08f6a18 100644
+--- a/arch/arm/configs/imx28evk_defconfig
++++ b/arch/arm/configs/imx28evk_defconfig
+@@ -1742,7 +1742,8 @@ CONFIG_DMADEVICES=y
+ # CONFIG_TIMB_DMA is not set
+ # CONFIG_AUXDISPLAY is not set
+ # CONFIG_UIO is not set
+-# CONFIG_STAGING is not set
++CONFIG_STAGING=y
++CONFIG_STAGING_EXCLUDE_BUILD=n
+ 
+ #
+ # File systems
+-- 
+1.5.4.4
+

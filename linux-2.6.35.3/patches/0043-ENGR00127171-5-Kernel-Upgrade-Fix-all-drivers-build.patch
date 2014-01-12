@@ -1,0 +1,472 @@
+From 6b0334a50d5bee4a8713d5d1f50507e22d39f0d8 Mon Sep 17 00:00:00 2001
+From: Frank Li <Frank.Li@freescale.com>
+Date: Mon, 6 Sep 2010 13:19:49 +0800
+Subject: [PATCH] ENGR00127171-5 Kernel Upgrade: Fix all drivers build error for mx23/mx28
+
+Fix build error because kernel upgrade
+
+Signed-off-by: Frank Li <Frank.Li@freescale.com>
+---
+ drivers/input/touchscreen/mxs-ts.c        |    1 +
+ drivers/mmc/host/mxs-mmc.c                |    2 +-
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-main.c |    1 +
+ drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c  |   22 +++++++++-------------
+ drivers/mtd/ubiblock.c                    |    6 +++---
+ drivers/serial/mxs-auart.c                |    6 +++---
+ drivers/serial/mxs-duart.c                |    6 +++---
+ drivers/video/backlight/mxs_bl.c          |    2 +-
+ sound/soc/codecs/mxs-adc-codec.c          |   19 ++++++-------------
+ sound/soc/codecs/mxs_spdif.c              |   20 ++++++--------------
+ sound/soc/codecs/sgtl5000.c               |    9 +--------
+ sound/soc/mxs/mxs-adc.c                   |    4 ++--
+ sound/soc/mxs/mxs-dai.c                   |    4 ++--
+ sound/soc/mxs/mxs-pcm.c                   |    2 +-
+ sound/soc/mxs/mxs-spdif-dai.c             |    2 +-
+ 15 files changed, 41 insertions(+), 65 deletions(-)
+
+diff --git a/drivers/input/touchscreen/mxs-ts.c b/drivers/input/touchscreen/mxs-ts.c
+index 1d380ac..fce77fd 100644
+--- a/drivers/input/touchscreen/mxs-ts.c
++++ b/drivers/input/touchscreen/mxs-ts.c
+@@ -25,6 +25,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/fsl_devices.h>
+ 
++#include <mach/hardware.h>
+ #include <mach/lradc.h>
+ #include <mach/device.h>
+ #include <mach/regs-lradc.h>
+diff --git a/drivers/mmc/host/mxs-mmc.c b/drivers/mmc/host/mxs-mmc.c
+index 5e5c904..3428163 100644
+--- a/drivers/mmc/host/mxs-mmc.c
++++ b/drivers/mmc/host/mxs-mmc.c
+@@ -1247,7 +1247,7 @@ static int mxs_mmc_suspend(struct platform_device *pdev,
+ 	mmc = platform_get_drvdata(pdev);
+ 	host = mmc_priv(mmc);
+ 
+-	ret = mmc_suspend_host(mmc, state);
++	ret = mmc_suspend_host(mmc);
+ 	if (!ret) {
+ 		if (mmc_data && mmc_data->hw_release)
+ 			mmc_data->hw_release();
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-main.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-main.c
+index 1400deb..19982b1 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-main.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-main.c
+@@ -21,6 +21,7 @@
+ 
+ #include <linux/slab.h>
+ #include "gpmi-nfc.h"
++#include "linux/slab.h"
+ 
+ /*
+  * This structure contains the "safe" GPMI timing that should succeed with any
+diff --git a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+index cb5dc4d..5a2325a 100644
+--- a/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
++++ b/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+@@ -21,6 +21,7 @@
+ 
+ #include <linux/slab.h>
+ #include "gpmi-nfc.h"
++#include "linux/slab.h"
+ 
+ /*
+  * Indicates the driver should register the MTD that represents the entire
+@@ -1887,16 +1888,13 @@ static int mil_boot_areas_init(struct gpmi_nfc_data *this)
+ 
+ 		/* Find the general use MTD. */
+ 
+-		for (i = 0; i < MAX_MTD_DEVICES; i++) {
+-
+-			/* Get the current MTD so we can examine it. */
+-
+-			search_mtd = get_mtd_device(0, i);
++		i = 0;
++		while (search_mtd = get_mtd_device(0, i)) {
+ 
+ 			/* Check if we got nonsense. */
+ 
+ 			if ((!search_mtd) || (search_mtd == ERR_PTR(-ENODEV)))
+-				continue;
++				break;
+ 
+ 			/* Check if the current MTD is one of our remainders. */
+ 
+@@ -1907,6 +1905,7 @@ static int mil_boot_areas_init(struct gpmi_nfc_data *this)
+ 
+ 			put_mtd_device(search_mtd);
+ 
++			i++;
+ 		}
+ 
+ 		if (!mil->general_use_mtd) {
+@@ -1985,17 +1984,13 @@ static int mil_boot_areas_init(struct gpmi_nfc_data *this)
+ 		add_mtd_partitions(mtd, partitions, 4);
+ 
+ 		/* Find the remainder partitions. */
+-
+-		for (i = 0; i < MAX_MTD_DEVICES; i++) {
+-
+-			/* Get the current MTD so we can examine it. */
+-
+-			search_mtd = get_mtd_device(0, i);
++		i = 0;
++		while (search_mtd = get_mtd_device(0, i)) {
+ 
+ 			/* Check if we got nonsense. */
+ 
+ 			if ((!search_mtd) || (search_mtd == ERR_PTR(-ENODEV)))
+-				continue;
++				break;
+ 
+ 			/* Check if the current MTD is one of our remainders. */
+ 
+@@ -2009,6 +2004,7 @@ static int mil_boot_areas_init(struct gpmi_nfc_data *this)
+ 
+ 			put_mtd_device(search_mtd);
+ 
++			i++;
+ 		}
+ 
+ 		if (!chip_0_remainder_mtd || !medium_remainder_mtd) {
+diff --git a/drivers/mtd/ubiblock.c b/drivers/mtd/ubiblock.c
+index a2327f5..6c75d98 100644
+--- a/drivers/mtd/ubiblock.c
++++ b/drivers/mtd/ubiblock.c
+@@ -3,7 +3,7 @@
+  *
+  * Author: dmitry pervushin <dimka@embeddedalley.com>
+  *
+- * Copyright 2008-2009 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008-2010 Freescale Semiconductor, Inc.
+  * Copyright 2008 Embedded Alley Solutions, Inc. All Rights Reserved.
+  *
+  * The code contained herein is licensed under the GNU General Public
+@@ -496,7 +496,7 @@ static void *ubiblk_add_locked(int ubi_num, int ubi_vol_id)
+ 
+ 	list_add_tail(&u->list, &ubiblk_devices);
+ 	add_mtd_blktrans_dev(&u->m);
+-	ubiblk_sysfs(u->m.blkcore_priv, true);
++	ubiblk_sysfs(u->m.priv, true);
+ out:
+ 	return u;
+ }
+@@ -514,7 +514,7 @@ static int ubiblk_del_locked(struct ubiblk_dev *u)
+ {
+ 	if (u->usecount != 0)
+ 		return -EBUSY;
+-	ubiblk_sysfs(u->m.blkcore_priv, false);
++	ubiblk_sysfs(u->m.priv, false);
+ 	del_mtd_blktrans_dev(&u->m);
+ 	list_del(&u->list);
+ 	BUG_ON(u->cache_data != NULL); /* who did not free the cache ?! */
+diff --git a/drivers/serial/mxs-auart.c b/drivers/serial/mxs-auart.c
+index 63d7d91..be79f0e 100644
+--- a/drivers/serial/mxs-auart.c
++++ b/drivers/serial/mxs-auart.c
+@@ -82,7 +82,7 @@ static inline struct mxs_auart_port *to_auart_port(struct uart_port *u)
+ 
+ static inline void mxs_auart_tx_chars(struct mxs_auart_port *s)
+ {
+-	struct circ_buf *xmit = &s->port.info->xmit;
++	struct circ_buf *xmit = &s->port.state->xmit;
+ 
+ 	if (s->flags & MXS_AUART_PORT_DMA_MODE) {
+ 		int i = 0, size;
+@@ -134,7 +134,7 @@ static inline void mxs_auart_tx_chars(struct mxs_auart_port *s)
+ 		} else
+ 			break;
+ 	}
+-	if (uart_circ_empty(&(s->port.info->xmit)))
++	if (uart_circ_empty(&(s->port.state->xmit)))
+ 		__raw_writel(BM_UARTAPP_INTR_TXIEN,
+ 			     s->port.membase + HW_UARTAPP_INTR_CLR);
+ 	else
+@@ -180,7 +180,7 @@ mxs_auart_rx_char(struct mxs_auart_port *s, unsigned int stat, u8 c)
+ static void mxs_auart_rx_chars(struct mxs_auart_port *s)
+ {
+ 	u8 c;
+-	struct tty_struct *tty = s->port.info->port.tty;
++	struct tty_struct *tty = s->port.state->port.tty;
+ 	u32 stat = 0;
+ 
+ 	if (s->flags & MXS_AUART_PORT_DMA_MODE) {
+diff --git a/drivers/serial/mxs-duart.c b/drivers/serial/mxs-duart.c
+index 171b862..64e5057 100644
+--- a/drivers/serial/mxs-duart.c
++++ b/drivers/serial/mxs-duart.c
+@@ -100,7 +100,7 @@ static void duart_enable_ms(struct uart_port *port)
+ 
+ static void duart_rx_chars(struct duart_port *dp)
+ {
+-	struct tty_struct *tty = dp->port.info->port.tty;
++	struct tty_struct *tty = dp->port.state->port.tty;
+ 	unsigned int status, ch, flag, rsr, max_count = SERIAL_RX_LIMIT;
+ 
+ 	status = __raw_readl(dp->port.membase + HW_UARTDBGFR);
+@@ -157,7 +157,7 @@ ignore_char:
+ static void duart_tx_chars(struct duart_port *dp)
+ {
+ 	int count;
+-	struct circ_buf *xmit = &dp->port.info->xmit;
++	struct circ_buf *xmit = &dp->port.state->xmit;
+ 
+ 	if (dp->port.x_char) {
+ 		__raw_writel(dp->port.x_char, dp->port.membase + HW_UARTDBGDR);
+@@ -208,7 +208,7 @@ static void duart_modem_status(struct duart_port *dp)
+ 	if (delta & BM_UARTDBGFR_CTS)
+ 		uart_handle_cts_change(&dp->port, status & BM_UARTDBGFR_CTS);
+ 
+-	wake_up_interruptible(&dp->port.info->delta_msr_wait);
++	wake_up_interruptible(&dp->port.state->port.delta_msr_wait);
+ }
+ 
+ static irqreturn_t duart_int(int irq, void *dev_id)
+diff --git a/drivers/video/backlight/mxs_bl.c b/drivers/video/backlight/mxs_bl.c
+index f793d33..a66cbaa 100644
+--- a/drivers/video/backlight/mxs_bl.c
++++ b/drivers/video/backlight/mxs_bl.c
+@@ -301,7 +301,7 @@ static int __init mxsbl_probe(struct platform_device *pdev)
+ 		goto out;
+ 	}
+ 	data->bd = backlight_device_register(pdev->name, &pdev->dev, pdev,
+-					&mxsbl_ops);
++					&mxsbl_ops, NULL);
+ 	if (IS_ERR(data->bd)) {
+ 		ret = PTR_ERR(data->bd);
+ 		goto out_1;
+diff --git a/sound/soc/codecs/mxs-adc-codec.c b/sound/soc/codecs/mxs-adc-codec.c
+index c5a223e..34c0662 100644
+--- a/sound/soc/codecs/mxs-adc-codec.c
++++ b/sound/soc/codecs/mxs-adc-codec.c
+@@ -25,6 +25,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
++#include <linux/slab.h>
+ 
+ #include <sound/core.h>
+ #include <sound/pcm.h>
+@@ -913,7 +914,7 @@ static void mxs_codec_adc_disable(struct mxs_codec_priv *mxs_adc)
+ 
+ static void mxs_codec_startup(struct snd_soc_codec *codec)
+ {
+-	struct mxs_codec_priv *mxs_adc = codec->private_data;
++	struct mxs_codec_priv *mxs_adc = snd_soc_codec_get_drvdata(codec);
+ 
+ 	/* Soft reset DAC block */
+ 	__raw_writel(BM_AUDIOOUT_CTRL_SFTRST,
+@@ -943,7 +944,7 @@ static void mxs_codec_startup(struct snd_soc_codec *codec)
+ 
+ static void mxs_codec_stop(struct snd_soc_codec *codec)
+ {
+-	struct mxs_codec_priv *mxs_adc = codec->private_data;
++	struct mxs_codec_priv *mxs_adc = snd_soc_codec_get_drvdata(codec);
+ 	mxs_codec_dac_disable(mxs_adc);
+ 	mxs_codec_adc_disable(mxs_adc);
+ }
+@@ -997,14 +998,6 @@ static int mxs_codec_probe(struct platform_device *pdev)
+ 
+ 	mxs_codec_startup(codec);
+ 
+-	/* Register the socdev */
+-	ret = snd_soc_init_card(socdev);
+-	if (ret < 0) {
+-		dev_err(codec->dev, "failed to register card\n");
+-		snd_soc_dapm_free(socdev);
+-		snd_soc_free_pcms(socdev);
+-		return ret;
+-	}
+ 	/* Set default bias level*/
+ 	mxs_codec_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+ 	return 0;
+@@ -1035,7 +1028,7 @@ static int mxs_codec_suspend(struct platform_device *pdev,
+ 	if (codec == NULL)
+ 		goto out;
+ 
+-	mxs_adc = codec->private_data;
++	mxs_adc = snd_soc_codec_get_drvdata(codec);
+ 
+ 	mxs_codec_dac_disable(mxs_adc);
+ 	mxs_codec_adc_disable(mxs_adc);
+@@ -1056,7 +1049,7 @@ static int mxs_codec_resume(struct platform_device *pdev)
+ 	if (codec == NULL)
+ 		goto out;
+ 
+-	mxs_adc = codec->private_data;
++	mxs_adc = snd_soc_codec_get_drvdata(codec);
+ 	clk_enable(mxs_adc->clk);
+ 
+ 	/* Soft reset DAC block */
+@@ -1127,7 +1120,7 @@ static int __init mxs_codec_audio_probe(struct platform_device *pdev)
+ 	codec->dev = &pdev->dev;
+ 	codec->name = "mxs adc/dac";
+ 	codec->owner = THIS_MODULE;
+-	codec->private_data = mxs_adc;
++	snd_soc_codec_set_drvdata(codec, mxs_adc);
+ 	codec->read = mxs_codec_read;
+ 	codec->write = mxs_codec_write;
+ 	codec->bias_level = SND_SOC_BIAS_OFF;
+diff --git a/sound/soc/codecs/mxs_spdif.c b/sound/soc/codecs/mxs_spdif.c
+index 3a08912..cdd8c34 100644
+--- a/sound/soc/codecs/mxs_spdif.c
++++ b/sound/soc/codecs/mxs_spdif.c
+@@ -23,6 +23,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
++#include <linux/slab.h>
+ 
+ #include <sound/core.h>
+ #include <sound/pcm.h>
+@@ -209,7 +210,7 @@ static void mxs_codec_spdif_disable(struct mxs_codec_priv *mxs_spdif)
+ 
+ static void mxs_codec_init(struct snd_soc_codec *codec)
+ {
+-	struct mxs_codec_priv *mxs_spdif = codec->private_data;
++	struct mxs_codec_priv *mxs_spdif = codec->drvdata;
+ 
+ 	/* Soft reset SPDIF block */
+ 	__raw_writel(BM_SPDIF_CTRL_SFTRST, REGS_SPDIF_BASE + HW_SPDIF_CTRL_SET);
+@@ -226,7 +227,7 @@ static void mxs_codec_init(struct snd_soc_codec *codec)
+ 
+ static void mxs_codec_exit(struct snd_soc_codec *codec)
+ {
+-	struct mxs_codec_priv *mxs_spdif = codec->private_data;
++	struct mxs_codec_priv *mxs_spdif = codec->drvdata;
+ 
+ 	mxs_codec_spdif_disable(mxs_spdif);
+ }
+@@ -268,15 +269,6 @@ static int mxs_codec_probe(struct platform_device *pdev)
+ 
+ 	mxs_codec_init(codec);
+ 
+-	/* Register the socdev */
+-	ret = snd_soc_init_card(socdev);
+-	if (ret < 0) {
+-		dev_err(codec->dev, "failed to register card\n");
+-		snd_soc_dapm_free(socdev);
+-		snd_soc_free_pcms(socdev);
+-		return ret;
+-	}
+-
+ 	return 0;
+ }
+ 
+@@ -304,7 +296,7 @@ static int mxs_codec_suspend(struct platform_device *pdev, pm_message_t state)
+ 	if (codec == NULL)
+ 		goto out;
+ 
+-	mxs_spdif = codec->private_data;
++	mxs_spdif = codec->drvdata;
+ 
+ 	mxs_codec_spdif_disable(mxs_spdif);
+ 	clk_disable(mxs_spdif->clk);
+@@ -324,7 +316,7 @@ static int mxs_codec_resume(struct platform_device *pdev)
+ 	if (codec == NULL)
+ 		goto out;
+ 
+-	mxs_spdif = codec->private_data;
++	mxs_spdif = codec->drvdata;
+ 	clk_enable(mxs_spdif->clk);
+ 
+ 	/* Soft reset SPDIF block */
+@@ -368,7 +360,7 @@ static int __init mxs_spdif_probe(struct platform_device *pdev)
+ 	codec = &mxs_spdif->codec;
+ 	codec->name = "mxs spdif";
+ 	codec->owner = THIS_MODULE;
+-	codec->private_data = mxs_spdif;
++	codec->drvdata = mxs_spdif;
+ 	codec->read = mxs_codec_read;
+ 	codec->write = mxs_codec_write;
+ 	codec->dai = &mxs_spdif_codec_dai;
+diff --git a/sound/soc/codecs/sgtl5000.c b/sound/soc/codecs/sgtl5000.c
+index 49a6367..f05f764 100644
+--- a/sound/soc/codecs/sgtl5000.c
++++ b/sound/soc/codecs/sgtl5000.c
+@@ -18,6 +18,7 @@
+ #include <linux/clk.h>
+ #include <linux/platform_device.h>
+ #include <linux/regulator/consumer.h>
++#include <linux/slab.h>
+ #include <sound/core.h>
+ #include <sound/pcm.h>
+ #include <sound/pcm_params.h>
+@@ -1071,14 +1072,6 @@ static int sgtl5000_probe(struct platform_device *pdev)
+ 
+ 	sgtl5000_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+ 
+-	ret = snd_soc_init_card(socdev);
+-	if (ret < 0) {
+-		printk(KERN_ERR "sgtl5000: failed to register card\n");
+-		snd_soc_free_pcms(socdev);
+-		snd_soc_dapm_free(socdev);
+-		return ret;
+-	}
+-
+ 	return 0;
+ }
+ 
+diff --git a/sound/soc/mxs/mxs-adc.c b/sound/soc/mxs/mxs-adc.c
+index 7069927..cd5e93c 100644
+--- a/sound/soc/mxs/mxs-adc.c
++++ b/sound/soc/mxs/mxs-adc.c
+@@ -336,10 +336,10 @@ static int mxs_adc_startup(struct snd_pcm_substream *substream,
+ 
+ 	if (playback) {
+ 		irq = IRQ_DAC_ERROR;
+-		cpu_dai->dma_data = &mxs_audio_out;
++		snd_soc_dai_set_dma_data(dai, substream, &mxs_audio_out);
+ 	} else {
+ 		irq = IRQ_ADC_ERROR;
+-		cpu_dai->dma_data = &mxs_audio_in;
++		snd_soc_dai_set_dma_data(dai, substream, &mxs_audio_in);
+ 	}
+ 
+ 	ret = request_irq(irq, mxs_err_irq, 0, "MXS DAC/ADC Error",
+diff --git a/sound/soc/mxs/mxs-dai.c b/sound/soc/mxs/mxs-dai.c
+index a548b99..8df684d 100644
+--- a/sound/soc/mxs/mxs-dai.c
++++ b/sound/soc/mxs/mxs-dai.c
+@@ -388,9 +388,9 @@ static int mxs_saif_startup(struct snd_pcm_substream *substream,
+ 		(substream->stream == SNDRV_PCM_STREAM_PLAYBACK)) || \
+ 		((saif_select->stream_mapping == PLAYBACK_SAIF1_CAPTURE_SAIF0) \
+ 		&& (substream->stream == SNDRV_PCM_STREAM_CAPTURE)))
+-		cpu_dai->dma_data = &mxs_saif_0;
++		snd_soc_dai_set_dma_data(cpu_dai, substream, &mxs_saif_0);
+ 	else
+-		cpu_dai->dma_data = &mxs_saif_1;
++		snd_soc_dai_set_dma_data(cpu_dai, substream, &mxs_saif_1);
+ 
+ 	if (cpu_dai->playback.active && cpu_dai->capture.active)
+ 		return 0;
+diff --git a/sound/soc/mxs/mxs-pcm.c b/sound/soc/mxs/mxs-pcm.c
+index f3cdcdb..5229058 100644
+--- a/sound/soc/mxs/mxs-pcm.c
++++ b/sound/soc/mxs/mxs-pcm.c
+@@ -286,7 +286,7 @@ static int mxs_pcm_dma_request(struct snd_pcm_substream *substream)
+ 	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+ 	struct mxs_runtime_data *prtd = runtime->private_data;
+-	struct mxs_pcm_dma_params *dma_data = rtd->dai->cpu_dai->dma_data;
++	struct mxs_pcm_dma_params *dma_data = snd_soc_dai_get_dma_data(rtd->dai, substream);
+ 	int desc_num = mxs_pcm_hardware.periods_max;
+ 	int desc;
+ 	int ret;
+diff --git a/sound/soc/mxs/mxs-spdif-dai.c b/sound/soc/mxs/mxs-spdif-dai.c
+index 052c404..1b45b59 100644
+--- a/sound/soc/mxs/mxs-spdif-dai.c
++++ b/sound/soc/mxs/mxs-spdif-dai.c
+@@ -107,7 +107,7 @@ static int mxs_spdif_startup(struct snd_pcm_substream *substream,
+ 
+ 	if (playback) {
+ 		irq = IRQ_SPDIF_ERROR;
+-		cpu_dai->dma_data = &mxs_spdif;
++		snd_soc_dai_set_dma_data(cpu_dai, substream, &mxs_spdif);
+ 	}
+ 
+ 	ret = request_irq(irq, mxs_err_irq, 0, "Mxs SPDIF Error",
+-- 
+1.5.4.4
+

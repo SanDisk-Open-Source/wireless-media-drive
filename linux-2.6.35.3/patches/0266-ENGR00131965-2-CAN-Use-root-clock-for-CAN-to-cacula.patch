@@ -1,0 +1,70 @@
+From cbbbff5ff43f9479f7b5ccc2bc4bc29fcfb44f74 Mon Sep 17 00:00:00 2001
+From: William Lai <b04597@freescale.com>
+Date: Tue, 28 Sep 2010 10:00:13 +0800
+Subject: [PATCH] ENGR00131965-2 CAN: Use root clock for CAN to caculate bitrate
+
+Caculate the bitrate on the root clock for CAN, in case the
+root_clk_id is set. Otherwise caculatge on the default clock
+named "can_clk".
+
+Signed-off-by: William Lai<b04597@freescale.com>
+---
+ drivers/net/can/flexcan/dev.c |   25 ++++++++++++++++++-------
+ 1 files changed, 18 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/can/flexcan/dev.c b/drivers/net/can/flexcan/dev.c
+index 27ab701..05a48d2 100644
+--- a/drivers/net/can/flexcan/dev.c
++++ b/drivers/net/can/flexcan/dev.c
+@@ -250,16 +250,22 @@ static void flexcan_set_bitrate(struct flexcan_device *flexcan, int bitrate)
+ static void flexcan_update_bitrate(struct flexcan_device *flexcan)
+ {
+ 	int rate, div;
++	struct flexcan_platform_data *plat_data;
++	plat_data = flexcan->dev->dev.platform_data;
+ 
+-	if (flexcan->br_clksrc)
++	if (plat_data->root_clk_id)
+ 		rate = clk_get_rate(flexcan->clk);
+ 	else {
+-		struct clk *clk;
+-		clk = clk_get(NULL, "ckih");
+-		if (!clk)
+-			return;
+-		rate = clk_get_rate(clk);
+-		clk_put(clk);
++		if (flexcan->br_clksrc)
++			rate = clk_get_rate(flexcan->clk);
++		else {
++			struct clk *clk;
++			clk = clk_get(NULL, "ckih");
++			if (!clk)
++				return;
++			rate = clk_get_rate(clk);
++			clk_put(clk);
++		}
+ 	}
+ 	if (!rate)
+ 		return;
+@@ -581,6 +587,7 @@ static int flexcan_device_attach(struct flexcan_device *flexcan)
+ 	struct resource *res;
+ 	struct platform_device *pdev = flexcan->dev;
+ 	struct flexcan_platform_data *plat_data = (pdev->dev).platform_data;
++	struct clk *can_root_clk;
+ 
+ 	res = platform_get_resource(flexcan->dev, IORESOURCE_MEM, 0);
+ 	if (!res)
+@@ -613,6 +620,10 @@ static int flexcan_device_attach(struct flexcan_device *flexcan)
+ 		}
+ 	}
+ 	flexcan->clk = clk_get(&(flexcan->dev)->dev, "can_clk");
++	if (plat_data->root_clk_id) {
++		can_root_clk = clk_get(NULL, plat_data->root_clk_id);
++		clk_set_parent(flexcan->clk, can_root_clk);
++	}
+ 	flexcan->hwmb = (struct can_hw_mb *)(flexcan->io_base + CAN_MB_BASE);
+ 	flexcan->rx_mask = (unsigned int *)(flexcan->io_base + CAN_RXMASK_BASE);
+ 
+-- 
+1.5.4.4
+

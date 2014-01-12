@@ -1,0 +1,107 @@
+From db1223ab1a2f94317e7e449808eae41e6e38d0b5 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Tue, 19 Apr 2011 17:42:46 +0800
+Subject: [PATCH] ENGR00142322: mx53-smd: spi nor: can't erase 0x200000 size
+
+Spi nor can't erase 0x200000 size.
+There are two issues in this CR.
+1. Spi nor can't erase 0x200000 size.
+2. Whole chip erase don't work.
+
+The solution will be:
+1. Delay more time for WIP check.
+2. Use normal erase for whole chip erase.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx53_smd/mx53_smd.c  |    2 +-
+ drivers/mtd/spi/imx_spi_nor_m25pxx.c |   26 +++++++++++++-------------
+ 2 files changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/board/freescale/mx53_smd/mx53_smd.c b/board/freescale/mx53_smd/mx53_smd.c
+index ed9bbe3..70a0b94 100644
+--- a/board/freescale/mx53_smd/mx53_smd.c
++++ b/board/freescale/mx53_smd/mx53_smd.c
+@@ -449,7 +449,7 @@ void spi_io_init(struct imx_spi_dev_t *dev)
+ 		mxc_iomux_set_input(MUX_IN_ECSPI1_IPP_IND_MISO_SELECT_INPUT,
+ 				0x3);
+ 
+-		/* MISO */
++		/* MOSI */
+ 		mxc_request_iomux(MX53_PIN_EIM_D18, IOMUX_CONFIG_ALT4);
+ 		mxc_iomux_set_pad(MX53_PIN_EIM_D18, 0x104);
+ 		mxc_iomux_set_input(MUX_IN_ECSPI1_IPP_IND_MOSI_SELECT_INPUT,
+diff --git a/drivers/mtd/spi/imx_spi_nor_m25pxx.c b/drivers/mtd/spi/imx_spi_nor_m25pxx.c
+index a87bab6..9ad2262 100644
+--- a/drivers/mtd/spi/imx_spi_nor_m25pxx.c
++++ b/drivers/mtd/spi/imx_spi_nor_m25pxx.c
+@@ -121,8 +121,7 @@ static s32 spi_nor_status(struct spi_flash *flash)
+ static int wait_till_ready(struct spi_flash *flash)
+ {
+ 	int sr;
+-	int i;
+-	int times = 100;
++	int times = 10000;
+ 
+ 	do {
+ 		sr = spi_nor_status(flash);
+@@ -186,7 +185,7 @@ static int spi_nor_flash_read(struct spi_flash *flash, u32 from,
+ {
+ 	struct imx_spi_flash *imx_sf = to_imx_spi_flash(flash);
+ 	int rx_len = 0, count = 0, i = 0;
+-	int addr, cmd_len, status;
++	int addr, cmd_len;
+ 	u8 txer[SPI_FIFOSIZE] = { 0 };
+ 	u8 *s = txer;
+ 	u8 *d = buf;
+@@ -270,7 +269,7 @@ static int _fsl_spi_write(struct spi_flash *flash, const void *buf, int len, int
+ 	u8 txer[SPI_FIFOSIZE] = { 0 };
+ 	u8 *d = txer;
+ 	u8 *s = (u8 *) buf;
+-	int delta = 0, l = 0, i = 0, count = 0, status;
++	int delta = 0, l = 0, i = 0, count = 0;
+ 
+ 	count = len;
+ 	delta = count % 4;
+@@ -421,9 +420,13 @@ static int spi_nor_flash_erase(struct spi_flash *flash, u32 offset,
+ 	struct imx_spi_flash *imx_sf = to_imx_spi_flash(flash);
+ 
+ 	/* whole-chip erase? */
++	/*
+ 	if (len == imx_sf->params->device_size) {
+ 		if (erase_chip(flash))
+ 			return -EIO;
++		else
++			return 0;
++	*/
+ 
+ 	/* REVISIT in some cases we could speed up erasing large regions
+ 	 * by using OPCODE_SE instead of OPCODE_BE_4K.  We may have set up
+@@ -431,18 +434,15 @@ static int spi_nor_flash_erase(struct spi_flash *flash, u32 offset,
+ 	 */
+ 
+ 	/* "sector"-at-a-time erase */
+-	} else {
+-		len = roundup(len, imx_sf->params->block_size);
+-		while (len) {
+-			if (erase_sector(flash, offset))
+-				return -EIO;
++	len = roundup(len, imx_sf->params->block_size);
++	while (len) {
++		if (erase_sector(flash, offset))
++			return -EIO;
+ 
+-			offset += imx_sf->params->block_size;
+-			len -= imx_sf->params->block_size;
+-		}
++		offset += imx_sf->params->block_size;
++		len -= imx_sf->params->block_size;
+ 	}
+ 
+-
+ 	return 0;
+ }
+ 
+-- 
+1.5.4.4
+

@@ -1,0 +1,441 @@
+From c7c9adb7ec54c5686e5ca975cae76a3c3f13d777 Mon Sep 17 00:00:00 2001
+From: Sammy He <r62914@freescale.com>
+Date: Mon, 24 Jan 2011 08:02:54 +0800
+Subject: [PATCH] ENGR00138422-2 Add SATA storage support for android fastboot
+
+Add SATA storage support for android fastboot.
+
+Signed-off-by: Sammy He <r62914@freescale.com>
+---
+ common/cmd_fastboot.c              |  126 ++++++++++++++++++------------------
+ drivers/fastboot/fastboot.c        |  111 ++++++++++++++++++++-----------
+ include/configs/mx51_bbg_android.h |    2 +-
+ include/configs/mx53_evk_android.h |    2 +-
+ include/configs/mx53_smd_android.h |    3 +-
+ 5 files changed, 138 insertions(+), 106 deletions(-)
+
+diff --git a/common/cmd_fastboot.c b/common/cmd_fastboot.c
+index 939ffac..e3eb590 100644
+--- a/common/cmd_fastboot.c
++++ b/common/cmd_fastboot.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Copyright 2008 - 2009 (C) Wind River Systems, Inc.
+  * Tom Rix <Tom.Rix@windriver.com>
+@@ -69,8 +69,11 @@ extern int do_reset(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
+ /* Use do_nand for fastboot's flash commands */
+ #if defined(CONFIG_FASTBOOT_STORAGE_NAND)
+ extern int do_nand(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
+-#elif defined(CONFIG_FASTBOOT_STORAGE_EMMC)
++#elif defined(CONFIG_FASTBOOT_STORAGE_EMMC_SATA)
+ extern int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
++#if defined(CONFIG_CMD_SATA)
++extern int do_sata(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
++#endif
+ extern env_t *env_ptr;
+ #endif
+ /* Use do_setenv and do_saveenv to permenantly save data */
+@@ -108,6 +111,7 @@ static unsigned int mmc_controller_no;
+ /* To support the Android-style naming of flash */
+ #define MAX_PTN		    16
+ #define MMC_BLOCK_SIZE	    512
++#define SATA_BLOCK_SIZE     512
+ 
+ static fastboot_ptentry ptable[MAX_PTN];
+ static unsigned int pcount;
+@@ -930,59 +934,12 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 					printf("partition '%s' erased\n", ptn->name);
+ 					sprintf(response, "OKAY");
+ 				}
+-
+ 			}
+-#elif defined(CONFIG_FASTBOOT_STORAGE_EMMC)
+-			struct fastboot_ptentry *ptn;
+-
+-#ifdef CONFIG_DYNAMIC_MMC_DEVNO
+-			mmc_controller_no = get_mmc_env_devno();
++			ret = 0;
+ #else
+-			/* Save the MMC controller number */
+-			mmc_controller_no = CONFIG_FASTBOOT_MMC_NO;
+-#endif
+-			/* Find the partition and erase it */
+-			ptn = fastboot_flash_find_ptn(cmdbuf + 6);
+-
+-			if (ptn == 0) {
+-				sprintf(response, "FAIL: partition doesn't exist");
+-			} else {
+-				/* Call MMC erase function here */
+-				char start[32], length[32];
+-				char slot_no[32];
+-
+-				char *erase[5] = {"mmc", "erase",
+-						    NULL, NULL, NULL};
+-				char *mmc_init[2] = {"mmcinit", NULL};
+-
+-				mmc_init[1] = slot_no;
+-				erase[2] = slot_no;
+-				erase[3] = start;
+-				erase[4] = length;
+-
+-				sprintf(slot_no, "%d", mmc_controller_no);
+-				sprintf(length, "0x%x",
+-					    ptn->length / MMC_BLOCK_SIZE);
+-				sprintf(start, "0x%x",
+-					    ptn->start / MMC_BLOCK_SIZE);
+-
+-				printf("Initializing '%s'\n", ptn->name);
+-				if (do_mmcops(NULL, 0, 2, mmc_init))
+-					sprintf(response, "FAIL: Init of MMC card");
+-				else
+-					sprintf(response, "OKAY");
+-
+-				printf("Erasing '%s'\n", ptn->name);
+-				if (do_mmcops(NULL, 0, 5, erase)) {
+-					printf("Erasing '%s' FAILED!\n", ptn->name);
+-					sprintf(response, "FAIL: Erase partition");
+-				} else {
+-					printf("Erasing '%s' DONE!\n", ptn->name);
+-					sprintf(response, "OKAY");
+-				}
+-			}
++			printf("Not support erase command for EMMC\n");
++			ret = -1;
+ #endif
+-			ret = 0;
+ 		}
+ 
+ 		/* download
+@@ -1150,17 +1107,10 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 			} else {
+ 				sprintf(response, "FAILno image downloaded");
+ 			}
+-#elif defined(CONFIG_FASTBOOT_STORAGE_EMMC)
++#elif defined(CONFIG_FASTBOOT_STORAGE_EMMC_SATA)
+ 			if (download_bytes) {
+-
+ 				struct fastboot_ptentry *ptn;
+ 
+-#ifdef CONFIG_DYNAMIC_MMC_DEVNO
+-				mmc_controller_no = get_mmc_env_devno();
+-#else
+-				/* Save the MMC controller number */
+-				mmc_controller_no = CONFIG_FASTBOOT_MMC_NO;
+-#endif
+ 				/* Next is the partition name */
+ 				ptn = fastboot_flash_find_ptn(cmdbuf + 6);
+ 				if (ptn == 0) {
+@@ -1191,12 +1141,60 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
+ 					printf("saveenv to '%s' DONE!\n", ptn->name);
+ 					sprintf(response, "OKAY");
+ 				} else {
+-				/* Normal case */
+-
+-					char source[32], dest[32], length[32];
+-					char slot_no[32];
++					char *fastboot_env;
++					char source[32], dest[32];
++					char length[32], slot_no[32];
+ 					unsigned int temp;
+ 
++					/* Normal case */
++					fastboot_env = getenv("fastboot_dev");
++					if ((fastboot_env == NULL) ||
++					     strcmp(fastboot_env, "sata")) {
++						/* download to mmc */
++						goto mmc_ops;
++					} else {
++						/* downaload to sata */
++#ifdef CONFIG_CMD_SATA
++					char *sata_write[5] = {"sata", "write",
++						NULL, NULL, NULL};
++
++					sata_write[2] = source;
++					sata_write[3] = dest;
++					sata_write[4] = length;
++
++					sprintf(source, "0x%x",
++						 interface.transfer_buffer);
++						/* block offset */
++					temp = ptn->start / SATA_BLOCK_SIZE;
++					sprintf(dest, "0x%x", temp);
++					/* block count */
++					temp = (download_bytes +
++						SATA_BLOCK_SIZE - 1) /
++							SATA_BLOCK_SIZE;
++					sprintf(length, "0x%x", temp);
++					if (do_sata(NULL, 0, 5, sata_write)) {
++						printf("Writing '%s' FAILED!\n",
++							 ptn->name);
++						sprintf(response,
++						       "FAIL: Write partition");
++					} else {
++						printf("Writing '%s' DONE!\n",
++							ptn->name);
++						sprintf(response, "OKAY");
++						ret = 0;
++					}
++#else
++					sprintf(response, "FAIL: Not support");
++#endif
++					fastboot_tx_status(response,
++							    strlen(response));
++					return ret; /* End of sata download */
++				}
++mmc_ops:
++					/* Save the MMC controller number */
++					mmc_controller_no =
++							CONFIG_FASTBOOT_MMC_NO;
++
+ 					printf("writing to partition '%s'\n", ptn->name);
+ 					char *mmc_write[6] = {"mmc", "write",
+ 							NULL, NULL, NULL, NULL};
+diff --git a/drivers/fastboot/fastboot.c b/drivers/fastboot/fastboot.c
+index ee8d6fc..2eb17cc 100644
+--- a/drivers/fastboot/fastboot.c
++++ b/drivers/fastboot/fastboot.c
+@@ -33,6 +33,7 @@
+ #include <asm/io.h>
+ #include <usbdevice.h>
+ #include <mmc.h>
++#include <sata.h>
+ 
+ /*
+  * Defines
+@@ -43,6 +44,24 @@
+ #define CONFIG_USBD_IN_PKTSIZE	    0x200
+ #define MAX_BUFFER_SIZE		    0x200
+ 
++/*
++ * imx family android layout
++ * mbr -  0 ~ 0x3FF byte
++ * bootloader - 0x400 ~ 0xFFFFF byte
++ * kernel - 0x100000 ~ 5FFFFF byte
++ * uramedisk - 0x600000 ~ 0x6FFFFF  supposing 1M temporarily
++ * SYSTEM partition - /dev/mmcblk0p2  or /dev/sda2
++ * RECOVERY parittion - dev/mmcblk0p4 or /dev/sda4
++ */
++#define ANDROID_MBR_OFFSET	    0
++#define ANDROID_MBR_SIZE	    0x200
++#define ANDROID_BOOTLOADER_OFFSET   0x400
++#define ANDROID_BOOTLOADER_SIZE	    0xFFC00
++#define ANDROID_KERNEL_OFFSET	    0x100000
++#define ANDROID_KERNEL_SIZE	    0x500000
++#define ANDROID_URAMDISK_OFFSET	    0x600000
++#define ANDROID_URAMDISK_SIZE	    0x100000
++
+ #define STR_LANG_INDEX		    0x00
+ #define STR_MANUFACTURER_INDEX	    0x01
+ #define STR_PRODUCT_INDEX	    0x02
+@@ -190,8 +209,8 @@ static void fastboot_event_handler(struct usb_device_instance *device,
+ static int fastboot_cdc_setup(struct usb_device_request *request,
+ 				struct urb *urb);
+ static int fastboot_usb_configured(void);
+-#ifdef CONFIG_FASTBOOT_STORAGE_EMMC
+-static void fastboot_init_mmc_ptable(void);
++#ifdef CONFIG_FASTBOOT_STORAGE_EMMC_SATA
++static int fastboot_init_mmc_sata_ptable(void);
+ #endif
+ 
+ /* utility function for converting char* to wide string used by USB */
+@@ -214,8 +233,9 @@ static void str2wide(char *str, u16 * wide)
+  */
+ int fastboot_init(struct cmd_fastboot_interface *interface)
+ {
+-	printf("fastboot is in init......");
++	char *fastboot_env;
+ 
++	printf("fastboot is in init......");
+ 	fastboot_interface = interface;
+ 	fastboot_interface->product_name = CONFIG_FASTBOOT_PRODUCT_NAME_STR;
+ 	fastboot_interface->serial_no = CONFIG_FASTBOOT_SERIAL_NUM;
+@@ -229,8 +249,8 @@ int fastboot_init(struct cmd_fastboot_interface *interface)
+ 	udc_init();
+ 
+ 	fastboot_init_instances();
+-#ifdef CONFIG_FASTBOOT_STORAGE_EMMC
+-	fastboot_init_mmc_ptable();
++#ifdef CONFIG_FASTBOOT_STORAGE_EMMC_SATA
++	fastboot_init_mmc_sata_ptable();
+ #endif
+ 	udc_startup_events(device_instance);
+ 	udc_connect();		/* Enable pullup for host detection */
+@@ -238,54 +258,65 @@ int fastboot_init(struct cmd_fastboot_interface *interface)
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_FASTBOOT_STORAGE_EMMC
+-static void fastboot_init_mmc_ptable(void)
++#ifdef CONFIG_FASTBOOT_STORAGE_EMMC_SATA
++static int fastboot_init_mmc_sata_ptable(void)
+ {
+-	int i;
++	int i, sata_device_no;
+ 	struct mmc *mmc;
+ 	block_dev_desc_t *dev_desc;
+ 	disk_partition_t info;
++	char *fastboot_env;
+ 	fastboot_ptentry ptable[PTN_RECOVERY_INDEX + 1];
+ 
+-	mmc = find_mmc_device(CONFIG_FASTBOOT_MMC_NO);
+-	if (mmc && mmc_init(mmc))
+-		printf("MMC card init failed!\n");
+-
+-	dev_desc = get_dev("mmc", CONFIG_FASTBOOT_MMC_NO);
+-	if (NULL == dev_desc) {
+-		printf("** Block device MMC %d not supported\n",
+-			CONFIG_FASTBOOT_MMC_NO);
+-		return;
++	fastboot_env = getenv("fastboot_dev");
++	if ((fastboot_env == NULL) || strcmp(fastboot_env, "sata")) {
++		puts("flash target is SD card\n");
++		mmc = find_mmc_device(CONFIG_FASTBOOT_MMC_NO);
++		if (mmc && mmc_init(mmc))
++			printf("MMC card init failed!\n");
++
++		dev_desc = get_dev("mmc", CONFIG_FASTBOOT_MMC_NO);
++		if (NULL == dev_desc) {
++			printf("** Block device MMC %d not supported\n",
++				CONFIG_FASTBOOT_MMC_NO);
++			return -1;
++		}
++	} else {
++#ifdef CONFIG_CMD_SATA
++		puts("flash target is SATA\n");
++		if (sata_initialize())
++			return -1;
++		sata_device_no = CONFIG_FASTBOOT_SATA_NO;
++		if (sata_device_no >= CONFIG_SYS_SATA_MAX_DEVICE) {
++			printf("Unknown SATA(%d) device for fastboot\n",
++				sata_device_no);
++			return -1;
++		}
++		dev_desc = sata_get_dev(sata_device_no);
++#else
++		puts("SATA isn't buildin\n");
++		return -1;
++#endif
+ 	}
+ 
+ 	memset((char *)ptable, 0,
+ 		    sizeof(fastboot_ptentry) * (PTN_RECOVERY_INDEX + 1));
+-
+-	/*
+-	 * imx family android layout
+-	 * mbr -  0 ~ 0x3FF byte
+-	 * bootloader - 0x400 ~ 0xFFFFF byte
+-	 * kernel - 0x100000 ~ 5FFFFF byte
+-	 * uramedisk - 0x600000 ~ 0x6FFFFF  supposing 1M temporarily
+-	 * SYSTEM partition - /dev/mmcblk0p2
+-	 * RECOVERY parittion - dev/mmcblk0p6
+-	 */
+ 	/* MBR */
+ 	strcpy(ptable[PTN_MBR_INDEX].name, "mbr");
+-	ptable[PTN_MBR_INDEX].start = 0;
+-	ptable[PTN_MBR_INDEX].length = 0x200;
++	ptable[PTN_MBR_INDEX].start = ANDROID_MBR_OFFSET;
++	ptable[PTN_MBR_INDEX].length = ANDROID_MBR_SIZE;
+ 	/* Bootloader */
+ 	strcpy(ptable[PTN_BOOTLOADER_INDEX].name, "bootloader");
+-	ptable[PTN_BOOTLOADER_INDEX].start = 0x400;
+-	ptable[PTN_BOOTLOADER_INDEX].length = 0xFFC00;
++	ptable[PTN_BOOTLOADER_INDEX].start = ANDROID_BOOTLOADER_OFFSET;
++	ptable[PTN_BOOTLOADER_INDEX].length = ANDROID_BOOTLOADER_SIZE;
+ 	/* kernel */
+ 	strcpy(ptable[PTN_KERNEL_INDEX].name, "kernel");
+-	ptable[PTN_KERNEL_INDEX].start = 0x100000;  /* 1M byte offset */
+-	ptable[PTN_KERNEL_INDEX].length = 0x500000; /* 5M byte */
++	ptable[PTN_KERNEL_INDEX].start = ANDROID_KERNEL_OFFSET;
++	ptable[PTN_KERNEL_INDEX].length = ANDROID_KERNEL_SIZE;
+ 	/* uramdisk */
+ 	strcpy(ptable[PTN_URAMDISK_INDEX].name, "uramdisk");
+-	ptable[PTN_URAMDISK_INDEX].start = 0x600000; /* 6M byte offset */
+-	ptable[PTN_URAMDISK_INDEX].length = 0x100000;
++	ptable[PTN_URAMDISK_INDEX].start = ANDROID_URAMDISK_OFFSET;
++	ptable[PTN_URAMDISK_INDEX].length = ANDROID_URAMDISK_SIZE;
+ 
+ 	/* system partition */
+ 	strcpy(ptable[PTN_SYSTEM_INDEX].name, "system");
+@@ -295,9 +326,9 @@ static void fastboot_init_mmc_ptable(void)
+ 			CONFIG_ANDROID_SYSTEM_PARTITION_MMC);
+ 	else {
+ 		ptable[PTN_SYSTEM_INDEX].start = info.start *
+-						    mmc->write_bl_len;
++						    dev_desc->blksz;
+ 		ptable[PTN_SYSTEM_INDEX].length = info.size *
+-						    mmc->write_bl_len;
++						    dev_desc->blksz;
+ 	}
+ 	/* recovery partition */
+ 	strcpy(ptable[PTN_RECOVERY_INDEX].name, "recovery");
+@@ -307,13 +338,15 @@ static void fastboot_init_mmc_ptable(void)
+ 			CONFIG_ANDROID_RECOVERY_PARTITION_MMC);
+ 	else {
+ 		ptable[PTN_RECOVERY_INDEX].start = info.start *
+-							mmc->write_bl_len;
++							dev_desc->blksz;
+ 		ptable[PTN_RECOVERY_INDEX].length = info.size *
+-							mmc->write_bl_len;
++							dev_desc->blksz;
+ 	}
+ 
+ 	for (i = 0; i <= PTN_RECOVERY_INDEX; i++)
+ 		fastboot_flash_add_ptn(&ptable[i]);
++
++	return 0;
+ }
+ #endif
+ 
+diff --git a/include/configs/mx51_bbg_android.h b/include/configs/mx51_bbg_android.h
+index a460954..4b1271a 100644
+--- a/include/configs/mx51_bbg_android.h
++++ b/include/configs/mx51_bbg_android.h
+@@ -91,7 +91,7 @@
+ #define CONFIG_USB_DEVICE
+ #define CONFIG_FASTBOOT		1
+ #define CONFIG_IMX_UDC		1
+-#define CONFIG_FASTBOOT_STORAGE_EMMC
++#define CONFIG_FASTBOOT_STORAGE_EMMC_SATA
+ #define CONFIG_FASTBOOT_VENDOR_ID	0xbb4
+ #define CONFIG_FASTBOOT_PRODUCT_ID	0xc01
+ #define CONFIG_FASTBOOT_BCD_DEVICE	0x311
+diff --git a/include/configs/mx53_evk_android.h b/include/configs/mx53_evk_android.h
+index cf80932..00007e7 100644
+--- a/include/configs/mx53_evk_android.h
++++ b/include/configs/mx53_evk_android.h
+@@ -81,7 +81,7 @@
+ #define CONFIG_USB_DEVICE
+ #define CONFIG_FASTBOOT                1
+ #define CONFIG_IMX_UDC                 1
+-#define CONFIG_FASTBOOT_STORAGE_EMMC
++#define CONFIG_FASTBOOT_STORAGE_EMMC_SATA
+ #define CONFIG_FASTBOOT_VENDOR_ID      0xbb4
+ #define CONFIG_FASTBOOT_PRODUCT_ID     0xc01
+ #define CONFIG_FASTBOOT_BCD_DEVICE     0x311
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index 9c92f01..dcf71c1 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -81,7 +81,7 @@
+ #define CONFIG_USB_DEVICE
+ #define CONFIG_IMX_UDC                 1
+ #define CONFIG_FASTBOOT                1
+-#define CONFIG_FASTBOOT_STORAGE_EMMC
++#define CONFIG_FASTBOOT_STORAGE_EMMC_SATA
+ #define CONFIG_FASTBOOT_VENDOR_ID      0xbb4
+ #define CONFIG_FASTBOOT_PRODUCT_ID     0xc01
+ #define CONFIG_FASTBOOT_BCD_DEVICE     0x311
+@@ -91,6 +91,7 @@
+ #define CONFIG_FASTBOOT_INTERFACE_STR    "Android fastboot"
+ #define CONFIG_FASTBOOT_SERIAL_NUM      "12345"
+ #define CONFIG_FASTBOOT_MMC_NO          0
++#define CONFIG_FASTBOOT_SATA_NO          0
+ #define CONFIG_FASTBOOT_TRANSFER_BUF    0x80000000
+ #define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x8000000 /* 128M byte */
+ 
+-- 
+1.5.4.4
+

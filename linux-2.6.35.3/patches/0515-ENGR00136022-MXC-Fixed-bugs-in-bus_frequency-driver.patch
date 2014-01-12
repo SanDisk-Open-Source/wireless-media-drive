@@ -1,0 +1,107 @@
+From 12fbb20426381fa1a498b0d8c17f9be2198627b8 Mon Sep 17 00:00:00 2001
+From: Ranjani Vaidyanathan <ra5478@freescale.com>
+Date: Mon, 6 Dec 2010 11:34:20 -0600
+Subject: [PATCH] ENGR00136022: MXC:Fixed bugs in bus_frequency driver.
+
+Fix MX53 boot issue caused by the changes made to bus_freq driver.
+Ensure that all MX5x platforms can enter/exit various low power modes.
+
+Signed-off-by: Ranjani Vaidyanathan <ra5478@freescale.com>
+---
+ arch/arm/mach-mx5/bus_freq.c |   21 ++++++++-------------
+ arch/arm/plat-mxc/clock.c    |   18 +++++-------------
+ 2 files changed, 13 insertions(+), 26 deletions(-)
+
+diff --git a/arch/arm/mach-mx5/bus_freq.c b/arch/arm/mach-mx5/bus_freq.c
+index e4def91..08f5f5c 100644
+--- a/arch/arm/mach-mx5/bus_freq.c
++++ b/arch/arm/mach-mx5/bus_freq.c
+@@ -161,6 +161,12 @@ int set_low_bus_freq(void)
+ 		return 0;
+ 
+ 	if (bus_freq_scaling_initialized) {
++		/* can not enter low bus freq, when cpu is in highest freq */
++		if (clk_get_rate(cpu_clk) >
++				cpu_wp_tbl[cpu_wp_nr - 1].cpu_rate) {
++			return 0;
++		}
++
+ 		mutex_lock(&bus_freq_mutex);
+ 
+ 		stop_dvfs_per();
+@@ -235,12 +241,7 @@ void enter_lpapm_mode_mx50()
+ 	u32 reg;
+ 	unsigned long flags;
+ 	spin_lock_irqsave(&ddr_freq_lock, flags);
+-	/* can not enter low bus freq, when cpu is in highest freq */
+-	if (clk_get_rate(cpu_clk) !=
+-			cpu_wp_tbl[cpu_wp_nr - 1].cpu_rate) {
+-		spin_unlock_irqrestore(&ddr_freq_lock, flags);
+-		return;
+-	}
++
+ 	set_ddr_freq(LP_APM_CLK);
+ 	/* Set the parent of main_bus_clk to be PLL3 */
+ 	clk_set_parent(main_bus_clk, pll3);
+@@ -312,12 +313,6 @@ void enter_lpapm_mode_mx51()
+ {
+ 	u32 reg;
+ 
+-	/* can not enter low bus freq, when cpu is in highest freq */
+-	if (clk_get_rate(cpu_clk) !=
+-			cpu_wp_tbl[cpu_wp_nr - 1].cpu_rate) {
+-		return;
+-	}
+-
+ 	/* Set PLL3 to 133Mhz if no-one is using it. */
+ 	if (clk_get_usecount(pll3) == 0) {
+ 		u32 pll3_rate = clk_get_rate(pll3);
+@@ -376,7 +371,7 @@ int set_high_bus_freq(int high_bus_freq)
+ 		 * If the CPU freq is 800MHz, set the bus to the high
+ 		 * setpoint (133MHz) and DDR to 200MHz.
+ 		 */
+-		if ((clk_get_rate(cpu_clk) !=
++		if ((clk_get_rate(cpu_clk) >
+ 				cpu_wp_tbl[cpu_wp_nr - 1].cpu_rate)
+ 				|| lp_high_freq)
+ 			high_bus_freq = 1;
+diff --git a/arch/arm/plat-mxc/clock.c b/arch/arm/plat-mxc/clock.c
+index 32cf787..8551456 100644
+--- a/arch/arm/plat-mxc/clock.c
++++ b/arch/arm/plat-mxc/clock.c
+@@ -184,9 +184,9 @@ int clk_enable(struct clk *clk)
+ 	if ((clk->flags & CPU_FREQ_TRIG_UPDATE)
+ 			&& (clk_get_usecount(clk) == 0)) {
+ #if (defined(CONFIG_ARCH_MX5) || defined(CONFIG_ARCH_MX37))
+-		if (low_freq_bus_used() && !low_bus_freq_mode) {
+-			if (!(clk->flags &
+-				(AHB_HIGH_SET_POINT | AHB_MED_SET_POINT)))
++		if (!(clk->flags &
++			(AHB_HIGH_SET_POINT | AHB_MED_SET_POINT)))  {
++			if (low_freq_bus_used() && !low_bus_freq_mode)
+ 				set_low_bus_freq();
+ 		} else {
+ 			if ((clk->flags & AHB_MED_SET_POINT)
+@@ -242,17 +242,9 @@ void clk_disable(struct clk *clk)
+ #if (defined(CONFIG_ARCH_MX5) || defined(CONFIG_ARCH_MX37))
+ 		if (low_freq_bus_used() && !low_bus_freq_mode)
+ 			set_low_bus_freq();
+-		else if ((clk->flags & AHB_MED_SET_POINT)
+-			&& !med_bus_freq_mode)
+-			/* Currently at low need to set to medium setpoint
+-			  */
++		else
++			/* Set to either high or medium setpoint. */
+ 			set_high_bus_freq(0);
+-		else if ((clk->flags & AHB_HIGH_SET_POINT)
+-			&& !high_bus_freq_mode)
+-			/* Currently at low or medium set point,
+-			  * need to set to high setpoint
+-			  */
+-			set_high_bus_freq(1);
+ #endif
+ 	}
+ }
+-- 
+1.5.4.4
+

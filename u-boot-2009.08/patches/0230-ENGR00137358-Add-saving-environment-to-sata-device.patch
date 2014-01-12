@@ -1,0 +1,342 @@
+From 9b1177585564a7fc63ea8a377fab7d15b1e43674 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Fri, 24 Dec 2010 16:29:37 +0800
+Subject: [PATCH] ENGR00137358: Add saving environment to sata device support
+
+Add saving environment to sata device support.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ common/Makefile             |    2 +
+ common/cmd_nvedit.c         |    3 +-
+ common/env_sata.c           |  162 +++++++++++++++++++++++++++++++++++++++++++
+ include/configs/mx53_ard.h  |    7 ++-
+ include/configs/mx53_evk.h  |    7 ++-
+ include/configs/mx53_loco.h |    7 ++-
+ include/configs/mx53_smd.h  |    7 ++-
+ 7 files changed, 190 insertions(+), 5 deletions(-)
+
+diff --git a/common/Makefile b/common/Makefile
+index 451ccb0..b7953e6 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -58,11 +58,13 @@ COBJS-$(CONFIG_ENV_IS_IN_NVRAM) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_MMC) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_NAND) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_SPI_FLASH) += env_embedded.o
++COBJS-$(CONFIG_ENV_IS_IN_SATA) += env_embedded.o
+ COBJS-$(CONFIG_ENV_IS_IN_FLASH) += env_flash.o
+ COBJS-$(CONFIG_ENV_IS_IN_MG_DISK) += env_mgdisk.o
+ COBJS-$(CONFIG_ENV_IS_IN_NAND) += env_nand.o
+ COBJS-$(CONFIG_ENV_IS_IN_NVRAM) += env_nvram.o
+ COBJS-$(CONFIG_ENV_IS_IN_ONENAND) += env_onenand.o
++COBJS-$(CONFIG_ENV_IS_IN_SATA) += env_sata.o
+ COBJS-$(CONFIG_ENV_IS_IN_SPI_FLASH) += env_sf.o
+ COBJS-$(CONFIG_ENV_IS_IN_MMC) += env_mmc.o
+ COBJS-$(CONFIG_ENV_IS_NOWHERE) += env_nowhere.o
+diff --git a/common/cmd_nvedit.c b/common/cmd_nvedit.c
+index e0ccd56..f5cef1b 100644
+--- a/common/cmd_nvedit.c
++++ b/common/cmd_nvedit.c
+@@ -61,8 +61,9 @@ DECLARE_GLOBAL_DATA_PTR;
+     !defined(CONFIG_ENV_IS_IN_ONENAND)	&& \
+     !defined(CONFIG_ENV_IS_IN_SPI_FLASH)	&& \
+     !defined(CONFIG_ENV_IS_IN_MMC)	&& \
++    !defined(CONFIG_ENV_IS_IN_SATA)      && \
+     !defined(CONFIG_ENV_IS_NOWHERE)
+-# error Define one of CONFIG_ENV_IS_IN_{NVRAM|EEPROM|FLASH|DATAFLASH|ONENAND|SPI_FLASH|MMC|MG_DISK|NOWHERE}
++# error Define one of CONFIG_ENV_IS_IN_{NVRAM|EEPROM|FLASH|DATAFLASH|ONENAND|SPI_FLASH|SATA|MMC|MG_DISK|NOWHERE}
+ #endif
+ 
+ #define XMK_STR(x)	#x
+diff --git a/common/env_sata.c b/common/env_sata.c
+new file mode 100755
+index 0000000..522a335
+--- /dev/null
++++ b/common/env_sata.c
+@@ -0,0 +1,162 @@
++/*
++ * (C) Copyright 2010-2011 Freescale Semiconductor, Inc.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++/* #define DEBUG */
++
++#include <common.h>
++
++#include <command.h>
++#include <environment.h>
++#include <linux/stddef.h>
++#include <sata.h>
++
++/* references to names in env_common.c */
++extern uchar default_environment[];
++
++char *env_name_spec = "SATA";
++
++#ifdef ENV_IS_EMBEDDED
++extern uchar environment[];
++env_t *env_ptr = (env_t *)(&environment[0]);
++#else /* ! ENV_IS_EMBEDDED */
++env_t *env_ptr;
++#endif /* ENV_IS_EMBEDDED */
++
++extern int sata_curr_device;
++
++/* local functions */
++#if !defined(ENV_IS_EMBEDDED)
++static void use_default(void);
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++uchar env_get_char_spec(int index)
++{
++	return *((uchar *)(gd->env_addr + index));
++}
++
++int env_init(void)
++{
++	/* use default */
++	gd->env_addr = (ulong)&default_environment[0];
++	gd->env_valid = 1;
++
++	return 0;
++}
++
++#ifdef CONFIG_CMD_SAVEENV
++
++inline int write_env(block_dev_desc_t *sata, unsigned long size,
++			unsigned long offset, const void *buffer)
++{
++	uint blk_start, blk_cnt, n;
++
++	blk_start = ALIGN(offset, sata->blksz) / sata->blksz;
++	blk_cnt   = ALIGN(size, sata->blksz) / sata->blksz;
++
++	n = sata->block_write(sata_curr_device, blk_start,
++					blk_cnt, (u_char *)buffer);
++
++	return (n == blk_cnt) ? 0 : -1;
++}
++
++int saveenv(void)
++{
++	struct block_dev_desc_t *sata = NULL;
++
++	if (sata_curr_device == -1) {
++		if (sata_initialize())
++			return 1;
++		sata_curr_device = CONFIG_SATA_ENV_DEV;
++	}
++
++	if (sata_curr_device >= CONFIG_SYS_SATA_MAX_DEVICE) {
++		printf("Unknown SATA(%d) device for environment!\n",
++			sata_curr_device);
++		return 1;
++	}
++
++	sata = sata_get_dev(sata_curr_device);
++
++	printf("Writing to SATA(%d)... ", sata_curr_device);
++	if (write_env(sata, CONFIG_ENV_SIZE, CONFIG_ENV_OFFSET, env_ptr)) {
++		puts("failed\n");
++		return 1;
++	}
++
++	puts("done\n");
++	return 0;
++}
++#endif /* CONFIG_CMD_SAVEENV */
++
++inline int read_env(block_dev_desc_t *sata, unsigned long size,
++			unsigned long offset, const void *buffer)
++{
++	uint blk_start, blk_cnt, n;
++
++	blk_start = ALIGN(offset, sata->blksz) / sata->blksz;
++	blk_cnt   = ALIGN(size, sata->blksz) / sata->blksz;
++
++	n = sata->block_read(sata_curr_device, blk_start,
++					blk_cnt, (uchar *)buffer);
++
++	return (n == blk_cnt) ? 0 : -1;
++}
++
++void env_relocate_spec(void)
++{
++#if !defined(ENV_IS_EMBEDDED)
++	struct block_dev_desc_t *sata = NULL;
++	int i = 0;
++
++	if (sata_curr_device == -1) {
++		if (sata_initialize())
++			return 1;
++		sata_curr_device = CONFIG_SATA_ENV_DEV;
++	}
++
++	if (sata_curr_device >= CONFIG_SYS_SATA_MAX_DEVICE) {
++		printf("Unknown SATA(%d) device for environment!\n",
++			sata_curr_device);
++		return 1;
++	}
++	sata = sata_get_dev(sata_curr_device);
++
++	if (read_env(sata, CONFIG_ENV_SIZE, CONFIG_ENV_OFFSET, env_ptr))
++		return use_default();
++
++	if (crc32(0, env_ptr->data, ENV_SIZE) != env_ptr->crc)
++		return use_default();
++
++	gd->env_valid = 1;
++#endif
++}
++
++#if !defined(ENV_IS_EMBEDDED)
++static void use_default()
++{
++	puts("*** Warning - bad CRC or MMC, using default environment\n\n");
++	set_default_env();
++}
++#endif
++
+diff --git a/include/configs/mx53_ard.h b/include/configs/mx53_ard.h
+index 9dcb980..fda6197 100644
+--- a/include/configs/mx53_ard.h
++++ b/include/configs/mx53_ard.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX53-ARD Freescale board.
+  *
+@@ -260,6 +260,7 @@
+ 
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_MMC
++/* #define CONFIG_FSL_ENV_IN_SATA */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
+@@ -270,6 +271,10 @@
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SATA)
++	#define CONFIG_ENV_IS_IN_SATA   1
++	#define CONFIG_SATA_ENV_DEV     0
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+ 	#define CONFIG_ENV_SPI_CS		1
+diff --git a/include/configs/mx53_evk.h b/include/configs/mx53_evk.h
+index bc31975..7d8cf81 100644
+--- a/include/configs/mx53_evk.h
++++ b/include/configs/mx53_evk.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX53-EVK Freescale board.
+  *
+@@ -264,6 +264,7 @@
+ 
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_MMC
++/* #define CONFIG_FSL_ENV_IN_SATA */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
+@@ -274,6 +275,10 @@
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SATA)
++	#define CONFIG_ENV_IS_IN_SATA   1
++	#define CONFIG_SATA_ENV_DEV     0
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+ 	#define CONFIG_ENV_SPI_CS		1
+diff --git a/include/configs/mx53_loco.h b/include/configs/mx53_loco.h
+index 9d7cf2e..b5d880f 100644
+--- a/include/configs/mx53_loco.h
++++ b/include/configs/mx53_loco.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX53-LOCO Freescale board.
+  *
+@@ -251,6 +251,7 @@
+ 
+ /* Monitor at beginning of flash */
+ #define CONFIG_FSL_ENV_IN_MMC
++/* #define CONFIG_FSL_ENV_IN_SATA */
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+ #define CONFIG_ENV_SIZE         CONFIG_ENV_SECT_SIZE
+@@ -261,6 +262,10 @@
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SATA)
++	#define CONFIG_ENV_IS_IN_SATA   1
++	#define CONFIG_SATA_ENV_DEV     0
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+ 	#define CONFIG_ENV_SPI_CS		1
+diff --git a/include/configs/mx53_smd.h b/include/configs/mx53_smd.h
+index 2b889ea..760e78b 100644
+--- a/include/configs/mx53_smd.h
++++ b/include/configs/mx53_smd.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2010 Freescale Semiconductor, Inc.
++ * Copyright (C) 2010-2011 Freescale Semiconductor, Inc.
+  *
+  * Configuration settings for the MX53-SMD Freescale board.
+  *
+@@ -250,6 +250,7 @@
+ #define CONFIG_SYS_NO_FLASH
+ 
+ /* Monitor at beginning of flash */
++/* #define CONFIG_FSL_ENV_IN_SATA */
+ #define CONFIG_FSL_ENV_IN_MMC
+ 
+ #define CONFIG_ENV_SECT_SIZE    (128 * 1024)
+@@ -261,6 +262,10 @@
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	#define CONFIG_ENV_OFFSET	(768 * 1024)
++#elif defined(CONFIG_FSL_ENV_IN_SATA)
++	#define CONFIG_ENV_IS_IN_SATA   1
++	#define CONFIG_SATA_ENV_DEV     0
++	#define CONFIG_ENV_OFFSET       (768 * 1024)
+ #elif defined(CONFIG_FSL_ENV_IN_SF)
+ 	#define CONFIG_ENV_IS_IN_SPI_FLASH	1
+ 	#define CONFIG_ENV_SPI_CS		1
+-- 
+1.5.4.4
+

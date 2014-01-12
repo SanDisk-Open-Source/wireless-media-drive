@@ -1,0 +1,36 @@
+From 8119c10880bcbe55449e33b34f0f8932fb0da480 Mon Sep 17 00:00:00 2001
+From: Andrew Kephart <andrew.kephart@alereon.com>
+Date: Mon, 13 Dec 2010 09:46:34 -0600
+Subject: [PATCH] fbdev: Fix fb_find_nearest_mode refresh comparison
+
+Refresh rate nearness is not calculated or reset when nearest resolution
+changes.
+
+This patch resets the refresh rate differential measurement whenever a
+new nearest resolution is discovered.  This fixes two error cases;
+first, wherein the first mode's refresh rate differential is never
+calculated and second, when the closest refresh rate from a previous
+nearest resolution is erroneously preserved.
+
+Signed-off-by: Andrew Kephart <andrew.kephart@alereon.com>
+Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+(cherry picked from commit e504b84805c574cf18d705c610c9e4a8f6e61017)
+---
+ drivers/video/modedb.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/video/modedb.c b/drivers/video/modedb.c
+index 0a4dbdc..de450c1 100644
+--- a/drivers/video/modedb.c
++++ b/drivers/video/modedb.c
+@@ -855,6 +855,7 @@ const struct fb_videomode *fb_find_nearest_mode(const struct fb_videomode *mode,
+ 			abs(cmode->yres - mode->yres);
+ 		if (diff > d) {
+ 			diff = d;
++			diff_refresh = abs(cmode->refresh - mode->refresh);
+ 			best = cmode;
+ 		} else if (diff == d) {
+ 			d = abs(cmode->refresh - mode->refresh);
+-- 
+1.5.4.4
+

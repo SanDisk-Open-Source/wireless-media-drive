@@ -1,0 +1,47 @@
+From ff168f49d3dc88cb7f4e94c43a176b7a881992ab Mon Sep 17 00:00:00 2001
+From: Liu Ying <Ying.Liu@freescale.com>
+Date: Mon, 17 Jan 2011 12:51:11 +0800
+Subject: [PATCH] ENGR00138040-1 MX53 SMD Android:Support splashimage
+
+This patch supports splashimage for MX53 SMD Android.
+
+Signed-off-by: Liu Ying <Ying.Liu@freescale.com>
+---
+ include/configs/mx53_smd_android.h |   23 +++++++++++++++++++++++
+ 1 files changed, 23 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/mx53_smd_android.h b/include/configs/mx53_smd_android.h
+index cbe2f3b..661a8f6 100644
+--- a/include/configs/mx53_smd_android.h
++++ b/include/configs/mx53_smd_android.h
+@@ -321,4 +321,27 @@
+ #else
+ 	#define CONFIG_ENV_IS_NOWHERE	1
+ #endif
++
++#define CONFIG_SPLASH_SCREEN
++#ifdef CONFIG_SPLASH_SCREEN
++	/*
++	 * Framebuffer and LCD
++	 */
++	#define CONFIG_LCD
++	#define CONFIG_VIDEO_MX5
++	#define CONFIG_IPU_CLKRATE	200000000
++	#define CONFIG_SYS_CONSOLE_ENV_OVERWRITE
++	#define CONFIG_SYS_CONSOLE_OVERWRITE_ROUTINE
++	#define CONFIG_SYS_CONSOLE_IS_IN_ENV
++	#define LCD_BPP		LCD_COLOR16
++	#define CONFIG_CMD_BMP
++	#define CONFIG_BMP_8BPP
++	#define CONFIG_FB_BASE	(TEXT_BASE + 0x300000)
++	#define CONFIG_SPLASH_SCREEN_ALIGN
++	#define CONFIG_SYS_WHITE_ON_BLACK
++
++	#define CONFIG_IMX_PWM
++	#define IMX_PWM1_BASE    PWM1_BASE_ADDR
++	#define IMX_PWM2_BASE    PWM2_BASE_ADDR
++#endif
+ #endif				/* __CONFIG_H */
+-- 
+1.5.4.4
+

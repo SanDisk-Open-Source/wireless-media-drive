@@ -1,0 +1,130 @@
+From a7b772a9e3f9f565ee8765a07797a3113aef1892 Mon Sep 17 00:00:00 2001
+From: Terry Lv <r65388@freescale.com>
+Date: Thu, 31 Dec 2009 14:35:16 +0800
+Subject: [PATCH] ENGR00119738: eMMC card access failed.
+
+The iomux settings of mx51 bbg and mx35 3stack can't support eMMC card.
+Thus, change the iomux settings.
+
+Signed-off-by: Terry Lv <r65388@freescale.com>
+---
+ board/freescale/mx35_3stack/mx35_3stack.c |   26 +++++++++---------
+ board/freescale/mx51_bbg/mx51_bbg.c       |   43 +++++++++++++++++++++-------
+ 2 files changed, 45 insertions(+), 24 deletions(-)
+
+diff --git a/board/freescale/mx35_3stack/mx35_3stack.c b/board/freescale/mx35_3stack/mx35_3stack.c
+index 4f79942..1186368 100644
+--- a/board/freescale/mx35_3stack/mx35_3stack.c
++++ b/board/freescale/mx35_3stack/mx35_3stack.c
+@@ -380,18 +380,18 @@ int esdhc_gpio_init(void)
+ 				(u32 *)MMC_SDHC1_BASE_ADDR;
+ 
+ 		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+-				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
+-				PAD_CTL_47K_PU | PAD_CTL_SRE_FAST;
+-		mxc_request_iomux(MX35_PIN_SD1_CLK,
+-				MUX_CONFIG_FUNC | MUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX35_PIN_SD1_CLK, pad_val);
+-
+-		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+ 			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
+-			PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++			PAD_CTL_100K_PD | PAD_CTL_SRE_FAST;
+ 		mxc_request_iomux(MX35_PIN_SD1_CMD,
+ 			MUX_CONFIG_FUNC | MUX_CONFIG_SION);
+ 		mxc_iomux_set_pad(MX35_PIN_SD1_CMD, pad_val);
++
++		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
++				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++				PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++		mxc_request_iomux(MX35_PIN_SD1_CLK,
++				MUX_CONFIG_FUNC | MUX_CONFIG_SION);
++		mxc_iomux_set_pad(MX35_PIN_SD1_CLK, pad_val);
+ 		mxc_request_iomux(MX35_PIN_SD1_DATA0,
+ 			  MUX_CONFIG_FUNC);
+ 		mxc_iomux_set_pad(MX35_PIN_SD1_DATA0, pad_val);
+@@ -415,13 +415,13 @@ int esdhc_gpio_init(void)
+ 
+ 		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+ 			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
+-			PAD_CTL_47K_PU | PAD_CTL_SRE_FAST;
+-		mxc_iomux_set_pad(MX35_PIN_SD2_CLK, pad_val);
++			PAD_CTL_100K_PD | PAD_CTL_SRE_FAST;
++		mxc_iomux_set_pad(MX35_PIN_SD2_CMD, pad_val);
+ 
+ 		pad_val = PAD_CTL_PUE_PUD | PAD_CTL_PKE_ENABLE |
+-			PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_MAX |
+-			PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
+-		mxc_iomux_set_pad(MX35_PIN_SD2_CMD, pad_val);
++				PAD_CTL_HYS_SCHMITZ | PAD_CTL_DRV_HIGH |
++				PAD_CTL_100K_PU | PAD_CTL_SRE_FAST;
++		mxc_iomux_set_pad(MX35_PIN_SD2_CLK, pad_val);
+ 		mxc_iomux_set_pad(MX35_PIN_SD2_DATA0, pad_val);
+ 		mxc_iomux_set_pad(MX35_PIN_SD2_DATA3, pad_val);
+ 
+diff --git a/board/freescale/mx51_bbg/mx51_bbg.c b/board/freescale/mx51_bbg/mx51_bbg.c
+index 60fc704..e5ac369 100644
+--- a/board/freescale/mx51_bbg/mx51_bbg.c
++++ b/board/freescale/mx51_bbg/mx51_bbg.c
+@@ -568,13 +568,10 @@ int esdhc_gpio_init(void)
+ 	case 0:
+ 		imx_esdhc_base_addr = (u32 *)MMC_SDHC1_BASE_ADDR;
+ 
+-		pad = PAD_CTL_PUE_KEEPER | PAD_CTL_PKE_ENABLE | PAD_CTL_DRV_HIGH |
+-		                PAD_CTL_47K_PU | PAD_CTL_SRE_FAST;
+-
+ 		mxc_request_iomux(MX51_PIN_SD1_CMD,
+-			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+ 		mxc_request_iomux(MX51_PIN_SD1_CLK,
+-			  IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
++				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+ 
+ 		mxc_request_iomux(MX51_PIN_SD1_DATA0,
+ 				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+@@ -584,12 +581,36 @@ int esdhc_gpio_init(void)
+ 				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+ 		mxc_request_iomux(MX51_PIN_SD1_DATA3,
+ 				IOMUX_CONFIG_ALT0 | IOMUX_CONFIG_SION);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_CMD, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_CLK, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA0, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA1, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA2, pad);
+-		mxc_iomux_set_pad(MX51_PIN_SD1_DATA3, pad);
++		mxc_iomux_set_pad(MX51_PIN_SD1_CMD,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_CLK,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_NONE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA0,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA1,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA2,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_47K_PU |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
++		mxc_iomux_set_pad(MX51_PIN_SD1_DATA3,
++				PAD_CTL_DRV_MAX | PAD_CTL_DRV_VOT_HIGH |
++				PAD_CTL_HYS_ENABLE | PAD_CTL_100K_PD |
++				PAD_CTL_PUE_PULL |
++				PAD_CTL_PKE_ENABLE | PAD_CTL_SRE_FAST);
+ 		break;
+ 	case 1:
+ 		imx_esdhc_base_addr = (u32 *)MMC_SDHC2_BASE_ADDR;
+-- 
+1.5.4.4
+

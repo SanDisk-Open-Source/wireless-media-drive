@@ -1,0 +1,69 @@
+<HEAD><TITLE>O que é DNS?</TITLE>
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso8859-1">
+
+</HEAD><BODY>
+
+<H1>O que é DNS?</H1>
+
+DNS é algo que a maioria dos usuários de internet não estam atentos ou não levam
+em consideração, mas é essencial para o funcionamento da internet. Simplesmente
+sem DNS, não haveria internet. Qualquer um que queira usar a internet precisa de um 
+servidor de DNS ou acesso a um servidor de DNS.  Por isso que todo provedor de
+internet provê servidores de DNS para seus clientes.  
+
+<p>
+Porém, existem desvantagens ao usar os servidores de DNS de um provedor. 
+A principal desvantagem é que os servidores poderiam ser sobrecarregados; 
+cada conexão a internet (cada e-mail enviado, cada página acessada, etc.)  
+requer uma consulta de DNS.  Com um número grande de clientes que consultando
+os mesmos dois servidores de DNS inúmeras vezes, esses servidores podem 
+ficar lentos e sobrecarregado.  
+
+<p>
+Por isso é que você deveria ter o seu próprio servidor de DNS. Este servidor
+de DNS pode rodar muito mais rápido que o servidores de DNS do seu provedor,
+permitindo acessar a internet de modo muito mais rápido.  
+
+<p>
+Existe um par de modos de usar um servidor de DNS para acelerar a internet; 
+mas primeiro eu deveria descrever o que DNS é.
+
+<p>
+DNS é o processo de obter um nome, como "www.yahoo.com" e 
+converter isto para um número, como "10.22.45.32". É como você 
+fosse a lista telefônica da internet.     
+
+<p>
+Como eu disse antes, há dois modos para ter seu próprio servidor de DNS  
+acelerando a internet.  Um jeito, é simplesmente agir como cache: Um programa   
+que consulta uma vez servidores de DNS do seu provedor para "www.yahoo.com", e  
+se lembra do número (este número é chamado "IP") para você, de forma que  
+você não precisa pedir para seu provedor o IP do www.yahoo.com toda  
+vez que visitar aquele site. Isto é o que eu chamo de um servidor de DNS
+downstream. MaraDNS, naturalmente, suporta completamente este modo de  
+operação.  
+
+<p>
+O outro modo é ter seus servidores de DNS para fazer o que os servidores do
+seu provedor fazem: Consultar diretamente várias máquinas na internet para   
+o IP "www.yahoo.com", e lhe dá a resposta depois de fazer toda a burocracia
+necessária para descobrir qual é o IP para "www.yahoo.com".  Isto 
+é o que eu chamo um servidor de DNS recursivo.  MaraDNS, naturalmente,  
+também suporta completamente este modo de operação.  Realmente, este é o modo
+mais fácil de operação para configurar o MaraDNS.  
+
+<p>
+Agora, como eu disse antes, há um pouco de burocracia envolvida em convertendo   
+"www.yahoo.com" de um nome em para um IP (contanto que você não   
+peça para o servidores de DNS do seu provedor fazer isto pra você). Esta burocracia 
+envolve consultas em vários servidores na internet para "www.yahoo.com". Encurtando
+a história, se você quer ser anfitrião de seus próprios domínios, como   
+"www.yourname.com", você precisará rodar seu próprio servidor de DNS.  Este tipo  
+de servidor de DNS não é usado para acelerar a internet, mas é usado de forma que  
+outros servidores de DNS possam descobrir o IP para "www.yourname.com". Este tipo  
+de servidor de DNS é chamado de servidor de DNS autoritativo. No MaraDNS, adivinhe,
+tem suporte completo para este modo de operação.  
+
+</body>
+
